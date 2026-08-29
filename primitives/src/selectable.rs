@@ -179,7 +179,11 @@ pub(crate) fn use_single_selectable_value<T: Clone + PartialEq + 'static>(
     default_value: Option<T>,
     on_change: Callback<Option<T>>,
     component_name: &'static str,
-) -> (Memo<Vec<RcPartialEqValue>>, Callback<RcPartialEqValue>) {
+) -> (
+    Memo<Vec<RcPartialEqValue>>,
+    Callback<RcPartialEqValue>,
+    Callback<()>,
+) {
     let mut internal_value: Signal<Option<T>> = use_signal(|| default_value.clone());
     let value = use_memo(move || match controlled_value {
         Some(value) => value.cloned(),
@@ -195,7 +199,17 @@ pub(crate) fn use_single_selectable_value<T: Clone + PartialEq + 'static>(
         on_change.call(Some(value));
     });
 
-    (values, set_value)
+    // Resets the (Dioxus-side) selection back to `default_value`. Native
+    // `<form reset>` only restores the hidden mirror `<select>` this crate
+    // renders (see select.rs) -- it has no way to reach this signal, so
+    // callers wire this into a `use_form_reset_listener` themselves.
+    let default_for_reset = default_value.clone();
+    let reset_to_default = use_callback(move |()| {
+        internal_value.set(default_for_reset.clone());
+        on_change.call(default_for_reset.clone());
+    });
+
+    (values, set_value, reset_to_default)
 }
 
 pub(crate) fn use_selectable_root(

@@ -103,6 +103,7 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
             aria_haspopup: "listbox",
             aria_expanded: open(),
             aria_controls: ctx.selectable.list_id,
+            aria_required: ctx.required,
 
             // Pass through other attributes
             ..props.attributes,

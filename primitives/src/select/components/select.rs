@@ -7,7 +7,7 @@ use crate::{
     selectable::{
         use_selectable_root, use_single_selectable_value, RcPartialEqValue, SelectionMode,
     },
-    use_controlled, use_effect, Controlled,
+    use_controlled, use_effect, use_form_reset_listener, use_unique_id, Controlled,
 };
 use dioxus::prelude::*;
 use dioxus_core::Task;
@@ -50,6 +50,13 @@ pub struct SelectProps<T: Clone + PartialEq + 'static = String> {
     /// Name of the select for form submission
     #[props(default)]
     pub name: ReadSignal<String>,
+
+    /// Whether a selection is required for form submission. Only has an
+    /// effect when `name` is also set to a non-empty value -- an empty
+    /// `name` excludes the hidden mirror `<select>` from the entry list
+    /// regardless, per the HTML "constructing the entry list" algorithm.
+    #[props(default)]
+    pub required: ReadSignal<bool>,
 
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
@@ -118,6 +125,16 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
     pub children: Element,
 }
 
+/// The bits of [`use_select_root`]'s configuration that aren't already
+/// grouped by an existing type (like [`Controlled`]) -- bundled together so
+/// the function stays under clippy's argument-count lint.
+struct SelectRootConfig {
+    typeahead_timeout: ReadSignal<Duration>,
+    /// Whether a selection is required for form submission. See
+    /// [`SelectProps::required`].
+    required: ReadSignal<bool>,
+}
+
 /// Sets up the shared signals, focus, and context that both [`Select`] and
 /// [`SelectMulti`] need. Returns the `open` signal for the root `<div>`.
 fn use_select_root(
@@ -127,8 +144,12 @@ fn use_select_root(
     disabled: ReadSignal<bool>,
     roving_loop: ReadSignal<bool>,
     open: Controlled<bool>,
-    typeahead_timeout: ReadSignal<Duration>,
-) -> Memo<bool> {
+    config: SelectRootConfig,
+) -> (SelectContext, Memo<bool>) {
+    let SelectRootConfig {
+        typeahead_timeout,
+        required,
+    } = config;
     let selectable = use_selectable_root(
         values,
         set_value,
@@ -151,15 +172,16 @@ fn use_select_root(
             typeahead_buffer.take();
         }
     });
-    use_context_provider(|| SelectContext {
+    let ctx = use_context_provider(|| SelectContext {
         selectable,
         adaptive_keyboard,
         typeahead_buffer,
         typeahead_clear_task,
         typeahead_timeout,
+        required,
     });
 
-    open
+    (ctx, open)
 }
 
 /// # Select
@@ -214,14 +236,19 @@ fn use_select_root(
 /// - `data-state`: Indicates the current state of the select. Values are `open` or `closed`.
 #[component]
 pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element {
-    let (values, set_value) = use_single_selectable_value(
+    // Snapshot before `use_single_selectable_value` consumes it: the hidden
+    // mirror `<select>` below needs it to mark the option matching the
+    // default value `initial_selected` (-> `.defaultSelected`), which is
+    // what the HTML reset algorithm restores from.
+    let default_value_for_reset = props.default_value.clone();
+    let (values, set_value, reset_to_default) = use_single_selectable_value(
         props.value,
         props.default_value,
         props.on_value_change,
         "select",
     );
 
-    let open = use_select_root(
+    let (ctx, open) = use_select_root(
         values,
         set_value,
         SelectionMode::Single,
@@ -232,8 +259,21 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
             default: props.default_open,
             on_change: props.on_open_change,
         },
-        props.typeahead_timeout,
+        SelectRootConfig {
+            typeahead_timeout: props.typeahead_timeout,
+            required: props.required,
+        },
     );
+
+    let options = ctx.selectable.options;
+    let current_value = values.read().first().cloned();
+    let default_value = default_value_for_reset.map(RcPartialEqValue::new);
+
+    // A stable id for the hidden mirror `<select>`, so the form-reset
+    // listener below can locate it (and, through it, its owning form) in
+    // the DOM.
+    let hidden_select_id = use_unique_id();
+    use_form_reset_listener(hidden_select_id, move || reset_to_default.call(()));
 
     rsx! {
         div {
@@ -241,6 +281,63 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
             "data-disabled": (props.disabled)(),
             ..props.attributes,
             {props.children}
+        }
+
+        // Hidden native <select> for form participation, matching Radix's
+        // "BubbleSelect" pattern -- see docs/plan.md Phase 1.3 and
+        // docs/recommended-implementations.md §1. Rendered unconditionally
+        // (matching Checkbox's BubbleInput), so an empty `name` simply means
+        // this contributes nothing to the entry list, per the HTML
+        // "constructing the entry list" algorithm, rather than needing a
+        // `closest('form')` gate this codebase has no cheap way to run.
+        // Shape ported from dignifiedquire/dx-components (MIT OR
+        // Apache-2.0), primitives/src/select/components/select.rs @
+        // ~L158-186 as read from that fork's tree -- adapted to this repo's
+        // `SelectableContext`/`OptionState` types (that fork's `Select` is
+        // string-only; this one is generic over `T`, so options are matched
+        // by `RcPartialEqValue` rather than by string), rendered
+        // unconditionally rather than gated on `!name().is_empty()`, and
+        // given the `initial_selected`/`selected` split (plus a
+        // `use_form_reset_listener`) needed for correct `<form reset>`
+        // behavior, which that fork's version does not have.
+        select {
+            id: hidden_select_id,
+            "data-slot": "select-native",
+            name: props.name,
+            required: props.required,
+            disabled: (props.disabled)(),
+            aria_hidden: "true",
+            tabindex: "-1",
+            position: "absolute",
+            pointer_events: "none",
+            opacity: "0",
+            margin: "0",
+            transform: "translateX(-100%)",
+
+            // A leading empty-value option, selected only while nothing is
+            // chosen. Without one, a native <select> with no `<option
+            // selected>` falls back to auto-selecting the first real option
+            // (per the HTML spec's "ask for a reset" default selectedness),
+            // which would misreport "no selection" as that option's value on
+            // submit -- and would prevent `required` from ever seeing a
+            // missing value. Matches the empty first `<option>` the fixture's
+            // own native reference `<select required>` uses for the same
+            // reason (`preview/src/components/form/component.rs`).
+            option {
+                value: "",
+                selected: current_value.is_none(),
+                initial_selected: default_value.is_none(),
+            }
+
+            for opt in options.read().iter() {
+                option {
+                    key: "{opt.id}",
+                    value: opt.text_value.clone(),
+                    selected: Some(&opt.value) == current_value.as_ref(),
+                    initial_selected: Some(&opt.value) == default_value.as_ref(),
+                    {opt.text_value.clone()}
+                }
+            }
         }
     }
 }
@@ -322,7 +419,11 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
         set_multi_internal.call(current);
     });
 
-    let open = use_select_root(
+    // SelectMulti has no `required` prop: a native <select multiple> can't
+    // express "at least one selected" via a single `required` attribute the
+    // way a single-select can, and multi-select form participation is out of
+    // scope for docs/plan.md Phase 1 (which only asks for `Select`).
+    let (_ctx, open) = use_select_root(
         values,
         set_value,
         SelectionMode::Multiple,
@@ -333,7 +434,10 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
             default: props.default_open,
             on_change: props.on_open_change,
         },
-        props.typeahead_timeout,
+        SelectRootConfig {
+            typeahead_timeout: props.typeahead_timeout,
+            required: ReadSignal::new(Signal::new(false)),
+        },
     );
 
     rsx! {

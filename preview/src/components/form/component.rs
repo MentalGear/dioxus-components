@@ -254,11 +254,9 @@ pub fn FormFixture() -> Element {
                 p { class: Styles::dx_form_hint,
                     "Every library control below sets "
                     code { "required" }
-                    " per its documented API. "
+                    " per its documented API, including "
                     code { "Select" }
-                    " has no "
-                    code { "required" }
-                    " prop yet, so only its native reference can be tested here -- see the usage notes below. "
+                    " -- see docs/plan.md Phase 1.3. "
                     "Blocked submits fire "
                     code { "invalid" }
                     " on the offending controls, listed below in insertion order."
@@ -346,8 +344,8 @@ pub fn FormFixture() -> Element {
 
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
-                            span { "Fruit, no required prop yet (library select)" }
-                            Select::<String> { name: "fruit-required-lib",
+                            span { "Fruit, required (library select)" }
+                            Select::<String> { name: "fruit-required-lib", required: true,
                                 SelectTrigger { aria_label: "Fruit, required (library)",
                                     SelectValue { placeholder: "Choose a fruit" }
                                 }

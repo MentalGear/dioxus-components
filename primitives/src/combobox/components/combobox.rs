@@ -103,7 +103,7 @@ fn use_combobox_root(
 /// A single-select autocomplete input with a filterable popup list.
 #[component]
 pub fn Combobox<T: Clone + PartialEq + 'static>(props: ComboboxProps<T>) -> Element {
-    let (selected, set_value) = use_single_selectable_value(
+    let (selected, set_value, _reset_to_default) = use_single_selectable_value(
         props.value,
         props.default_value,
         props.on_value_change,
