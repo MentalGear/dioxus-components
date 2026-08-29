@@ -1,7 +1,7 @@
 # Capability gaps in `dioxus-primitives`, and which forks closed them
 
 **Scan date:** 2026-08-29 · **Baseline:** `bf007c1` (upstream `main`, unchanged since 2026-06-29)
-**Verification level:** static. Claims are backed by reading the current source on `main` and in fork refs. **Nothing was compiled or run.**
+**Verification level:** static, **except focus restore, which has now been executed against the running app** (see below). Other claims are backed by reading the current source on `main` and in fork refs, not by running them.
 
 Companion to [`adopt-fork-fixes.md`](./adopt-fork-fixes.md), which covers *bug fixes*. This document covers *missing capabilities* — behaviour a mature headless component library is expected to have, that upstream does not implement, and that at least one fork does.
 
@@ -13,7 +13,7 @@ Three findings outrank everything in the fix report:
 
 1. **`RadioGroup` and `Select` accept `name` and `required` props, document them as "for form submission", and silently ignore them.** A developer following the documented API ships a form that omits the field. Two forks fixed `RadioGroup` independently; the patch is single-file.
 2. **No overlay does collision detection.** Placement is static CSS keyed off `data-side`. A `Popover`, `Select`, `Tooltip` or `DropdownMenu` near a viewport edge renders off-screen, and `ContextMenu` opens at raw click coordinates with no clamping.
-3. **Closing a `DropdownMenu`, `ContextMenu`, `Menubar` or `Select` drops focus to `<body>`.** Dialog and Popover restore focus correctly; the menu family never got it.
+3. **Closing a `DropdownMenu`, `ContextMenu`, `Menubar` or `Select` never returns focus to the trigger.** Dialog and Popover restore focus correctly; the menu family never got it. **Confirmed by execution** — four failing conformance tests against a passing Dialog control ([details](#confirmed-by-execution--and-the-mechanism-was-not-what-i-predicted)).
 
 **One fork is the source for nearly all of it.** `dignifiedquire/dx-components` is a systematic Radix-parity rewrite whose accessibility modules are deliberately standalone files — `scroll_lock.rs` (58 lines), `aria_hidden.rs` (91), `typeahead.rs` (78), `direction.rs` (83) — each depending only on helpers upstream already has.
 
@@ -68,6 +68,28 @@ Severity comes from the API *promising* the behaviour. A missing feature is an i
 `dignifiedquire` closes this with `use_refocus_on_close_unless` (`lib.rs:236-254`, wired at `dropdown_menu.rs:748`), matching Radix's `onCloseAutoFocus` semantics — restore focus to the trigger *unless* the close was caused by interacting outside. **Adoptable with rework**: the helper is ~15 lines and drops onto upstream's existing `trigger_id` fields, but the `interacted_outside` signal must be threaded through the dismiss path, which upstream's `use_outside_dismiss` doesn't currently expose. A cruder interim fix — focus `trigger_id` at each `set_open.call(false)` site — captures most of the value.
 
 *Impact: high. Keyboard and screen-reader users, on four of the library's most-used components.*
+
+#### Confirmed by execution — and the mechanism was not what I predicted
+
+`playwright/oracle-focus-restore.spec.ts` encodes the APG rule and was run against the app built from this commit (`dx run --web`, Chromium). **Four fail, and the control passes:**
+
+| Component | Focus after Escape | |
+|---|---|---|
+| `DropdownMenu` | `<div role="option">` — "Edit" | ✗ |
+| `Menubar` | `<div role="menuitem">` — "New" | ✗ |
+| `ContextMenu` | `<body>` | ✗ |
+| `Select` | trigger reported `inactive` | ✗ |
+| `Dialog` (control) | its trigger | ✓ |
+
+The control matters: same harness, same page, same keypress, and `Dialog` restores focus correctly — so the four failures are behaviour, not a broken rig.
+
+**Correction to the static analysis above.** I predicted focus falls to `<body>` in all four cases. That holds only for `ContextMenu`. In `DropdownMenu` and `Menubar`, focus *remains on the menu item of the menu that just closed* — which is worse than `<body>`: the user's next Tab continues from a position inside dismissed content that is no longer on screen. So this is not one bug with one shared fix; at minimum the menu family needs focus moved off the item as well as returned to the trigger.
+
+To reproduce, with the preview running on :8080:
+
+```bash
+cd playwright && npx playwright test oracle-focus-restore --project=chromium
+```
 
 ### `aria-hidden` on background content — a WCAG-class defect
 
