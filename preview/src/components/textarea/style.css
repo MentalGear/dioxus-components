@@ -82,3 +82,14 @@
 .dx-textarea[data-style="ghost"]:focus {
   border-color: var(--focused-border-color);
 }
+
+/*
+ * Floor the font-size to 16px on touch devices. iOS Safari auto-zooms when a
+ * focused text field computes below 16px, and the textarea otherwise inherits a
+ * smaller size. Scoped to coarse pointers so desktop sizing is unaffected.
+ */
+@media (pointer: coarse) {
+  .dx-textarea {
+    font-size: 16px;
+  }
+}
