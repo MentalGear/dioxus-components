@@ -152,7 +152,9 @@ Two forks solved it, differently:
 
 `dignifiedquire/top_layer.rs` (189 lines) wraps the native primitives — `popover="auto"`/`"manual"` and `<dialog>` + `showModal()`. **Adoptable with rework**; the blockers are browser-support assumptions and the fact that it touches every overlay's render tree.
 
-**Historical note worth knowing:** upstream *used* to render `Dialog` as a native `<dialog>` with `showModal()`. Commit `dd87bf05` (2026-03-07), "Rewrite Dialog and AlertDialog primitives to match Radix", deliberately replaced it with the `div role="dialog"` pattern. Several stale fork branches still contain `showModal()` — that is leftover pre-rewrite code, **not** fork innovation.
+**Historical note, corrected.** An earlier draft of this document attributed upstream's move away from native `<dialog>` to commit `dd87bf05`, "Rewrite Dialog and AlertDialog primitives to match Radix". That attribution was wrong: `git merge-base --is-ancestor dd87bf05 origin/main` fails — **`dd87bf05` is a commit in `dignifiedquire`'s fork, not upstream**, and that author has **zero** commits in upstream `main`.
+
+What is true: upstream did once use `showModal()` (it appears in the history of `797b343e` and `b3f6de53`) and today renders `div role="dialog"` (`dialog.rs:259`). Several stale fork branches still contain `showModal()` as leftover pre-change code rather than fork innovation. But the Radix-parity rewrite is `dignifiedquire`'s own work in their fork — it is not upstream's direction.
 
 ### CSS anchor positioning
 
@@ -177,3 +179,27 @@ Absent upstream **and in all 111 fork refs**. Every fork that solved positioning
 | RTL | Absent | `dignifiedquire` `direction.rs` | As-is + concept port | Medium |
 | Roving tabindex | Consistent | — | No gap | — |
 | CSS anchor positioning | Absent everywhere | — | Nothing to adopt | Low |
+
+---
+
+## What this project is actually reaching for
+
+Relevant to any conformance harness, because it decides which rules are binding and which are opinion.
+
+**Stated contract — WAI-ARIA APG.** The contributing guidance in `README.md` requires that a new primitive "adheres to the [WAI-ARIA Authoring Practices for accessibility]", linking to `w3.org`. The styled layer is described as "shadcn style". **Radix is not mentioned in the README at all.**
+
+**Actual practice — Radix as an informal touchstone.** Counting against `origin/main`:
+
+| | Occurrences |
+|---|---|
+| Links to `w3.org` / "Authoring Practices" anywhere in `primitives/src` | **0** |
+| Commits mentioning `wai-aria`, `apg`, or "authoring practices" | **0** |
+| "Radix" in `primitives/src` | 4 — three of them the same line: *"Radix UI / Headless UI / Material UI do for the same reason"* |
+
+So the standard is cited once, in contributor docs, and never referenced again in code or commit history; Radix is consulted as peer precedent — "what do the mature libraries do here" — rather than as a specification. Neither is systematically checked, which is exactly how a gap like focus-restore survives 122 Playwright tests.
+
+**Consequences for the harness:**
+
+1. **Hold the library to APG, because APG is its own commitment.** A failing APG test is not an outside standard being imposed — it is the project's stated contract, unmet. That is the strongest possible framing for an upstream PR.
+2. **Label Radix-parity rules as opinion, separately.** Upstream never committed to matching Radix, and `dignifiedquire`'s Radix-parity rewrite is that fork's direction, not upstream's. Behaviours APG does not specify — scroll lock, `onCloseAutoFocus` semantics, `aria-hidden` on background — belong in a clearly-marked second tier, or "conformance" quietly comes to mean "matches Radix".
+3. **Form submission is a third source.** It is neither APG nor Radix but plain HTML semantics, and it is where the most severe defect sits.
