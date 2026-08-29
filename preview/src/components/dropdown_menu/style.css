@@ -32,6 +32,10 @@
   top: 100%;
   left: 0;
   min-width: 200px;
+
+  /* Clamp to the viewport so the menu never induces horizontal page scroll on
+     narrow screens. Collision-aware flip/shift positioning belongs upstream. */
+  max-width: calc(100vw - 2rem);
   padding: 0.25rem;
   border-radius: 0.5rem;
   margin-top: 4px;
