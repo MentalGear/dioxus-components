@@ -175,7 +175,10 @@ Maintain a table as things land, so the next person can tell ported code from or
 
 | Landed | What | Shape | Source | Source SHA | Oracle |
 |---|---|---|---|---|---|
-| _(nothing yet)_ | | | | | |
+| 2026-08-29 | `Switch` forwards `required` to its hidden input | A | `dignifiedquire/dx-components` `switch.rs` | `5af3cc2` | `oracle/tier2-html/form-participation.spec.ts` rule 4 |
+| 2026-08-29 | `RadioGroup` per-item hidden `<input type="radio">` | B | `dignifiedquire/dx-components` `radio_group.rs` (~L260-273); `checked`/`initial_checked` split + reset resync are ours | `5af3cc2` | same, rules 1/2/4/6 |
+| 2026-08-29 | `Select` hidden native `<select>` mirror + new `required` prop | C | `dignifiedquire/dx-components` `select/components/select.rs` (~L158-186), Radix BubbleSelect lineage; adapted to generic option model, rendered unconditionally | `5af3cc2` | same, rules 1/4/6 |
+| 2026-08-29 | `Checkbox` reset correctness + shared `use_form_reset_listener` | original | Radix reset-listener *semantics*, no code lifted | — | same, rule 6 |
 
 ## 9. Upstreaming
 
