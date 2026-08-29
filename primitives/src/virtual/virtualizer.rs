@@ -429,6 +429,47 @@ mod tests {
     }
 
     #[test]
+    fn test_resize_item_while_measurements_memo_peek_held() {
+        // Regression for `primitives/src/virtual_list.rs`'s onresize handler,
+        // which historically held `measurements.peek()` (a `Memo` guard) for
+        // the full duration of a call to `resize_item` -- and `resize_item`
+        // writes `item_size_cache`, which is a *dependency* of that same
+        // memo (see the `use_memo` at virtual_list.rs's measurements
+        // definition, which reads `state.item_size_cache()`). This
+        // reproduces that exact shape: a live `Memo::peek()` guard held
+        // across a write to one of the memo's own dependencies, inside a
+        // real reactive component context (`with_runtime`), using the
+        // primitives' actual `Store`/`Memo`/`compute_measurements`/
+        // `resize_item` -- not a hand-rolled substitute.
+        with_runtime(|| {
+            let state = create_test_state();
+            let measurements: Memo<Vec<VirtualItem>> = use_memo(move || {
+                let isc = state.item_size_cache();
+                let cache = isc.read();
+                compute_measurements(100, &cache, Some(&|_| 50))
+            });
+
+            // Force the memo to compute once before reproducing the bug, same
+            // as the real component would have already rendered once.
+            let _ = measurements.peek();
+
+            // Bug shape: hold the peek() guard alive across resize_item,
+            // which mutates item_size_cache (a dependency of `measurements`)
+            // before the guard is dropped.
+            let m = measurements.peek();
+            let _adjustment = resize_item(&state, &m, 5, 999);
+            drop(m);
+
+            // If the above didn't panic, also exercise a second resize while
+            // still holding the guard, since `virtual_list.rs`'s onresize
+            // fires once per resized item and columns can resize together.
+            let m2 = measurements.peek();
+            let _adjustment2 = resize_item(&state, &m2, 6, 777);
+            drop(m2);
+        });
+    }
+
+    #[test]
     fn test_no_deferred_adjustments_for_items_below_viewport() {
         with_runtime(|| {
             let state = create_test_state();

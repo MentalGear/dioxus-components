@@ -199,3 +199,53 @@ test("virtual list virtualizes rows and updates on scroll", async ({ page }) => 
     expect(hasScrolledContent).toBe(true);
   }).toPass({ timeout: 15000 });
 });
+
+test("resize churn while scrolling does not panic (holds no borrow across resize_item)", async ({ page }) => {
+  // Regression for a signal-borrow bug inferred (not directly observed) in
+  // `primitives/src/virtual_list.rs`'s onresize handler: it historically held
+  // a `measurements.peek()` guard for the full duration of a call to
+  // `resize_item`, which writes `item_size_cache` -- a dependency of that
+  // same memo. A Rust-level unit test attempting the same shape against the
+  // primitives' Store/Memo machinery directly (see
+  // `virtual::virtualizer::tests::test_resize_item_while_measurements_memo_peek_held`)
+  // did not reproduce a panic, so this is the browser-level fallback oracle:
+  // drive real ResizeObserver churn (viewport-width changes reflow every
+  // visible card, firing `onresize` for each) concurrently with scrolling
+  // (which also touches the same memo), and assert the console never carries
+  // a Rust panic or a borrow-checker message.
+  const consoleMessages: string[] = [];
+  page.on("console", (msg) => consoleMessages.push(msg.text()));
+  page.on("pageerror", (err) => consoleMessages.push(`pageerror: ${err.message}`));
+
+  await page.goto("http://127.0.0.1:8080/component/block/?name=virtual_list&variant=random_heights", {
+    timeout: 20 * 60 * 1000,
+  });
+
+  const container = page.getByRole("list").first();
+  await expect(container).toBeVisible({ timeout: 30000 });
+  await page.waitForTimeout(500);
+
+  const initialState = await container.evaluate((el) => ({
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+  }));
+  const maxScroll = Math.max(0, initialState.scrollHeight - initialState.clientHeight);
+
+  const widths = [1280, 800, 1280, 640, 1024, 900, 1280];
+  for (let i = 0; i < widths.length; i++) {
+    await page.setViewportSize({ width: widths[i], height: 800 });
+    // Scroll while the resize-triggered remeasurement is still in flight, so
+    // the scroll-driven memo read and the resize-driven cache write race.
+    const target = Math.round((maxScroll * (i + 1)) / widths.length);
+    await container.evaluate((el, scroll) => {
+      el.scrollTop = scroll;
+    }, target);
+    await page.waitForTimeout(80);
+  }
+  await page.waitForTimeout(400);
+
+  const suspicious = consoleMessages.filter(
+    (m) => /panicked/i.test(m) || /already borrowed/i.test(m) || /BorrowMutError/i.test(m)
+  );
+  expect(suspicious, `Suspicious console output during resize churn:\n${suspicious.join("\n")}`).toEqual([]);
+});

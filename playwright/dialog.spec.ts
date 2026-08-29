@@ -33,3 +33,20 @@ test('test', async ({ page }) => {
   await page.mouse.click(2, 2);
   await expect(dialog).toHaveCount(0);
 });
+
+test('dialog stays open when clicking non-focusable content inside it', async ({ page }) => {
+  // Regression: `use_outside_dismiss` (shared with Popover) served pointerdown
+  // and focusin with one handler. Clicking a non-focusable region inside the
+  // dialog (e.g. this demo's "Item information" title) blurs the currently
+  // focused control, and the browser moves focus to the nearest focusable
+  // *ancestor* -- outside the dialog's root while still containing it. The
+  // shared handler read that as focus leaving and closed the dialog.
+  await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 });
+  await page.getByRole('button', { name: 'Show Dialog' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByText('Item information').click();
+
+  await expect(dialog).toBeVisible();
+});
