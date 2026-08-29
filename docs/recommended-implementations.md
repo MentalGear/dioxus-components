@@ -26,7 +26,7 @@ The history, in order:
 
 | Date | Commit | |
 |---|---|---|
-| 2025-04-11 | `b3f6de53` "progress: dialog" (Miles) | **Added** `<dialog>` + `showModal()`. `is_modal` already existed here |
+| 2025-04-11 | `b3f6de53` "progress: dialog" (Miles) | **Added** `<dialog>` + `showModal()` — and `is_modal` in the same commit; `dialog.rs` did not exist before it |
 | 2025-06-12 | `797b343e` "Fix keyboard navigation for the dialog and toast components (#47)" (Evan Almloff) | **Removed** `dialog.showModal()` and the `dialog {` element; added `window.createFocusTrap` and a document-level Escape listener. **In upstream `main`** |
 | 2026-05-13 | `7b25d863` "Port Dialog to native `<dialog>` + show_modal" (dignifiedquire) | Went back the other way — **in that fork only** |
 
@@ -34,7 +34,7 @@ PR #47's description says only: *"Modals need extra logic to handle focus. This 
 
 **Conclusion:** the move away from `<dialog>` looks *incidental* to a focus-trap PR rather than a considered rejection of the platform feature. That is not the same as proof it was accidental — ask upstream before proposing a return. But the evidence does not show a deliberate decision to avoid `<dialog>`, which was the risk this caveat was raised against.
 
-**It was not done for Blitz compatibility.** Three arguments rule that out:
+**Blitz compatibility is unlikely to have been the motive.** Three arguments weigh against it — circumstantial, not dispositive:
 
 1. **The replacement is *more* JavaScript-dependent, not less.** `<dialog>` + `showModal()` is declarative markup plus one call; what replaced it is `document::eval` for the focus trap *and* a document-level Escape listener. On Blitz, `eval` is a no-op, so the replacement is strictly *more* broken on native than what it replaced — a `<dialog open>` at least renders there under Blitz's UA stylesheet. A Blitz-motivated change would have moved toward declarative markup, not away from it.
 2. **Native is not in CI.** No workflow in `.github/workflows/` mentions native, desktop or Blitz; CI covers web, SSG, Playwright and stylelint. A target that is never built is unlikely to have driven the design.
@@ -95,7 +95,7 @@ Do not, however, plan a schedule around it. Seventeen months open with no linked
 | Hiding technique | **This repo** (`checkbox.rs:279-296`) — `aria_hidden`, `tabindex="-1"`, `position:absolute; opacity:0; pointer-events:none` | Already in-tree, already reviewed, consistent |
 | Render unconditionally | **This repo**, over Radix's `closest('form')` gate | Radix's gate needs a DOM query; in Dioxus that is a `document::eval` round-trip and a hydration hazard. Radix itself defaults the gate to `true` when it cannot measure |
 | Attribute set — `required`, `disabled`, `form` | **Radix** | This repo forwards `name`/`value` but drops `required` on `Switch`; `form` allows a control outside the `<form>` |
-| `Select`: hidden native `<select>` with mirrored `<option>`s | **Radix's BubbleSelect**, via `dignifiedquire@select.rs:158-186` | A real `<select required>` gets full native validation UI, which a hidden `<input>` cannot provide |
+| `Select`: hidden native `<select>` with mirrored `<option>`s | **Radix's BubbleSelect**, via `dignifiedquire@select/components/select.rs:158-186` | A real `<select required>` gets full native validation UI, which a hidden `<input>` cannot provide |
 
 Not novel work: the pattern is in-tree and simply was never extended.
 
@@ -139,7 +139,7 @@ This fixes clipping inside `overflow:hidden` and transformed ancestors — which
 **Build:** Radix's *semantics* on `dignifiedquire`'s *shape*, corrected by our own measurement.
 
 - Behaviour: Radix's `onCloseAutoFocus` — return focus to the trigger **unless** the close came from interacting outside.
-- Shape: `dignifiedquire@lib.rs:236-254` (`use_refocus_on_close_unless`), ~15 lines, dropping onto the `trigger_id` fields this repo already has. It needs `use_previous`, which does not exist here and must be written.
+- Shape: `dignifiedquire@lib.rs:241-255` (`use_refocus_on_close_unless`), ~15 lines, dropping onto the `trigger_id` fields this repo already has. It needs `use_previous`, which does not exist here and must be written.
 - **Correction from execution:** our oracle showed `DropdownMenu` and `Menubar` leave focus *on the item of the closed menu*, not on `<body>`. Restoring to the trigger is therefore necessary but not sufficient — focus must also be moved off the item. Neither reference handles this, because neither has this bug.
 
 ### 5. Body scroll lock
@@ -152,7 +152,7 @@ Known limitation in **both**: no iOS momentum-scroll handling and no scrollbar-g
 
 **Build:** `sarendipitee@floating.rs` (269 lines) — a thin `use_position()` hook over the external `floating-ui-dioxus`/`-dom` crates, reusing this repo's existing `ContentSide`/`ContentAlign` names, with a `#[cfg(target_family = "wasm")]` split and a native fallback that reproduces today's CSS behaviour.
 
-Prefer it over `dignifiedquire`'s in-repo port (3,292 lines + a 1,158-line `popper.rs`) for maintenance reasons, but keep that port as the contingency if the external crates stall — it additionally implements `collision_padding`, sticky behaviour, arrow and size middleware.
+Prefer it over `dignifiedquire`'s in-repo port (3,262 lines of Rust + a 1,158-line `popper.rs`) for maintenance reasons, but keep that port as the contingency if the external crates stall — it additionally implements `collision_padding`, sticky behaviour, arrow and size middleware.
 
 Keep the CSS clamp already on this repo's `fix/preview-a11y-ux` branch as defence-in-depth: it costs nothing and still helps non-wasm targets. `ContextMenu` needs separate viewport clamping either way, since it is positioned at click coordinates rather than anchored.
 
@@ -180,9 +180,9 @@ Best-of here means recognising that upstream already wins one.
 
 | Take | From | Why |
 |---|---|---|
-| Playwright e2e in real browsers | **This repo** | 32 specs / 122 tests, strong on keyboard (167 `keyboard.press`, 84 `toBeFocused`) — keep as the backbone |
+| Playwright e2e in real browsers | **This repo** | 32 specs / 123 tests, strong on keyboard (167 `keyboard.press`, 84 `toBeFocused`) — keep as the backbone |
 | Per-component axe assertions | **Radix** (`vitest-axe`) | This repo runs axe in only 3 of 32 specs; Radix does 7 calls in checkbox alone |
-| Cargo unit tests for algorithms | **This repo** | Already the right split — 10 of 40 modules, the algorithmic ones |
+| Cargo unit tests for algorithms | **This repo** | Already the right split — 10 of 63 modules, the algorithmic ones |
 | Entry-list assertions (`FormData` after submit) | **Nobody** | Radix has zero `FormData` assertions; this is genuinely new and rests on the HTML spec |
 | Tiered rules with external calibration | **New** — see [`conformance-harness.md`](./conformance-harness.md) | Every rule traceable to APG, HTML, or a labelled opinion |
 | In-process keyboard tests | `hovinen`'s `dioxus-test` branch | Optional; needs Dioxus 0.8, so not near-term |

@@ -34,7 +34,7 @@ Sources are `dq` = `dignifiedquire/dx-components`, `sr` = `sarendipitee/dioxus-c
 | Commit | Fork | Category | What it fixes | Take? |
 |---|---|---|---|---|
 | `42b56dd3` | sr | correctness | `RangeSlider` thumbs swap identity when dragged past each other — `ordered_range` sorts the pair (`slider.rs:264-265`) | **TAKE** |
-| `799a4ff3` | sr | correctness | `VirtualList` holds a `peek()` borrow across `resize_item`, which reads the same signal — panics rather than misbehaving (`virtual_list.rs:203-205`). Primitives hunk only | **TAKE** |
+| `799a4ff3` | sr | correctness | `VirtualList` holds a `peek()` borrow across `resize_item`, which reads the same signal (`virtual_list.rs:203-205`). The author describes it as recursing into the underlying lock; the exact failure mode is inferred, not observed. Primitives hunk only | **TAKE** |
 
 ### Batch 2 — shared dismissal helper (re-test Dialog as well as Popover)
 
@@ -55,8 +55,8 @@ Sources are `dq` = `dignifiedquire/dx-components`, `sr` = `sarendipitee/dioxus-c
 
 | Source | Fork | Category | What it fixes | Take? |
 |---|---|---|---|---|
-| `radio_group.rs:267-279` / `:338-348` | dq / sr (independent, same shape) | correctness | `RadioGroup` declares `name`/`required` "for form submission" and never uses them; adds the per-item hidden `<input type="radio">` | **TAKE** |
-| `select.rs:158-186` | dq | correctness | Same silent failure in `Select`; hidden native `<select>` with mirrored options, which also gets native validation UI | **TAKE** — needs a `required` prop that does not exist yet |
+| dq `radio_group.rs:267-279` / sr `:338-348` | dq / sr (independent, same shape) | correctness | `RadioGroup` declares `name`/`required` "for form submission" and never uses them; adds the per-item hidden `<input type="radio">` | **TAKE** |
+| `select/components/select.rs:158-186` | dq | correctness | Same silent failure in `Select`; hidden native `<select>` with mirrored options, which also gets native validation UI | **TAKE** — needs a `required` prop that does not exist yet |
 | `switch.rs:128` | dq | correctness | `Switch` forwards `name`/`value` but drops `required` | **TAKE** — one line |
 
 ### Batch 5 — capability lifts (file ports, not commits)
@@ -65,7 +65,7 @@ Sources are `dq` = `dignifiedquire/dx-components`, `sr` = `sarendipitee/dioxus-c
 |---|---|---|---|---|
 | `scroll_lock.rs` (58 ln) | dq | a11y | Body scroll lock, refcounted for nested modals, restoring the original `overflow` | **TAKE** — plus sr's unlock-flash guard |
 | native `<dialog>` + `showModal()` | dq (`7b25d863`) | a11y | Focus trap, focus restore, inert background and top layer as browser behaviour — subsumes `focus_scope.rs` and `aria_hidden.rs` | **FLAG** — see caveats in [`recommended-implementations.md`](./recommended-implementations.md); needs a declarative-`open` floor |
-| `use_refocus_on_close_unless` (`lib.rs:236-254`) | dq | a11y | Focus restore for the menu family, Radix `onCloseAutoFocus` semantics | **TAKE** — plus moving focus off the item, which our oracle found and no source handles |
+| `use_refocus_on_close_unless` (`lib.rs:241-255`) | dq | a11y | Focus restore for the menu family, Radix `onCloseAutoFocus` semantics | **TAKE** — plus moving focus off the item, which our oracle found and no source handles |
 | `aria_hidden.rs` (91 ln) | dq | a11y | Background content hidden from AT while a modal is open | **FLAG** — only if the native-dialog route is rejected; also needs the Dialog wiring that fork never did |
 | `df16e449` | matchish | behavior | `pub mod portal` — `use_portal`/`PortalId` are unreachable by consumers | **FLAG** — public-API decision, one line, merges clean |
 
@@ -73,7 +73,7 @@ Sources are `dq` = `dignifiedquire/dx-components`, `sr` = `sarendipitee/dioxus-c
 
 | Source | Fork | Category | What it adds | Take? |
 |---|---|---|---|---|
-| `floating.rs` (269 ln) | sr | correctness | Collision-aware flip/shift; overlays near a viewport edge currently render off-screen | **TAKE** — dependency decision; `dq`'s 3,292-line vendored port is the contingency |
+| `floating.rs` (269 ln) | sr | correctness | Collision-aware flip/shift; overlays near a viewport edge currently render off-screen | **TAKE** — dependency decision; `dq`'s 3,262-line vendored port is the contingency |
 | — | — | correctness | `ContextMenu` viewport clamping — positioned at click coordinates, unclamped | **TAKE** — not covered by either fork |
 
 ### Deferred — real, but not yet scheduled
