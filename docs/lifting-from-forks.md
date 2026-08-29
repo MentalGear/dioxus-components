@@ -179,6 +179,11 @@ Maintain a table as things land, so the next person can tell ported code from or
 | 2026-08-29 | `RadioGroup` per-item hidden `<input type="radio">` | B | `dignifiedquire/dx-components` `radio_group.rs` (~L260-273); `checked`/`initial_checked` split + reset resync are ours | `5af3cc2` | same, rules 1/2/4/6 |
 | 2026-08-29 | `Select` hidden native `<select>` mirror + new `required` prop | C | `dignifiedquire/dx-components` `select/components/select.rs` (~L158-186), Radix BubbleSelect lineage; adapted to generic option model, rendered unconditionally | `5af3cc2` | same, rules 1/4/6 |
 | 2026-08-29 | `Checkbox` reset correctness + shared `use_form_reset_listener` | original | Radix reset-listener *semantics*, no code lifted | — | same, rule 6 |
+| 2026-08-29 | `RangeSlider` thumb identity at collision | A | `sarendipitee@42b56dd3`, cherry-picked, author kept | `48858e0` | `slider.spec.ts` leapfrog drag — **no red reproducible**: `clamp_for` already guards every call site; landed as hardening with a green invariant test |
+| 2026-08-29 | `VirtualList` snapshot-before-`resize_item` | A | `sarendipitee@799a4ff3`, primitives hunk only (fork-only `data_table` hunk dropped), author kept | `82efdfd` | Rust unit test + Playwright console-panic scan — **no red reproducible** in this reactivity model; landed as hardening |
+| 2026-08-29 | `use_outside_dismiss` split pointerdown/focusin handlers | A | `sarendipitee@f63ee07e`, **`lib.rs` hunk only** — the commit's `PopoverTrigger` button→div rewrite + `PopoverOpenTrigger` were dropped as scope creep / a11y regression | `7668256` | `popover.spec.ts` non-focusable-inside-click, red→green demonstrated; dialog + context-menu suites re-run green |
+| 2026-08-29 | `use_animated_open` rAF + 250 ms hold on close | A | `jcgruenhage@6f0a69f0`, cherry-picked, author kept | `3a61900` | `combobox.spec.ts` full suite green |
+| 2026-08-29 | `use_animated_open` generation counter (stale-cycle gate + cancelled-animation unmount) | original | neither fork has it — see `adopt-fork-fixes-results.md` §5 | `56d4236` | cancel-mid-close leak test: red on `3a61900` alone, green with counter |
 
 ## 9. Upstreaming
 
