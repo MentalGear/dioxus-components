@@ -294,6 +294,23 @@ fn use_form_reset_listener(
     });
 }
 
+/// Whether a completed (or aborted) close-animation cycle should still write
+/// its result to `show_in_dom`.
+///
+/// Each run of [`use_animated_open`]'s effect -- whether it opens or closes --
+/// bumps a generation counter before spawning its async work. A cycle is
+/// stale, and its result must be dropped, once a newer cycle has started:
+/// that newer cycle already owns `show_in_dom` (an open cycle sets it
+/// synchronously; a closing cycle will set it when its own animation
+/// settles), so applying a superseded cycle's result would clobber fresher
+/// state with stale data. A cycle that is still current -- including one
+/// whose animation was aborted by something other than a new open/close,
+/// e.g. a script directly cancelling the animation -- must still apply, or
+/// the element leaks in the DOM forever with no cycle left to unmount it.
+fn should_apply_animation_result(spawned_generation: u64, current_generation: u64) -> bool {
+    spawned_generation == current_generation
+}
+
 fn use_animated_open(
     id: impl Readable<Target = String> + Copy + 'static,
     open: impl Readable<Target = bool> + Copy + 'static,
@@ -302,7 +319,16 @@ fn use_animated_open(
     // If it does start, we wait for the animation to finish before showing removing the element from the DOM.
     let mut show_in_dom = use_signal(|| false);
 
+    // Bumped at the top of every effect run (open or close) so a closing
+    // task still in flight when a newer cycle starts can tell it is stale.
+    // Written through `.write()` / read through `.peek()` only -- never
+    // `.read()` -- so this effect never subscribes to its own counter.
+    let mut generation = use_signal(|| 0u64);
+
     use_effect(move || {
+        *generation.write() += 1;
+        let my_generation = *generation.peek();
+
         let open = open.cloned();
         if open {
             show_in_dom.set(open);
@@ -330,10 +356,15 @@ fn use_animated_open(
                             .then(hold)
                             .then(() => dioxus.send(true))
                             .catch(() => {
-                                // Animation aborted — a newer open/close cycle
-                                // is in flight. Do NOT send: that would resolve
-                                // the stale recv() and let it overwrite the
-                                // newer show_in_dom state.
+                                // Animation aborted -- most often because a
+                                // newer open/close cycle re-triggered it, but
+                                // possibly because something else (e.g. a
+                                // script) cancelled it directly. Always send
+                                // so this task's recv() completes either way;
+                                // the generation check on the Rust side is
+                                // what decides whether the result still
+                                // applies.
+                                dioxus.send(false);
                             });
                     } else {
                         dioxus.send(true);
@@ -341,12 +372,33 @@ fn use_animated_open(
                 );
                 let _ = eval.send(id);
                 let _ = eval.recv::<bool>().await;
-                show_in_dom.set(open);
+
+                if should_apply_animation_result(my_generation, *generation.peek()) {
+                    show_in_dom.set(open);
+                }
             });
         }
     });
 
     move || show_in_dom()
+}
+
+#[cfg(test)]
+mod use_animated_open_tests {
+    use super::should_apply_animation_result;
+
+    #[test]
+    fn current_generation_applies() {
+        assert!(should_apply_animation_result(3, 3));
+    }
+
+    #[test]
+    fn superseded_generation_is_skipped() {
+        // A newer cycle started (generation moved on) while this one was
+        // still awaiting its animation -- applying it now would clobber the
+        // newer cycle's state.
+        assert!(!should_apply_animation_result(3, 4));
+    }
 }
 
 /// The side where the content will be displayed relative to the trigger
