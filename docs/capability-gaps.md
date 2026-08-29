@@ -55,6 +55,28 @@ Severity comes from the API *promising* the behaviour. A missing feature is an i
 
 `Switch`'s missing `required` is a one-line fix.
 
+### How the pattern is implemented elsewhere — and why this is not novel work
+
+A `div role="radio"` **cannot** participate in form submission. HTML restricts the entry list to *submittable elements* — `button`, `input`, `select`, `textarea`, and form-associated custom elements. ARIA changes what the element is *announced as*, never what it *submits as*. And because Dioxus renders plain DOM rather than custom elements, `ElementInternals.setFormValue()` — the modern escape hatch — is unavailable. A real submittable element must exist in the DOM.
+
+Both reference implementations do exactly that, and this repo already does it too:
+
+**Radix** (`radio-group/src/radio.tsx`) renders the hidden input *conditionally*, only when the control is actually inside a form:
+
+```ts
+const isFormControl = control
+  ? !!form || !!control.closest('form')
+  : true;  // default true so events bubble to forms without JS (SSR)
+```
+
+and when true emits `<input type="radio" aria-hidden tabIndex={-1} name value required disabled form>` alongside the visual button, plus synthetic click dispatch so programmatic changes stay in sync.
+
+**This repo's `Checkbox`** does the same thing unconditionally (`checkbox.rs:279-296`): a real `<input type="checkbox">` with `aria_hidden: "true"`, `tabindex: "-1"`, hidden via inline style (`position: absolute; opacity: 0; pointer-events: none; transform: translateX(-100%)`), with `checked`/`indeterminate` synced through `document::eval`.
+
+So the pattern is **already in this codebase**, applied to `Checkbox` and `Switch` and simply never extended to `RadioGroup` or `Select`. Fixing them is not new design — it is applying the project's own existing solution consistently, which is also the strongest possible framing for an upstream PR.
+
+The one design choice to make: Radix's conditional rendering avoids leaving a stray input in the DOM outside a form; `Checkbox`'s unconditional rendering is simpler. Either is defensible — but match one of them deliberately rather than inventing a third.
+
 ---
 
 ## Priority 2 — accessibility behaviour
