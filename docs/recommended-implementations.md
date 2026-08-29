@@ -34,6 +34,14 @@ PR #47's description says only: *"Modals need extra logic to handle focus. This 
 
 **Conclusion:** the move away from `<dialog>` looks *incidental* to a focus-trap PR rather than a considered rejection of the platform feature. That is not the same as proof it was accidental — ask upstream before proposing a return. But the evidence does not show a deliberate decision to avoid `<dialog>`, which was the risk this caveat was raised against.
 
+**It was not done for Blitz compatibility.** Three arguments rule that out:
+
+1. **The replacement is *more* JavaScript-dependent, not less.** `<dialog>` + `showModal()` is declarative markup plus one call; what replaced it is `document::eval` for the focus trap *and* a document-level Escape listener. On Blitz, `eval` is a no-op, so the replacement is strictly *more* broken on native than what it replaced — a `<dialog open>` at least renders there under Blitz's UA stylesheet. A Blitz-motivated change would have moved toward declarative markup, not away from it.
+2. **Native is not in CI.** No workflow in `.github/workflows/` mentions native, desktop or Blitz; CI covers web, SSG, Playwright and stylelint. A target that is never built is unlikely to have driven the design.
+3. **The PR frames itself purely as a focus/keyboard fix**, and never mentions `<dialog>`.
+
+A more plausible motive — *hypothesis, not evidence* — is uniformity across `is_modal: true`/`false`. Native `<dialog>` behaves very differently in the two modes (`showModal()` gives top layer, backdrop and inertness; `show()` gives none of them), whereas one custom implementation behaves identically in both. The added Escape listener's own comment points the same way: *"we can't just add this to the dialog itself because it might not be focused if the user is highlighting text or interacting with another element."*
+
 ### Caveat 2 — non-browser targets: mostly dissolves
 
 First, a correction to how I framed this: Dioxus *desktop* runs a real webview, so `<dialog>` and `popover=` work there. The non-browser renderer is `dioxus-native`, built on **Blitz**.
@@ -57,7 +65,21 @@ So a native-first Dialog is **not worse** on Blitz than the status quo, and is b
 - Therefore: bind `open` as the floor (giving Blitz a visible, in-flow, non-modal dialog), and call `showModal()` where `eval` actually works (giving web/webview the top layer, backdrop, inertness and focus trap).
 - Do not do both blindly: `showModal()` on a dialog already opened via the attribute throws `InvalidStateError`. Close first, or gate the attribute on whether the modal path succeeded.
 
-**Net effect on the recommendation:** caveat 2 no longer blocks item 2 or item 3, but it does mandate the declarative-`open` floor rather than a JS-only path. Caveat 1 remains a question for upstream, not a demonstrated objection.
+#### Is Blitz going to support this?
+
+It is on the roadmap, endorsed by a Blitz maintainer, with no evidence of imminent delivery:
+
+- **Issue [#196 "Implement the popover API"](https://github.com/DioxusLabs/blitz/issues/196)** — opened by `nicoburns` in **March 2025**, still **open**, and the issue page reports *no branches or pull requests* linked. Roughly seventeen months without linked work.
+- No `<dialog>`/`showModal` issue exists at all.
+- The UA stylesheet already carries `dialog:modal`, `-moz-top-layer`, `dialog::backdrop` and `[popover]:not(:popover-open)` — but that is inherited Firefox styling with no implementation behind it.
+
+**The reasoning in that issue matters more than its status.** `nicoburns` argues for the popover API precisely because it lets *"stateful popovers such as menus and tooltips be implemented in pure HTML/CSS (without JavaScript)"*, which *"aligns well with Blitz's lack of JavaScript support."*
+
+That is the same argument this document makes, from the renderer's side — and it flips the risk calculation. A native-first `dioxus-primitives` is **aligned with where Blitz is heading**: if and when popover and dialog land, those behaviours arrive on native for free. The current JS-based approach can *never* work there, because `eval` is a no-op by design rather than by omission. So native-first is not merely the better web choice; it is the only one of the two that has a path to working on native at all.
+
+Do not, however, plan a schedule around it. Seventeen months open with no linked PR is the number to weigh, not the intent.
+
+**Net effect on the recommendation:** caveat 2 no longer blocks item 2 or item 3, but it does mandate the declarative-`open` floor rather than a JS-only path. Caveat 1 remains a question for upstream, not a demonstrated objection — and specifically not a Blitz-compatibility decision.
 
 ---
 
