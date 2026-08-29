@@ -124,3 +124,43 @@ Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` al
 - **Tier 1:** one rule implemented (focus restore on Escape), executed, 4 fail / 1 control passes. Not yet calibrated against an APG page — the control is internal.
 - **Tier 2:** researched, not implemented. Needs a form fixture; none exists in `preview/`.
 - **Tier 3:** not implemented.
+
+---
+
+## What the existing suites already do — and where they stop
+
+Measured, not assumed. This decides what the harness must add versus duplicate.
+
+### This project
+
+| Layer | Extent |
+|---|---|
+| Playwright e2e | 32 spec files, **122 tests** — the primary safety net |
+| Cargo unit tests | `#[cfg(test)]` in **10 of 40** files in `primitives/src` — and they are the algorithmic ones (`slider`, `calendar`, `virtualizer`, `select/text_search`, `pointer`, `date_picker`, `selection`, `color_picker`, `move_interaction`, `lib`) |
+| CI (`main.yml`) | `cargo check --workspace --all-features`, `cargo test --workspace`, `cargo fmt --check`, docs with `-Dwarnings`, and `clippy … -D warnings` |
+| Other workflows | `playwright.yml`, `stylelint.yml`, `web.yml`, `pages.yml`, `all_components.yml` |
+| `test-harness/` | A separate Dioxus app for manual exercising — not an automated suite |
+
+The split is sensible: unit-test the algorithms in Rust, interaction-test the components in a real browser. There is no component-level unit test of DOM/ARIA output, because Rust has no jsdom equivalent — which is what `hovinen`'s `dioxus-test` branch was exploring.
+
+Where the e2e suite stops is precise and revealing:
+
+| Assertion | Count |
+|---|---|
+| `keyboard.press` | 167 |
+| `toBeFocused` | 84 |
+| `aria-selected` | 13 |
+| `role=` | 11 |
+| axe scans | **3 specs of 32** |
+| `aria-hidden` | **0** |
+| `overflow` / `scrollY` | **0** |
+
+Keyboard interaction is genuinely well covered. The suite tests what a component *does*, and never what it must *prevent* — no scroll containment, no background inertness, and no assertion of where focus *lands* after a close, only that the thing closed. That is the exact shape of the gaps in `capability-gaps.md`, and it is why they survived 122 tests.
+
+### Radix
+
+`vitest` + `@testing-library/react` + **`vitest-axe`** — axe assertions inside unit tests rather than e2e. Substantial files: `select.test.tsx` 1,610 lines, `radio-group.test.tsx` 983, `checkbox.test.tsx` 829. Axe is called 7× in checkbox and 3× in radio-group, but **0× in select**.
+
+The notable part, and it is directly relevant to tier 2: **`FormData` appears zero times across Radix's checkbox, radio-group and select tests.** Their `RadioGroup.ItemBubbleInput` block asserts that the element renders, that it is an `INPUT`, that it carries `type="radio"` and `aria-hidden`, and that props are forwarded — but never that submitting a form actually produces the entry.
+
+So Radix verifies *the mechanism exists*, not *the outcome the mechanism is for*. The entry-list rules in this document therefore go **beyond** what the reference implementation tests. That is worth knowing in both directions: the proposal is not redundant, and it is also not something we can point at Radix to justify — it has to stand on the HTML spec, which it does.
