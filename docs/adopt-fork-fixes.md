@@ -200,7 +200,7 @@ Each of these is real but carries a blocker. None should be merged as written.
 
 ## 7. Tier 3 — rejected
 
-Roughly 45 candidates, in five groups.
+The remaining ~45 candidates (the balance of the ~60 analysed, after the 4 adopted and 11 conditional), in five groups. Branches are grouped by reason rather than listed individually; the per-branch detail is in the commit history of this document's research, not reproduced here.
 
 **Already upstream, verified in code (~20).** Every substantive branch in the maintainer fork `ealmloff/components` had landed: keyboard nav (`calendar.rs:615-662`, `accordion.rs:446-467`), the focus trap (`src/js/focus-trap.js` + `lib.rs:60`), mobile pointer handling (`menubar.rs:407,414`), the Safari `display:contents` toast bug (now `ToastList`/`ToastListItem`), `Memo<T>` context fields, the dark-mode query param (`main.rs:136-159`), the calendar month/year selectors, the `Button` preview component, and a documentation pass now enforced by `#![warn(missing_docs)]`. Also here: `WhaleFromMars` (`resolve_drop_index`/`resolve_drop_position` are byte-identical to the fork's versions, at `drag_and_drop_list.rs:46,60` **on `main`** — the rest of that file differs substantially, so diff the two functions, not the file), `jaysonmaw/patch-1` and `patch-2` (merged as #193 and #195), `AnttiJalomaki/fix-toolbar`, `p-jackson/slider-reactive-min-max-step` (upstream's version additionally handles `RangeSlider`), `guiemrabassa/multiselect` (shipped as `SelectMulti`), `zhiyanzhaijie/feat-pagination`, `ddudenin/main` (tree byte-identical to `main` — it *is* the Tag Group merge), and the `matta`/`p-jackson`/`wheregmis` single-commit branches.
 
@@ -212,7 +212,7 @@ Roughly 45 candidates, in five groups.
 
 **Whole-repo rewrites, not patches (3).** `dignifiedquire/main` (245 commits) is a ground-up shadcn/Tailwind + Radix-parity reimplementation with an in-repo `floating-ui` port — nothing is cherry-pickable, but its accessibility audit trail is a useful reference. `SPRAGE/main` is a Copilot-generated repackaging into a flat single crate (202 files renamed). `lavaeater/0.8` is a Dioxus 0.8 alpha bump plus a vendored `dioxus-icons` dump (3,684 files); keep it bookmarked for a future 0.8 migration, since it documents the `dioxus-sdk-time` incompatibility.
 
-**Not real fixes (~6).** `sumitpsm/basic-fix` (upstream PR #288) collapses a `format!` string and cites a `data-node` attribute that exists nowhere in the repo; whitespace inside a `style` attribute is inert. `SFSeeger/main` bundles the same calendar API as `jaysonmaw` with a silent **regression** — it reverts `OffsetDateTime::now_local_date()` back to `UtcDateTime::now().date()`, undoing the shipped timezone fix (`calendar.rs:492,496,748,752`, helper at `lib.rs:327-337`). `Fakhir-Israr-200219/table` (upstream PR #254) is a preview-only demo over hardcoded data with no primitive underneath. `hovinen`'s branch (upstream PR #289) adds a `#[cfg(test)]` module to `accordion.rs` and touches no production logic — but note the branch is not otherwise small: it also moves the workspace to `dioxus 0.8.0-alpha.0` with a `[patch.crates-io]` block redirecting `dioxus`, `dioxus-rsx`, `dioxus-ssr`, `blitz-dom`, `blitz-traits`, `dioxus-native-dom` and a pinned `stylo` rev at git, and adds `dioxus-test` from the author's personal fork. Take the test module alone if you take anything (and note it needs that unreleased dependency to run). `dignifiedquire@2e913cd8`'s global-Escape fix does not reproduce here — upstream's menus use element-scoped `onkeydown` and its dialogs gate content behind `render()`; worth remembering as a latent risk if more global-listener consumers appear.
+**Not real fixes (~6).** `sumitpsm/basic-fix` (upstream PR #288) collapses a `format!` string and cites a `data-node` attribute that exists nowhere in the repo; whitespace inside a `style` attribute is inert. `SFSeeger/main` bundles the same calendar API as `jaysonmaw` with a silent **regression** — it reverts `OffsetDateTime::now_local_date()` back to `UtcDateTime::now().date()`, undoing the shipped timezone fix (`calendar.rs:492,496,748,752`, helper at `lib.rs:327-337`). `Fakhir-Israr-200219/table` (upstream PR #254, still a draft) is a preview-only demo over hardcoded data with no primitive underneath. `hovinen`'s branch (upstream PR #289) adds a `#[cfg(test)]` module to `accordion.rs` and touches no production logic — but note the branch is not otherwise small: it also moves the workspace to `dioxus 0.8.0-alpha.0` with a `[patch.crates-io]` block redirecting `dioxus`, `dioxus-rsx`, `dioxus-ssr`, `blitz-dom`, `blitz-traits`, `dioxus-native-dom` and a pinned `stylo` rev at git, and adds `dioxus-test` from the author's personal fork. Take the test module alone if you take anything (and note it needs that unreleased dependency to run). `dignifiedquire@2e913cd8`'s global-Escape fix does not reproduce here — upstream's menus use element-scoped `onkeydown` and its dialogs gate content behind `render()`; worth remembering as a latent risk if more global-listener consumers appear.
 
 ---
 
@@ -220,20 +220,39 @@ Roughly 45 candidates, in five groups.
 
 Adopt in three batches so each is independently revertable, and validate between them with what CI runs — `cargo clippy --workspace --examples --tests --all-features --all-targets -- -D warnings`, `cargo fmt --check`, and the Playwright suite.
 
+These commits live **only in the fork repositories** — they are not in upstream, so upstream is not a usable object source. Add the two forks as remotes and fetch the branches that contain them:
+
 ```bash
-git remote add mining https://github.com/DioxusLabs/dioxus-components   # object source
+git remote add fork-saren https://github.com/sarendipitee/dioxus-components
+git remote add fork-jc    https://github.com/jcgruenhage/dioxus-components
+git fetch --no-tags fork-saren main    # holds 42b56dd3, 799a4ff3, f63ee07e
+git fetch --no-tags fork-jc    fork    # holds 6f0a69f0
+```
 
+```bash
 # Batch 1 — independent, lowest risk
-git cherry-pick 42b56dd3fc133173d679e33ea671e9fd0f3848fa   # slider thumb identity
-git cherry-pick 799a4ff39969c7ec6c2b4d04e92dabe48fef3061 -- primitives/src/virtual_list.rs
+git cherry-pick 42b56dd3fc133173d679e33ea671e9fd0f3848fa      # slider thumb identity
 
-# Batch 2 — shared dismissal helper; re-test Dialog as well as Popover
-git cherry-pick f63ee07e835d6b76177d62bd72a1a173b32157c3   # drop the popover.spec.ts hunk
+# virtual_list: take only the primitives hunk. A whole-commit cherry-pick
+# conflicts on a fork-only data_table file, and `git cherry-pick` takes no
+# pathspec — apply the one file instead.
+git show 799a4ff39969c7ec6c2b4d04e92dabe48fef3061 -- primitives/src/virtual_list.rs \
+  | git apply --index
+git commit -C 799a4ff39969c7ec6c2b4d04e92dabe48fef3061       # keeps Saren as author
+
+# Batch 2 — shared dismissal helper; re-test Dialog as well as Popover.
+# Conflicts in playwright/popover.spec.ts only; keep our version and write the
+# regression test against current selectors.
+git cherry-pick f63ee07e835d6b76177d62bd72a1a173b32157c3
+git checkout HEAD -- playwright/popover.spec.ts
+git cherry-pick --continue --no-edit
 
 # Batch 3 — after settling §5
 git cherry-pick 6f0a69f037a2360889fb0da42f58cb1c865f7d3a
 # then, optionally, Wervice's tooltip fade-out — never before this
 ```
+
+This exact sequence was executed against a clean checkout of `bf007c1` and produces four commits with original authorship intact; batch 2's spec-file conflict is the only manual step.
 
 Each commit needs a Playwright regression test; none of the four shipped with one. Preserve original authorship (`git cherry-pick` does), and credit the source fork in the message — these are other people's fixes.
 
