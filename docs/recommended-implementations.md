@@ -18,10 +18,46 @@ One native element closes **four** gaps at once for modal dialogs — focus trap
 
 So the best plan is **smaller** than "port four modules". Prefer platform features; fall back to JavaScript only where no platform feature exists.
 
-**Two caveats that must be settled first, honestly stated:**
+**Two caveats gated this. Both have now been investigated.**
 
-1. **Upstream previously used `showModal()` and moved away from it** — it appears in the history of `797b343e` and `b3f6de53`, and today's `dialog.rs:259` renders `div role="dialog"`. I do not know why. Establish the reason before proposing a return; there may be a hydration, styling, or renderer constraint that makes this a non-starter.
-2. **Non-browser targets.** `<dialog>` and `popover=` are browser features. Dioxus also targets desktop/liveview through Blitz, where support is unverified. Any native-first approach needs a fallback path, exactly as `sarendipitee`'s `floating.rs` does with its `#[cfg(target_family = "wasm")]` split.
+### Caveat 1 — why upstream left `<dialog>`: no recorded reason
+
+The history, in order:
+
+| Date | Commit | |
+|---|---|---|
+| 2025-04-11 | `b3f6de53` "progress: dialog" (Miles) | **Added** `<dialog>` + `showModal()`. `is_modal` already existed here |
+| 2025-06-12 | `797b343e` "Fix keyboard navigation for the dialog and toast components (#47)" (Evan Almloff) | **Removed** `dialog.showModal()` and the `dialog {` element; added `window.createFocusTrap` and a document-level Escape listener. **In upstream `main`** |
+| 2026-05-13 | `7b25d863` "Port Dialog to native `<dialog>` + show_modal" (dignifiedquire) | Went back the other way — **in that fork only** |
+
+PR #47's description says only: *"Modals need extra logic to handle focus. This PR implements focus traps for dialog and alert dialog, and implements the f6 keyboard shortcut to focus toasts."* No architectural rationale, no mention of `<dialog>` at all; the conversation thread did not load when fetched.
+
+**Conclusion:** the move away from `<dialog>` looks *incidental* to a focus-trap PR rather than a considered rejection of the platform feature. That is not the same as proof it was accidental — ask upstream before proposing a return. But the evidence does not show a deliberate decision to avoid `<dialog>`, which was the risk this caveat was raised against.
+
+### Caveat 2 — non-browser targets: mostly dissolves
+
+First, a correction to how I framed this: Dioxus *desktop* runs a real webview, so `<dialog>` and `popover=` work there. The non-browser renderer is `dioxus-native`, built on **Blitz**.
+
+Checked against `DioxusLabs/blitz@main`:
+
+| Capability | Blitz |
+|---|---|
+| `showModal` / `show_modal` | **0 occurrences** |
+| `popover` attribute support | **0** |
+| top-layer API | **0** |
+| `inert` attribute | **0** — its 3 `inert` hits are about `<template>` contents |
+| `document::eval` | **`dioxus-native` implements it as `NoOpDocument.eval`** (`packages/dioxus-native/src/contexts.rs`) |
+| UA stylesheet | **Full Firefox-derived rules**: `dialog`, `dialog:not([open]) { display: none }`, `dialog:modal`, `dialog::backdrop`, `[popover]:not(:popover-open)` |
+
+The decisive line is `eval`. Because it is a no-op on native, **all 14 `document::eval` sites in `primitives/src` already do nothing there today** — no focus trap, no Escape listener, no `Checkbox` indeterminate sync, and `use_animated_open`'s close path awaits a response that never arrives. The library's interactive behaviour is already effectively web-and-webview-only.
+
+So a native-first Dialog is **not worse** on Blitz than the status quo, and is better everywhere else. With one design detail that must be got right:
+
+- Blitz styles `dialog:not([open])` as `display: none`, so a `<dialog>` is invisible unless the `open` attribute is present — and `open` is a plain attribute Dioxus can bind **declaratively, without JS**.
+- Therefore: bind `open` as the floor (giving Blitz a visible, in-flow, non-modal dialog), and call `showModal()` where `eval` actually works (giving web/webview the top layer, backdrop, inertness and focus trap).
+- Do not do both blindly: `showModal()` on a dialog already opened via the attribute throws `InvalidStateError`. Close first, or gate the attribute on whether the modal path succeeded.
+
+**Net effect on the recommendation:** caveat 2 no longer blocks item 2 or item 3, but it does mandate the declarative-`open` floor rather than a JS-only path. Caveat 1 remains a question for upstream, not a demonstrated objection.
 
 ---
 
@@ -131,7 +167,7 @@ Best-of here means recognising that upstream already wins one.
 
 ## Sequence
 
-1. **Settle caveat 1** — why upstream left `showModal()`. It gates items 2 and 3, the two highest-leverage changes.
+1. **Ask upstream about caveat 1** — the history shows no recorded rationale, so this is a question, not a blocker. It does not need to be answered before item 1.
 2. **Form participation** (item 1) — highest severity, no caveats, applies an in-tree pattern.
 3. **Scroll lock** (5) — needed regardless of how 2 resolves.
 4. **Focus restore** (4) — the oracle is already written and red.
