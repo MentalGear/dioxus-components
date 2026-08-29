@@ -33,6 +33,8 @@ preview/           (styled showcase layer)
 
 There is no separate primitives repository — `primitives/Cargo.toml` declares `name = "dioxus-primitives"` and it is a workspace member here. `DioxusLabs/dioxus-primitives` and `DioxusLabs/primitives` do not exist.
 
+**Everything below is web-and-webview-only today.** `dioxus-native` (Blitz) implements `Document::eval` as `NoOpDocument.eval`, so all 14 `document::eval` sites in `primitives/src` silently do nothing on that renderer — no focus trap, no Escape listener, no `Checkbox` indeterminate sync, and `use_animated_open`'s close path awaiting a response that never arrives. Several gaps recorded here are therefore *worse* on native than described, and one behaviour that works on web may not unmount at all there. Unverified by measurement — inferred from the no-op implementation. See [`recommended-implementations.md`](./recommended-implementations.md) for what that implies about preferring platform features.
+
 **The framework cannot help with any gap below.** Checked against `DioxusLabs/dioxus@main`: no body/scroll API (`scroll_lock`, `set_body_style`, `body().style` — no hits in `packages/document` or `packages/web`), and no portal support (`use_portal`/`PortalIn`/`PortalOut` — no hits anywhere), so `complaints.md`'s "Need Portals" entry is still open. `document::eval` (`packages/document/src/lib.rs:29`) remains the only escape hatch, which is why `primitives/src` reaches for it in 14 places and why both forks implement scroll lock in JavaScript. Fixing these upstream in the framework would mean designing new public API — a different project, not on the critical path.
 
 ---

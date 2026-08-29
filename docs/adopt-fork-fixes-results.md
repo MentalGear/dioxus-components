@@ -23,6 +23,88 @@ One decision has to be made before adopting #2: two forks patch the same functio
 
 ---
 
+## 0. Results table — the brief's requested output
+
+Columns and categories per [`adopt-fork-fixes.md`](./adopt-fork-fixes.md). **TAKE** = functional fix, adopt. **SKIP** = restyle, superseded, or not a fix. **FLAG** = ambiguous, needs a decision, or blocked on something.
+
+Sources are `dq` = `dignifiedquire/dx-components`, `sr` = `sarendipitee/dioxus-components`, plus forks outside the brief's scope where they carried the only fix.
+
+### Batch 1 — independent, lowest risk
+
+| Commit | Fork | Category | What it fixes | Take? |
+|---|---|---|---|---|
+| `42b56dd3` | sr | correctness | `RangeSlider` thumbs swap identity when dragged past each other — `ordered_range` sorts the pair (`slider.rs:264-265`) | **TAKE** |
+| `799a4ff3` | sr | correctness | `VirtualList` holds a `peek()` borrow across `resize_item`, which reads the same signal — panics rather than misbehaving (`virtual_list.rs:203-205`). Primitives hunk only | **TAKE** |
+
+### Batch 2 — shared dismissal helper (re-test Dialog as well as Popover)
+
+| Commit | Fork | Category | What it fixes | Take? |
+|---|---|---|---|---|
+| `f63ee07e` | sr | a11y / correctness | `use_outside_dismiss` serves `pointerdown` and `focusin` with one handler, so clicking a non-focusable area inside a popover moves focus to an ancestor and reads as focus-out — the popover closes itself (`lib.rs:214-229`) | **TAKE** |
+| `045f7dfd` | Torvex-UG (PR #286) | correctness | Dialog light-dismiss via backdrop `onclick` instead of `use_outside_dismiss` | **FLAG** — overlaps the above, which fixes the shared helper properly; re-evaluate after |
+
+### Batch 3 — animation lifecycle
+
+| Commit | Fork | Category | What it fixes | Take? |
+|---|---|---|---|---|
+| `6f0a69f0` | jcgruenhage | correctness | `use_animated_open` unmounts under a race and carries a permanently-false `animating` signal; declines to send on a cancelled animation so a stale task cannot overwrite newer state (`lib.rs:244-280`) | **TAKE** + add a per-cycle generation counter |
+| `573cc1e9` | ziimakc (PR #291) | correctness | Competing fix to the same function — swallows per-animation rejections | **SKIP** — trades a stuck-open element for one that vanishes while open; see §5 |
+| `a704c517` | Wervice (PR #293) | behavior | Tooltip fade-out on close, matching its existing fade-in | **TAKE** — but only *after* `6f0a69f0`, which it increases exposure to |
+
+### Batch 4 — form semantics
+
+| Source | Fork | Category | What it fixes | Take? |
+|---|---|---|---|---|
+| `radio_group.rs:267-279` / `:338-348` | dq / sr (independent, same shape) | correctness | `RadioGroup` declares `name`/`required` "for form submission" and never uses them; adds the per-item hidden `<input type="radio">` | **TAKE** |
+| `select.rs:158-186` | dq | correctness | Same silent failure in `Select`; hidden native `<select>` with mirrored options, which also gets native validation UI | **TAKE** — needs a `required` prop that does not exist yet |
+| `switch.rs:128` | dq | correctness | `Switch` forwards `name`/`value` but drops `required` | **TAKE** — one line |
+
+### Batch 5 — capability lifts (file ports, not commits)
+
+| Source | Fork | Category | What it adds | Take? |
+|---|---|---|---|---|
+| `scroll_lock.rs` (58 ln) | dq | a11y | Body scroll lock, refcounted for nested modals, restoring the original `overflow` | **TAKE** — plus sr's unlock-flash guard |
+| native `<dialog>` + `showModal()` | dq (`7b25d863`) | a11y | Focus trap, focus restore, inert background and top layer as browser behaviour — subsumes `focus_scope.rs` and `aria_hidden.rs` | **FLAG** — see caveats in [`recommended-implementations.md`](./recommended-implementations.md); needs a declarative-`open` floor |
+| `use_refocus_on_close_unless` (`lib.rs:236-254`) | dq | a11y | Focus restore for the menu family, Radix `onCloseAutoFocus` semantics | **TAKE** — plus moving focus off the item, which our oracle found and no source handles |
+| `aria_hidden.rs` (91 ln) | dq | a11y | Background content hidden from AT while a modal is open | **FLAG** — only if the native-dialog route is rejected; also needs the Dialog wiring that fork never did |
+| `df16e449` | matchish | behavior | `pub mod portal` — `use_portal`/`PortalId` are unreachable by consumers | **FLAG** — public-API decision, one line, merges clean |
+
+### Batch 6 — positioning
+
+| Source | Fork | Category | What it adds | Take? |
+|---|---|---|---|---|
+| `floating.rs` (269 ln) | sr | correctness | Collision-aware flip/shift; overlays near a viewport edge currently render off-screen | **TAKE** — dependency decision; `dq`'s 3,292-line vendored port is the contingency |
+| — | — | correctness | `ContextMenu` viewport clamping — positioned at click coordinates, unclamped | **TAKE** — not covered by either fork |
+
+### Deferred — real, but not yet scheduled
+
+| Source | Fork | Category | What it adds | Take? |
+|---|---|---|---|---|
+| `typeahead.rs` (78 ln) | dq | behavior | Type-to-select in menus (absent outside `select/`) | **TAKE later** — do **not** touch `select/`, whose matcher is better than both |
+| `direction.rs` (83 ln) | dq | a11y | RTL direction context; arrow keys are hardcoded LTR | **TAKE later** — port the key-flip concept, not the 708-line file |
+| `top_layer.rs` (189 ln) | dq | correctness | `popover=` top-layer rendering; overlays clip inside `overflow:hidden` ancestors | **FLAG** — same caveats as native `<dialog>` |
+| `3c43ce75` | jaysonmaw | new-component | Public `CalendarDayState` API (upstream issue #199) | **FLAG** — conflicts, needs rebase and idiom cleanup |
+| `a7a6a9f1` | catan2001 | behavior | `class` prop on `ToggleProps`, consistent with six other primitives | **FLAG** — default lacks the `dx-` prefix |
+
+### Rejected
+
+| Commit / source | Fork | Category | Why | Take? |
+|---|---|---|---|---|
+| `ffbed418` | Torvex-UG | behavior | `pub use_global_escape_listener` — undocumented `pub fn` under `#![warn(missing_docs)]` with clippy `-D warnings` | **SKIP** as written — CI failure; trivially fixable |
+| `3510aeee` | arkret-org | correctness | Focus-trap idempotency guard — patches the *generated* `focus-trap.js`; the next build erases it | **SKIP** as written — re-implement in the `.ts` |
+| `d0e39952` | nickelser | behavior | Hoists `FOCUS_TRAP_JS` to the app root — `preview/` has no `document::Script`, so focus trapping breaks | **SKIP** as shipped |
+| `e4cfbe28` | sumitpsm (PR #288) | — | Collapses a `format!` string; cites a `data-node` attribute that exists nowhere | **SKIP** — no verifiable bug |
+| `fe23e524` | ealmloff (PR #273) | tooling | `default-features = false` for `dioxus` | **FLAG** — sound intent, but repoints `dioxus-sdk-time` at a personal git fork |
+| `3b22d34f` | sr (PR #281, closed) | tooling | Pre-renders preview code snippets for wasm | **FLAG** — upstream closed it unmerged; find out why first |
+| ~45 others | various | — | Already upstream, superseded by later architecture, personal build hacks, or whole-repo rewrites | **SKIP** — see §7 |
+
+### Already done — do not re-derive
+
+Per the brief, branch `fix/preview-a11y-ux` carries three `preview/` CSS fixes (iOS focus auto-zoom floor, accordion `grid-template-rows` animation, dropdown/select viewport clamp). **They are not merged into `main`** — verified absent there — so they remain pending on that branch. Its clamp comment independently corroborates the collision gap: *"Collision-aware flip/shift positioning belongs upstream."*
+
+
+---
+
 ## 1. Scope
 
 This repository is a fork of `DioxusLabs/dioxus-components` created 2026-08-29, sitting exactly on upstream's `main` — zero divergence. Upstream `main` has not moved since 2026-06-29, so anything found in the network is genuinely unmerged rather than merely unreleased.
