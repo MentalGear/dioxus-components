@@ -300,6 +300,8 @@ The remaining ~45 candidates (the balance of the ~60 analysed, after the 4 adopt
 
 ## 8. Suggested sequence
 
+> The authoritative ordering is [`plan.md`](./plan.md); this section is the exact commands for the four mined fixes (Phase 2 there).
+
 Adopt in three batches so each is independently revertable, and validate between them with what CI runs — `cargo clippy --workspace --examples --tests --all-features --all-targets -- -D warnings`, `cargo fmt --check`, and the Playwright suite.
 
 These commits live **only in the fork repositories** — they are not in upstream, so upstream is not a usable object source. Add the two forks as remotes and fetch the branches that contain them:
