@@ -33,6 +33,8 @@ preview/           (styled showcase layer)
 
 There is no separate primitives repository — `primitives/Cargo.toml` declares `name = "dioxus-primitives"` and it is a workspace member here. `DioxusLabs/dioxus-primitives` and `DioxusLabs/primitives` do not exist.
 
+**Everything below is web-and-webview-only today.** `dioxus-native` (Blitz) implements `Document::eval` as `NoOpDocument.eval`, so all 14 `document::eval` sites in `primitives/src` silently do nothing on that renderer — no focus trap, no Escape listener, no `Checkbox` indeterminate sync, and `use_animated_open`'s close path awaiting a response that never arrives. Several gaps recorded here are therefore *worse* on native than described, and one behaviour that works on web may not unmount at all there. Unverified by measurement — inferred from the no-op implementation. See [`recommended-implementations.md`](./recommended-implementations.md) for what that implies about preferring platform features.
+
 **The framework cannot help with any gap below.** Checked against `DioxusLabs/dioxus@main`: no body/scroll API (`scroll_lock`, `set_body_style`, `body().style` — no hits in `packages/document` or `packages/web`), and no portal support (`use_portal`/`PortalIn`/`PortalOut` — no hits anywhere), so `complaints.md`'s "Need Portals" entry is still open. `document::eval` (`packages/document/src/lib.rs:29`) remains the only escape hatch, which is why `primitives/src` reaches for it in 14 places and why both forks implement scroll lock in JavaScript. Fixing these upstream in the framework would mean designing new public API — a different project, not on the critical path.
 
 ---
@@ -43,15 +45,15 @@ Severity comes from the API *promising* the behaviour. A missing feature is an i
 
 | Component | Props declared | Hidden native input? | Verdict |
 |---|---|---|---|
-| `Checkbox` | `name`, `value`, `required` (`checkbox.rs:70-80`) | **Yes** — `BubbleInput` renders a real `<input type="checkbox">` (`checkbox.rs:262-296`) | Correct — the reference implementation |
-| `Switch` | `name`, `value`, `required` (`switch.rs:21-27`) | Yes (`switch.rs:121-130`), but **`required` is never forwarded** — only `aria_required` on the button (`switch.rs:92`) | Partial: no native constraint validation |
-| `RadioGroup` | `name` (`radio_group.rs:93`, doc: *"The name attribute for form submission"*), `required` (`:97`) | **No.** `props.name` appears nowhere else in the file. Items are `button role="radio"` with no backing input | **Silent failure** |
-| `Select` / `SelectMulti` | `name` (`select.rs:52,103`, doc: *"Name of the select for form submission"*); no `required` prop exists | **No.** `props.name` is never referenced in the render body | **Silent failure — the most flagrant** |
+| `Checkbox` | `name`, `value`, `required` (`checkbox.rs:72,80,84`) | **Yes** — `BubbleInput` renders a real `<input type="checkbox">` (`checkbox.rs:262-296`) | Correct — the reference implementation |
+| `Switch` | `name`, `value`, `required` (`switch.rs:23,27,31`) | Yes (`switch.rs:121-130`), but **`required` is never forwarded** — only `aria_required` on the button (`switch.rs:92`) | Partial: no native constraint validation |
+| `RadioGroup` | `name` (`radio_group.rs:97`, doc: *"The name attribute for form submission"*), `required` (`:93`) | **No.** `props.name` appears nowhere else in the file. Items are `button role="radio"` with no backing input | **Silent failure** |
+| `Select` / `SelectMulti` | `name` (`select/components/select.rs:52,103`, doc: *"Name of the select for form submission"*); no `required` prop exists | **No.** `props.name` is never referenced in the render body | **Silent failure — the most flagrant** |
 | `Slider`, `ToggleGroup`, `Combobox` | none | No | Absent but honest |
 
 **Available fixes.** `RadioGroup` was fixed independently in two forks, in the same shape — a per-item hidden `<input type="radio">` carrying `name`/`value`/`checked`/`required`/`disabled`, which also gives correct native group semantics: `dignifiedquire@radio_group.rs:267-279` and `sarendipitee@radio_group.rs:338-348`. Both are single-file and dependency-free — **adoptable as-is**, modulo `ReadSignal` vs `bool` prop-type differences.
 
-`Select` was fixed only by `dignifiedquire` (`select.rs:158-186`), rendering a hidden native `<select>` with mirrored `<option>` children — Radix's "BubbleSelect" pattern, and the more correct fix since a real `<select required>` gets full browser validation UI. **Adoptable with rework**: it needs a `required` prop added to `SelectProps`/`SelectMultiProps` (upstream has none), and upstream's `Select<T>` is generic while the fork stringifies via `text_value`, so value-type handling needs review.
+`Select` was fixed only by `dignifiedquire` (`select/components/select.rs:158-186`), rendering a hidden native `<select>` with mirrored `<option>` children — Radix's "BubbleSelect" pattern, and the more correct fix since a real `<select required>` gets full browser validation UI. **Adoptable with rework**: it needs a `required` prop added to `SelectProps`/`SelectMultiProps` (upstream has none), and upstream's `Select<T>` is generic while the fork stringifies via `text_value`, so value-type handling needs review.
 
 `Switch`'s missing `required` is a one-line fix.
 
@@ -87,7 +89,7 @@ The one design choice to make: Radix's conditional rendering avoids leaving a st
 
 **Absent** for `DropdownMenu`, `ContextMenu`, `Menubar` and `Select` — none of them call `createFocusTrap`. They use the roving-tabindex machinery in `collection.rs`, which moves *real DOM focus* onto items as the user arrow-keys. On close that focused node unmounts with the content, and nothing hands focus back: searching those files for restore-focus/`activeElement` returns nothing. Per browser behaviour focus falls to `<body>`, so a keyboard user must Tab from the top of the page to get back.
 
-`dignifiedquire` closes this with `use_refocus_on_close_unless` (`lib.rs:236-254`, wired at `dropdown_menu.rs:748`), matching Radix's `onCloseAutoFocus` semantics — restore focus to the trigger *unless* the close was caused by interacting outside. **Adoptable with rework**: the helper is ~15 lines and drops onto upstream's existing `trigger_id` fields, but the `interacted_outside` signal must be threaded through the dismiss path, which upstream's `use_outside_dismiss` doesn't currently expose. A cruder interim fix — focus `trigger_id` at each `set_open.call(false)` site — captures most of the value.
+`dignifiedquire` closes this with `use_refocus_on_close_unless` (`lib.rs:241-255`, wired at `dropdown_menu.rs:423`), matching Radix's `onCloseAutoFocus` semantics — restore focus to the trigger *unless* the close was caused by interacting outside. **Adoptable with rework**: the helper is ~15 lines and drops onto upstream's existing `trigger_id` fields, but the `interacted_outside` signal must be threaded through the dismiss path, which upstream's `use_outside_dismiss` doesn't currently expose. A cruder interim fix — focus `trigger_id` at each `set_open.call(false)` site — captures most of the value.
 
 *Impact: high. Keyboard and screen-reader users, on four of the library's most-used components.*
 
@@ -162,7 +164,7 @@ Nothing measures the viewport. Searching `primitives/` for `getBoundingClientRec
 Two forks solved it, differently:
 
 - **`sarendipitee/floating.rs`** (269 lines) — one `use_position()` hook wrapping the external `floating-ui-dioxus`/`-dom`/`-utils` crates (0.6.0, from crates.io). Offset + Flip + Shift + `auto_update`, gated `#[cfg(target_family = "wasm")]` with a native fallback that reproduces today's CSS-only behaviour. Reuses upstream's own `ContentSide`/`ContentAlign` names.
-- **`dignifiedquire`** — an in-repo `floating-ui/` crate (3,292 lines across 18 files) plus `popper.rs` (1,158 lines): a genuine port of `@floating-ui/core` + `/dom` with flip, shift, offset, size, arrow and hide middleware, `collision_padding` and sticky behaviour. Confirmed **separable** from that fork's Tailwind layer — `primitives/` there has zero styling coupling, and the shadcn work lives in a third crate.
+- **`dignifiedquire`** — an in-repo `floating-ui/` crate (18 `.rs` files, 3,262 lines) plus `popper.rs` (1,158 lines): a genuine port of `@floating-ui/core` + `/dom` with flip, shift, offset, size, arrow and hide middleware, `collision_padding` and sticky behaviour. Confirmed **separable** from that fork's Tailwind layer — `primitives/` there has zero styling coupling, and the shadcn work lives in a third crate.
 
 **Recommendation if this is taken on: `sarendipitee`'s wrapper.** ~270 lines behind one hook beats 3,300 lines to vendor and maintain, and it keeps upstream's public enum names. The trade-offs to accept: a new third-party dependency family, wasm-only behaviour (desktop/liveview keep today's static CSS — not a regression, but not a universal fix), and `ContextMenu` still needing its own clamp since it isn't anchor-based.
 
@@ -189,9 +191,9 @@ Absent upstream **and in all 111 fork refs**. Every fork that solved positioning
 | Gap | Upstream | Best source | Portability | Impact |
 |---|---|---|---|---|
 | `RadioGroup` form submission | Silent failure | `dignifiedquire` or `sarendipitee` `radio_group.rs` | As-is | High |
-| `Select` form submission | Silent failure | `dignifiedquire` `select.rs:158-186` | With rework | High |
+| `Select` form submission | Silent failure | `dignifiedquire` `select/components/select.rs:158-186` | With rework | High |
 | `Switch` `required` | Partial | `dignifiedquire` `switch.rs:128` | As-is (1 line) | Medium |
-| Focus restore (menus, select) | Absent | `dignifiedquire` `lib.rs:236-254` | With rework | High |
+| Focus restore (menus, select) | Absent | `dignifiedquire` `lib.rs:241-255` | With rework | High |
 | `aria-hidden` background | Absent | `dignifiedquire` `aria_hidden.rs` | With rework (needs wiring the fork lacks) | High |
 | Body scroll lock | Absent | `dignifiedquire` `scroll_lock.rs` | **As-is** | High |
 | Collision detection | Absent | `sarendipitee` `floating.rs` | With rework | High |

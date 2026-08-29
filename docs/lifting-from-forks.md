@@ -151,14 +151,14 @@ Ordered by severity-to-effort. Sources and line numbers are in `capability-gaps.
 | # | Item | Shape | Source | Oracle to write first |
 |---|---|---|---|---|
 | 1 | `RadioGroup` ignores `name`/`required` | A or B | `dignifiedquire` or `sarendipitee` `radio_group.rs` (independent, same shape) | Submit a `<form>`, assert `FormData` contains the field. **Needs a form fixture — none exists.** |
-| 2 | `Select` ignores `name` | C | `dignifiedquire` `select.rs:158-186` (hidden native `<select>`) | Same fixture; also assert native validation fires |
+| 2 | `Select` ignores `name` | C | `dignifiedquire` `select/components/select.rs:158-186` (hidden native `<select>`) | Same fixture; also assert native validation fires |
 | 3 | `Switch` drops `required` | A | `dignifiedquire` `switch.rs:128` | One-line; covered by the same form fixture |
-| 4 | Focus restore, menu family | C | `dignifiedquire` `use_refocus_on_close_unless` (`lib.rs:236-254`) | **Already written and red** — `oracle-focus-restore.spec.ts` |
+| 4 | Focus restore, menu family | C | `dignifiedquire` `use_refocus_on_close_unless` (`lib.rs:241-255`) | **Already written and red** — `oracle-focus-restore.spec.ts` |
 | 5 | Body scroll lock | B | `dignifiedquire` `scroll_lock.rs` (58 lines) | Open a modal, scroll, assert `window.scrollY` unchanged |
 | 6 | `aria-hidden` on background | B + wiring | `dignifiedquire` `aria_hidden.rs` (91 lines) | Assert background landmark is hidden from AT while modal open |
 | 7 | Typeahead in menus | B | `dignifiedquire` `typeahead.rs` (78 lines) | Type a prefix, assert the matching item is focused |
 | 8 | RTL arrow keys | C | `dignifiedquire` `direction.rs` + key-flip concept | Set `dir="rtl"`, assert ArrowLeft moves *forward*. **Needs an RTL fixture.** |
-| 9 | Collision detection | C + dependency decision | `sarendipitee` `floating.rs` (269 lines, external crates) vs `dignifiedquire` vendored port (3,292) | Render near a viewport edge, assert the content box stays inside it |
+| 9 | Collision detection | C + dependency decision | `sarendipitee` `floating.rs` (269 lines, external crates) vs `dignifiedquire` vendored port (3,262) | Render near a viewport edge, assert the content box stays inside it |
 | 10 | The four mined bug fixes | A | see `adopt-fork-fixes-results.md` §8 | Regression test per fix; none shipped with one |
 
 Two recipes worth spelling out because they have traps:

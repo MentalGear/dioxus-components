@@ -6,7 +6,8 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 
 | Document | Answers |
 |---|---|
-| [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md) | Which **bug fixes** exist in forks and were never merged. Four are still live on `main`; ~11 conditional; ~45 rejected with reasons. |
+| [`adopt-fork-fixes.md`](./adopt-fork-fixes.md) | The **task brief** (from `chore/fork-fix-mining`) — scope, classification scheme, and requested output. |
+| [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md) | The **results**: §0 is the brief's categorized + batched table; then the full mining report. Four fixes still live on `main`; ~11 conditional; ~45 rejected with reasons. |
 | [`capability-gaps.md`](./capability-gaps.md) | Which **capabilities** upstream is missing — form submission, focus restore, scroll lock, `aria-hidden`, collision detection, typeahead, RTL — and which fork closed each. |
 | [`lifting-from-forks.md`](./lifting-from-forks.md) | **How to port** any of it: licensing, the three lift shapes, name mapping, the traps, and per-item recipes. |
 | [`recommended-implementations.md`](./recommended-implementations.md) | **What to build** for each gap, assembled from the best part of each source rather than copying any one wholesale. |
@@ -32,7 +33,8 @@ Read this before acting on any of it.
 - **Executed:** focus restore. The oracle ran against the app built from this commit — four failures, one passing control. It also *corrected* the static analysis: focus falls to `<body>` only in `ContextMenu`; `DropdownMenu` and `Menubar` keep focus on the closed menu's item.
 - **Verified statically:** everything else. Claims are backed by reading current source and fork refs, and every cherry-pick result in `adopt-fork-fixes-results.md` §8 was executed. Nothing else was compiled or run.
 - **Point-in-time:** PR states and fork contents were read on the scan date. Re-check before acting.
-- **Reviewed:** the fix report went through three adversarial review rounds, which caught four factual errors and two broken commands. The capability documents have not had equivalent review.
+- **Reviewed:** the fix report went through three adversarial review rounds, which caught four factual errors and two broken commands. The capability, harness and recommendation documents have **not** had equivalent review.
+- **Inferred, not measured:** that the `eval` no-op leaves several behaviours broken on `dioxus-native`. Read from the implementation, never run on that renderer.
 
 ## Where the layers are
 

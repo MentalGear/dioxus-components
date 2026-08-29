@@ -135,8 +135,8 @@ Measured, not assumed. This decides what the harness must add versus duplicate.
 
 | Layer | Extent |
 |---|---|
-| Playwright e2e | 32 spec files, **122 tests** — the primary safety net |
-| Cargo unit tests | `#[cfg(test)]` in **10 of 40** files in `primitives/src` — and they are the algorithmic ones (`slider`, `calendar`, `virtualizer`, `select/text_search`, `pointer`, `date_picker`, `selection`, `color_picker`, `move_interaction`, `lib`) |
+| Playwright e2e | 32 spec files, **123 tests** — the primary safety net |
+| Cargo unit tests | `#[cfg(test)]` in **10 of 63** `.rs` files under `primitives/src` (8 of the 40 top-level ones) — and they are the algorithmic ones (`slider`, `calendar`, `virtualizer`, `select/text_search`, `pointer`, `date_picker`, `selection`, `color_picker`, `move_interaction`, `lib`) |
 | CI (`main.yml`) | `cargo check --workspace --all-features`, `cargo test --workspace`, `cargo fmt --check`, docs with `-Dwarnings`, and `clippy … -D warnings` |
 | Other workflows | `playwright.yml`, `stylelint.yml`, `web.yml`, `pages.yml`, `all_components.yml` |
 | `test-harness/` | A separate Dioxus app for manual exercising — not an automated suite |
@@ -155,7 +155,7 @@ Where the e2e suite stops is precise and revealing:
 | `aria-hidden` | **0** |
 | `overflow` / `scrollY` | **0** |
 
-Keyboard interaction is genuinely well covered. The suite tests what a component *does*, and never what it must *prevent* — no scroll containment, no background inertness, and no assertion of where focus *lands* after a close, only that the thing closed. That is the exact shape of the gaps in `capability-gaps.md`, and it is why they survived 122 tests.
+Keyboard interaction is genuinely well covered. The suite tests what a component *does*, and never what it must *prevent* — no scroll containment, no background inertness, and no assertion of where focus *lands* after a close, only that the thing closed. That is the exact shape of the gaps in `capability-gaps.md`, and it is why they survived 123 tests.
 
 ### Radix
 
