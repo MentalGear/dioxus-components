@@ -2,7 +2,7 @@
 
 **Scan date:** 2026-08-29
 **Baseline:** `bf007c1` — `Tag Group component (#271)`, 2026-06-29, the tip of both `DioxusLabs/dioxus-components@main` and this fork
-**Verification level:** static only. Every claim below was checked by reading diffs and the current code on `main`, and every cherry-pick result was executed. **Nothing here was compiled, and no test suite was run.** Treat "merges cleanly" as "git applied it", not "it works".
+**Verification level:** static only. Every claim below was checked by reading diffs and the current code on `main`, and every cherry-pick result was executed. **Nothing here was compiled, and no test suite was run.** Treat "merges cleanly" as "git applied it", not "it works". Pull-request states were read from upstream's public PR pages on the scan date and are point-in-time — re-check them before acting.
 
 ---
 
@@ -52,6 +52,10 @@ git cherry origin/main refs/mined/<owner>/<branch>   # '-' == already upstream
 git diff origin/main...refs/mined/<owner>/<branch>
 git merge-tree --write-tree origin/main refs/mined/<owner>/<branch>
 git cherry-pick --no-commit <sha>          # in a throwaway worktree
+
+# 6. Finally, check the upstream PR queue for each surviving candidate — a fix
+#    already under review is a different decision from one nobody has seen
+#    https://github.com/DioxusLabs/dioxus-components/pulls?q=is%3Apr+author%3A<owner>
 ```
 
 Step 4 is necessary but **not sufficient**: a squash-merged multi-commit branch keeps a different patch-id, so `git cherry` still calls it novel. Every candidate was therefore additionally checked against the current source of `main` — which is what caught, for example, `ealmloff/fix-initial-value-select` landing verbatim (down to a stray-space typo now sitting at `select/components/group.rs:174`).
@@ -69,8 +73,8 @@ In a fork-and-PR workflow the fork's `main` stays a mirror of upstream while the
 | Refs carrying commits absent from upstream | 111 (`gh-pages` build branches excluded) |
 | — of those, fork `main` | 18 |
 | — topic branches | 93 |
-| Forks with at least one novel ref | 58 |
-| Branches discarded as patch-identical to upstream | 10 |
+| Forks with at least one novel ref | 58 — but 9 of those have only a `gh-pages` branch, so **49** have real work |
+| Refs discarded as patch-identical to upstream (`git cherry`) | 21 refs / 17 distinct branch tips |
 | Candidates analysed in depth | ~60 |
 | **Recommended for adoption** | **4** |
 | Conditional | 11 |
@@ -108,7 +112,7 @@ The fix clamps instead of reordering: `v.min(cur.end)..cur.end` / `cur.start..v.
 - **Source:** `jcgruenhage/dioxus-components@6f0a69f0`, JC Grünhage, 2026-05-23 — `fix(animations): keep closing element in DOM 250ms before unmount`
 - **Files:** `primitives/src/lib.rs` · **cherry-pick: clean** (+27/−10)
 
-`use_animated_open` is shared by `Dialog`, `AlertDialog`, `Popover`, `Combobox`, `DropdownMenu`, `ContextMenu`, `HoverCard`, `Tooltip`, `Accordion`, `Listbox`, `Menubar` and `Navbar` — so anything wrong in it is wrong everywhere. `primitives/src/lib.rs:244-277` on `main` is byte-for-byte the pre-fix version, including a dead `animating` signal that is declared without `mut`, never written, and therefore always `false` while still being OR'd into the hook's return value.
+`use_animated_open` is shared by `Dialog`, `AlertDialog`, `Popover`, `Combobox`, `DropdownMenu`, `ContextMenu`, `HoverCard`, `Tooltip`, `Accordion`, `Listbox`, `Menubar` and `Navbar` — so anything wrong in it is wrong everywhere. `primitives/src/lib.rs:244-280` on `main` is byte-for-byte the pre-fix version, including a dead `animating` signal: declared without `mut` at line 248, never written, and therefore permanently `false` — yet still OR'd into the hook's return value at line 279.
 
 The commit fixes three things at once: it waits a frame before querying animations, holds the closing element in the DOM ~250 ms after the animation ends (it is `opacity: 0` / `pointer-events: none` throughout, so users see nothing) so observers such as Playwright and screen readers get a predictable window, and — most importantly — it *declines to send* when the animation promise rejects, because a rejection means a newer open/close cycle is already in flight and resolving the stale `recv()` would let it overwrite fresher state. It was root-caused against an intermittent WebKit failure in `combobox.spec.ts:131`.
 
@@ -130,7 +134,7 @@ The fix splits the handler into `onPointer` / `onFocus` and gives the focus path
 - **Source:** `sarendipitee/dioxus-components@799a4ff3`, Saren, 2026-06-28 — `Fix virtual_list resize memoization`
 - **Files:** `primitives/src/virtual_list.rs` · **cherry-pick of the primitives hunk: clean** (the full commit also touches a fork-only `data_table` file — split it)
 
-`primitives/src/virtual_list.rs:198-205` keeps a `peek()` guard alive across the call that uses it:
+`primitives/src/virtual_list.rs:203-205` keeps a `peek()` guard alive across the call that uses it:
 
 ```rust
 let m = measurements.peek();
@@ -168,6 +172,8 @@ So PR #291 converts a stuck-open element into an element that disappears while o
 
 **Recommendation:** take `jcgruenhage@6f0a69f0`. If you want the residual case covered too, the correct shape is a per-cycle generation counter — send on rejection *only* when the cycle that spawned the task is still current — rather than either patch as written. If PR #291 lands upstream first, this fork will need to reconcile; the analysis above is the argument to bring to that thread.
 
+**Confidence:** the argument is derived from reading the source, **not from running it**. What is verified: `use_animated_open` uses a plain `use_effect`, not the crate's own `use_effect_with_cleanup` (which exists precisely to cancel work between reruns), so nothing cancels the in-flight task when the effect re-runs — which is the premise the whole race rests on. What is not verified: that the sequence is observable in a browser at real animation timings. Reproduce it against a rapidly-toggled tooltip or combobox before you argue it in the PR thread.
+
 ---
 
 ## 6. Tier 2 — conditional
@@ -196,7 +202,9 @@ Each of these is real but carries a blocker. None should be merged as written.
 
 Roughly 45 candidates, in five groups.
 
-**Already upstream, verified in code (~20).** Every substantive branch in the maintainer fork `ealmloff/components` had landed: keyboard nav (`calendar.rs:615-662`, `accordion.rs:446-467`), the focus trap (`src/js/focus-trap.js` + `lib.rs:60`), mobile pointer handling (`menubar.rs:407,414`), the Safari `display:contents` toast bug (now `ToastList`/`ToastListItem`), `Memo<T>` context fields, the dark-mode query param (`main.rs:136-159`), the calendar month/year selectors, the `Button` preview component, and a documentation pass now enforced by `#![warn(missing_docs)]`. Also here: `WhaleFromMars` (drag-and-drop index resolution, byte-identical at `drag_and_drop_list.rs:46,60`), `jaysonmaw/patch-1` and `patch-2` (merged as #193 and #195), `AnttiJalomaki/fix-toolbar`, `p-jackson/slider-reactive-min-max-step` (upstream's version additionally handles `RangeSlider`), `guiemrabassa/multiselect` (shipped as `SelectMulti`), `zhiyanzhaijie/feat-pagination`, and three forks whose `main` tree is byte-identical to ours (`Tumypmyp`, `ddudenin`, plus `matta`/`p-jackson`/`wheregmis` single-commit branches).
+**Already upstream, verified in code (~20).** Every substantive branch in the maintainer fork `ealmloff/components` had landed: keyboard nav (`calendar.rs:615-662`, `accordion.rs:446-467`), the focus trap (`src/js/focus-trap.js` + `lib.rs:60`), mobile pointer handling (`menubar.rs:407,414`), the Safari `display:contents` toast bug (now `ToastList`/`ToastListItem`), `Memo<T>` context fields, the dark-mode query param (`main.rs:136-159`), the calendar month/year selectors, the `Button` preview component, and a documentation pass now enforced by `#![warn(missing_docs)]`. Also here: `WhaleFromMars` (`resolve_drop_index`/`resolve_drop_position` are byte-identical to the fork's versions, at `drag_and_drop_list.rs:46,60` **on `main`** — the rest of that file differs substantially, so diff the two functions, not the file), `jaysonmaw/patch-1` and `patch-2` (merged as #193 and #195), `AnttiJalomaki/fix-toolbar`, `p-jackson/slider-reactive-min-max-step` (upstream's version additionally handles `RangeSlider`), `guiemrabassa/multiselect` (shipped as `SelectMulti`), `zhiyanzhaijie/feat-pagination`, `ddudenin/main` (tree byte-identical to `main` — it *is* the Tag Group merge), and the `matta`/`p-jackson`/`wheregmis` single-commit branches.
+
+`Tumypmyp/main` belongs here too, but for a different reason than it first appears: its tree is **not** identical to `main` (`git diff --stat origin/main refs/mined/Tumypmyp/main` reports 323 files) because the fork is **51 commits behind** upstream while being 2 ahead. Those 2 commits are a merge plus `af3ff3f7` "Fix sheet component example", and `git diff <merge-base> refs/mined/Tumypmyp/main` is **empty** — the sheet fix landed upstream independently, so the branch contributes nothing novel. Stale, not identical.
 
 **Superseded by later architecture (~8).** `wheregmis/click_out_onfocusout` (per-component focus state → shared `CollectionState`), `knoxfighter/select-focus-disabled` and `combo-box-try-1` (patch `primitives/src/focus.rs`, a file that **no longer exists** — replaced by `selectable.rs`/`selection.rs`/`listbox.rs`/`collection.rs`; the shipped primitive is `combobox`, not `combo_box`), the `DanielWarloch` cluster, and `haywoodfu`'s `VirtualList` scroll fixes (they repair the fork's own superseded engine, not `main`'s).
 
@@ -204,7 +212,7 @@ Roughly 45 candidates, in five groups.
 
 **Whole-repo rewrites, not patches (3).** `dignifiedquire/main` (245 commits) is a ground-up shadcn/Tailwind + Radix-parity reimplementation with an in-repo `floating-ui` port — nothing is cherry-pickable, but its accessibility audit trail is a useful reference. `SPRAGE/main` is a Copilot-generated repackaging into a flat single crate (202 files renamed). `lavaeater/0.8` is a Dioxus 0.8 alpha bump plus a vendored `dioxus-icons` dump (3,684 files); keep it bookmarked for a future 0.8 migration, since it documents the `dioxus-sdk-time` incompatibility.
 
-**Not real fixes (~6).** `sumitpsm/basic-fix` (upstream PR #288) collapses a `format!` string and cites a `data-node` attribute that exists nowhere in the repo; whitespace inside a `style` attribute is inert. `SFSeeger/main` bundles the same calendar API as `jaysonmaw` with a silent **regression** — it reverts `OffsetDateTime::now_local_date()` back to `UtcDateTime::now().date()`, undoing the shipped timezone fix (`calendar.rs:492,496,748,752`, helper at `lib.rs:327-337`). `Fakhir-Israr-200219/table` (upstream PR #254) is a preview-only demo over hardcoded data with no primitive underneath. `hovinen`'s branch (upstream PR #289) adds only a `#[cfg(test)]` module. `dignifiedquire@2e913cd8`'s global-Escape fix does not reproduce here — upstream's menus use element-scoped `onkeydown` and its dialogs gate content behind `render()`; worth remembering as a latent risk if more global-listener consumers appear.
+**Not real fixes (~6).** `sumitpsm/basic-fix` (upstream PR #288) collapses a `format!` string and cites a `data-node` attribute that exists nowhere in the repo; whitespace inside a `style` attribute is inert. `SFSeeger/main` bundles the same calendar API as `jaysonmaw` with a silent **regression** — it reverts `OffsetDateTime::now_local_date()` back to `UtcDateTime::now().date()`, undoing the shipped timezone fix (`calendar.rs:492,496,748,752`, helper at `lib.rs:327-337`). `Fakhir-Israr-200219/table` (upstream PR #254) is a preview-only demo over hardcoded data with no primitive underneath. `hovinen`'s branch (upstream PR #289) adds a `#[cfg(test)]` module to `accordion.rs` and touches no production logic — but note the branch is not otherwise small: it also moves the workspace to `dioxus 0.8.0-alpha.0` with a `[patch.crates-io]` block redirecting `dioxus`, `dioxus-rsx`, `dioxus-ssr`, `blitz-dom`, `blitz-traits`, `dioxus-native-dom` and a pinned `stylo` rev at git, and adds `dioxus-test` from the author's personal fork. Take the test module alone if you take anything (and note it needs that unreleased dependency to run). `dignifiedquire@2e913cd8`'s global-Escape fix does not reproduce here — upstream's menus use element-scoped `onkeydown` and its dialogs gate content behind `render()`; worth remembering as a latent risk if more global-listener consumers appear.
 
 ---
 
