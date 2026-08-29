@@ -6,6 +6,7 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 
 | Document | Answers |
 |---|---|
+| [`plan.md`](./plan.md) | **The single authoritative sequence** — phases, dependencies, open decisions, and the definition of done. Start here. Where another document's ordering differs, the plan wins. |
 | [`adopt-fork-fixes.md`](./adopt-fork-fixes.md) | The **task brief** (from `chore/fork-fix-mining`) — scope, classification scheme, and requested output. |
 | [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md) | The **results**: §0 is the brief's categorized + batched table; then the full mining report. Four fixes still live on `main`; ~11 conditional; ~45 rejected with reasons. |
 | [`capability-gaps.md`](./capability-gaps.md) | Which **capabilities** upstream is missing — form submission, focus restore, scroll lock, `aria-hidden`, collision detection, typeahead, RTL — and which fork closed each. |
@@ -33,7 +34,7 @@ Read this before acting on any of it.
 - **Executed:** focus restore. The oracle ran against the app built from this commit — four failures, one passing control. It also *corrected* the static analysis: focus falls to `<body>` only in `ContextMenu`; `DropdownMenu` and `Menubar` keep focus on the closed menu's item.
 - **Verified statically:** everything else. Claims are backed by reading current source and fork refs, and every cherry-pick result in `adopt-fork-fixes-results.md` §8 was executed. Nothing else was compiled or run.
 - **Point-in-time:** PR states and fork contents were read on the scan date. Re-check before acting.
-- **Reviewed:** the fix report went through three adversarial review rounds, which caught four factual errors and two broken commands. The capability, harness and recommendation documents have **not** had equivalent review.
+- **Reviewed:** four adversarial review rounds across the set — three on the fix report, one on the capability, harness and recommendation documents — catching six factual errors and two broken commands, including a fabricated line reference propagated from a sub-agent summary.
 - **Inferred, not measured:** that the `eval` no-op leaves several behaviours broken on `dioxus-native`. Read from the implementation, never run on that renderer.
 
 ## Where the layers are

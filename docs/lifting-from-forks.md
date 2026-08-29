@@ -146,6 +146,8 @@ cd playwright && npx playwright test --config=oracle.local.config.ts <spec>
 
 ## 7. The queue, with per-item recipes
 
+> Sequencing lives in [`plan.md`](./plan.md); this table is the per-item porting recipe.
+
 Ordered by severity-to-effort. Sources and line numbers are in `capability-gaps.md`.
 
 | # | Item | Shape | Source | Oracle to write first |

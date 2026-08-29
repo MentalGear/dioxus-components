@@ -189,6 +189,8 @@ Best-of here means recognising that upstream already wins one.
 
 ## Sequence
 
+> Superseded by [`plan.md`](./plan.md), which reconciles this with the batches in `adopt-fork-fixes-results.md` §0 and the queue in `lifting-from-forks.md` §7. Kept here for the per-gap rationale.
+
 1. **Ask upstream about caveat 1** — the history shows no recorded rationale, so this is a question, not a blocker. It does not need to be answered before item 1.
 2. **Form participation** (item 1) — highest severity, no caveats, applies an in-tree pattern.
 3. **Scroll lock** (5) — needed regardless of how 2 resolves.
