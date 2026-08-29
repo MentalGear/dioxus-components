@@ -124,7 +124,13 @@ pub fn FormFixture() -> Element {
                                 r#type: "checkbox",
                                 name: "terms-native",
                                 value: "accepted",
-                                checked: true,
+                                // `initial_checked` (-> `defaultChecked`) rather than `checked`
+                                // (-> the live `.checked` IDL property, per dioxus-interpreter-js
+                                // `set_attribute.ts`): only the former sets the `checked` content
+                                // attribute the HTML reset algorithm reads, so this reference
+                                // control actually restores on <form> reset like a plain static
+                                // `<input checked>` would. See docs/conformance-harness.md rule 6.
+                                initial_checked: true,
                             }
                         }
                     }
@@ -148,7 +154,9 @@ pub fn FormFixture() -> Element {
                                 r#type: "checkbox",
                                 name: "promo-native",
                                 value: "yes",
-                                checked: true,
+                                // See the `chk-native` comment above: `initial_checked`, not
+                                // `checked`, so this reference matches static-HTML reset semantics.
+                                initial_checked: true,
                                 disabled: true,
                             }
                         }
