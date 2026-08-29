@@ -3,7 +3,7 @@
 **Scan date:** 2026-08-29 · **Baseline:** `bf007c1` (upstream `main`, unchanged since 2026-06-29)
 **Verification level:** static, **except focus restore, which has now been executed against the running app** (see below). Other claims are backed by reading the current source on `main` and in fork refs, not by running them.
 
-Companion to [`adopt-fork-fixes.md`](./adopt-fork-fixes.md), which covers *bug fixes*. This document covers *missing capabilities* — behaviour a mature headless component library is expected to have, that upstream does not implement, and that at least one fork does.
+Companion to [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md), which covers *bug fixes*. This document covers *missing capabilities* — behaviour a mature headless component library is expected to have, that upstream does not implement, and that at least one fork does.
 
 ---
 

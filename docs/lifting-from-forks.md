@@ -2,7 +2,7 @@
 
 A practical playbook for moving code from a fork of `DioxusLabs/dioxus-components` into this repo without importing someone's architecture, their build hacks, or a fix that evaporates on the next build.
 
-Companions: [`adopt-fork-fixes.md`](./adopt-fork-fixes.md) (which bug fixes exist) and [`capability-gaps.md`](./capability-gaps.md) (which capabilities are missing). This document is the *how*.
+Companions: [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md) (which bug fixes exist) and [`capability-gaps.md`](./capability-gaps.md) (which capabilities are missing). This document is the *how*.
 
 ---
 
@@ -159,7 +159,7 @@ Ordered by severity-to-effort. Sources and line numbers are in `capability-gaps.
 | 7 | Typeahead in menus | B | `dignifiedquire` `typeahead.rs` (78 lines) | Type a prefix, assert the matching item is focused |
 | 8 | RTL arrow keys | C | `dignifiedquire` `direction.rs` + key-flip concept | Set `dir="rtl"`, assert ArrowLeft moves *forward*. **Needs an RTL fixture.** |
 | 9 | Collision detection | C + dependency decision | `sarendipitee` `floating.rs` (269 lines, external crates) vs `dignifiedquire` vendored port (3,292) | Render near a viewport edge, assert the content box stays inside it |
-| 10 | The four mined bug fixes | A | see `adopt-fork-fixes.md` §8 | Regression test per fix; none shipped with one |
+| 10 | The four mined bug fixes | A | see `adopt-fork-fixes-results.md` §8 | Regression test per fix; none shipped with one |
 
 Two recipes worth spelling out because they have traps:
 
