@@ -1,0 +1,142 @@
+# Recommended implementations — best of each source
+
+For every gap in [`capability-gaps.md`](./capability-gaps.md), which solution to actually build, assembled from the strongest parts of upstream, Radix, and the forks rather than copying any one of them wholesale.
+
+Sources compared: this repo (`bf007c1`), `radix-ui/primitives`, `dignifiedquire/dx-components`, `sarendipitee/dioxus-components`, `jcgruenhage/dioxus-components`, and the WHATWG HTML spec.
+
+**Verification:** all source claims below were read from the actual code. None of the *recommendations* have been built or run.
+
+---
+
+## The finding that changes the plan
+
+`dignifiedquire`'s `dialog.rs` documents something worth more than any file we might port:
+
+> Renders a modal dialog using the native `<dialog>` element opened with `showModal()`, which provides a focus trap, ESC-to-close, and inert siblings as native browser behaviours… We do not run our own `FocusScope` wrapper inside the dialog… We do not run our own `aria-hidden` outsider machinery.
+
+One native element closes **four** gaps at once for modal dialogs — focus trap, focus restore, background inertness, and top-layer rendering that escapes every ancestor `overflow`, `transform` and stacking context. `inert` is also strictly stronger than `aria-hidden`: it removes background content from the accessibility tree *and* blocks focus and pointer interaction, where `aria-hidden` only does the first.
+
+So the best plan is **smaller** than "port four modules". Prefer platform features; fall back to JavaScript only where no platform feature exists.
+
+**Two caveats that must be settled first, honestly stated:**
+
+1. **Upstream previously used `showModal()` and moved away from it** — it appears in the history of `797b343e` and `b3f6de53`, and today's `dialog.rs:259` renders `div role="dialog"`. I do not know why. Establish the reason before proposing a return; there may be a hydration, styling, or renderer constraint that makes this a non-starter.
+2. **Non-browser targets.** `<dialog>` and `popover=` are browser features. Dioxus also targets desktop/liveview through Blitz, where support is unverified. Any native-first approach needs a fallback path, exactly as `sarendipitee`'s `floating.rs` does with its `#[cfg(target_family = "wasm")]` split.
+
+---
+
+## Per-gap recommendations
+
+### 1. Form participation — `RadioGroup`, `Select`, `Switch`
+
+**Build:** this repo's own `Checkbox` pattern, with Radix's attribute completeness.
+
+| Decision | Take from | Why |
+|---|---|---|
+| A real submittable element | Both agree | HTML admits only `button`/`input`/`select`/`textarea` to the entry list; ARIA cannot change this, and `ElementInternals` is unavailable because Dioxus renders plain DOM |
+| Hiding technique | **This repo** (`checkbox.rs:279-296`) — `aria_hidden`, `tabindex="-1"`, `position:absolute; opacity:0; pointer-events:none` | Already in-tree, already reviewed, consistent |
+| Render unconditionally | **This repo**, over Radix's `closest('form')` gate | Radix's gate needs a DOM query; in Dioxus that is a `document::eval` round-trip and a hydration hazard. Radix itself defaults the gate to `true` when it cannot measure |
+| Attribute set — `required`, `disabled`, `form` | **Radix** | This repo forwards `name`/`value` but drops `required` on `Switch`; `form` allows a control outside the `<form>` |
+| `Select`: hidden native `<select>` with mirrored `<option>`s | **Radix's BubbleSelect**, via `dignifiedquire@select.rs:158-186` | A real `<select required>` gets full native validation UI, which a hidden `<input>` cannot provide |
+
+Not novel work: the pattern is in-tree and simply was never extended.
+
+#### Why upstream diverged from Radix here — and who to follow
+
+It looks like a style preference. It isn't: **it is a documented framework limitation**, and upstream wrote it down.
+
+`complaints.md` in this repository, under *"No way to know a component or element's parent, siblings, or children"*, cites **the exact Radix line** this decision turns on:
+
+> Take [radix-primitives' switch](https://github.com/radix-ui/primitives/blob/6e75e117977c9e6ffa939e6951a707f16ba0f95e/packages/react/switch/src/switch.tsx#L51) as an example. It detects when the switch is in a form and creates an input so that the switch's value bubbles with the form submit event.
+
+Radix's gate is `control.closest('form')` — a synchronous ancestor query available in React the moment a ref is attached. Dioxus offers no equivalent: `MountedData` exposes focus, scroll and rect operations, not ancestor traversal. Reproducing the gate would require a `document::eval` round-trip per control instance — asynchronous, racy against first paint, and a hydration hazard under the SSG/fullstack builds this repo's `web.yml` produces, since the server would render one tree and the client another.
+
+**Follow upstream: render unconditionally.** Four reasons:
+
+1. The conditional gate is not implementable here at acceptable cost, and upstream had already identified precisely this blocker.
+2. **Radix's own fallback is to render it.** When `control` is null and it cannot measure — during SSR — `isFormControl` defaults to `true`, with the comment *"so that events bubble to forms without JS"*. In Dioxus, "cannot measure" is the permanent condition, so unconditional rendering *is* Radix's documented behaviour for that case.
+3. The cost is negligible. The input carries `aria-hidden` and `tabindex="-1"` and is visually removed, so it is inert to assistive technology, keyboard, and layout alike. The residual risks are cosmetic — browser autofill and password-manager heuristics may notice a stray named input, and it appears in `document.querySelectorAll('input')`.
+4. It matches `Checkbox`, which is already in-tree and reviewed. Consistency inside one library beats fidelity to another library's constraint.
+
+Two things to carry over from Radix regardless: forward the **`form` attribute**, which gives users an explicit way to associate a control rendered outside its `<form>` — the deliberate escape hatch that makes the missing gate a non-issue — and forward **`required`**, which `Switch` currently drops.
+
+Revisit only if Dioxus gains ancestor awareness. That `complaints.md` entry is still open: `DioxusLabs/dioxus@main` (0.8.0-alpha.1) has no parent-traversal API, so this is a framework gap worth filing upstream rather than a decision to keep relitigating.
+
+### 2. Modal dialogs — focus trap, focus restore, inertness, top layer
+
+**Build:** native `<dialog>` + `showModal()`, per `dignifiedquire` — *if* caveat 1 clears.
+
+That single change subsumes the ports of `focus_scope.rs` (743 lines) and `aria_hidden.rs` (91), and removes the vendored `focus-trap.ts`/`.js` pair along with its generated-file trap. Nested modals — which the current `FocusTrap` cannot handle, having no `pause()`/`unpause()` — become a browser concern.
+
+If caveat 1 blocks it, fall back to: `dignifiedquire`'s `aria_hidden.rs` (marker-based so nested overlays don't unhide each other), **wired into `Dialog` and `AlertDialog`, which that fork never did**, and prefer setting `inert` over `aria-hidden` where the target browsers allow.
+
+### 3. Non-modal overlays — menus, popovers, tooltips
+
+**Build:** `popover="auto"` / `"manual"` (`dignifiedquire@top_layer.rs`, 189 lines) for top-layer rendering and light dismiss, with the same fallback requirement as caveat 2.
+
+This fixes clipping inside `overflow:hidden` and transformed ancestors — which no CSS workaround can.
+
+### 4. Focus restore for the menu family
+
+**Build:** Radix's *semantics* on `dignifiedquire`'s *shape*, corrected by our own measurement.
+
+- Behaviour: Radix's `onCloseAutoFocus` — return focus to the trigger **unless** the close came from interacting outside.
+- Shape: `dignifiedquire@lib.rs:236-254` (`use_refocus_on_close_unless`), ~15 lines, dropping onto the `trigger_id` fields this repo already has. It needs `use_previous`, which does not exist here and must be written.
+- **Correction from execution:** our oracle showed `DropdownMenu` and `Menubar` leave focus *on the item of the closed menu*, not on `<body>`. Restoring to the trigger is therefore necessary but not sufficient — focus must also be moved off the item. Neither reference handles this, because neither has this bug.
+
+### 5. Body scroll lock
+
+**Build:** `dignifiedquire@scroll_lock.rs` (58 lines) as the base — it refcounts for nested modals *and* restores the original `overflow` value, which `sarendipitee`'s does not — plus `sarendipitee`'s guard against the unlock flash when a second modal opens while the first is tearing down.
+
+Known limitation in **both**: no iOS momentum-scroll handling and no scrollbar-gap compensation. Radix delegates this to `react-remove-scroll`; we have no equivalent. Decide whether that matters before claiming the gap closed, and note that native `<dialog>` does **not** itself prevent background scrolling — this is needed regardless of item 2.
+
+### 6. Collision detection
+
+**Build:** `sarendipitee@floating.rs` (269 lines) — a thin `use_position()` hook over the external `floating-ui-dioxus`/`-dom` crates, reusing this repo's existing `ContentSide`/`ContentAlign` names, with a `#[cfg(target_family = "wasm")]` split and a native fallback that reproduces today's CSS behaviour.
+
+Prefer it over `dignifiedquire`'s in-repo port (3,292 lines + a 1,158-line `popper.rs`) for maintenance reasons, but keep that port as the contingency if the external crates stall — it additionally implements `collision_padding`, sticky behaviour, arrow and size middleware.
+
+Keep the CSS clamp already on this repo's `fix/preview-a11y-ux` branch as defence-in-depth: it costs nothing and still helps non-wasm targets. `ContextMenu` needs separate viewport clamping either way, since it is positioned at click coordinates rather than anchored.
+
+### 7. `use_animated_open`
+
+**Build:** neither patch as written.
+
+`jcgruenhage@6f0a69f0` is the correct base — it catches at the end of the chain and deliberately *declines to send*, so a stale task cannot overwrite newer state. `ziimakc@573cc1e9` (upstream PR #291) swallows per-animation rejections, which lets a stale close task set `show_in_dom = false` after a reopen: a stuck-open element becomes one that vanishes while open.
+
+Add what neither has: a **per-cycle generation counter**, so the rejection path *can* resolve when it is still the current cycle. That closes `jcgruenhage`'s residual case, where an animation cancelled with no successor leaves the element mounted.
+
+### 8. Typeahead
+
+**Build:** `dignifiedquire@typeahead.rs` (78 lines, prefix matching) for the *menu* family only — and **do not touch `select/`**, whose Levenshtein, keyboard-layout-aware matcher with a configurable timeout is better than both Radix's and the fork's. Its only dependency, `dioxus_sdk_time::sleep`, is already used in-tree.
+
+Best-of here means recognising that upstream already wins one.
+
+### 9. RTL
+
+**Build:** `dignifiedquire@direction.rs` (83 lines) as-is for the context/provider, and port only the *concept* of `direction_aware_key()` into this repo's existing `collection.rs` handlers. Do not take the 708-line `roving_focus.rs`, which would replace a collection system that is already correct.
+
+---
+
+## Testing — best of all three suites
+
+| Take | From | Why |
+|---|---|---|
+| Playwright e2e in real browsers | **This repo** | 32 specs / 122 tests, strong on keyboard (167 `keyboard.press`, 84 `toBeFocused`) — keep as the backbone |
+| Per-component axe assertions | **Radix** (`vitest-axe`) | This repo runs axe in only 3 of 32 specs; Radix does 7 calls in checkbox alone |
+| Cargo unit tests for algorithms | **This repo** | Already the right split — 10 of 40 modules, the algorithmic ones |
+| Entry-list assertions (`FormData` after submit) | **Nobody** | Radix has zero `FormData` assertions; this is genuinely new and rests on the HTML spec |
+| Tiered rules with external calibration | **New** — see [`conformance-harness.md`](./conformance-harness.md) | Every rule traceable to APG, HTML, or a labelled opinion |
+| In-process keyboard tests | `hovinen`'s `dioxus-test` branch | Optional; needs Dioxus 0.8, so not near-term |
+
+## Sequence
+
+1. **Settle caveat 1** — why upstream left `showModal()`. It gates items 2 and 3, the two highest-leverage changes.
+2. **Form participation** (item 1) — highest severity, no caveats, applies an in-tree pattern.
+3. **Scroll lock** (5) — needed regardless of how 2 resolves.
+4. **Focus restore** (4) — the oracle is already written and red.
+5. **`use_animated_open`** (7) and the other three mined fixes.
+6. **Collision detection** (6) — largest, and a dependency decision.
+7. Typeahead (8), RTL (9).
+
+Write the failing test before each, per the harness document. Nothing here has been built.
