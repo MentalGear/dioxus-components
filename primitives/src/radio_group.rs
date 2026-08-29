@@ -6,7 +6,7 @@ use crate::{
     collection::{
         collection_item, use_collection_provider_with, use_item, CollectionOptions, CollectionState,
     },
-    use_controlled, use_effect_with_cleanup,
+    use_controlled, use_effect_with_cleanup, use_form_reset_listener, use_unique_id,
 };
 use dioxus::prelude::*;
 
@@ -14,6 +14,13 @@ use dioxus::prelude::*;
 struct RadioGroupCtx {
     // State
     disabled: ReadSignal<bool>,
+    required: ReadSignal<bool>,
+    name: ReadSignal<String>,
+    /// The value the group resets to on `<form reset>`. Mirrors
+    /// `Checkbox`'s `default_checked` (it is the *prop*, not a live snapshot
+    /// of the value at mount, so it stays correct even if `default_value`
+    /// were ever changed dynamically).
+    default_value: ReadSignal<String>,
     value: Memo<String>,
     set_value: Callback<String>,
 
@@ -154,6 +161,12 @@ pub struct RadioGroupProps {
 /// - `data-disabled`: Indicates if the radio group is disabled. Values are `true` or `false`.
 #[component]
 pub fn RadioGroup(props: RadioGroupProps) -> Element {
+    // Snapshot the default before `use_controlled` consumes it -- each
+    // RadioItem's hidden radio needs it (for `initial_checked`) and the
+    // group's own form-reset listener needs it (to restore the Rust-side
+    // selection). `RadioGroupCtx` derives `Copy`, so this has to be a
+    // `Signal`, not the plain `String` the prop is.
+    let default_value = use_signal(|| props.default_value.clone());
     let (value, set_value) =
         use_controlled(props.value, props.default_value, props.on_value_change);
 
@@ -169,6 +182,9 @@ pub fn RadioGroup(props: RadioGroupProps) -> Element {
         value,
         set_value,
         disabled: props.disabled,
+        required: props.required,
+        name: props.name,
+        default_value: default_value.into(),
 
         values: Signal::new(Default::default()),
         focus,
@@ -285,6 +301,25 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
     let tab_index = item.tabindex;
     let onmounted = item.onmounted();
 
+    // Hidden native radio mirroring this item, so the group participates in
+    // HTML form submission -- see docs/plan.md Phase 1.2. Rendered
+    // unconditionally, matching Checkbox's BubbleInput: this repo's decision
+    // table (docs/recommended-implementations.md §1) follows upstream over
+    // Radix's `closest('form')` gate, which Dioxus has no cheap equivalent
+    // for. Shape ported from dignifiedquire/dx-components (MIT OR
+    // Apache-2.0), primitives/src/radio_group.rs (RadioGroupItem's hidden
+    // `input`, ~L260-273 as read from that fork's tree) -- adapted to this
+    // repo's per-item `checked` memo, the `initial_checked`/`checked` split
+    // needed for correct `<form reset>` behavior (that fork's own hidden
+    // input has the same defect as this repo's `Checkbox::BubbleInput` had;
+    // see checkbox.rs), and a `reset` listener that resyncs the Dioxus-side
+    // selection, which neither fork implements.
+    let hidden_input_id = use_unique_id();
+    use_form_reset_listener(hidden_input_id, move || {
+        ctx.set_value(ctx.default_value.cloned());
+    });
+    let is_default = use_memo(move || (ctx.default_value)() == (props.value)());
+
     rsx! {
         button {
             role: "radio",
@@ -326,6 +361,29 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
             ..props.attributes,
 
             {props.children}
+        }
+
+        input {
+            id: hidden_input_id,
+            type: "radio",
+            aria_hidden: "true",
+            tabindex: "-1",
+            position: "absolute",
+            pointer_events: "none",
+            opacity: "0",
+            margin: "0",
+            transform: "translateX(-100%)",
+
+            name: ctx.name,
+            value: (props.value)(),
+            required: ctx.required,
+            disabled: disabled(),
+            // Live sync + default, for the same reason as Checkbox's
+            // BubbleInput and Switch's hidden input (see their comments):
+            // `checked` keeps this mirror in step with the visible radio,
+            // `initial_checked` is what `<form reset>` actually restores from.
+            checked: checked(),
+            initial_checked: is_default(),
         }
     }
 }
