@@ -9,6 +9,7 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 | [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md) | Which **bug fixes** exist in forks and were never merged. Four are still live on `main`; ~11 conditional; ~45 rejected with reasons. |
 | [`capability-gaps.md`](./capability-gaps.md) | Which **capabilities** upstream is missing — form submission, focus restore, scroll lock, `aria-hidden`, collision detection, typeahead, RTL — and which fork closed each. |
 | [`lifting-from-forks.md`](./lifting-from-forks.md) | **How to port** any of it: licensing, the three lift shapes, name mapping, the traps, and per-item recipes. |
+| [`recommended-implementations.md`](./recommended-implementations.md) | **What to build** for each gap, assembled from the best part of each source rather than copying any one wholesale. |
 | [`conformance-harness.md`](./conformance-harness.md) | The **harness design**: three labelled rule tiers (APG / HTML / Radix-opinion), verified sources for each, and how each tier calibrates itself against a known-correct reference. |
 | `../playwright/oracle-focus-restore.spec.ts` | The **executable oracle**: APG conformance tests that turn a claim into a reproducible result. |
 
