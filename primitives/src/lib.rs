@@ -241,6 +241,47 @@ fn use_outside_dismiss(
     });
 }
 
+/// Listens for the native `reset` event on the `<form>` that owns the element
+/// with the given `id`, calling `on_reset` whenever the form resets.
+///
+/// The browser's own form-reset algorithm only restores a form control's own
+/// DOM state (checkedness/selectedness derived from its `defaultChecked`/
+/// `defaultSelected` content attribute) -- it has no way to know about, let
+/// alone update, this crate's own Dioxus signals. Radix's form-participation
+/// components (`Checkbox`, `RadioGroup`, `Select`, `Switch`) solve this the
+/// same way: a `reset` listener on the hidden control's owning form that
+/// pushes the component's visible/Rust state back to its default.
+///
+/// Looks up the owning form via `element.form` (present on `input`/`select`)
+/// falling back to `element.closest('form')` for elements -- like a
+/// `RadioGroup`'s container `<div>` -- that are not themselves form-associated.
+fn use_form_reset_listener(
+    id: impl Readable<Target = String> + Copy + 'static,
+    on_reset: impl FnMut() + Clone + 'static,
+) {
+    use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const el = document.getElementById(id);
+            const form = el && (el.form || el.closest('form'));
+            const listener = () => dioxus.send(true);
+            if (form) form.addEventListener('reset', listener);
+            await dioxus.recv();
+            if (form) form.removeEventListener('reset', listener);",
+        );
+        let _ = eval.send(id.cloned());
+        let mut on_reset = on_reset.clone();
+        spawn(async move {
+            while let Ok(true) = eval.recv().await {
+                on_reset();
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
 fn use_animated_open(
     id: impl Readable<Target = String> + Copy + 'static,
     open: impl Readable<Target = bool> + Copy + 'static,
