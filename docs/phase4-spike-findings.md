@@ -393,3 +393,316 @@ Rust-side synchronization at all for the pure light-dismiss case.
   case) was not separately built or tested. The dq fork's `top_layer.rs`
   covers it via the same eval-channel shape already proven for `<dialog>`
   in experiments 2-6, so the risk is judged low, but it was not run.
+
+---
+
+# Round 2 — solved by construction
+
+Same branch, same disposable spike module
+(`primitives/src/spike_native_dialog.rs`, experiments 8-9), extended
+Playwright spec (`playwright/spike-native-dialog.spec.ts`, now 24 tests
+across all `test.describe` blocks, 4 new ones added for this round). Round
+1's philosophy was "find the hazard and describe a mitigation." Round 2's
+was: for each hazard, find the actual mechanism, then make the failure
+*unrepresentable*, and prove it by execution -- not "less likely," fixed.
+
+**Headline result: round 1's central scroll-lock claim did not survive
+scrutiny. It was a test artifact, not a browser defect.** Plain
+`overflow: hidden` on `<html>`/`<body>` already fully blocks wheel,
+`PageDown`, and `Space` scrolling behind an open native modal `<dialog>` --
+zero defeat, zero jump (it never touches `scrollTop`). This changes the
+Phase 4 go/no-go picture from round 1's doc: scroll-lock's *only* real,
+confirmed defect is the (separately real, separately fixed) scrollbar-gap
+regression, not a scroll-blocking failure. See Construction A below for the
+full evidence trail and how this was found.
+
+## Construction A — the scroll-lock artifact, and the real (harder) bug underneath
+
+**Root cause of round 1's claim.** Re-instrumented experiment 6's fixture
+with precise per-step logging instead of a single before/after assertion.
+The sequence in round 1's test was:
+
+```
+scrollTo(0, 0)                                  // scrollY = 0
+locator('#...trigger').click()                  // scrollY = 2079 !!
+  <-- Playwright's actionability check scrolled the (off-screen, far down
+      the page) trigger button into view BEFORE the click fires and BEFORE
+      the dialog -- and its scroll lock -- exist at all
+wait for dialog visible                         // scrollY = 2079 (unchanged)
+assert overflow: hidden on html/body            // true (the lock is real)
+mouse.wheel(0, 800)                             // scrollY = 2079 (unchanged)
+assert scrollY > 0                              // PASSES -- but for a reason
+                                                 // that has nothing to do
+                                                 // with the wheel event
+```
+
+Confirmed directly: `scrollY` immediately after `.click()` resolves is
+already `2079`, before any wheel event fires. The subsequent
+`mouse.wheel(0, 800)` changes `scrollY` by exactly `0` in every rerun
+(`2079 -> 2079`, `0 -> 0`, `1000 -> 1000`) -- the wheel gesture never moved
+anything; `expect(scrollY).toBeGreaterThan(0)` merely happened to already
+be true from the click-triggered auto-scroll, and the test's own
+methodology (checking an absolute value, not a delta) hid this. The
+"`preventDefault()`-calling capturing listener still doesn't stop the
+scroll" observation in round 1's original narrative has the identical
+explanation: the listener fires and calls `preventDefault()` correctly,
+and `scrollY` is unchanged by the wheel -- but was already non-zero before
+it, from the same artifact, which round 1's before/after comparison did
+not isolate.
+
+**Corrected measurement** (`playwright/spike-native-dialog.spec.ts`,
+"Round 2, Construction A -- scroll-lock root cause, revisited", 4 tests):
+with the baseline scroll position actually held constant (re-zeroed *after*
+the dialog and its lock are engaged, or set to an explicit value like
+`1000` never touched by any click), wheel, `PageDown`, and `Space` are all
+completely blocked, at scrollY 0 and at a large value, and at every
+`elementFromPoint`-sampled coordinate including all four viewport corners
+(where hit-testing does resolve to the `<dialog>` element itself -- the one
+part of round 1's mechanism hypothesis that does hold, just not the part
+that explained the "defeat"). One caveat found and worked around: a
+`Space` keypress while a dialog's own Close button holds focus (which
+`showModal()` auto-focuses) legitimately *activates that button* per HTML
+semantics -- not a scroll-lock defect, but it will masquerade as one
+("scrollY changed after Space!") if the test doesn't blur first.
+
+**The real, separate bug underneath, now fixed by construction.**
+`overflow: hidden` never compensates for the vertical scrollbar's width,
+so removing it shifts layout horizontally -- on any engine with a
+non-overlay scrollbar. This repo's default headless Chromium renders
+0-width overlay scrollbars (confirmed: a genuinely 2613px-tall scrollable
+page still reports `innerWidth - documentElement.clientWidth === 0`), so
+this defect is invisible in the committed suite's normal run. Forced a
+real classic 15px scrollbar with `xvfb-run` (headed Chromium under a
+virtual X server) to make it reproducible: the *shipped* lock shifts a
+`position: fixed; right: 0` probe element by exactly 15px the instant it
+engages (see Construction C).
+
+Building the fix took two wrong attempts before landing on the
+construction that actually holds in both scrollbar regimes:
+
+1. **Wrong (round 1 of this round's own investigation): measure the gap
+   (`innerWidth - clientWidth`) and add it as `padding-right` on
+   `<body>`** -- the textbook `react-remove-scroll`-style recipe.
+   *Falsified by execution* under Xvfb: `padding-right` on `<body>` only
+   compensates normal-flow content. A `position: fixed; right: 0` element
+   (a realistic right-aligned navbar action) is positioned against the
+   *initial containing block*, whose size is set by the true viewport net
+   of the actual scrollbar and is not influenced by any element's padding.
+   The probe still shifted the full 15px, uncorrected.
+2. **Wrong in the opposite direction: `scrollbar-gutter: stable` +
+   `overflow: hidden`, toggled together only at lock time.** This does fix
+   the classic-scrollbar case -- but on a platform whose *unlocked* state
+   uses an overlay scrollbar (this repo's headless default), turning
+   `scrollbar-gutter: stable` on introduces a reservation that was never
+   there before: Chromium reserves the classic-scrollbar width for
+   `stable` regardless of whether overlay scrollbars are otherwise in use.
+   Confirmed by execution: in headless Chromium, the same probe element
+   went from flush (`right: 1280`) to newly inset (`right: 1265`) the
+   moment the transient toggle engaged -- introducing exactly the defect
+   being fixed, just on the other kind of platform.
+3. **Correct: stop treating the gutter as part of the lock/unlock
+   transition at all.** Reserve it *permanently*, once
+   (`overflow-y: auto; scrollbar-gutter: stable;` -- in a real
+   implementation a static base-stylesheet rule; done here as a one-time
+   mount effect since this is a disposable spike), and let locking only
+   toggle `overflow-y` between `auto` and `hidden`. Because
+   `scrollbar-gutter: stable`'s reservation does not depend on which
+   non-`visible` value `overflow-y` currently holds, the available width
+   is now bit-for-bit identical before, during, and after every lock
+   cycle -- there is no gap value left to compute, patch, or invert.
+   Confirmed against both regimes: Xvfb/classic-scrollbar (gap 15 -> 0 ->
+   15, probe's right edge constant at every step) and this repo's default
+   headless/overlay environment (gap 0 throughout, probe's right edge
+   still constant).
+
+The scroll-block half of the fix is the already-proven `position: fixed;
+top: -{scrollY}px` body-freeze (round 1's mitigation, now wired up with
+the gutter fix and a real save/restore cycle instead of being demonstrated
+in isolation). One more non-obvious, execution-only finding surfaced
+building this: the moment `<body>` is taken out of flow, `<html>`'s
+`scrollTop` (and therefore `window.scrollY`) is clamped to `0` by the
+browser immediately -- *before* any wheel or keyboard event -- because
+`<html>`'s scrollable extent has genuinely collapsed to zero. The visual
+position is held entirely by `top: -{scrollY}px`, not by leaving
+`scrollTop` alone. A test asserting "`scrollY` stays equal to its pre-lock
+value while locked" is therefore asserting the wrong invariant; the
+correct one (used in the committed tests) is "`scrollY` stays at whatever
+value it settled to *the instant the lock engaged*, across every
+subsequent scroll gesture," with the pre-lock value checked only once,
+after unlock, as the restore assertion.
+
+**Proof (`playwright/spike-native-dialog.spec.ts`, "Round 2, Construction A
+-- compensated (jump-free) scroll lock", 2 tests, scrollY 0 and 1600):**
+per cycle -- open (a) marker's `getBoundingClientRect().top` identical
+before and immediately after locking (no jump); (b) wheel, `PageDown`, and
+`Space` all held at the locked-in scrollY; (c) a `position: fixed;
+right: 0` probe's `.right` identical before and while locked (no
+horizontal shift); close -- `scrollY` restored to the exact pre-lock
+value, marker `.top` and probe `.right` both back to their original
+readings. All 24 suite tests green across 3 consecutive headless runs and
+one full run under Xvfb with a forced real 15px scrollbar (both the
+6-test Construction A subset and the full 24-test suite).
+
+**Honest limits.** This is a hand-rolled hook proven in one spike fixture,
+not backport-ready production code: it does not handle iOS momentum
+scroll, does not coordinate with `crate::scroll_lock`'s existing nested-
+lock refcounting (Construction C's target, `scroll_lock.rs`, already has
+that; this hook doesn't), and `scrollbar-gutter` support should be
+double-checked on the actual minimum-supported-browser list before this
+technique is ported into `scroll_lock.rs` for real (it is broadly
+supported in current Chromium/Firefox; historically absent in older
+WebKit/Safari, meaning the fixed-position half of this fix would silently
+not apply there -- Safari support was not verified in this environment,
+which only runs Chromium).
+
+## Construction B — cfg-split floor/modal separation
+
+**Root cause of the interleaving** (experiment 3c, round 1): Dioxus
+applies the declaratively-bound `open` attribute during the render pass;
+the effect that calls `showModal()` runs *after* that render commits. By
+the time the guarded driver's `if (!dialog.open) showModal()` check runs,
+the attribute has already made `dialog.open === true`, so the guard's
+condition is false and `showModal()` is skipped -- silently. No exception,
+no console warning: the dialog renders as an inert, non-modal, in-flow
+open element. The two code paths (declarative `open` binding, and a JS
+driver that also writes `open` via `showModal()`/`close()`) are not
+merely risky to combine; they race on which one gets to define "is this
+dialog open" for a given render, and the declarative one always wins that
+race because it runs first.
+
+**Construction.** Added experiment 8, `SpikeCfgSplit`
+(`primitives/src/spike_native_dialog.rs`): the component body is split
+into two `cfg`-gated free functions, `spike_cfg_split_body`, so only one
+of them exists in any given compiled artifact:
+
+```rust
+#[cfg(target_family = "wasm")]
+fn spike_cfg_split_body(...) -> Element { /* web arm: showModal()-driven,
+    `open` never bound in rsx */ }
+
+#[cfg(not(target_family = "wasm"))]
+fn spike_cfg_split_body(...) -> Element { /* native arm: `open` bound
+    declaratively, zero document::eval calls */ }
+```
+
+The web arm cannot bind `open` declaratively -- the code that would do
+that does not exist in that build. The native arm cannot call
+`showModal()` unconditionally-then-guarded -- there is no `document::eval`
+call in that arm at all. Experiment 3c's race requires both paths to be
+compiled into the same binary; here, only one ever is. The hazard isn't
+mitigated, it's absent from the artifact.
+
+**Proof.**
+- `cargo check -p dioxus-primitives --features web --target
+  wasm32-unknown-unknown` -- clean (the web arm, matching what `dx run
+  --web` actually builds).
+- `cargo check -p dioxus-primitives` (host triple,
+  `x86_64-unknown-linux-gnu`, no target flag -- this environment's default,
+  non-wasm) -- clean (the native arm).
+- `playwright/spike-native-dialog.spec.ts`, "Round 2, Construction B":
+  20 open/close cycles driven by direct DOM `.click()` calls inside a
+  single `page.evaluate`, yielding only one `requestAnimationFrame` tick
+  between clicks (no Playwright-level waits, retries, or actionability
+  checks), asserting on every cycle that `dialog.open` implies
+  `dialog.matches(':modal')`. Zero bad cycles, stable.
+
+**The cfg axis, and why `target_family = "wasm"` is the wrong one for a
+real implementation.** This spike's split is gated on `target_family =
+"wasm"` because that is the only axis this single-target environment
+(`dx run --web`, Playwright/Chromium) can actually exercise both sides
+of -- flipping the `not(wasm)` arm on and checking it with `cargo check`
+on the host triple. But the workspace's own dependency graph shows this is
+not the axis a shipped implementation should use:
+
+- `preview/Cargo.toml` and `test-harness/Cargo.toml` both define a
+  `desktop` feature as `dioxus/desktop` -- `dioxus-desktop` (checked
+  directly: `dioxus-desktop-0.7.9`'s `Cargo.toml`) has **no**
+  `target_arch`/`target_family` cfg gate of its own; it is a normal crate
+  that compiles for `windows`/`linux`/`macos`/`ios`/`android` as a native
+  (non-wasm32) binary, using a real system webview (wry/tao) as its
+  rendering engine.
+- Checked `dioxus-desktop`'s `Document::eval` impl
+  (`dioxus-desktop-0.7.9/src/document.rs`): it is a real implementation
+  that runs JS in that webview -- `showModal()` genuinely executes there,
+  exactly as it does on web.
+- Checked the *actual* Blitz-based "native" renderer,
+  `dioxus-native` (the crate backing the `native` feature both
+  `Cargo.toml`s also define): its `Document::eval`
+  (`dioxus-native-0.7.9/src/contexts.rs`) is a literal
+  `NoOpDocument.eval(js)` -- `eval` compiles and runs, but the JS is
+  never executed. This -- not "non-wasm" -- is where the declarative-floor
+  arm is actually required, because it is the only renderer where
+  `showModal()` truly cannot run.
+
+So `#[cfg(not(target_family = "wasm"))]` would put a **desktop-webview
+build on the declarative-floor (native) arm**, even though that build runs
+a real browser engine via `dioxus-desktop` and needs the exact same
+`showModal()`-driven web arm that a wasm32 build does. That silently
+reintroduces experiment 3c's hazard on desktop, the one platform this cfg
+split is supposed to have made impossible everywhere. **The right axis is
+a Cargo feature that mirrors which renderer backend is linked in --
+matching this crate's own existing `web`/`router` feature pattern (e.g.
+gate the declarative floor on the `native` feature, alongside `web`, not
+on `target_family`) -- not `target_arch`/`target_family`, which conflates
+"non-wasm binary" with "no working JS engine" and gets desktop-webview
+wrong.** This environment cannot build or run a `dioxus-desktop` target to
+verify that split directly (no desktop runtime available here), so this
+conclusion rests on reading the three `Cargo.toml`s and the two crates'
+`Document::eval` implementations cited above, not on an executed desktop
+build -- the one place in this round where the evidence is textual rather
+than a passing/failing test.
+
+## Construction C — retrofit check on the shipped `scroll_lock.rs`
+
+**Question:** does today's shipped Phase 3.2 `crate::scroll_lock` (used by
+the current non-native `Dialog`/`AlertDialog`/`Popover`) have the jump
+problem, the gap problem, or neither, independent of Phase 4?
+
+**Jump: no.** `overflow: hidden` never writes to `scrollTop`; per
+Construction A's corrected measurement, there is no scroll-position change
+to jump from in the first place.
+
+**Gap: yes, confirmed by execution -- but only visible with a real
+scrollbar, which this repo's default test environment does not have.**
+This repo's headless Chromium renders 0-width overlay scrollbars even for
+a genuinely 2613px-tall scrollable page (`innerWidth -
+documentElement.clientWidth === 0`), so the shipped lock's known
+limitation (already documented in `scroll_lock.rs`'s own module comment:
+"No ... scrollbar-gap compensation") cannot be exercised by any test that
+only runs in this environment's default configuration. Forced a real
+classic scrollbar with `xvfb-run` (Chromium headed under a virtual X
+server, no code changes, same binary) and re-ran the exact same
+production `/component/?name=dialog` demo page:
+
+| environment | natural scrollbar gap | shift on opening the real Dialog |
+|---|---|---|
+| this repo's default headless Chromium | 0px | 0px |
+| headed Chromium under `xvfb-run` (real scrollbar) | 15px | 15px |
+
+The committed test (`playwright/spike-native-dialog.spec.ts`, "Round 2,
+Construction C") asserts `shift === gapBeforeLock` rather than hardcoding
+either number, so it is meaningful evidence in whichever environment runs
+it: it stays green in this repo's normal CI-shaped run (0 == 0, honestly
+reflecting "no gap here to regress on"), and the Xvfb run above is the
+positive confirmation that the same assertion, on the same page, catches a
+real 15px regression the moment a classic scrollbar exists. Tested against
+the real Dialog demo page rather than reusing a spike fixture, deliberately
+-- Construction A's compensated-lock fixture lives on the same spike page
+as the rest of this document's experiments and sets a page-global
+`scrollbar-gutter: stable` on `<html>` for its own purposes; reusing that
+page for Construction C's measurement was tried first and found to
+silently zero out the very shift being measured (the gutter reservation
+from the unrelated fixture was already absorbing the space), which is
+itself a small illustration of why Construction A's fix must be scoped
+per-application, not per-component, when it eventually ships.
+
+**Verdict: yes, backport the scrollbar-gap fix independently of Phase
+4.** The regression is real, reproducible, and currently silent in this
+repo's own test suite only because of a headless-Chromium environment
+detail (overlay scrollbars) that will not hold on most users' actual
+machines (Windows Chrome/Firefox defaults, Linux without overlay-scrollbar
+GTK settings, and other engines all commonly render classic, space-
+reserving scrollbars). Construction A's permanent-`scrollbar-gutter`
+technique (not the falsified padding-right recipe) is the fix to port; it
+requires no Phase 4 native-`<dialog>` work to be useful, since today's
+lock already has the defect it fixes.
