@@ -36,7 +36,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
     match name {
         "button" | "input" | "textarea" | "label" | "checkbox" | "switch" | "radio_group"
         | "toggle" | "toggle_group" | "select" | "slider" | "calendar" | "date_picker"
-        | "color_picker" => ComponentCategory::Forms,
+        | "color_picker" | "form" => ComponentCategory::Forms,
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
         | "dropdown_menu" => ComponentCategory::Navigation,
         "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card" => {
@@ -187,6 +187,7 @@ examples!(
     dialog,
     drag_and_drop_list[removable],
     dropdown_menu,
+    form,
     hover_card,
     input,
     item[variant, size, image, group],

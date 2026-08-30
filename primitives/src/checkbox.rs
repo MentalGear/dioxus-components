@@ -1,6 +1,6 @@
 //! Defines the [`Checkbox`] component and its subcomponents, which manage checkbox inputs with controlled state.
 
-use crate::{use_controlled, use_unique_id};
+use crate::{use_controlled, use_form_reset_listener, use_unique_id};
 use dioxus::{document::eval, prelude::*};
 use std::ops::Not;
 use std::rc::Rc;
@@ -177,6 +177,7 @@ pub fn Checkbox(props: CheckboxProps) -> Element {
         BubbleInput {
             checked: checked,
             default_checked: props.default_checked,
+            on_reset: move |_| set_checked.call(props.default_checked),
 
             required: props.required,
             name: props.name,
@@ -242,9 +243,18 @@ pub fn CheckboxIndicator(
 fn BubbleInput(
     checked: ReadSignal<CheckboxState>,
     default_checked: CheckboxState,
+    /// Called when the owning `<form>` fires a native `reset` event, so the
+    /// component's own (Dioxus-side) checked state can resync -- the browser
+    /// reset algorithm only restores this input's own `checked`
+    /// IDL property from its `checked` content attribute (see
+    /// `initial_checked` below); it never touches [`Checkbox`]'s signal.
+    #[props(default)]
+    on_reset: Callback<()>,
     #[props(extends = input)] attributes: Vec<Attribute>,
 ) -> Element {
     let id = use_unique_id();
+
+    use_form_reset_listener(id, move || on_reset.call(()));
 
     // Update the actual input state to match our virtual state.
     use_effect(move || {
@@ -288,8 +298,14 @@ fn BubbleInput(
             margin: "0",
             transform: "translateX(-100%)",
 
-            // Default checked
-            checked: default_checked != CheckboxState::Unchecked,
+            // Default checked -- `initial_checked` (-> `.defaultChecked`, the
+            // `checked` *content attribute*), not `checked` (-> the live
+            // `.checked` IDL property; see dioxus-interpreter-js's
+            // `set_attribute.ts`). The HTML reset algorithm restores
+            // checkedness from the content attribute, so this is the one that
+            // must carry the default for `<form reset>` to work; the live
+            // property is kept in sync separately by the `use_effect` above.
+            initial_checked: default_checked != CheckboxState::Unchecked,
 
             ..attributes,
         }

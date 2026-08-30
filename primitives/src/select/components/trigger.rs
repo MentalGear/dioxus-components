@@ -70,6 +70,7 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
 
     rsx! {
         button {
+            id: ctx.selectable.trigger_id,
             // Standard HTML attributes
             disabled: (ctx.selectable.disabled)(),
             type: "button",
@@ -103,6 +104,13 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
             aria_haspopup: "listbox",
             aria_expanded: open(),
             aria_controls: ctx.selectable.list_id,
+            // NOTE: aria-required is deliberately NOT set here — it is not a
+            // supported property on an (implicit) button role, and axe flags
+            // it. Requiredness is enforced by the hidden native
+            // <select required> mirror; exposing it to AT properly means
+            // adopting the APG select-only-combobox trigger role
+            // (role="combobox"), which is a larger semantic change tracked as
+            // follow-up work.
 
             // Pass through other attributes
             ..props.attributes,

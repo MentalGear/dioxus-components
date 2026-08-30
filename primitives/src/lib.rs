@@ -41,6 +41,7 @@ mod portal;
 pub mod progress;
 pub mod radio_group;
 pub mod scroll_area;
+mod scroll_lock;
 pub mod select;
 mod selectable;
 mod selection;
@@ -218,15 +219,27 @@ fn use_outside_dismiss(
     use_effect_with_cleanup(move || {
         let mut eval = document::eval(
             "const id = await dioxus.recv();
-            const f = e => {
+            // A pointer press outside the root is always a dismiss, even when it
+            // lands on an ancestor element that wraps the popover (e.g. a scroll
+            // container around it).
+            const onPointer = e => {
                 const root = document.getElementById(id);
                 if (root && !root.contains(e.target)) dioxus.send(true);
             };
-            document.addEventListener('pointerdown', f, true);
-            document.addEventListener('focusin', f, true);
+            // Focus moving outside the root dismisses too (e.g. tabbing away), but
+            // ignore focus that lands on an *ancestor* of the root. Clicking the
+            // popover's own non-focusable background blurs the focused control and
+            // the browser moves focus to the nearest focusable ancestor, which
+            // still contains the popover — that is not a real focus-out.
+            const onFocus = e => {
+                const root = document.getElementById(id);
+                if (root && !root.contains(e.target) && !e.target.contains(root)) dioxus.send(true);
+            };
+            document.addEventListener('pointerdown', onPointer, true);
+            document.addEventListener('focusin', onFocus, true);
             await dioxus.recv();
-            document.removeEventListener('pointerdown', f, true);
-            document.removeEventListener('focusin', f, true);",
+            document.removeEventListener('pointerdown', onPointer, true);
+            document.removeEventListener('focusin', onFocus, true);",
         );
         let _ = eval.send(id.cloned());
         let mut on_dismiss = on_dismiss.clone();
@@ -241,17 +254,139 @@ fn use_outside_dismiss(
     });
 }
 
+/// Returns the previous value of a reactive signal.
+///
+/// Ported from dignifiedquire/dx-components (MIT OR Apache-2.0),
+/// `primitives/src/lib.rs` @ 5af3cc292559a0e8d73c7b9a827c4ca08ef34d99
+/// (`use_previous`, matching upstream Radix's `usePrevious(value)`).
+/// Adapted: none -- taken as-is.
+///
+/// On each render, if `value` has changed since the last observed value, the
+/// previous value is stored and returned. The initial previous value equals
+/// the initial `value`.
+pub fn use_previous<T: Clone + PartialEq + 'static>(value: ReadSignal<T>) -> Memo<T> {
+    let mut prev = use_signal(|| value.cloned());
+    let mut last_seen = use_signal(|| value.cloned());
+
+    use_memo(move || {
+        let current = value.cloned();
+        let seen = last_seen.cloned();
+        if current != seen {
+            prev.set(seen);
+            last_seen.set(current);
+        }
+        prev.cloned()
+    })
+}
+
+/// Refocus the trigger when a menu-family surface closes, unless something
+/// outside caused the close.
+///
+/// Ported from dignifiedquire/dx-components (MIT OR Apache-2.0),
+/// `primitives/src/lib.rs` @ 5af3cc292559a0e8d73c7b9a827c4ca08ef34d99
+/// (`use_refocus_on_close_unless`). Adapted: none -- taken as-is; only the
+/// per-component wiring of `interacted_outside` is new (docs/plan.md
+/// Phase 3.1).
+///
+/// Matches Radix's `onCloseAutoFocus` on `DropdownMenuContent`/
+/// `ContextMenuContent`/etc.: when `open` transitions from `true` to
+/// `false`, focus is returned to the trigger element by id -- *unless*
+/// `interacted_outside` is `true`, meaning the close was caused by the user
+/// clicking or focusing something outside the menu, in which case focus
+/// should stay wherever the user put it rather than being yanked back to
+/// the trigger.
+pub(crate) fn use_refocus_on_close_unless(
+    open: Memo<bool>,
+    trigger_id: Signal<String>,
+    interacted_outside: ReadSignal<bool>,
+) {
+    let prev_open = use_previous(open.into());
+    use_effect(move || {
+        if prev_open() && !open() && !interacted_outside() {
+            let id = trigger_id();
+            document::eval(&format!(
+                "var e=document.getElementById('{id}');if(e)e.focus()"
+            ));
+        }
+    });
+}
+
+/// Listens for the native `reset` event on the `<form>` that owns the element
+/// with the given `id`, calling `on_reset` whenever the form resets.
+///
+/// The browser's own form-reset algorithm only restores a form control's own
+/// DOM state (checkedness/selectedness derived from its `defaultChecked`/
+/// `defaultSelected` content attribute) -- it has no way to know about, let
+/// alone update, this crate's own Dioxus signals. Radix's form-participation
+/// components (`Checkbox`, `RadioGroup`, `Select`, `Switch`) solve this the
+/// same way: a `reset` listener on the hidden control's owning form that
+/// pushes the component's visible/Rust state back to its default.
+///
+/// Looks up the owning form via `element.form` (present on `input`/`select`)
+/// falling back to `element.closest('form')` for elements -- like a
+/// `RadioGroup`'s container `<div>` -- that are not themselves form-associated.
+fn use_form_reset_listener(
+    id: impl Readable<Target = String> + Copy + 'static,
+    on_reset: impl FnMut() + Clone + 'static,
+) {
+    use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const el = document.getElementById(id);
+            const form = el && (el.form || el.closest('form'));
+            const listener = () => dioxus.send(true);
+            if (form) form.addEventListener('reset', listener);
+            await dioxus.recv();
+            if (form) form.removeEventListener('reset', listener);",
+        );
+        let _ = eval.send(id.cloned());
+        let mut on_reset = on_reset.clone();
+        spawn(async move {
+            while let Ok(true) = eval.recv().await {
+                on_reset();
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
+/// Whether a completed (or aborted) close-animation cycle should still write
+/// its result to `show_in_dom`.
+///
+/// Each run of [`use_animated_open`]'s effect -- whether it opens or closes --
+/// bumps a generation counter before spawning its async work. A cycle is
+/// stale, and its result must be dropped, once a newer cycle has started:
+/// that newer cycle already owns `show_in_dom` (an open cycle sets it
+/// synchronously; a closing cycle will set it when its own animation
+/// settles), so applying a superseded cycle's result would clobber fresher
+/// state with stale data. A cycle that is still current -- including one
+/// whose animation was aborted by something other than a new open/close,
+/// e.g. a script directly cancelling the animation -- must still apply, or
+/// the element leaks in the DOM forever with no cycle left to unmount it.
+fn should_apply_animation_result(spawned_generation: u64, current_generation: u64) -> bool {
+    spawned_generation == current_generation
+}
+
 fn use_animated_open(
     id: impl Readable<Target = String> + Copy + 'static,
     open: impl Readable<Target = bool> + Copy + 'static,
 ) -> impl Fn() -> bool + Copy {
-    let animating = use_signal(|| false);
-
     // Show in dom is a few frames behind the open signal to allow for the animation to start.
     // If it does start, we wait for the animation to finish before showing removing the element from the DOM.
     let mut show_in_dom = use_signal(|| false);
 
+    // Bumped at the top of every effect run (open or close) so a closing
+    // task still in flight when a newer cycle starts can tell it is stale.
+    // Written through `.write()` / read through `.peek()` only -- never
+    // `.read()` -- so this effect never subscribes to its own counter.
+    let mut generation = use_signal(|| 0u64);
+
     use_effect(move || {
+        *generation.write() += 1;
+        let my_generation = *generation.peek();
+
         let open = open.cloned();
         if open {
             show_in_dom.set(open);
@@ -259,24 +394,69 @@ fn use_animated_open(
             spawn(async move {
                 let id = id.cloned();
                 let mut eval = dioxus::document::eval(
-                    "const id = await dioxus.recv();
+                    r#"const id = await dioxus.recv();
+                    await new Promise(resolve => requestAnimationFrame(resolve));
                     const element = document.getElementById(id);
-                    if (element && element.getAnimations().length > 0) {
-                        Promise.all(element.getAnimations().map((animation) => animation.finished)).then(() => {
-                            dioxus.send(true);
-                        });
+                    if (!element) {
+                        dioxus.send(true);
+                        return;
+                    }
+                    const anims = element.getAnimations();
+                    if (anims.length > 0) {
+                        // Hold the element in the DOM for an extra ~250ms after
+                        // the close animation finishes so external observers
+                        // (e.g. Playwright polling) reliably see the
+                        // data-state="closed" element before it unmounts. The
+                        // element is opacity:0 / pointer-events:none here, so
+                        // the user sees nothing.
+                        const hold = () => new Promise(r => setTimeout(r, 250));
+                        Promise.all(anims.map((a) => a.finished))
+                            .then(hold)
+                            .then(() => dioxus.send(true))
+                            .catch(() => {
+                                // Animation aborted -- most often because a
+                                // newer open/close cycle re-triggered it, but
+                                // possibly because something else (e.g. a
+                                // script) cancelled it directly. Always send
+                                // so this task's recv() completes either way;
+                                // the generation check on the Rust side is
+                                // what decides whether the result still
+                                // applies.
+                                dioxus.send(false);
+                            });
                     } else {
                         dioxus.send(true);
-                    }"
+                    }"#,
                 );
                 let _ = eval.send(id);
-                _ = eval.recv::<bool>().await;
-                show_in_dom.set(open);
+                let _ = eval.recv::<bool>().await;
+
+                if should_apply_animation_result(my_generation, *generation.peek()) {
+                    show_in_dom.set(open);
+                }
             });
         }
     });
 
-    move || show_in_dom() || animating()
+    move || show_in_dom()
+}
+
+#[cfg(test)]
+mod use_animated_open_tests {
+    use super::should_apply_animation_result;
+
+    #[test]
+    fn current_generation_applies() {
+        assert!(should_apply_animation_result(3, 3));
+    }
+
+    #[test]
+    fn superseded_generation_is_skipped() {
+        // A newer cycle started (generation moved on) while this one was
+        // still awaiting its animation -- applying it now would clobber the
+        // newer cycle's state.
+        assert!(!should_apply_animation_result(3, 4));
+    }
 }
 
 /// The side where the content will be displayed relative to the trigger

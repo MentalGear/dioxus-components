@@ -1,6 +1,6 @@
 //! Defines the [`Switch`] component and its sub-components.
 
-use crate::use_controlled;
+use crate::{use_controlled, use_form_reset_listener, use_unique_id};
 use dioxus::prelude::*;
 use std::rc::Rc;
 
@@ -77,6 +77,12 @@ pub fn Switch(props: SwitchProps) -> Element {
         props.on_checked_change,
     );
 
+    // The hidden mirror <input> needs a stable id so the form-reset listener
+    // below can find it (and, through it, its owning form) in the DOM.
+    let hidden_input_id = use_unique_id();
+    let default_checked = props.default_checked;
+    use_form_reset_listener(hidden_input_id, move || set_checked.call(default_checked));
+
     // Safari and Firefox on macOS do not focus <button> on click by default
     // (matches the macOS "Press Tab to highlight items" preference). Capture
     // a mounted ref so we can explicitly focus on click, matching what
@@ -119,12 +125,21 @@ pub fn Switch(props: SwitchProps) -> Element {
 
         // Hidden input for form submission
         input {
+            id: hidden_input_id,
             type: "checkbox",
             aria_hidden: true,
             tabindex: -1,
             name: props.name,
             value: props.value,
+            required: props.required,
+            // Live sync (-> `.checked` IDL property) and default (->
+            // `.defaultChecked`/the `checked` content attribute) are both
+            // needed: the former keeps this mirror in step with the visible
+            // switch, the latter is what the HTML reset algorithm reads, so
+            // omitting it would repeat Checkbox's BubbleInput reset defect
+            // (see primitives/src/checkbox.rs).
             checked,
+            initial_checked: props.default_checked,
             disabled: props.disabled,
             style: "transform: translateX(-100%); position: absolute; pointer-events: none; opacity: 0; margin: 0; width: 0; height: 0;",
         }

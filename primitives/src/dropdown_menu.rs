@@ -21,6 +21,16 @@ struct DropdownMenuContext {
 
     // Unique ID for the trigger button
     trigger_id: Signal<String>,
+
+    // Whether the open menu should lock page scrolling. See
+    // docs/plan.md Phase 3.2.
+    modal: ReadSignal<bool>,
+
+    // Set just before a close caused by something *outside* the menu
+    // (trigger/item blur), so `use_refocus_on_close_unless` (lib.rs) knows
+    // not to yank focus back to the trigger for those closes. Reset to
+    // `false` whenever the menu opens. See docs/plan.md Phase 3.1.
+    interacted_outside: Signal<bool>,
 }
 
 /// The props for the [`DropdownMenu`] component
@@ -40,6 +50,11 @@ pub struct DropdownMenuProps {
     /// Whether the dropdown menu is disabled. If true, the menu will not open and items will not be selectable.
     #[props(default)]
     pub disabled: ReadSignal<bool>,
+
+    /// Whether the open menu should lock page scrolling, matching Radix's
+    /// default. See docs/plan.md Phase 3.2.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub modal: ReadSignal<bool>,
 
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
@@ -103,6 +118,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
 
     let disabled = props.disabled;
     let trigger_id = use_unique_id();
+    let interacted_outside = use_signal(|| false);
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| DropdownMenuContext {
         open,
@@ -110,6 +126,8 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         disabled,
         focus,
         trigger_id,
+        modal: props.modal,
+        interacted_outside,
     });
 
     use_effect(move || {
@@ -118,6 +136,26 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
             (ctx.set_open)(focused);
         }
     });
+
+    // A fresh open shouldn't inherit an `interacted_outside` flag set by a
+    // previous close -- otherwise an internal close (Escape, item select)
+    // right after an outside-dismiss would wrongly skip refocusing the
+    // trigger.
+    use_effect(move || {
+        if (ctx.open)() {
+            ctx.interacted_outside.set(false);
+        }
+    });
+
+    // APG menu-button: "Escape: Closes the menu and sets focus to the menu
+    // button." Radix's `onCloseAutoFocus` skips the refocus when the close
+    // was caused by interacting outside the menu (see `interacted_outside`
+    // wiring on the trigger/item `onblur` handlers below).
+    crate::use_refocus_on_close_unless(
+        ctx.open,
+        ctx.trigger_id,
+        ReadSignal::new(ctx.interacted_outside),
+    );
 
     // Handle escape key to close the menu
     let handle_keydown = move |event: Event<KeyboardData>| {
@@ -254,6 +292,7 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
         },
         onblur: move |_| {
             if !ctx.focus.any_focused() {
+                ctx.interacted_outside.set(true);
                 ctx.focus.clear_focus();
                 ctx.set_open.call(false);
             }
@@ -338,6 +377,16 @@ pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
     let id = use_id_or(unique_id, props.id);
     let render = use_animated_open(id, ctx.open);
 
+    // Lock page scroll while the menu is open and modal, matching Radix's
+    // default. See docs/plan.md Phase 3.2. `DropdownMenuContent` itself
+    // never unmounts (only the `div` below does, via `render()`), so the
+    // lock is held by `ScrollLockGuard` -- a child mounted inside that same
+    // conditional -- rather than by this component directly; see that
+    // guard's doc comment.
+    let modal = ctx.modal;
+    let open = ctx.open;
+    let scroll_lock_active = use_memo(move || modal() && open());
+
     rsx! {
         if render() {
             div {
@@ -354,6 +403,7 @@ pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
                     event.stop_propagation();
                 },
                 ..props.attributes,
+                crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
                 {props.children}
             }
         }
@@ -469,6 +519,7 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
 
             onblur: move |_| {
                 if focused() {
+                    ctx.interacted_outside.set(true);
                     ctx.focus.clear_focus();
                 }
             },

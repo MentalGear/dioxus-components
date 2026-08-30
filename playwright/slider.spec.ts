@@ -326,3 +326,35 @@ test('range collided thumbs drag left from just below collision', async ({ page 
   await expect(t0).toHaveAttribute('aria-valuenow', '70');
   await expect(t1).toHaveAttribute('aria-valuenow', '80');
 });
+
+test('range dragged thumb keeps its identity past the other thumb', async ({ page }) => {
+  // Regression for the collision leapfrog bug: set_thumb sorted the pair via
+  // ordered_range, so dragging thumb 0 past thumb 1 silently reassigned which
+  // thumb was "start" and which was "end" -- the thumb under the user's
+  // pointer swapped identity mid-drag and the untouched thumb visibly jumped.
+  await page.goto('http://127.0.0.1:8080/component/block?name=slider&variant=range&', { timeout: 20 * 60 * 1000 });
+  const thumbs = page.getByRole('slider', { name: 'Range Slider' });
+  const t0 = thumbs.nth(0);
+  const t1 = thumbs.nth(1);
+  const slider = sliderGroup(page, 'Range Slider');
+  const track = sliderTrack(slider);
+
+  await expect(t0).toHaveAttribute('aria-valuenow', '20');
+  await expect(t1).toHaveAttribute('aria-valuenow', '80');
+
+  // Continuous drag of thumb 0, starting at its own position (20%) and moving
+  // well past thumb 1's position (80%) to 95% -- a single uninterrupted drag,
+  // not a fresh pointerdown, so the drag stays bound to thumb index 0
+  // throughout.
+  const start = await sliderTrackPoint(track, 0.2);
+  const end = await sliderTrackPoint(track, 0.95);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 10 });
+  await page.mouse.up();
+
+  // Thumb 0 must clamp at thumb 1's value (80) and stop there -- it must not
+  // keep going past it. Thumb 1, never touched, must stay exactly at 80.
+  await expect(t0).toHaveAttribute('aria-valuenow', '80');
+  await expect(t1).toHaveAttribute('aria-valuenow', '80');
+});
