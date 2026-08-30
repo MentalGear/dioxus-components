@@ -184,6 +184,8 @@ Maintain a table as things land, so the next person can tell ported code from or
 | 2026-08-29 | `use_outside_dismiss` split pointerdown/focusin handlers | A | `sarendipitee@f63ee07e`, **`lib.rs` hunk only** — the commit's `PopoverTrigger` button→div rewrite + `PopoverOpenTrigger` were dropped as scope creep / a11y regression | `7668256` | `popover.spec.ts` non-focusable-inside-click, red→green demonstrated; dialog + context-menu suites re-run green |
 | 2026-08-29 | `use_animated_open` rAF + 250 ms hold on close | A | `jcgruenhage@6f0a69f0`, cherry-picked, author kept | `3a61900` | `combobox.spec.ts` full suite green |
 | 2026-08-29 | `use_animated_open` generation counter (stale-cycle gate + cancelled-animation unmount) | original | neither fork has it — see `adopt-fork-fixes-results.md` §5 | `56d4236` | cancel-mid-close leak test: red on `3a61900` alone, green with counter |
+| 2026-08-30 | `use_previous` + `use_refocus_on_close_unless`, wired into DropdownMenu/ContextMenu/Select via `interacted_outside`; Menubar via collection `clear_focus`+`set_focus` | B + C | `dignifiedquire/dx-components` `lib.rs:241-255` | `5af3cc2` | `oracle-focus-restore.spec.ts`, 4 red → 5/5 green, spec unmodified |
+| 2026-08-30 | `scroll_lock.rs` + 5 call sites + `modal` prop on the two menus + `ScrollLockGuard` | B, adapted (Rust-side refcount; `documentElement` lock; per-instance release) | `dignifiedquire/dx-components` `scroll_lock.rs`; unlock-flash guard concept from `sarendipitee` `overlay.rs` | `5af3cc2` | `oracle/tier3-radix/scroll-lock.spec.ts`, 6 red → 6/6 green |
 
 ## 9. Upstreaming
 
