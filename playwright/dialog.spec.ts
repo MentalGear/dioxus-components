@@ -6,10 +6,18 @@ test('test', async ({ page }) => {
   // Assert the dialog is open
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  // Assert the close button is focused
-  const closeButton = dialog.getByRole('button');
+  // Assert the close button is focused. Scoped by name -- the dialog demo
+  // also has an "Open Nested Dialog" button (see
+  // playwright/oracle/tier3-radix/scroll-lock.spec.ts) so an unscoped
+  // getByRole('button') would match more than one element here.
+  const closeButton = dialog.getByRole('button', { name: 'Close' });
   await expect(closeButton).toBeFocused();
-  // Hitting tab should keep focus on the close button
+  // The dialog demo now also has an "Open Nested Dialog" button (see
+  // playwright/oracle/tier3-radix/scroll-lock.spec.ts), so the focus trap's
+  // tab cycle has two stops: Tab moves off the close button, and a second
+  // Tab wraps back around to it.
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Open Nested Dialog' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(closeButton).toBeFocused();
   // Hitting escape should close the dialog
