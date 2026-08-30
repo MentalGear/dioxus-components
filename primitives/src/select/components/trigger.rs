@@ -70,6 +70,7 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
 
     rsx! {
         button {
+            id: ctx.selectable.trigger_id,
             // Standard HTML attributes
             disabled: (ctx.selectable.disabled)(),
             type: "button",

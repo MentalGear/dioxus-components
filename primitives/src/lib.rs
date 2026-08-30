@@ -41,6 +41,7 @@ mod portal;
 pub mod progress;
 pub mod radio_group;
 pub mod scroll_area;
+mod scroll_lock;
 pub mod select;
 mod selectable;
 mod selection;
@@ -249,6 +250,63 @@ fn use_outside_dismiss(
         });
         move || {
             let _ = eval.send(true);
+        }
+    });
+}
+
+/// Returns the previous value of a reactive signal.
+///
+/// Ported from dignifiedquire/dx-components (MIT OR Apache-2.0),
+/// `primitives/src/lib.rs` @ 5af3cc292559a0e8d73c7b9a827c4ca08ef34d99
+/// (`use_previous`, matching upstream Radix's `usePrevious(value)`).
+/// Adapted: none -- taken as-is.
+///
+/// On each render, if `value` has changed since the last observed value, the
+/// previous value is stored and returned. The initial previous value equals
+/// the initial `value`.
+pub fn use_previous<T: Clone + PartialEq + 'static>(value: ReadSignal<T>) -> Memo<T> {
+    let mut prev = use_signal(|| value.cloned());
+    let mut last_seen = use_signal(|| value.cloned());
+
+    use_memo(move || {
+        let current = value.cloned();
+        let seen = last_seen.cloned();
+        if current != seen {
+            prev.set(seen);
+            last_seen.set(current);
+        }
+        prev.cloned()
+    })
+}
+
+/// Refocus the trigger when a menu-family surface closes, unless something
+/// outside caused the close.
+///
+/// Ported from dignifiedquire/dx-components (MIT OR Apache-2.0),
+/// `primitives/src/lib.rs` @ 5af3cc292559a0e8d73c7b9a827c4ca08ef34d99
+/// (`use_refocus_on_close_unless`). Adapted: none -- taken as-is; only the
+/// per-component wiring of `interacted_outside` is new (docs/plan.md
+/// Phase 3.1).
+///
+/// Matches Radix's `onCloseAutoFocus` on `DropdownMenuContent`/
+/// `ContextMenuContent`/etc.: when `open` transitions from `true` to
+/// `false`, focus is returned to the trigger element by id -- *unless*
+/// `interacted_outside` is `true`, meaning the close was caused by the user
+/// clicking or focusing something outside the menu, in which case focus
+/// should stay wherever the user put it rather than being yanked back to
+/// the trigger.
+pub(crate) fn use_refocus_on_close_unless(
+    open: Memo<bool>,
+    trigger_id: Signal<String>,
+    interacted_outside: ReadSignal<bool>,
+) {
+    let prev_open = use_previous(open.into());
+    use_effect(move || {
+        if prev_open() && !open() && !interacted_outside() {
+            let id = trigger_id();
+            document::eval(&format!(
+                "var e=document.getElementById('{id}');if(e)e.focus()"
+            ));
         }
     });
 }

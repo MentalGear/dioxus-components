@@ -162,6 +162,7 @@ pub fn SelectList(props: SelectListProps) -> Element {
                 onkeydown,
                 onblur: move |_| {
                     if focused() {
+                        ctx.selectable.interacted_outside.set(true);
                         ctx.set_open(false);
                     }
                 },

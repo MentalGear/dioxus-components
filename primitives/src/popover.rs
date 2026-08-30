@@ -275,6 +275,12 @@ pub fn PopoverContentRendered(
     let open = ctx.open;
     let is_open = open();
     let set_open = ctx.set_open;
+    let is_modal = ctx.is_modal;
+
+    // Lock page scroll while the popover is open and modal. See
+    // docs/plan.md Phase 3.2.
+    let scroll_lock_active = use_memo(move || is_modal() && open());
+    crate::scroll_lock::use_scroll_lock(scroll_lock_active);
 
     // Add a escape key listener to the document when the popover is open. We can't
     // just add this to the popover itself because it might not be focused if the user

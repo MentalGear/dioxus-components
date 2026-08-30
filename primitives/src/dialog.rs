@@ -228,6 +228,12 @@ pub fn DialogContent(props: DialogContentProps) -> Element {
     let gen_id = use_unique_id();
     let id = use_id_or(gen_id, props.id);
 
+    // Lock page scroll while the dialog is open and modal -- native
+    // `<dialog>`/focus-trap semantics don't cover this. See
+    // docs/plan.md Phase 3.2.
+    let scroll_lock_active = use_memo(move || is_modal() && open());
+    crate::scroll_lock::use_scroll_lock(scroll_lock_active);
+
     use_outside_dismiss(id, move || set_open.call(false));
     use_effect(move || {
         let is_modal = is_modal();

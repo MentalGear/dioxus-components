@@ -283,7 +283,22 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
                     Key::Enter if !disabled() => {
                         ctx.set_open_menu.call((!is_open()).then(&*props.index));
                     }
-                    Key::Escape => ctx.set_open_menu.call(None),
+                    Key::Escape => {
+                        ctx.set_open_menu.call(None);
+                        // APG menubar: "Escape: ... sets focus to the
+                        // menubar." Use the existing collection-focus
+                        // mechanism (not the shared refocus-on-close hook --
+                        // see docs/plan.md Phase 3.1) to move focus back to
+                        // this menu's own trigger item. `ctx.focus` never
+                        // stopped being this trigger's own index while
+                        // keyboard focus roamed *within* the open submenu
+                        // (`menu_ctx.focus` tracks that separately), so
+                        // `set_focus` alone would be a same-value no-op that
+                        // never re-runs `control_mount_focus` -- clear first
+                        // to force a real transition.
+                        ctx.focus.clear_focus();
+                        ctx.focus.set_focus(Some(props.index.cloned()));
+                    }
                     Key::ArrowLeft => ctx.focus.focus_prev(),
                     Key::ArrowRight => ctx.focus.focus_next(),
                     Key::ArrowDown if !disabled() => {
@@ -651,6 +666,15 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
                     if !disabled() {
                         props.on_select.call(value.clone());
                         ctx.set_open_menu.call(None);
+                        // APG menubar close-focus rule, via the collection's
+                        // own focus mechanism -- see docs/plan.md Phase 3.1
+                        // and the matching Escape case in `MenubarMenu`.
+                        // `ctx.focus` never actually left this trigger's
+                        // index while item-level keyboard focus roamed the
+                        // (separate) submenu collection, so `set_focus`
+                        // alone would be a same-value no-op -- clear first.
+                        ctx.focus.clear_focus();
+                        ctx.focus.set_focus(Some(menu_ctx.index.cloned()));
                     }
                 }
             },
@@ -662,6 +686,10 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
                         if !disabled() {
                             props.on_select.call(value.clone());
                             ctx.set_open_menu.call(None);
+                            // See the matching comment on the `onpointerdown`
+                            // handler above.
+                            ctx.focus.clear_focus();
+                            ctx.focus.set_focus(Some(menu_ctx.index.cloned()));
                         }
                         event.prevent_default();
                         event.stop_propagation();

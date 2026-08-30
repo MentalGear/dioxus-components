@@ -130,9 +130,6 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
 /// the function stays under clippy's argument-count lint.
 struct SelectRootConfig {
     typeahead_timeout: ReadSignal<Duration>,
-    /// Whether a selection is required for form submission. See
-    /// [`SelectProps::required`].
-    required: ReadSignal<bool>,
 }
 
 /// Sets up the shared signals, focus, and context that both [`Select`] and
@@ -146,10 +143,7 @@ fn use_select_root(
     open: Controlled<bool>,
     config: SelectRootConfig,
 ) -> (SelectContext, Memo<bool>) {
-    let SelectRootConfig {
-        typeahead_timeout,
-        required,
-    } = config;
+    let SelectRootConfig { typeahead_timeout } = config;
     let selectable = use_selectable_root(
         values,
         set_value,
@@ -178,7 +172,6 @@ fn use_select_root(
         typeahead_buffer,
         typeahead_clear_task,
         typeahead_timeout,
-        required,
     });
 
     (ctx, open)
@@ -261,8 +254,18 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
         },
         SelectRootConfig {
             typeahead_timeout: props.typeahead_timeout,
-            required: props.required,
         },
+    );
+
+    // APG combobox: "Escape ... sets focus on the combobox" -- unless the
+    // close was caused by focus leaving the listbox for something outside
+    // it, in which case focus should stay where the user put it. See
+    // docs/plan.md Phase 3.1; `SelectTrigger` and `SelectList` set/thread
+    // `trigger_id`/`interacted_outside` on `SelectableContext`.
+    crate::use_refocus_on_close_unless(
+        open,
+        ctx.selectable.trigger_id,
+        ReadSignal::new(ctx.selectable.interacted_outside),
     );
 
     let options = ctx.selectable.options;
@@ -436,7 +439,6 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
         },
         SelectRootConfig {
             typeahead_timeout: props.typeahead_timeout,
-            required: ReadSignal::new(Signal::new(false)),
         },
     );
 

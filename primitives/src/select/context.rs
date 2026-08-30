@@ -22,10 +22,6 @@ pub(super) struct SelectContext {
     pub typeahead_clear_task: Signal<Option<Task>>,
     /// Timeout before clearing typeahead buffer
     pub typeahead_timeout: ReadSignal<Duration>,
-    /// Whether a selection is required for form submission. Forwarded to the
-    /// hidden native `<select>` (`select.rs`) and, for a11y completeness, to
-    /// [`super::components::SelectTrigger`]'s `aria-required`.
-    pub required: ReadSignal<bool>,
 }
 
 impl SelectContext {

@@ -185,6 +185,11 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
 
     let gen_id = use_unique_id();
     let id = use_id_or(gen_id, props.id);
+
+    // An alert dialog is always modal, so lock page scroll for as long as
+    // it's open. See docs/plan.md Phase 3.2.
+    crate::scroll_lock::use_scroll_lock(open);
+
     use_effect(move || {
         let eval = document::eval(
             r#"let id = await dioxus.recv();

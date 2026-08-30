@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use crate::{
     collection::{use_collection_provider, CollectionState},
     listbox::{use_listbox_option, ListboxOptionContext},
-    selection, use_controlled, Controlled,
+    selection, use_controlled, use_unique_id, Controlled,
 };
 
 pub(crate) use crate::selection::{OptionState, RcPartialEqValue};
@@ -43,6 +43,16 @@ pub(crate) struct SelectableContext {
     pub(crate) collection: CollectionState,
     pub(crate) initial_focus: Signal<Option<usize>>,
     pub(crate) disabled: ReadSignal<bool>,
+
+    /// Id of the trigger button, for `use_refocus_on_close_unless` (lib.rs)
+    /// to return focus to on close. See docs/plan.md Phase 3.1.
+    pub(crate) trigger_id: Signal<String>,
+
+    /// Set just before a close caused by focus leaving the listbox (see the
+    /// `onblur` handler in `SelectList`), so the refocus hook knows to leave
+    /// focus where the user put it instead of yanking it back to the
+    /// trigger. Reset to `false` whenever the popup opens.
+    pub(crate) interacted_outside: Signal<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -225,6 +235,16 @@ pub(crate) fn use_selectable_root(
     let list_id = use_signal(|| None);
     let collection = use_collection_provider(roving_loop);
     let initial_focus = use_signal(|| None);
+    let trigger_id = use_unique_id();
+    let mut interacted_outside = use_signal(|| false);
+
+    // A fresh open shouldn't inherit an `interacted_outside` flag left over
+    // from a previous close (see docs/plan.md Phase 3.1).
+    use_effect(move || {
+        if open() {
+            interacted_outside.set(false);
+        }
+    });
 
     SelectableContext {
         open,
@@ -237,6 +257,8 @@ pub(crate) fn use_selectable_root(
         collection,
         initial_focus,
         disabled,
+        trigger_id,
+        interacted_outside,
     }
 }
 

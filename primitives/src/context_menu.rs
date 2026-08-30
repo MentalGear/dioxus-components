@@ -40,6 +40,10 @@ struct ContextMenuCtx {
     set_open: Callback<bool>,
     disabled: ReadSignal<bool>,
 
+    // Whether the open menu should lock page scrolling. See
+    // docs/plan.md Phase 3.2.
+    modal: ReadSignal<bool>,
+
     // Position of the context menu
     position: Signal<(i32, i32)>,
 
@@ -49,6 +53,16 @@ struct ContextMenuCtx {
     // Id on the root wrapper — covers both trigger and content, so
     // `use_outside_dismiss` treats them as "inside".
     root_id: Signal<String>,
+
+    // Id of the trigger element, for `use_refocus_on_close_unless` (lib.rs)
+    // to return focus to on close. See docs/plan.md Phase 3.1.
+    trigger_id: Signal<String>,
+
+    // Set just before a close caused by interacting outside the menu (see
+    // `use_outside_dismiss` below), so the refocus hook knows to leave focus
+    // where the user put it instead of yanking it back to the trigger.
+    // Reset to `false` whenever the menu opens.
+    interacted_outside: Signal<bool>,
 
     // Set briefly after a touch long-press opens the menu. Used to (a) swallow
     // Android Chrome's spurious `contextmenu` ~500ms later, and (b) ignore the
@@ -64,6 +78,11 @@ pub struct ContextMenuProps {
     /// Whether the context menu is disabled
     #[props(default = ReadSignal::new(Signal::new(false)))]
     pub disabled: ReadSignal<bool>,
+
+    /// Whether the open menu should lock page scrolling, matching Radix's
+    /// default. See docs/plan.md Phase 3.2.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub modal: ReadSignal<bool>,
 
     /// Whether the context menu is open
     pub open: ReadSignal<Option<bool>>,
@@ -141,6 +160,8 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
     let position = use_signal(|| (0, 0));
     let root_id = use_unique_id();
+    let trigger_id = use_unique_id();
+    let interacted_outside = use_signal(|| false);
     let long_press_just_fired = use_signal(|| false);
 
     let focus = use_collection_provider(props.roving_loop);
@@ -148,9 +169,12 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
         open,
         set_open,
         disabled: props.disabled,
+        modal: props.modal,
         position,
         focus,
         root_id,
+        trigger_id,
+        interacted_outside,
         long_press_just_fired,
     });
 
@@ -160,6 +184,25 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
             (ctx.set_open)(focused);
         }
     });
+
+    // A fresh open shouldn't inherit an `interacted_outside` flag left over
+    // from a previous close.
+    use_effect(move || {
+        if (ctx.open)() {
+            ctx.interacted_outside.set(false);
+        }
+    });
+
+    // Escape and item-select close from inside the menu; Radix's
+    // `onCloseAutoFocus` semantics restore focus to the trigger for those,
+    // but not for a dismiss caused by interacting outside (see
+    // `use_outside_dismiss` in `ContextMenuContent`, which sets
+    // `interacted_outside`).
+    crate::use_refocus_on_close_unless(
+        ctx.open,
+        ctx.trigger_id,
+        ReadSignal::new(ctx.interacted_outside),
+    );
 
     // Handle escape key to close the menu
     let handle_keydown = move |event: Event<KeyboardData>| {
@@ -327,6 +370,13 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
 
     rsx! {
         div {
+            id: ctx.trigger_id,
+            // Not otherwise part of the tab order (the context menu opens via
+            // right-click/long-press, not Tab) -- but it must be
+            // programmatically focusable so Escape/select can return focus
+            // here per APG's menu-button-adjacent close-focus rule. See
+            // docs/plan.md Phase 3.1.
+            tabindex: "-1",
             oncontextmenu: handle_context_menu,
             onpointerdown: handle_pointer_down,
             onpointermove: handle_pointer_move,
@@ -454,7 +504,17 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
 
     let render = use_animated_open(id, open);
 
+    // Lock page scroll while the menu is open and modal, matching Radix's
+    // default. See docs/plan.md Phase 3.2. `ContextMenuContent` itself
+    // never unmounts (only the `div` below does, via `render()`), so the
+    // lock is held by `ScrollLockGuard` -- a child mounted inside that same
+    // conditional -- rather than by this component directly; see that
+    // guard's doc comment.
+    let modal = ctx.modal;
+    let scroll_lock_active = use_memo(move || modal() && open());
+
     use_outside_dismiss(ctx.root_id, move || {
+        ctx.interacted_outside.set(true);
         ctx.focus.clear_focus();
         ctx.set_open.call(false);
     });
@@ -507,6 +567,7 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
                 onmounted: move |evt| menu_ref.set(Some(evt.data())),
                 ..props.attributes,
 
+                crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
                 {props.children}
             }
         }
