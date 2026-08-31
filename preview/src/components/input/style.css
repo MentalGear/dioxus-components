@@ -36,3 +36,14 @@
   color: var(--secondary-color-1);
   outline: none;
 }
+
+/*
+ * Floor the font-size to 16px on touch devices. iOS Safari auto-zooms when a
+ * focused text field computes below 16px, and the input otherwise inherits a
+ * smaller size. Scoped to coarse pointers so desktop sizing is unaffected.
+ */
+@media (pointer: coarse) {
+  .dx-input {
+    font-size: 16px;
+  }
+}
