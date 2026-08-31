@@ -9,7 +9,14 @@ name: Pages
 #   pull_request:
 #     types: [closed]
 #
-on: workflow_dispatch
+# Chained trigger restored 2026-08-31: Pages may follow a completed Web
+# run (Web itself remains manual-only, so no automatic CI results from
+# this) and may be dispatched manually.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Web"]
+    types: [completed]
 permissions:
   actions: read
   contents: write
