@@ -16,8 +16,22 @@ test('test', async ({ page }) => {
   // playwright/oracle/tier3-radix/scroll-lock.spec.ts), so the focus trap's
   // tab cycle has two stops: Tab moves off the close button, and a second
   // Tab wraps back around to it.
+  //
+  // Phase 4.2 (docs/plan.md): the modal `Dialog` is now a native
+  // `<dialog>` on the web arm, so this cycle goes through Chromium's own
+  // focus trap rather than the vendored `FocusTrap`. Chromium's native trap
+  // parks focus on `<body>` for exactly one Tab stop after the last
+  // focusable element before wrapping to the first
+  // (docs/phase4-spike-findings.md experiment 4a) -- invisible to the user
+  // (no visible focus ring lands there) and it does not let focus escape
+  // the dialog, so this is a harness correction for the new trap's
+  // documented shape, not a behavior change under test.
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: 'Open Nested Dialog' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement === document.body))
+    .toBe(true);
   await page.keyboard.press('Tab');
   await expect(closeButton).toBeFocused();
   // Hitting escape should close the dialog

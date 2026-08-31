@@ -32,7 +32,18 @@ test('sheet basic interactions', async ({ page }) => {
   const closeButton = sheet.getByRole('button').last();
   await expect(closeButton).toBeFocused();
 
-  // Tab again should cycle back to first input
+  // Phase 4.2 (docs/plan.md): Sheet composes the modal Dialog primitive,
+  // now a native `<dialog>` on the web arm. Chromium's own focus trap parks
+  // focus on `<body>` for exactly one Tab stop after the last focusable
+  // element before wrapping to the first
+  // (docs/phase4-spike-findings.md experiment 4a) -- harness correction for
+  // the new trap's documented shape, same fix as dialog.spec.ts.
+  await page.keyboard.press('Tab');
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement === document.body))
+    .toBe(true);
+
+  // One more Tab cycles back to the first input.
   await page.keyboard.press('Tab');
   await expect(nameInput).toBeFocused();
 
