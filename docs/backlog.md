@@ -19,5 +19,6 @@ Everything outstanding across the plan, the harness, and follow-ups discovered d
 | 13 | Phase 6 — RTL (`dq direction.rs` + key-flip concept) | An RTL fixture decision (none exists) | M | |
 | 14 | Nudge Dioxus framework issues: #2962 (`onclose`), #4319 (dialog methods), ancestor-traversal gap (`complaints.md`) | User decision (outward-facing) | S | Would replace our eval bridges with typed API; nothing blocks on it |
 | 15 | `scrollbar-gutter` on older WebKit + iOS momentum scroll | A product decision that those targets matter | M | Both documented as known limits in `scroll_lock.rs`/findings; old engines simply keep today's behavior |
+| 16 | **Component candidates** — new components from upstream PRs, the fork network, and catalog gaps | A decision to expand the component catalog | S–XL per item | Ranked queue with per-item triggers in [`component-backlog.md`](./component-backlog.md); three items are ready the moment expansion is wanted (ComboboxMulti, Field+Alert, Password Toggle Field) |
 
 Standing rule for every item: the definition-of-done loop from [`plan.md`](./plan.md) — rule-cited oracle red first, provenance per `lifting-from-forks.md` §1, checks green, ledger updated.
