@@ -1,35 +1,38 @@
 name: Playwright Tests
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - /**
-      - playwright/**
-      - preview/**/*.css
-      - preview/**/*.rs
-      - preview/**/Cargo.toml
-      - primitives/**/*.rs
-      - primitives/**/Cargo.toml
-      - .github/**
-      - Cargo.toml
-
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - main
-    paths:
-      - /**
-      - playwright/**
-      - preview/**/*.css
-      - preview/**/*.rs
-      - preview/**/Cargo.toml
-      - primitives/**/*.rs
-      - primitives/**/Cargo.toml
-      - .github/**
-      - Cargo.toml
-
+# Automatic triggers disabled until further notice (2026-08-30).
+# To reactivate, delete the 'on: workflow_dispatch' line and uncomment:
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - /**
+#       - playwright/**
+#       - preview/**/*.css
+#       - preview/**/*.rs
+#       - preview/**/Cargo.toml
+#       - primitives/**/*.rs
+#       - primitives/**/Cargo.toml
+#       - .github/**
+#       - Cargo.toml
+#
+#   pull_request:
+#     types: [opened, synchronize, reopened, ready_for_review]
+#     branches:
+#       - main
+#     paths:
+#       - /**
+#       - playwright/**
+#       - preview/**/*.css
+#       - preview/**/*.rs
+#       - preview/**/Cargo.toml
+#       - primitives/**/*.rs
+#       - primitives/**/Cargo.toml
+#       - .github/**
+#       - Cargo.toml
+#
+on: workflow_dispatch
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
