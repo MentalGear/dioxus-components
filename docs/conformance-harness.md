@@ -104,6 +104,8 @@ Behaviours no standard specifies, which mature libraries nonetheless implement: 
 
 File these as `tier3/` with the Radix source named in each test. They are proposals, and should read that way in a PR.
 
+When a Radix behaviour looks idiosyncratic, reach for **bits-ui** (or another mature headless library) as an ad-hoc tie-breaker — read, never vendor — to distinguish a Radix quirk from a headless-library consensus. A second implementation is a second opinion, not a rule source, so it can strengthen a tier-3 proposal's framing ("de-facto consensus") but never becomes a standing oracle; policy details in `playwright/oracle/tier3-radix/README.md`.
+
 ---
 
 ## Layout
