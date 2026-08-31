@@ -36,14 +36,30 @@
  * `Menubar` is correctly excluded throughout -- it is never modal.
  *
  * KNOWN GAP, both in the dq base and here (see
- * docs/recommended-implementations.md §5): no iOS momentum-scroll handling
- * and no scrollbar-gap compensation. Radix delegates both to
- * `react-remove-scroll`; this crate has no equivalent, and this file does
- * not test for either -- only that `window.scrollY` doesn't move while
- * locked, on a desktop Chromium mouse-wheel attempt. It also does not (and,
- * per the note on `assertScrollIsLocked` below, should not) assert that a
- * scripted `window.scrollTo()` call is blocked -- `overflow: hidden` never
- * clamps that, in this implementation or Radix's.
+ * docs/recommended-implementations.md §5): no iOS momentum-scroll handling.
+ * Radix delegates that to `react-remove-scroll`, which this crate has no
+ * equivalent of, and this file does not test for it -- only that
+ * `window.scrollY` doesn't move while locked, on a desktop Chromium
+ * mouse-wheel attempt. It also does not (and, per the note on
+ * `assertScrollIsLocked` below, should not) assert that a scripted
+ * `window.scrollTo()` call is blocked -- `overflow: hidden` never clamps
+ * that, in this implementation or Radix's.
+ *
+ * LAYOUT-SHIFT ASSERTIONS (below, `assertNoHorizontalShift`): scroll-gap
+ * compensation is exercised too, per
+ * `docs/phase4-spike-findings.md` "Round 2 -- solved by construction",
+ * Construction A/C. Removing a classic (non-overlay) scrollbar's `overflow:
+ * hidden` without reserving its space shifts everything horizontally by the
+ * scrollbar's width the instant the lock engages -- confirmed 15px on this
+ * image under a forced real scrollbar (see `playwright/xvfb.local.config.ts`).
+ * That regression is invisible under this repo's default headless Chromium,
+ * which renders 0-width overlay scrollbars even for a genuinely scrollable
+ * page -- so `assertNoHorizontalShift` is trivially satisfied there and only
+ * bites for real when run under `xvfb.local.config.ts`. Both runs matter:
+ * headless proves the fix doesn't *introduce* a shift on overlay-scrollbar
+ * platforms (a transient `scrollbar-gutter` toggle was tried and falsified
+ * for exactly this reason -- see the findings doc), and the Xvfb run proves
+ * it *removes* the shift on classic-scrollbar platforms.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -126,13 +142,53 @@ async function assertScrollIsUnlocked(page: Page) {
   ).toBeGreaterThan(0);
 }
 
+/**
+ * Returns the current right edge of a `position: fixed; right: 0` marker,
+ * injecting it once per page if it isn't already there.
+ *
+ * `position: fixed` elements are positioned against the initial containing
+ * block, whose size tracks the true viewport net of whatever scrollbar the
+ * platform is actually rendering right now -- unlike normal-flow content,
+ * which a `padding-right` compensation recipe can reach but this can't (that
+ * recipe was tried and falsified for exactly this element shape; see
+ * `docs/phase4-spike-findings.md`, Round 2 Construction A). A stand-in for a
+ * realistic right-aligned navbar action.
+ */
+async function rightEdgeMarkerRight(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    let marker = document.getElementById("scroll-lock-shift-probe");
+    if (!marker) {
+      marker = document.createElement("div");
+      marker.id = "scroll-lock-shift-probe";
+      marker.style.cssText =
+        "position:fixed; top:0; right:0; width:4px; height:4px; pointer-events:none; z-index:2147483647;";
+      document.body.appendChild(marker);
+    }
+    return marker.getBoundingClientRect().right;
+  });
+}
+
+/**
+ * Asserts the right-anchored marker (see `rightEdgeMarkerRight`) has not
+ * moved from `expectedRight` -- i.e. engaging or releasing the scroll lock
+ * must not shift page layout horizontally. Only bites for real on a platform
+ * with a non-zero scrollbar gap; see the module header's LAYOUT-SHIFT note.
+ */
+async function assertNoHorizontalShift(page: Page, expectedRight: number, when: string) {
+  expect(await rightEdgeMarkerRight(page), `layout must not shift horizontally ${when}`).toBe(
+    expectedRight,
+  );
+}
+
 test.describe("Dialog locks and releases page scroll", () => {
   test("scroll is locked while open and restored after Escape", async ({ page }) => {
     await goto(page, "dialog");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     await page.getByRole("button", { name: "Show Dialog" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await assertNoHorizontalShift(page, rightBefore, "while the dialog is open");
 
     await assertScrollIsLocked(page);
 
@@ -140,6 +196,7 @@ test.describe("Dialog locks and releases page scroll", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the dialog closes and scroll unlocks");
   });
 
   test("nested dialog: closing the inner one leaves the page locked; closing the outer one restores scroll", async ({
@@ -147,17 +204,20 @@ test.describe("Dialog locks and releases page scroll", () => {
   }) => {
     await goto(page, "dialog");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     // Open the outer dialog.
     await page.getByRole("button", { name: "Show Dialog" }).click();
     const outer = page.getByRole("dialog").first();
     await expect(outer).toBeVisible();
     await assertScrollIsLocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "with the outer dialog open");
 
     // Open the nested dialog from inside the outer one's content.
     await page.getByRole("button", { name: "Open Nested Dialog" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(2);
     await assertScrollIsLocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "with both dialogs open");
 
     // Close the inner dialog only -- the outer one is still open, so the
     // page must still be locked. This is the refcount case: a naive
@@ -165,6 +225,7 @@ test.describe("Dialog locks and releases page scroll", () => {
     await page.getByRole("button", { name: "Close Nested" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(1);
     await assertScrollIsLocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "with only the outer dialog open again");
 
     // Close the outer dialog -- nothing is locking anymore. Closed via its
     // own Close button rather than Escape: this test's subject is the
@@ -174,6 +235,7 @@ test.describe("Dialog locks and releases page scroll", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after both dialogs close and scroll unlocks");
   });
 });
 
@@ -181,9 +243,11 @@ test.describe("AlertDialog locks and releases page scroll", () => {
   test("scroll is locked while open and restored after Escape", async ({ page }) => {
     await goto(page, "alert_dialog");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     await page.getByRole("button", { name: "Show Alert Dialog" }).click();
     await expect(page.getByRole("alertdialog")).toBeVisible();
+    await assertNoHorizontalShift(page, rightBefore, "while the alert dialog is open");
 
     await assertScrollIsLocked(page);
 
@@ -191,6 +255,7 @@ test.describe("AlertDialog locks and releases page scroll", () => {
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the alert dialog closes and scroll unlocks");
   });
 });
 
@@ -200,9 +265,11 @@ test.describe("Popover locks and releases page scroll", () => {
   }) => {
     await goto(page, "popover");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     await page.getByRole("button", { name: "Show Popover" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await assertNoHorizontalShift(page, rightBefore, "while the popover is open");
 
     await assertScrollIsLocked(page);
 
@@ -210,6 +277,7 @@ test.describe("Popover locks and releases page scroll", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the popover closes and scroll unlocks");
   });
 });
 
@@ -219,10 +287,12 @@ test.describe("DropdownMenu locks and releases page scroll", () => {
   }) => {
     await goto(page, "dropdown_menu");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     const trigger = page.getByRole("button", { name: "Open Menu" });
     await trigger.click();
     await expect(trigger).toHaveAttribute("data-state", "open");
+    await assertNoHorizontalShift(page, rightBefore, "while the dropdown menu is open");
 
     await assertScrollIsLocked(page);
 
@@ -230,6 +300,7 @@ test.describe("DropdownMenu locks and releases page scroll", () => {
     await expect(trigger).toHaveAttribute("data-state", "closed");
 
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the dropdown menu closes and scroll unlocks");
   });
 });
 
@@ -239,9 +310,11 @@ test.describe("ContextMenu locks and releases page scroll", () => {
   }) => {
     await goto(page, "context_menu");
     await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
 
     await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
     await expect(page.getByRole("menu")).toHaveAttribute("data-state", "open");
+    await assertNoHorizontalShift(page, rightBefore, "while the context menu is open");
 
     await assertScrollIsLocked(page);
 
@@ -249,5 +322,6 @@ test.describe("ContextMenu locks and releases page scroll", () => {
     await expect(page.getByRole("menu")).toHaveCount(0);
 
     await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the context menu closes and scroll unlocks");
   });
 });

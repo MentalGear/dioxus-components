@@ -114,6 +114,11 @@ pub struct DropdownMenuProps {
 /// - `data-disabled`: Indicates if the dropdown menu is disabled. values are `true` or `false`.
 #[component]
 pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
+    // See `DialogRoot`'s identical call for why this must be at the root,
+    // not only inside `use_scroll_lock` (reached via `ScrollLockGuard`,
+    // which mounts lazily inside `DropdownMenuContent`'s own open guard).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
 
     let disabled = props.disabled;

@@ -169,10 +169,22 @@ test('touch tap outside closes the open menu', async ({ page }) => {
   await expect(contextMenu).toHaveAttribute('data-state', 'open');
 
   // Tap near the bottom-right of the viewport, well outside the menu.
+  // Inset 30px from each edge rather than flush against it (`width - 10`):
+  // the scroll-lock's permanent `scrollbar-gutter: stable` baseline (see
+  // `primitives/src/scroll_lock.rs`) reserves a strip at the viewport's
+  // right/bottom edges that `document.elementFromPoint` legitimately
+  // returns null for -- real UA chrome, not a scrollable area -- even
+  // though `window.innerWidth`/`clientWidth` don't shrink to reflect it (a
+  // 0-width-overlay-scrollbar engine's `innerWidth` reports the same value
+  // whether or not that strip is reserved). A coordinate flush against the
+  // edge can land in that strip and fail with "no element at outside
+  // point" for a reason that has nothing to do with this test's actual
+  // claim; the same false negative and the same fix are documented in
+  // `docs/phase4-spike-findings.md`'s spike spec.
   const viewport = page.viewportSize();
   if (!viewport) throw new Error('no viewport');
-  const farX = viewport.width - 10;
-  const farY = viewport.height - 10;
+  const farX = viewport.width - 30;
+  const farY = viewport.height - 30;
   await page.evaluate(({ x, y }) => {
     const target = document.elementFromPoint(x, y);
     if (!target) throw new Error('no element at outside point');

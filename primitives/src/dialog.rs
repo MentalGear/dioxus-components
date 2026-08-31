@@ -113,6 +113,13 @@ pub struct DialogRootProps {
 /// - `data-state`: Indicates if the dialog is open or closed. It can be either "open" or "closed".
 #[component]
 pub fn DialogRoot(props: DialogRootProps) -> Element {
+    // Installs the permanent scrollbar-gutter baseline as early as possible
+    // -- this root mounts whenever a `Dialog` appears on the page, well
+    // before `DialogContent` (and its `use_scroll_lock`) first mounts on
+    // open. See `scroll_lock.rs`'s module docs and
+    // `ensure_scrollbar_gutter_baseline`'s doc comment.
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let dialog_labelledby = use_unique_id();
     let dialog_describedby = use_unique_id();
 

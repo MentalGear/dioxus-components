@@ -157,6 +157,11 @@ pub struct ContextMenuProps {
 /// - `data-disabled`: Indicates if the context menu is disabled. values are `true` or `false`.
 #[component]
 pub fn ContextMenu(props: ContextMenuProps) -> Element {
+    // See `DialogRoot`'s identical call for why this must be at the root,
+    // not only inside `use_scroll_lock` (reached via `ScrollLockGuard`,
+    // which mounts lazily inside `ContextMenuContent`'s own open guard).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
     let position = use_signal(|| (0, 0));
     let root_id = use_unique_id();
