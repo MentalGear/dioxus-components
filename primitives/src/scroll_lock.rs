@@ -42,16 +42,153 @@
 //!    counter, and releases based on that -- independent of `active`'s
 //!    value at unmount.
 //!
+//! ## Permanent `scrollbar-gutter: stable` baseline (scrollbar-gap fix)
+//! Backported from `docs/phase4-spike-findings.md`, "Round 2 -- solved by
+//! construction", Construction A/C (`primitives/src/spike_native_dialog.rs`'s
+//! `use_compensated_scroll_lock`, spike branch `spike/native-dialog`, never
+//! merged -- this is a from-scratch port of its *construction*, not a copy of
+//! its code). The defect: `overflow: hidden` never compensates for a classic
+//! (non-overlay) scrollbar's width, so removing it shifts everything
+//! horizontally by that width the instant a lock engages -- confirmed 15px
+//! under a forced real scrollbar (`playwright/xvfb.local.config.ts`),
+//! invisible under this repo's default headless Chromium, which renders
+//! 0-width overlay scrollbars regardless of how tall the page is. Most
+//! users' actual browsers (Windows/Linux Chrome and Firefox defaults, and
+//! other engines) render classic, space-reserving scrollbars, so this is a
+//! real, live regression despite being silent in the default test run --
+//! see `playwright/oracle/tier3-radix/scroll-lock.spec.ts`'s
+//! `assertNoHorizontalShift`.
+//!
+//! [`ensure_scrollbar_gutter_baseline`] installs `scrollbar-gutter: stable`
+//! on `<html>` **permanently** -- once, idempotently, the first time any
+//! scroll-lock-capable primitive mounts on the page -- and never toggles it
+//! again. That call is made from each primitive's *root* component
+//! (`DialogRoot`, `AlertDialogRoot`, `PopoverRoot`, `DropdownMenu`,
+//! `ContextMenu`), not only from [`use_scroll_lock`] here: those roots mount
+//! as soon as the primitive appears at all, while the `*Content`/
+//! `ScrollLockGuard` components that call `use_scroll_lock` mount lazily,
+//! only once the surface first opens -- installing the baseline that late
+//! would make the very first open on a page double as the moment the
+//! gutter reservation appears, i.e. exactly the one-time shift a
+//! *permanent* baseline exists to avoid (confirmed by execution: measuring
+//! before that first open, then after, shows precisely this). Locking
+//! and unlocking continue to work exactly as before, toggling only
+//! `overflow` between its original value and `hidden` (see adaptation notes
+//! above); the gutter reservation is independent of that value, so the
+//! available layout width is identical before, during, and after every lock
+//! cycle. Two constructions were tried and falsified by execution before
+//! landing on this one (full detail and measurements in the findings doc):
+//! 1. **The textbook `padding-right` recipe** (`react-remove-scroll` and
+//!    similar: measure `innerWidth - documentElement.clientWidth`, add it as
+//!    `padding-right` on `<body>`). Falsified for `position: fixed`
+//!    elements: a fixed-position box (a realistic right-aligned navbar
+//!    action, or this crate's own `Popover`/menu content) is positioned
+//!    against the *initial containing block*, whose size tracks the true
+//!    viewport net of the real scrollbar and is not influenced by any
+//!    element's padding. The probe element in the findings doc's Xvfb run
+//!    still shifted the full 15px, uncorrected.
+//! 2. **A transient `scrollbar-gutter: stable` toggle**, applied together
+//!    with `overflow: hidden` only for the duration of the lock. This fixes
+//!    the classic-scrollbar case, but Chromium reserves `stable`'s gutter
+//!    width unconditionally the instant the property takes effect,
+//!    regardless of whether the platform was otherwise showing an overlay
+//!    scrollbar -- so on an overlay-scrollbar platform (this repo's default
+//!    headless Chromium included), turning it on *at lock time* introduces
+//!    exactly the shift being fixed, just newly, on the other kind of
+//!    platform, and reverts it again on unlock -- a shift on every open and
+//!    every close, oscillating.
+//!
+//! Applying it *permanently* rather than transiently means overlay-scrollbar
+//! platforms pay the same fixed one-time gutter reservation classic-scrollbar
+//! platforms always paid anyway (this is `scrollbar-gutter: stable`'s
+//! documented, unconditional behavior, not specific to this fix), instead of
+//! oscillating on every lock cycle -- confirmed by execution in both regimes
+//! in the findings doc.
+//!
+//! The baseline is installed via a plain (non-`!important`) `:where(html) {
+//! scrollbar-gutter: stable; overflow-y: auto; }` rule in an injected
+//! `<style>` tag, not an inline style, and specifically through
+//! `:where()`'s zero specificity: any author rule touching `html`/`:root` --
+//! even a bare element selector -- wins outright, so an app that already
+//! declares its own `scrollbar-gutter` or `overflow-y` on the root is left
+//! alone. `overflow-y: auto` is part of the baseline (not just
+//! `scrollbar-gutter` alone) because `scrollbar-gutter` has no effect while
+//! `overflow-y` computes to `visible` (confirmed by execution: `stable`
+//! alone, with `overflow-y` untouched, reserved nothing under a forced real
+//! scrollbar) -- and it must live in the stylesheet rather than inline
+//! specifically so the existing lock/unlock toggle's restore step (which
+//! writes the *inline* `overflow` shorthand back to its captured original,
+//! typically clearing it) cannot erase it: an inline longhand set once at
+//! mount would be wiped by that restore on the very first unlock, since
+//! setting the inline `overflow` shorthand to `''` removes both of its
+//! longhands, including one set independently through `overflowY`.
+//!
+//! **Old-engine note:** `scrollbar-gutter` is unsupported on older
+//! WebKit/Safari. There, the injected rule is inert (an unrecognized
+//! property is dropped), so those engines simply keep today's shipped
+//! behavior -- no scrollbar-gap compensation, exactly as before this fix --
+//! never worse.
+//!
 //! ## Known limitation (carried over from the dq base)
-//! No iOS momentum-scroll handling and no scrollbar-gap compensation --
-//! Radix delegates both to `react-remove-scroll`, which this crate has no
-//! equivalent of. See docs/recommended-implementations.md §5.
+//! No iOS momentum-scroll handling. Radix delegates that to
+//! `react-remove-scroll`, which this crate has no equivalent of. See
+//! docs/recommended-implementations.md §5.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dioxus::document;
 use dioxus::prelude::*;
+
+thread_local! {
+    /// Whether [`ensure_scrollbar_gutter_baseline`]'s `document::eval` has
+    /// already been scheduled once in this WASM instance. `use_scroll_lock`
+    /// is called afresh every time a modal/menu opens (this crate's
+    /// `*Content` components mount lazily -- see the component doc below),
+    /// so without this guard the baseline install would re-run, harmlessly
+    /// but wastefully, on every single open for the rest of the session.
+    /// The JS side is *also* idempotent on its own (it checks for its
+    /// `<style>` tag by id before creating one) as a second guard, since
+    /// this flag alone would not survive e.g. a hot-reload that resets Rust
+    /// statics but leaves the already-injected style tag in the live DOM.
+    static SCROLLBAR_GUTTER_BASELINE_INSTALLED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Installs the permanent `scrollbar-gutter: stable` baseline described in
+/// the module docs, at most once per WASM instance. Deliberately not gated
+/// on `active` and not part of the lock/unlock toggle below -- see the
+/// module docs for why this must never be toggled per lock.
+///
+/// Called from an unconditional `use_effect` in each scroll-lock-capable
+/// primitive's *root* component (`DialogRoot`, `AlertDialogRoot`,
+/// `PopoverRoot`, `DropdownMenu`, `ContextMenu`) rather than only from
+/// [`use_scroll_lock`] below: those roots mount as soon as the primitive
+/// appears on the page at all, while the `*Content`/`ScrollLockGuard`
+/// components that call `use_scroll_lock` mount lazily, only once the
+/// surface first opens. Installing only at that later point would make the
+/// very first open on a given page load double as the moment the baseline
+/// (and therefore its gutter reservation) appears -- a real, if one-time,
+/// shift, on overlay-scrollbar platforms, that defeats the purpose of a
+/// baseline meant to be there before any interaction. [`use_scroll_lock`]
+/// also calls this, as a defensive fallback for any caller that reaches it
+/// without going through one of those root components; both call sites are
+/// idempotent and race-free (WASM is single-threaded).
+pub(crate) fn ensure_scrollbar_gutter_baseline() {
+    if SCROLLBAR_GUTTER_BASELINE_INSTALLED.with(|installed| installed.replace(true)) {
+        return;
+    }
+    let eval = document::eval(
+        r#"
+        if (!document.getElementById('dx-scrollbar-gutter-baseline')) {
+            const style = document.createElement('style');
+            style.id = 'dx-scrollbar-gutter-baseline';
+            style.textContent = ':where(html) { scrollbar-gutter: stable; overflow-y: auto; }';
+            document.head.appendChild(style);
+        }
+        "#,
+    );
+    let _ = eval;
+}
 
 /// Per-nesting-chain lock count, and the `<html>`/`<body>` `overflow` values
 /// observed just before the first lock in the chain took effect.
@@ -94,6 +231,11 @@ fn use_scroll_lock_state() -> ScrollLockState {
 /// acquired in this hook's effect and released in its unmount cleanup.
 pub(crate) fn use_scroll_lock(active: Memo<bool>) {
     let state = use_scroll_lock_state();
+
+    // Permanent baseline (see module docs) -- unconditional, run once per
+    // WASM instance, and never re-run or reverted by the lock/unlock toggle
+    // below.
+    use_effect(ensure_scrollbar_gutter_baseline);
 
     // Whether *this* hook instance is the one that incremented the shared
     // counter -- tracked separately from `active` because by the time this

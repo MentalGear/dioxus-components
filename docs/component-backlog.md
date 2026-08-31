@@ -31,3 +31,23 @@ This complements `adopt-fork-fixes-results.md`, which hunted *fixes*; this table
 4. **Reject Carousel and Schedule outright**; treat Command as build-from-existing-parts, not a port.
 5. **DragAndDropBoard needs its panic closed before it is a candidate at all** — a verified open bug in the only source for the feature.
 6. All of the above under the standing hygiene rules: oracle first, provenance headers, untrusted-content discipline, no fork `Cargo.toml` edits.
+
+## Execution queue — ranked, with triggers
+
+Each item's **trigger** is the condition under which it becomes actionable; "ready" means nothing blocks it but a go decision. Rank = take-order (priority weighted by effort and source quality).
+
+| # | Item | Trigger | Effort once triggered |
+|---|---|---|---|
+| 1 | ComboboxMulti | **Ready** — go decision only | S–M |
+| 2 | Resizable / SplitPane | Decision to extract the single commit from upstream PR #283 (never merge the branch) | M |
+| 3 | Field + Alert | **Ready** — Field pairs with the landed form-participation work | S each |
+| 4 | Password Toggle Field | **Ready** | S |
+| 5 | Input OTP | Upstream PR #255 unblocks: the Dioxus release with select-event-handler integration ships (watch dioxus releases + #255) | M |
+| 6 | TableOfContents + scroll-spy | A docs-site need materialises here, or the PR #283 split decision is made | S–M |
+| 7 | Nested submenu (`.Sub`) | **After Phase 4.4 lands** — `popover=`/top-layer removes the hardest part (nested stacking + light dismiss); budget as fresh design, molikto's patch for shape only | L |
+| 8 | Table / DataTable | A conformance-oracle design exists (must be invented — no Radix reference) AND demand is confirmed | L |
+| 9 | DateBackend trait | A consumer asks for a non-`time` backend (jiff/custom), or the Dioxus 0.8 migration window opens | M |
+| 10 | DragAndDropBoard | **Blocked**: the board panic documented in `jcgruenhage@cfc7c52` is reproduced and closed | M–L |
+| 11 | Command palette | After the deferred `typeahead.rs` port (plan Phase 6) lands — it is compositional on typeahead + listbox | M–L |
+| — | Schedule, Carousel | Explicit product decision to widen library scope — otherwise stays rejected | XL |
+| — | RecycleList | The `haywoodfu` fork becomes reachable and the claim is re-verified | unknown |

@@ -102,6 +102,11 @@ pub struct PopoverRootProps {
 /// - `data-state`: Indicates if the popover is open or closed. Values are `open` or `closed`.
 #[component]
 pub fn PopoverRoot(props: PopoverRootProps) -> Element {
+    // See `DialogRoot`'s identical call for why this must be at the root,
+    // not only inside `use_scroll_lock` (called by
+    // `PopoverContentRendered`, which mounts lazily on open).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let labelledby = use_unique_id();
     let gen_root_id = use_unique_id();
     let root_id = use_id_or(gen_root_id, props.id);

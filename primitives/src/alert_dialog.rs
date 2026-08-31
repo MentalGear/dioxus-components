@@ -79,6 +79,11 @@ pub struct AlertDialogRootProps {
 /// - `data-state`: Indicates if the alert dialog is open or closed. It can be either "open" or "closed".
 #[component]
 pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
+    // See `DialogRoot`'s identical call for why this must be at the root,
+    // not only inside `use_scroll_lock` (called by `AlertDialogContent`,
+    // which mounts lazily on open).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let labelledby = use_unique_id().to_string();
     let describedby = use_unique_id().to_string();
     let mut open_signal = use_signal(|| props.default_open);
