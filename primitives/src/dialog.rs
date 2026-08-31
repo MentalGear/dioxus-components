@@ -1,4 +1,45 @@
 //! Defines the [`DialogRoot`] component and its sub-components.
+//!
+//! ## Native `<dialog>` modality (Phase 4.2, docs/plan.md)
+//!
+//! [`DialogContent`] dispatches, per render, to one of two real
+//! child-component boundaries depending on `is_modal` -- the same pattern
+//! `popover.rs`'s `PopoverContentRendered` uses, and for the same two
+//! reasons documented there: `is_modal` is a `ReadSignal<bool>` that can in
+//! principle change mid-mount (hook-order safety demands separate mounted
+//! instances, not an `if`/`else` inside one instance's body), and the modal
+//! web arm's dismissal semantics are not merely "the non-modal path with a
+//! different callback" -- `use_global_keydown_listener` (this crate's
+//! `lib.rs`) calls `event.preventDefault()` on *every* Escape keypress
+//! unconditionally while any instance using it is mounted, which would fight
+//! the native `<dialog>`'s own `cancel`/`close` handling if a gated-callback
+//! version of `use_global_escape_listener` were merely installed and told to
+//! do nothing (docs/backlog.md row 3's warning, given when Phase 4.4 landed
+//! the same lesson for Popover).
+//!
+//! `DialogContentNonModal` (`is_modal: false`) is unchanged from before this
+//! slice on both targets, per docs/plan.md Phase 4.2's scope.
+//! `DialogContentModal` (`is_modal: true`) is cfg-split
+//! (`docs/phase4-spike-findings.md` Construction B):
+//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//!   `div` + vendored `FocusTrap` path.
+//! - `#[cfg(target_family = "wasm")]`: a real `<dialog>` element, `open`
+//!   never bound as an attribute (Construction B's central finding: binding
+//!   it declaratively in the same build as a guarded `showModal()` call
+//!   doesn't crash, it silently skips the modal state entirely), driven by
+//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`] (the
+//!   fix for the historical stranded-signal defect,
+//!   `docs/recommended-implementations.md` Caveat 1) plus
+//!   [`use_dialog_backdrop_dismiss`] for the "click far outside the dialog"
+//!   behaviour `dialog.spec.ts` already covers -- `use_outside_dismiss`
+//!   itself is not reusable here, because a `showModal()` backdrop click's
+//!   `event.target` *is* the `<dialog>` element (it contains itself), so
+//!   `use_outside_dismiss`'s `!root.contains(e.target)` check can never fire
+//!   for it (`docs/phase4-spike-findings.md` experiment 6's
+//!   `elementFromPoint` finding). No `use_global_escape_listener` and no
+//!   focus-trap eval on this arm: the browser's own `showModal()` supplies
+//!   the focus trap, focus restore, inertness, and top layer, and its
+//!   `cancel`/`close` events (synced above) already handle Escape.
 
 use dioxus::document;
 use dioxus::prelude::*;
@@ -225,12 +266,6 @@ pub fn DialogContent(props: DialogContentProps) -> Element {
     let ctx: DialogCtx = use_context();
     let open = ctx.open;
     let is_modal = ctx.is_modal;
-    let set_open = ctx.set_open;
-
-    // Add a escape key listener to the document when the dialog is open. We can't
-    // just add this to the dialog itself because it might not be focused if the user
-    // is highlighting text or interacting with another element.
-    use_global_escape_listener(move || set_open.call(false));
 
     let gen_id = use_unique_id();
     let id = use_id_or(gen_id, props.id);
@@ -241,14 +276,98 @@ pub fn DialogContent(props: DialogContentProps) -> Element {
     let scroll_lock_active = use_memo(move || is_modal() && open());
     crate::scroll_lock::use_scroll_lock(scroll_lock_active);
 
-    use_outside_dismiss(id, move || set_open.call(false));
-    use_effect(move || {
-        let is_modal = is_modal();
-        if !is_modal {
-            // If the dialog is not modal, we don't need to trap focus.
-            return;
-        }
+    let class = props
+        .class
+        .clone()
+        .unwrap_or_else(|| "dx-dialog".to_string());
+    let labelledby = ctx.dialog_labelledby;
+    let describedby = ctx.dialog_describedby;
 
+    // Real child-component boundary -- see this module's doc comment for
+    // why (hook-order safety, and the modal web arm's dismissal semantics
+    // not being reachable via a merely-gated callback).
+    if is_modal() {
+        rsx! {
+            DialogContentModal {
+                id,
+                class,
+                labelledby,
+                describedby,
+                attributes: props.attributes,
+                children: props.children,
+            }
+        }
+    } else {
+        rsx! {
+            DialogContentNonModal {
+                id,
+                class,
+                labelledby,
+                describedby,
+                attributes: props.attributes,
+                children: props.children,
+            }
+        }
+    }
+}
+
+/// `is_modal: false` arm -- unchanged from before Phase 4.2 on both targets
+/// (docs/plan.md Phase 4.2 scopes native `<dialog>` to the modal path only).
+#[component]
+fn DialogContentNonModal(
+    id: Memo<String>,
+    class: String,
+    labelledby: Signal<String>,
+    describedby: Signal<String>,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let ctx: DialogCtx = use_context();
+    let set_open = ctx.set_open;
+
+    // Add a escape key listener to the document when the dialog is open. We can't
+    // just add this to the dialog itself because it might not be focused if the user
+    // is highlighting text or interacting with another element.
+    use_global_escape_listener(move || set_open.call(false));
+    use_outside_dismiss(id, move || set_open.call(false));
+
+    rsx! {
+        div {
+            id,
+            role: "dialog",
+            aria_modal: "true",
+            aria_labelledby: labelledby,
+            aria_describedby: describedby,
+            class,
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// `is_modal: true` arm, native (Blitz) target -- byte-for-byte the
+/// pre-Phase-4.2 path: a plain `div` with the vendored `FocusTrap`.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn DialogContentModal(
+    id: Memo<String>,
+    class: String,
+    labelledby: Signal<String>,
+    describedby: Signal<String>,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let ctx: DialogCtx = use_context();
+    let open = ctx.open;
+    let set_open = ctx.set_open;
+
+    // Add a escape key listener to the document when the dialog is open. We can't
+    // just add this to the dialog itself because it might not be focused if the user
+    // is highlighting text or interacting with another element.
+    use_global_escape_listener(move || set_open.call(false));
+    use_outside_dismiss(id, move || set_open.call(false));
+
+    use_effect(move || {
         let eval = document::eval(
             r#"let id = await dioxus.recv();
             let is_open = await dioxus.recv();
@@ -271,13 +390,106 @@ pub fn DialogContent(props: DialogContentProps) -> Element {
             id,
             role: "dialog",
             aria_modal: "true",
-            aria_labelledby: ctx.dialog_labelledby,
-            aria_describedby: ctx.dialog_describedby,
-            class: props.class.clone().unwrap_or_else(|| "dx-dialog".to_string()),
-            ..props.attributes,
-            {props.children}
+            aria_labelledby: labelledby,
+            aria_describedby: describedby,
+            class,
+            ..attributes,
+            {children}
         }
     }
+}
+
+/// `is_modal: true` arm, web target (Phase 4.2, docs/plan.md) -- a real
+/// `<dialog>` opened with `showModal()`. `open` is never bound as an
+/// attribute here (see this module's doc comment); the browser supplies the
+/// focus trap, focus restore, background inertness, and top-layer
+/// rendering, so this arm installs none of the native arm's JS
+/// counterparts.
+#[cfg(target_family = "wasm")]
+#[component]
+fn DialogContentModal(
+    id: Memo<String>,
+    class: String,
+    labelledby: Signal<String>,
+    describedby: Signal<String>,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let ctx: DialogCtx = use_context();
+    let open = ctx.open;
+    let set_open = ctx.set_open;
+
+    // Browser -> signal (the fix for the historical stranded-signal defect,
+    // docs/recommended-implementations.md Caveat 1) and signal -> browser
+    // (guarded against `InvalidStateError`), both from `lib.rs`.
+    crate::use_dialog_close_sync(id, set_open);
+    crate::use_dialog_open_driver(id, open);
+    // Native <dialog> has no built-in "click outside to dismiss" the way
+    // `popover=` does -- reproduces dialog.spec.ts's "clicking far outside
+    // the dialog dismisses it" behaviour. See this module's doc comment for
+    // why `use_outside_dismiss` itself can't be reused here.
+    use_dialog_backdrop_dismiss(id, move || set_open.call(false));
+
+    rsx! {
+        dialog {
+            id,
+            role: "dialog",
+            aria_modal: "true",
+            aria_labelledby: labelledby,
+            aria_describedby: describedby,
+            class,
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Backdrop-click dismiss for the web modal arm's `<dialog>`.
+///
+/// `showModal()`'s `::backdrop` covers the entire viewport and owns
+/// hit-testing everywhere while the dialog is open
+/// (`docs/phase4-spike-findings.md` experiment 6: `elementFromPoint`
+/// resolves to the `<dialog>` element at every coordinate) -- and every
+/// pointer event over a `::backdrop` (or any other pseudo-element) is
+/// dispatched with its `target` set to the host element, i.e. the `<dialog>`
+/// itself. So the discriminator for "did this click land on the backdrop
+/// (dismiss) or on the dialog's own visible box (don't dismiss)" can't be
+/// `event.target` -- it's already the dialog element either way, including
+/// for clicks that land in the dialog's own padding/gap areas where no
+/// child happens to be. A bounding-rect check against the dialog's own
+/// rendered box (the same technique MDN's `<dialog>` guide recommends for
+/// this exact "click outside to close" pattern) tells the two apart
+/// correctly regardless of `event.target`.
+#[cfg(target_family = "wasm")]
+fn use_dialog_backdrop_dismiss(
+    id: impl Readable<Target = String> + Copy + 'static,
+    on_dismiss: impl FnMut() + Clone + 'static,
+) {
+    crate::use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const dialog = document.getElementById(id);
+            const onClick = (e) => {
+                const rect = dialog.getBoundingClientRect();
+                const inside = e.clientX >= rect.left && e.clientX <= rect.right
+                    && e.clientY >= rect.top && e.clientY <= rect.bottom;
+                if (!inside) dioxus.send(true);
+            };
+            dialog.addEventListener('click', onClick);
+            await dioxus.recv();
+            dialog.removeEventListener('click', onClick);",
+        );
+        let _ = eval.send(id.cloned());
+        let mut on_dismiss = on_dismiss.clone();
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                on_dismiss();
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
 }
 
 /// The props for the [`DialogTitle`] component

@@ -41,6 +41,17 @@
   position: fixed;
   z-index: 1001;
   display: flex;
+
+  /* The web arm's modal Dialog (docs/plan.md Phase 4.2) renders this as a
+   * real `<dialog>`. Chromium's UA stylesheet caps a top-layer `dialog:modal`
+   * at `max-width`/`max-height: calc(100% - 6px - 2em)` for elements that
+   * don't set their own -- author rules always win over UA ones, but only
+   * per property, so a sheet that stretches to full height/width purely via
+   * `top`/`bottom`/`left`/`right` (below) still needs its own `max-width`/
+   * `max-height` to keep that UA cap from silently shrinking it away from
+   * the edges it's meant to span. */
+  max-width: none;
+  max-height: none;
   box-sizing: border-box;
   flex-direction: column;
   border: none;
@@ -106,6 +117,21 @@
   animation: dx-slide-in-bottom 200ms ease-out forwards;
 }
 
+/* KNOWN GAP (docs/plan.md Phase 4.2; same treatment as docs/backlog.md row
+ * 19's Popover close-fade): on the web arm, `.dx-sheet` is now the modal
+ * Dialog's real `<dialog>` element. Closing calls `dialog.close()`
+ * immediately (`crate::use_dialog_open_driver`), which the UA's own
+ * `dialog:not([open]) { display: none }` rule applies synchronously --
+ * before `use_animated_open`'s ~150-250ms unmount-hold delay (based on the
+ * *root* wrapper's own fade animation, a sibling in the DOM, unaffected)
+ * has elapsed. The four slide-out animations below are defined on `.dx-sheet`
+ * itself, so they no longer get to play on close: the panel now disappears
+ * instantly instead of sliding out, while the backdrop's opacity fade (on
+ * `.dx-sheet-root`, not a `<dialog>`) still plays in full. Purely cosmetic;
+ * not fixed in this slice for the same reason row 19 wasn't -- it would need
+ * `use_animated_open`-style coordination with the browser's own close event,
+ * out of scope here. Native (Blitz) arm unaffected (plain `div`, no
+ * `<dialog>`). No oracle rule currently checks animation duration. */
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="right"] {
   animation: dx-slide-out-right 150ms ease-in forwards;
 }
