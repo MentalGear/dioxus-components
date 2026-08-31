@@ -279,26 +279,170 @@ pub fn PopoverContentRendered(
     let ctx: PopoverCtx = use_context();
     let open = ctx.open;
     let is_open = open();
-    let set_open = ctx.set_open;
     let is_modal = ctx.is_modal;
 
     // Lock page scroll while the popover is open and modal. See
-    // docs/plan.md Phase 3.2.
+    // docs/plan.md Phase 3.2. Safe to keep unconditional (only the
+    // *computed value* depends on `is_modal`, not the hook call itself) --
+    // see the child components below for the case that does need care.
     let scroll_lock_active = use_memo(move || is_modal() && open());
     crate::scroll_lock::use_scroll_lock(scroll_lock_active);
+
+    // The modal/non-modal split is a real child-component boundary, not an
+    // `if`/`else` inside this component's own body, and each child calls
+    // its own dismissal hooks internally (below) rather than this
+    // component calling them unconditionally up front. Two reasons:
+    //
+    // 1. Hook-order safety: `is_modal` is a `ReadSignal<bool>`, so it can
+    //    in principle change while a popover stays open. Dioxus (like
+    //    React) requires one mounted component instance to call the same
+    //    hooks in the same order on every render; branching which hooks
+    //    run on a value that can change mid-mount would violate that.
+    //    Routing the branch through separate child components sidesteps
+    //    the problem entirely: when `is_modal()` flips, Dioxus unmounts
+    //    one child and mounts the other, each getting its own fresh hook
+    //    scope, so there is no single instance whose hook count/order
+    //    could vary.
+    // 2. Correctness, not just safety: `use_global_escape_listener`'s
+    //    underlying JS calls `event.preventDefault()` on *every* Escape
+    //    keypress while any instance is mounted, regardless of what its
+    //    Rust callback decides to do -- so merely having the non-modal web
+    //    arm call it (even with a callback that declines to act) would
+    //    suppress the browser's own `popover="auto"` Escape-dismissal
+    //    algorithm before it ever runs. Confirmed by execution: an earlier
+    //    version of this fix kept the hook called unconditionally and
+    //    gated only the Rust-side callback, and Escape silently stopped
+    //    closing the non-modal web popover at all. The non-modal web arm
+    //    below simply never calls `use_global_escape_listener`/
+    //    `use_outside_dismiss`, so it never installs that
+    //    `preventDefault()`.
+    if is_modal() {
+        rsx! {
+            PopoverModalContent { id, class, side, align, attributes, children, is_open }
+        }
+    } else {
+        rsx! {
+            PopoverNonModalContent { id, class, side, align, attributes, children, is_open }
+        }
+    }
+}
+
+/// Modal arm: unchanged from before this slice. Native
+/// `<dialog>`/`showModal()` top-layer wiring for the modal arm is Phase 4.2
+/// (docs/plan.md), not this slice's -- this scope is deliberately just the
+/// non-modal arm below.
+#[component]
+#[allow(clippy::too_many_arguments)]
+fn PopoverModalContent(
+    id: String,
+    class: Option<String>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+    is_open: bool,
+) -> Element {
+    let ctx: PopoverCtx = use_context();
+    let set_open = ctx.set_open;
 
     // Add a escape key listener to the document when the popover is open. We can't
     // just add this to the popover itself because it might not be focused if the user
     // is highlighting text or interacting with another element.
     use_global_escape_listener(move || set_open.call(false));
-
     use_outside_dismiss(ctx.root_id, move || set_open.call(false));
 
     rsx! {
         div {
             id,
             role: "dialog",
-            aria_modal: (ctx.is_modal)().then_some("true"),
+            aria_modal: "true",
+            aria_labelledby: ctx.labelledby,
+            aria_hidden: (!is_open).then_some("true"),
+            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Web arm (Phase 4.4, docs/plan.md): render the non-modal content as a
+/// `<dialog popover="auto">`, per MDN's own guidance that `<dialog>` and the
+/// Popover API "overlap" and are meant to compose -- a `<dialog>` supplies
+/// dialog semantics (an implicit ARIA role of `"dialog"`, non-modal here
+/// since this element is never opened with `showModal()` --
+/// <https://www.w3.org/TR/html-aria/#el-dialog>), and `popover="auto"`
+/// supplies top-layer rendering plus light dismiss
+/// (WHATWG HTML §popover-light-dismiss). `PopoverModalContent` still sets
+/// an explicit `role="dialog"` because it is a plain `div`; here that would
+/// be redundant with the element's own implicit role, so it is dropped.
+///
+/// Deliberately does *not* call `use_global_escape_listener`/
+/// `use_outside_dismiss` -- see `PopoverContentRendered`'s comment for why
+/// that is required for correctness, not just style, on this arm.
+/// `crate::top_layer::use_popover_sync` drives `showPopover()`/
+/// `hidePopover()` from `open` and mirrors the browser's own `toggle` event
+/// (fired on light dismiss, Escape, or any other close) back into
+/// `set_open`, so the Rust signal can never strand the way `docs/
+/// recommended-implementations.md` Caveat 1 documents for `<dialog>`'s old
+/// one-way `showModal()`/`close()` binding.
+#[cfg(target_family = "wasm")]
+#[component]
+fn PopoverNonModalContent(
+    id: String,
+    class: Option<String>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+    is_open: bool,
+) -> Element {
+    let ctx: PopoverCtx = use_context();
+    crate::top_layer::use_popover_sync(id.clone(), ctx.open, ctx.set_open);
+
+    rsx! {
+        dialog {
+            id: id.clone(),
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            style: crate::top_layer::position_anchor_style(&id),
+            aria_labelledby: ctx.labelledby,
+            aria_hidden: (!is_open).then_some("true"),
+            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
+/// popover-API support at all (`docs/recommended-implementations.md`
+/// Caveat 2), so light dismiss / Escape still need this crate's own
+/// JS-driven listeners.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn PopoverNonModalContent(
+    id: String,
+    class: Option<String>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+    is_open: bool,
+) -> Element {
+    let ctx: PopoverCtx = use_context();
+    let set_open = ctx.set_open;
+    use_global_escape_listener(move || set_open.call(false));
+    use_outside_dismiss(ctx.root_id, move || set_open.call(false));
+
+    rsx! {
+        div {
+            id,
+            role: "dialog",
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
             class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
@@ -392,6 +536,13 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
         button {
             id,
             type: "button",
+            // See `crate::top_layer::anchor_name_style`: ties this trigger
+            // to the non-modal content's `position-anchor` so its
+            // `[data-side]` CSS still resolves relative to this trigger
+            // once the content is promoted to the top layer (Phase 4.4).
+            // Inert (empty) off the web arm, and unused by the modal arm
+            // (Phase 4.2's job), which never sets `position-anchor`.
+            style: crate::top_layer::anchor_name_style(&id.cloned()),
             onclick: move |e| {
                 e.stop_propagation();
                 ctx.set_open.call(!(ctx.open)());

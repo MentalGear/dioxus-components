@@ -191,6 +191,11 @@ pub fn TooltipTrigger(props: TooltipTriggerProps) -> Element {
         id: props.id.clone(),
         tabindex: "0",
         "aria-describedby": ctx.tooltip_id.cloned(),
+        // See `crate::top_layer::anchor_name_style`: ties the trigger to
+        // the content's `position-anchor` so the content's `[data-side]`
+        // CSS still resolves relative to this trigger once the content is
+        // promoted to the top layer. Inert (empty) off the web arm.
+        style: crate::top_layer::anchor_name_style(&ctx.tooltip_id.cloned()),
         onmouseenter: handle_mouse_enter,
         onmouseleave: handle_mouse_leave,
         onfocus: handle_focus,
@@ -285,18 +290,104 @@ pub fn TooltipContent(props: TooltipContentProps) -> Element {
     // Only render if the tooltip is open
     let render = use_animated_open(id, ctx.open);
 
-    // Create the tooltip content
+    // Create the tooltip content. `TooltipContentRendered` is a real
+    // component (not a plain fn) precisely so it can be mounted/unmounted
+    // by `render()` here -- it, and the hooks it calls internally (this
+    // slice's `use_popover_sync` on the web arm), get a fresh scope each
+    // time, matching this element's actual DOM lifetime. A plain fn called
+    // conditionally from inside this `rsx!` would instead attribute those
+    // hook calls to *this* component's own scope, where `render()` toggling
+    // on every open/close would change the hook count/order across renders
+    // of the same mounted `TooltipContent` -- exactly the hazard
+    // `docs/phase4-spike-findings.md` Construction B's root-cause analysis
+    // describes for a different case (binding `open` vs. calling
+    // `showModal()` in the same render pass); see `popover.rs`'s
+    // `PopoverContentRendered` for the same fix applied there.
     rsx! {
         if render() {
-            div {
-                id,
-                role: "tooltip",
-                "data-state": if ctx.open.cloned() { "open" } else { "closed" },
-                "data-side": props.side.as_str(),
-                "data-align": props.align.as_str(),
-                ..props.attributes,
-                {props.children}
+            TooltipContentRendered {
+                id: id.cloned(),
+                open: ctx.open,
+                set_open: ctx.set_open,
+                side: props.side,
+                align: props.align,
+                attributes: props.attributes,
+                children: props.children,
             }
+        }
+    }
+}
+
+/// Web arm (Phase 4.4, docs/plan.md): promote the tooltip to the top layer
+/// via `popover="manual"` so it escapes clipping/transformed ancestors
+/// (docs/phase4-spike-findings.md experiment 7). `manual`, not `auto`: a
+/// Tooltip already owns its entire open/close lifecycle through
+/// `TooltipTrigger`'s hover/focus/Escape handlers, and `auto`'s light
+/// dismiss (WHATWG HTML §popover-light-dismiss) would fight that — an
+/// outside pointerdown that the browser used to (harmlessly) ignore would
+/// now race our own signal to close it, and there is no separate
+/// interaction this component wants Escape or click-outside to mean beyond
+/// what the trigger already does. `crate::top_layer::use_popover_sync`
+/// drives `showPopover()`/`hidePopover()` from `open` and mirrors the
+/// browser's own `toggle` event back into `set_open` in case anything ever
+/// hides it outside that signal.
+#[cfg(target_family = "wasm")]
+#[component]
+fn TooltipContentRendered(
+    id: String,
+    open: Memo<bool>,
+    set_open: Callback<bool>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "tooltip",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            style: crate::top_layer::position_anchor_style(&id),
+            "data-state": if open.cloned() { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice. Blitz implements
+/// neither the `popover` attribute nor `document::eval`
+/// (`docs/recommended-implementations.md` Caveat 2), so this is the
+/// functional floor — a plain, always-in-flow div, visible exactly when
+/// `render()` (above) mounts it.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn TooltipContentRendered(
+    id: String,
+    open: Memo<bool>,
+    // Unused on this arm -- kept as a same-named field so the shared,
+    // cfg-independent call site in `TooltipContent` compiles unchanged on
+    // both arms.
+    set_open: Callback<bool>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let _ = set_open;
+    rsx! {
+        div {
+            id,
+            role: "tooltip",
+            "data-state": if open.cloned() { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            ..attributes,
+            {children}
         }
     }
 }

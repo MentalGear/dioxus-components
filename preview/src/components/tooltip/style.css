@@ -148,3 +148,82 @@
 .dx-tooltip-content[data-state="open"] {
   display: block;
 }
+
+/*
+ * Phase 4.4 (docs/plan.md): on the web arm, TooltipContent renders with a
+ * `popover` attribute so it escapes clipping/transformed ancestors
+ * (docs/phase4-spike-findings.md experiment 7) -- but promoting an element
+ * to the top layer changes its containing block to the viewport regardless
+ * of its own `position` value, which breaks every `[data-side]` rule above
+ * (they assume "absolute, relative to the nearest positioned ancestor",
+ * i.e. `.dx-tooltip`). CSS Anchor Positioning is the platform's own,
+ * still-CSS fix (see `top_layer::anchor_name_style`/`position_anchor_style`
+ * in primitives/src, which set `anchor-name` on the trigger and
+ * `position-anchor` on this content, both scoped to a unique id per
+ * instance): `anchor()` resolves relative to that named anchor even from
+ * the top layer. `@supports`-gated so an engine without Anchor Positioning
+ * (not yet Firefox/WebKit as of this writing) falls back to the rules
+ * above rather than an invalid declaration -- on such an engine, promoted
+ * content still escapes clipping, just without trigger-relative placement.
+ * No collision/flip logic here -- that is docs/plan.md Phase 5's job, not
+ * this slice's.
+ */
+@supports (anchor-name: --a) {
+  .dx-tooltip-content[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+  }
+
+  .dx-tooltip-content[popover][data-side="top"] {
+    bottom: anchor(top);
+    left: anchor(center);
+    margin-bottom: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-tooltip-content[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-tooltip-content[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-tooltip-content[popover][data-side="left"] {
+    top: anchor(center);
+    right: anchor(left);
+    margin-right: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-tooltip-content[popover][data-side="top"][data-align="start"],
+  .dx-tooltip-content[popover][data-side="bottom"][data-align="start"] {
+    left: anchor(left);
+    transform: none;
+  }
+
+  .dx-tooltip-content[popover][data-side="top"][data-align="end"],
+  .dx-tooltip-content[popover][data-side="bottom"][data-align="end"] {
+    left: anchor(right);
+    transform: translateX(-100%);
+  }
+
+  .dx-tooltip-content[popover][data-side="left"][data-align="start"],
+  .dx-tooltip-content[popover][data-side="right"][data-align="start"] {
+    top: anchor(top);
+    transform: none;
+  }
+
+  .dx-tooltip-content[popover][data-side="left"][data-align="end"],
+  .dx-tooltip-content[popover][data-side="right"][data-align="end"] {
+    top: anchor(bottom);
+    transform: translateY(-100%);
+  }
+}
