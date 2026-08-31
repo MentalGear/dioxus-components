@@ -814,6 +814,7 @@ impl SliderContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     #[test]
     fn closest_thumb_uses_raw_collision_position() {
@@ -835,5 +836,121 @@ mod tests {
     fn clamp_to_step_bounds_preserves_available_step_ticks() {
         assert_eq!(clamp_to_step_bounds(85.0, 72.0, 85.0, 10.0), 80.0);
         assert_eq!(clamp_to_step_bounds(84.0, 78.0, 89.0, 10.0), 80.0);
+    }
+
+    /// Run a closure inside a Dioxus runtime context so that Signal/Memo/Callback
+    /// APIs are available (mirrors `virtual/virtualizer.rs`'s `with_runtime`).
+    fn with_runtime(f: impl Fn() + 'static) {
+        let result = Rc::new(Cell::new(false));
+        let result2 = result.clone();
+        let test_fn = Rc::new(f);
+        let mut dom = VirtualDom::new_with_props(
+            |props: TestHarnessProps| {
+                (props.test_fn)();
+                props.result.set(true);
+                rsx! { div {} }
+            },
+            TestHarnessProps {
+                test_fn,
+                result: result2,
+            },
+        );
+        dom.rebuild_in_place();
+        assert!(result.get(), "Test component did not run");
+    }
+
+    #[derive(Clone, Props)]
+    struct TestHarnessProps {
+        test_fn: Rc<dyn Fn()>,
+        result: Rc<Cell<bool>>,
+    }
+
+    impl PartialEq for TestHarnessProps {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+
+    /// Build a real `SliderContext` (not a stand-in) with the given bounds/thumbs,
+    /// for exercising the signal-wiring methods that free-function tests can't reach.
+    fn make_context(
+        min: f64,
+        max: f64,
+        step: f64,
+        inverted: bool,
+        thumbs: Vec<f64>,
+    ) -> SliderContext {
+        let min_sig = use_signal(|| min);
+        let max_sig = use_signal(|| max);
+        let step_sig = use_signal(|| step);
+        let disabled_sig = use_signal(|| false);
+        let label_sig = use_signal(|| None::<String>);
+        let dragging_sig = use_signal(|| false);
+        let active_thumb = use_signal(|| 0usize);
+        let thumbs_memo = use_memo(move || thumbs.clone());
+        SliderContext {
+            thumbs: thumbs_memo,
+            set_thumb: Callback::new(|_: (usize, f64)| {}),
+            min: min_sig.into(),
+            max: max_sig.into(),
+            step: step_sig.into(),
+            disabled: disabled_sig.into(),
+            horizontal: true,
+            inverted,
+            dragging: dragging_sig.into(),
+            active_thumb,
+            label: label_sig.into(),
+        }
+    }
+
+    #[test]
+    fn slider_context_range_and_percent() {
+        with_runtime(|| {
+            let ctx = make_context(0.0, 100.0, 1.0, false, vec![50.0]);
+            assert_eq!(ctx.range(), [0.0, 100.0]);
+            assert_eq!(ctx.range_size(), 100.0);
+            assert_eq!(ctx.as_percent(25.0), 25.0);
+            assert_eq!(
+                ctx.as_percent(-10.0),
+                0.0,
+                "as_percent must clamp below min"
+            );
+            assert_eq!(
+                ctx.as_percent(150.0),
+                100.0,
+                "as_percent must clamp above max"
+            );
+
+            let inverted_ctx = make_context(0.0, 100.0, 1.0, true, vec![50.0]);
+            assert_eq!(inverted_ctx.range(), [100.0, 0.0], "inverted swaps min/max");
+            assert_eq!(inverted_ctx.range_size(), -100.0);
+
+            // A non-zero min distinguishes `value - min` (and `max - min`) from a
+            // mistaken `+`, which a min of 0.0 above cannot (0 - x == 0 + x).
+            let offset_ctx = make_context(10.0, 110.0, 1.0, false, vec![50.0]);
+            assert_eq!(offset_ctx.as_percent(60.0), 50.0);
+        });
+    }
+
+    #[test]
+    fn slider_context_closest_thumb_and_clamp_for() {
+        with_runtime(|| {
+            let ctx = make_context(0.0, 100.0, 10.0, false, vec![20.0, 80.0]);
+            assert_eq!(ctx.closest_thumb(10.0), 0);
+            assert_eq!(ctx.closest_thumb(90.0), 1);
+
+            // Range-mode clamp_for bounds thumb 0 against thumb 1's value and vice versa.
+            assert_eq!(ctx.clamp_for(0, 95.0), 80.0);
+            assert_eq!(ctx.clamp_for(1, 5.0), 20.0);
+            assert_eq!(ctx.clamp_for(0, 33.0), 30.0, "snaps to the nearest step");
+
+            let single = make_context(0.0, 100.0, 1.0, false, vec![50.0]);
+            assert_eq!(
+                single.closest_thumb(10.0),
+                0,
+                "single-thumb sliders always pick 0"
+            );
+            assert_eq!(single.clamp_for(0, 150.0), 100.0, "clamps to global max");
+        });
     }
 }

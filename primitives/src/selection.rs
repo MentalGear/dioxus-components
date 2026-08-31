@@ -132,6 +132,7 @@ fn remove_option_state(options: &mut Vec<OptionState>, id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dioxus::prelude::*;
 
     fn option(id: &str, index: usize) -> OptionState {
         OptionState {
@@ -182,5 +183,164 @@ mod tests {
 
         assert_eq!(ids(&options), ["b"]);
         assert_eq!(indices(&options), [0]);
+    }
+
+    #[test]
+    fn dyn_partial_eq_compares_by_downcast_and_value() {
+        let a: Rc<dyn DynPartialEq> = Rc::new(1i32);
+        let same_value: Rc<dyn DynPartialEq> = Rc::new(1i32);
+        let different_value: Rc<dyn DynPartialEq> = Rc::new(2i32);
+        let different_type: Rc<dyn DynPartialEq> = Rc::new("1".to_string());
+
+        assert!(a.eq(&*same_value as &dyn Any));
+        assert!(!a.eq(&*different_value as &dyn Any));
+        assert!(
+            !a.eq(&*different_type as &dyn Any),
+            "a mismatched concrete type must never compare equal"
+        );
+    }
+
+    #[test]
+    fn rc_partial_eq_value_equality_is_by_downcast_value() {
+        let a = RcPartialEqValue::new(42i32);
+        let same = RcPartialEqValue::new(42i32);
+        let different = RcPartialEqValue::new(7i32);
+        let different_type = RcPartialEqValue::new("42".to_string());
+
+        assert!(a == same);
+        assert!(a != different);
+        assert!(
+            a != different_type,
+            "values of different concrete types must never be equal"
+        );
+
+        assert_eq!(a.as_ref::<i32>(), Some(&42));
+        assert_eq!(a.as_ref::<String>(), None, "wrong-type downcast must fail");
+    }
+
+    #[test]
+    fn option_text_value_prefers_explicit_text_value() {
+        let value = "ignored".to_string();
+        let text = option_text_value(&value, Some("explicit".to_string()), "Select");
+        assert_eq!(text, "explicit");
+    }
+
+    #[test]
+    fn option_text_value_falls_back_to_string_value() {
+        let value = "from-string".to_string();
+        let text = option_text_value(&value, None, "Select");
+        assert_eq!(text, "from-string");
+    }
+
+    #[test]
+    fn option_text_value_falls_back_to_str_value() {
+        let value: &str = "from-str";
+        let text = option_text_value(&value, None, "Select");
+        assert_eq!(text, "from-str");
+    }
+
+    #[test]
+    fn option_text_value_defaults_to_empty_for_non_string_types_without_text_value() {
+        let value = 42i32;
+        let text = option_text_value(&value, None, "Select");
+        assert_eq!(text, "");
+    }
+
+    #[test]
+    fn selected_text_joins_matching_options_in_selection_order() {
+        let options = vec![option("a", 0), option("b", 1), option("c", 2)];
+        let a_value = RcPartialEqValue::new("a".to_string());
+        let c_value = RcPartialEqValue::new("c".to_string());
+
+        // Selection order (c, a) is preserved, not option registration order.
+        let text = selected_text([&c_value, &a_value], &options);
+        assert_eq!(text, Some("c, a".to_string()));
+    }
+
+    #[test]
+    fn selected_text_skips_values_with_no_matching_option() {
+        let options = vec![option("a", 0)];
+        let stale_value = RcPartialEqValue::new("gone".to_string());
+
+        let text = selected_text([&stale_value], &options);
+        assert_eq!(
+            text, None,
+            "no matching option means no text, not an empty joined string"
+        );
+    }
+
+    #[test]
+    fn selected_text_returns_none_for_no_values() {
+        let options = vec![option("a", 0)];
+        let values: Vec<&RcPartialEqValue> = Vec::new();
+
+        assert_eq!(selected_text(values, &options), None);
+    }
+
+    /// Run a closure inside a Dioxus runtime context so `Signal` is available
+    /// (mirrors `virtual/virtualizer.rs`'s `with_runtime`). `sync_option` and
+    /// `remove_option` are thin `Signal<Vec<OptionState>>` wrappers around
+    /// `sync_option_state`/`remove_option_state`, so exercising *them*
+    /// specifically (not just the inner pure functions) needs a real signal.
+    fn with_runtime(f: impl Fn() + 'static) {
+        use std::cell::Cell;
+
+        let result = Rc::new(Cell::new(false));
+        let result2 = result.clone();
+        let test_fn = Rc::new(f);
+        let mut dom = VirtualDom::new_with_props(
+            |props: TestHarnessProps| {
+                (props.test_fn)();
+                props.result.set(true);
+                rsx! { div {} }
+            },
+            TestHarnessProps {
+                test_fn,
+                result: result2,
+            },
+        );
+        dom.rebuild_in_place();
+        assert!(result.get(), "Test component did not run");
+    }
+
+    #[derive(Clone, Props)]
+    struct TestHarnessProps {
+        test_fn: Rc<dyn Fn()>,
+        result: Rc<std::cell::Cell<bool>>,
+    }
+
+    impl PartialEq for TestHarnessProps {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn sync_option_and_remove_option_operate_through_a_real_signal() {
+        with_runtime(|| {
+            let options_signal = Signal::new(vec![option("a", 0)]);
+
+            sync_option(options_signal, option("b", 1));
+            assert_eq!(
+                options_signal
+                    .read()
+                    .iter()
+                    .map(|o| o.id.clone())
+                    .collect::<Vec<_>>(),
+                vec!["a".to_string(), "b".to_string()],
+                "sync_option must write the new option into the signal"
+            );
+
+            remove_option(options_signal, "a");
+            assert_eq!(
+                options_signal
+                    .read()
+                    .iter()
+                    .map(|o| o.id.clone())
+                    .collect::<Vec<_>>(),
+                vec!["b".to_string()],
+                "remove_option must remove the matching option from the signal"
+            );
+        });
     }
 }

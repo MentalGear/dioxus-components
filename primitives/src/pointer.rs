@@ -93,6 +93,8 @@ fn remove_pointer(pointer_id: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     #[test]
     fn upsert_pointer_updates_existing_pointer() {
@@ -105,5 +107,98 @@ mod tests {
 
         assert_eq!(pointers.len(), 1);
         assert_eq!(pointers[0].position, ClientPoint::new(30.0, 40.0));
+    }
+
+    /// Run a closure inside a Dioxus runtime context. The `POINTERS` `GlobalSignal` (and the
+    /// `queue_effect`/`Runtime::current` machinery its initializer touches) require a live
+    /// runtime, so its public API can only be exercised this way (mirrors
+    /// `virtual/virtualizer.rs`'s `with_runtime`).
+    fn with_runtime(f: impl Fn() + 'static) {
+        let result = Rc::new(Cell::new(false));
+        let result2 = result.clone();
+        let test_fn = Rc::new(f);
+        let mut dom = VirtualDom::new_with_props(
+            |props: TestHarnessProps| {
+                (props.test_fn)();
+                props.result.set(true);
+                rsx! { div {} }
+            },
+            TestHarnessProps {
+                test_fn,
+                result: result2,
+            },
+        );
+        dom.rebuild_in_place();
+        assert!(result.get(), "Test component did not run");
+    }
+
+    #[derive(Clone, Props)]
+    struct TestHarnessProps {
+        test_fn: Rc<dyn Fn()>,
+        result: Rc<Cell<bool>>,
+    }
+
+    impl PartialEq for TestHarnessProps {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+
+    /// Each test picks pointer ids not used by other tests in this file: `POINTERS` is a
+    /// process-wide `GlobalSignal` (not reset between tests), and `cargo test` runs tests for
+    /// a binary in parallel by default.
+    #[test]
+    fn track_pointer_down_then_pointer_position_reports_it() {
+        with_runtime(|| {
+            assert_eq!(pointer_position(101), None, "unknown pointer starts absent");
+
+            track_pointer_down(101, ClientPoint::new(1.0, 2.0));
+            assert_eq!(pointer_position(101), Some(ClientPoint::new(1.0, 2.0)));
+        });
+    }
+
+    #[test]
+    fn add_pointer_then_update_pointer_moves_it() {
+        with_runtime(|| {
+            add_pointer(102, ClientPoint::new(5.0, 5.0));
+            assert_eq!(pointer_position(102), Some(ClientPoint::new(5.0, 5.0)));
+
+            update_pointer(102, ClientPoint::new(9.0, 9.0));
+            assert_eq!(
+                pointer_position(102),
+                Some(ClientPoint::new(9.0, 9.0)),
+                "update_pointer must move the existing entry, not add a new one"
+            );
+        });
+    }
+
+    #[test]
+    fn update_pointer_on_unknown_id_is_a_no_op() {
+        with_runtime(|| {
+            // No add_pointer(103, ..) beforehand.
+            update_pointer(103, ClientPoint::new(9.0, 9.0));
+            assert_eq!(
+                pointer_position(103),
+                None,
+                "update_pointer must not create an entry for an unknown pointer id"
+            );
+        });
+    }
+
+    #[test]
+    fn remove_pointer_clears_it_and_leaves_others() {
+        with_runtime(|| {
+            add_pointer(104, ClientPoint::new(1.0, 1.0));
+            add_pointer(105, ClientPoint::new(2.0, 2.0));
+
+            remove_pointer(104);
+
+            assert_eq!(pointer_position(104), None, "removed pointer must be gone");
+            assert_eq!(
+                pointer_position(105),
+                Some(ClientPoint::new(2.0, 2.0)),
+                "removing one pointer must not affect another"
+            );
+        });
     }
 }
