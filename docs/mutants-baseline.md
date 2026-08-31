@@ -40,3 +40,21 @@ Browser-only (expected, Playwright's layer): ~30–40 (drag-effect math in slide
 **Targeted test additions now; a `workflow_dispatch` (manual-trigger) job as the standing artifact — not nightly.** The gap is test *content*, not monitoring cadence; these files change infrequently, and a nightly re-report of a known backlog is ~2h/day of CI for no new information. Re-run the exact scoped command before releases or after touching these files.
 
 Full per-mutant detail was archived off-repo by the run; `mutants.out*/` is gitignored.
+
+## After the eight fixes (2026-08-31, same day)
+
+All eight landed (tests-only except the mechanical date_picker key-handler extraction, precedent move_interaction.rs). Re-runs, before → after caught/viable:
+
+| File | Before | After |
+|---|---|---|
+| calendar.rs | 23% | **68%** |
+| date_picker.rs | 0% | **85%** |
+| color_picker.rs | 0% | **58%** |
+| slider.rs | 40% | **75%** |
+| pointer.rs | 14% | **79%** |
+| selection.rs | 32% | **91%** |
+| text_search.rs | 65% | not re-run (projection ~86%) |
+
+Remaining misses are dominated by browser-only drag/effect math (Playwright layer, per scoping) plus a handful of equivalent mutants. Fix 1 verdict: the real calendar_grid_weeks passed the copied expectations unchanged — implementations equivalent, no latent bug. A late strengthening pass (a few extra boundary tests) landed after these measurements; a future scoped re-run (the workflow_dispatch job, .github/workflows/mutants.yml) will pick up the incremental gains.
+
+Gap discovered en route: **date_picker has no dedicated Playwright spec** (calendar.spec.ts does not cover it) — filed in the backlog.

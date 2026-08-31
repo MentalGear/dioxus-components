@@ -1,0 +1,36 @@
+name: Mutation testing (manual)
+
+# Manual-only by design — see docs/mutants-baseline.md: the gap this
+# measures is test content, not monitoring cadence. Run before releases
+# or after touching the scoped algorithmic files.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-mutants --locked
+      - name: Run scoped mutation testing
+        run: |
+          cargo mutants -p dioxus-primitives --timeout-multiplier 3 -j 2 \
+            -f primitives/src/slider.rs \
+            -f primitives/src/calendar.rs \
+            -f primitives/src/virtual/virtualizer.rs \
+            -f primitives/src/select/text_search.rs \
+            -f primitives/src/pointer.rs \
+            -f primitives/src/date_picker.rs \
+            -f primitives/src/selection.rs \
+            -f primitives/src/color_picker.rs \
+            -f primitives/src/move_interaction.rs
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out

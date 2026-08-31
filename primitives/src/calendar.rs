@@ -2552,6 +2552,7 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use time::macros::date;
 
     #[component]
@@ -2702,54 +2703,14 @@ mod tests {
 
     #[test]
     fn test_calendar_grid_weeks() {
-        // Helper function to generate grid (mimics what CalendarGrid does)
-        fn generate_test_grid(view_date: Date, first_day_of_week: Weekday) -> Vec<Vec<Date>> {
-            let mut grid = Vec::new();
-
-            let first_of_month = view_date.replace_day(1).unwrap();
-            let start_offset = days_since(view_date, first_day_of_week) as usize;
-
-            // Add previous month's trailing days
-            if start_offset > 0 {
-                if let Some(mut date) = first_of_month.previous_day() {
-                    for _ in 1..start_offset {
-                        date = date.previous_day().unwrap_or(date);
-                    }
-                    for _ in 0..start_offset {
-                        grid.push(date);
-                        date = date.next_day().unwrap_or(date);
-                    }
-                }
-            }
-
-            // Add current month's days
-            let days_in_month = view_date.month().length(view_date.year());
-            for day in 1..=days_in_month {
-                if let Ok(date) = view_date.replace_day(day) {
-                    grid.push(date);
-                }
-            }
-
-            // Add next month's days to complete the week
-            let remainder = grid.len() % 7;
-            if remainder > 0 {
-                if let Ok(last_day) = view_date.replace_day(days_in_month) {
-                    if let Some(mut date) = last_day.next_day() {
-                        for _ in 0..(7 - remainder) {
-                            grid.push(date);
-                            date = date.next_day().unwrap_or(date);
-                        }
-                    }
-                }
-            }
-
-            grid.chunks(7).map(|week| week.to_vec()).collect()
-        }
+        // Calls the real `calendar_grid_weeks` (the function `CalendarGrid`/
+        // `use_calendar_grid` actually use to build the rendered month grid) --
+        // not a hand-copied reimplementation. See docs/mutants-baseline.md fix #1.
 
         // Test February 2021: starts on Monday, 28 days
         // When first day of week is Monday, should fit in exactly 4 weeks
         let feb_2021 = date!(2021 - 02 - 15);
-        let feb_grid = generate_test_grid(feb_2021, Weekday::Monday);
+        let feb_grid = calendar_grid_weeks(feb_2021, Weekday::Monday);
         assert_eq!(
             feb_grid.len(),
             4,
@@ -2771,7 +2732,7 @@ mod tests {
         // Test May 2024: starts on Wednesday, 31 days
         // When first day of week is Sunday, should need 5 weeks
         let may_2024 = date!(2024 - 05 - 15);
-        let may_grid = generate_test_grid(may_2024, Weekday::Sunday);
+        let may_grid = calendar_grid_weeks(may_2024, Weekday::Sunday);
         assert_eq!(
             may_grid.len(),
             5,
@@ -2790,17 +2751,586 @@ mod tests {
         // December 2018: starts on Saturday, 31 days (when week starts on Sunday)
         // Should need exactly 6 weeks (30 days in November + 31 in December + 5 in January = 66/7 = 6)
         let dec_2018 = date!(2018 - 12 - 15);
-        let dec_grid = generate_test_grid(dec_2018, Weekday::Sunday);
+        let dec_grid = calendar_grid_weeks(dec_2018, Weekday::Sunday);
         assert_eq!(
             dec_grid.len(),
             6,
             "December 2018 should have exactly 6 weeks"
         );
 
-        // Verify no week is completely empty
+        // Verify no week is completely empty, and every week is contiguous
+        // and every week's 7 dates are consecutive calendar days
+        let mut prev: Option<Date> = None;
         for week in &dec_grid {
             assert!(!week.is_empty(), "No week should be empty");
             assert_eq!(week.len(), 7, "Each week should have exactly 7 days");
+            for &d in week {
+                if let Some(p) = prev {
+                    assert_eq!(p.next_day().unwrap(), d, "grid dates must be consecutive");
+                }
+                prev = Some(d);
+            }
         }
+
+        // The grid's first date is the correct number of days before the 1st
+        // of the month for the given first_day_of_week (i.e. the leading
+        // days from the previous month line up under the right weekday
+        // column), and the grid's last date completes the final week.
+        let first_of_dec = dec_2018.replace_day(1).unwrap();
+        assert_eq!(dec_grid[0][0].weekday(), Weekday::Sunday);
+        assert_eq!(
+            first_of_dec - dec_grid[0][0],
+            time::Duration::days(days_since(dec_2018, Weekday::Sunday))
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Pure predicates (docs/mutants-baseline.md fix #8)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_nth_month_next_and_previous() {
+        // NOTE: `nth_month_next`/`nth_month_previous` compute the target month via
+        // `Month::nth_next`/`nth_prev`, which cycle *within* a 12-month wheel, and only
+        // bump the year by at most 1 to account for that single wrap. They are only ever
+        // called in this codebase with small offsets (multi-month calendar view offsets),
+        // so this is exercised here with n in a realistic small range rather than n >= 12,
+        // where the single `+1`/`-1` year adjustment would under/overshoot the real
+        // number of year boundaries crossed.
+        let date = date!(2024 - 01 - 15);
+
+        assert_eq!(nth_month_next(date, 0), Some(date), "n=0 is a no-op");
+        assert_eq!(nth_month_next(date, 1), Some(date!(2024 - 02 - 15)));
+
+        // Crosses a year boundary within a single 12-month cycle.
+        let nov = date!(2024 - 11 - 15);
+        assert_eq!(
+            nth_month_next(nov, 2),
+            Some(date!(2025 - 01 - 15)),
+            "wraps into the next year"
+        );
+
+        // Clamps the day when the target month is shorter.
+        let jan_31 = date!(2024 - 01 - 31);
+        assert_eq!(nth_month_next(jan_31, 1), Some(date!(2024 - 02 - 29))); // 2024 is a leap year
+
+        assert_eq!(nth_month_previous(date, 0), Some(date), "n=0 is a no-op");
+        assert_eq!(nth_month_previous(date, 1), Some(date!(2023 - 12 - 15)));
+        assert_eq!(
+            nth_month_previous(nov, 2),
+            Some(date!(2024 - 09 - 15)),
+            "no wrap needed for a same-year previous"
+        );
+
+        let mar_31 = date!(2024 - 03 - 31);
+        assert_eq!(nth_month_previous(mar_31, 1), Some(date!(2024 - 02 - 29)));
+    }
+
+    #[test]
+    fn test_date_range_contains_and_contained_in_interval() {
+        let range = DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 20));
+
+        // `contains` is inclusive of both endpoints.
+        assert!(range.contains(date!(2024 - 01 - 10)));
+        assert!(range.contains(date!(2024 - 01 - 20)));
+        assert!(range.contains(date!(2024 - 01 - 15)));
+        assert!(!range.contains(date!(2024 - 01 - 09)));
+        assert!(!range.contains(date!(2024 - 01 - 21)));
+
+        // `contained_in_interval` is exclusive of both endpoints.
+        assert!(!range.contained_in_interval(date!(2024 - 01 - 10)));
+        assert!(!range.contained_in_interval(date!(2024 - 01 - 20)));
+        assert!(range.contained_in_interval(date!(2024 - 01 - 15)));
+
+        // `DateRange::new` normalizes a reversed (start, end) pair.
+        let reversed = DateRange::new(date!(2024 - 01 - 20), date!(2024 - 01 - 10));
+        assert_eq!(reversed.start(), date!(2024 - 01 - 10));
+        assert_eq!(reversed.end(), date!(2024 - 01 - 20));
+    }
+
+    #[test]
+    fn test_date_range_display() {
+        let range = DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 20));
+        assert_eq!(
+            range.to_string(),
+            format!("{} - {}", date!(2024 - 01 - 10), date!(2024 - 01 - 20))
+        );
+        assert!(!range.to_string().is_empty());
+    }
+
+    #[test]
+    fn test_available_ranges_valid_interval_and_to_disabled_ranges() {
+        let disabled = [
+            DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 15)),
+            DateRange::new(date!(2024 - 02 - 01), date!(2024 - 02 - 05)),
+        ];
+        let ranges = AvailableRanges::new(&disabled);
+
+        // Inside a disabled range (inclusive endpoints) is invalid.
+        assert!(!ranges.valid_interval(date!(2024 - 01 - 10)));
+        assert!(!ranges.valid_interval(date!(2024 - 01 - 12)));
+        assert!(!ranges.valid_interval(date!(2024 - 01 - 15)));
+        // Outside any disabled range is valid.
+        assert!(ranges.valid_interval(date!(2024 - 01 - 09)));
+        assert!(ranges.valid_interval(date!(2024 - 01 - 16)));
+        assert!(ranges.valid_interval(date!(2024 - 01 - 31)));
+        assert!(!ranges.valid_interval(date!(2024 - 02 - 03)));
+
+        // Round trips back out as the same (sorted, merged) disabled ranges.
+        assert_eq!(ranges.to_disabled_ranges(), disabled.to_vec());
+    }
+
+    #[test]
+    fn test_available_ranges_merges_overlapping_disabled_ranges() {
+        // Two overlapping disabled ranges collapse into one.
+        let disabled = [
+            DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 20)),
+            DateRange::new(date!(2024 - 01 - 15), date!(2024 - 01 - 25)),
+        ];
+        let ranges = AvailableRanges::new(&disabled);
+
+        assert_eq!(
+            ranges.to_disabled_ranges(),
+            vec![DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 25))]
+        );
+        assert!(!ranges.valid_interval(date!(2024 - 01 - 18)));
+    }
+
+    #[test]
+    fn test_available_ranges_available_range() {
+        let disabled = [DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 20))];
+        let ranges = AvailableRanges::new(&disabled);
+        let bounds = DateRange::new(date!(2024 - 01 - 01), date!(2024 - 01 - 31));
+
+        // A date between two disabled boundaries gets the gap between them.
+        let available = ranges
+            .available_range(date!(2024 - 01 - 05), bounds)
+            .expect("date is not disabled");
+        assert_eq!(available.start(), date!(2024 - 01 - 01));
+        assert_eq!(available.end(), date!(2024 - 01 - 09));
+
+        let available = ranges
+            .available_range(date!(2024 - 01 - 25), bounds)
+            .expect("date is not disabled");
+        assert_eq!(available.start(), date!(2024 - 01 - 21));
+        assert_eq!(available.end(), date!(2024 - 01 - 31));
+
+        // A disabled date itself has no available range.
+        assert_eq!(ranges.available_range(date!(2024 - 01 - 15), bounds), None);
+    }
+
+    #[test]
+    fn test_is_between_is_start_is_end() {
+        let range = Some(DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 20)));
+
+        assert!(is_start(date!(2024 - 01 - 10), range));
+        assert!(!is_start(date!(2024 - 01 - 20), range));
+        assert!(!is_start(date!(2024 - 01 - 15), range));
+
+        assert!(is_end(date!(2024 - 01 - 20), range));
+        assert!(!is_end(date!(2024 - 01 - 10), range));
+        assert!(!is_end(date!(2024 - 01 - 15), range));
+
+        assert!(is_between(date!(2024 - 01 - 15), range));
+        assert!(
+            !is_between(date!(2024 - 01 - 10), range),
+            "endpoints are not 'between'"
+        );
+        assert!(
+            !is_between(date!(2024 - 01 - 20), range),
+            "endpoints are not 'between'"
+        );
+
+        // A single-day range (start == end) is neither a start nor an end per
+        // the `date != r.end` / `date != r.start` guards.
+        let single_day = Some(DateRange::new(date!(2024 - 01 - 10), date!(2024 - 01 - 10)));
+        assert!(!is_start(date!(2024 - 01 - 10), single_day));
+        assert!(!is_end(date!(2024 - 01 - 10), single_day));
+
+        assert!(!is_start(date!(2024 - 01 - 10), None));
+        assert!(!is_end(date!(2024 - 01 - 10), None));
+        assert!(!is_between(date!(2024 - 01 - 10), None));
+    }
+
+    #[test]
+    fn test_aria_label() {
+        let d = date!(2024 - 03 - 04); // A Monday
+        assert_eq!(aria_label(&d), "Monday, March 4, 2024");
+    }
+
+    #[test]
+    fn test_relative_calendar_month() {
+        with_runtime(|| {
+            let enabled_range = DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31));
+            let base_ctx = make_base_ctx_for_relative_month(enabled_range);
+            let current_month = Month::June;
+
+            // Outside the enabled range entirely.
+            assert_eq!(
+                relative_calendar_month(date!(2023 - 12 - 15), &base_ctx, current_month),
+                RelativeMonth::Last
+            );
+            assert_eq!(
+                relative_calendar_month(date!(2025 - 01 - 15), &base_ctx, current_month),
+                RelativeMonth::Next
+            );
+
+            // Inside the enabled range: compared against `current_month`.
+            assert_eq!(
+                relative_calendar_month(date!(2024 - 05 - 15), &base_ctx, current_month),
+                RelativeMonth::Last
+            );
+            assert_eq!(
+                relative_calendar_month(date!(2024 - 06 - 15), &base_ctx, current_month),
+                RelativeMonth::Current
+            );
+            assert_eq!(
+                relative_calendar_month(date!(2024 - 07 - 15), &base_ctx, current_month),
+                RelativeMonth::Next
+            );
+        });
+    }
+
+    #[test]
+    fn test_relative_month_current_month() {
+        assert!(RelativeMonth::Current.current_month());
+        assert!(!RelativeMonth::Last.current_month());
+        assert!(!RelativeMonth::Next.current_month());
+    }
+
+    #[test]
+    fn test_relative_month_display() {
+        assert_eq!(RelativeMonth::Last.to_string(), "last");
+        assert_eq!(RelativeMonth::Current.to_string(), "current");
+        assert_eq!(RelativeMonth::Next.to_string(), "next");
+    }
+
+    // -----------------------------------------------------------------
+    // Context accessors (docs/mutants-baseline.md fix #8)
+    // -----------------------------------------------------------------
+
+    /// Run a closure inside a Dioxus runtime context so that Signal/Memo/Callback
+    /// APIs are available (mirrors `virtual/virtualizer.rs`'s `with_runtime`).
+    fn with_runtime(f: impl Fn() + 'static) {
+        let result = Rc::new(Cell::new(false));
+        let result2 = result.clone();
+        let test_fn = Rc::new(f);
+        let mut dom = VirtualDom::new_with_props(
+            |props: TestHarnessProps| {
+                (props.test_fn)();
+                props.result.set(true);
+                rsx! { div {} }
+            },
+            TestHarnessProps {
+                test_fn,
+                result: result2,
+            },
+        );
+        dom.rebuild_in_place();
+        assert!(result.get(), "Test component did not run");
+    }
+
+    #[derive(Clone, Props)]
+    struct TestHarnessProps {
+        test_fn: Rc<dyn Fn()>,
+        result: Rc<Cell<bool>>,
+    }
+
+    impl PartialEq for TestHarnessProps {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+
+    /// Build a minimal but real `BaseCalendarContext` just to exercise
+    /// `relative_calendar_month`'s `enabled_date_range` read; must run inside `with_runtime`.
+    fn make_base_ctx_for_relative_month(enabled_date_range: DateRange) -> BaseCalendarContext {
+        BaseCalendarContext {
+            focused_date: Signal::new(None),
+            view_date: use_signal(|| date!(2024 - 06 - 01)).into(),
+            available_ranges: use_memo(|| AvailableRanges::new(&[])),
+            set_view_date: Callback::new(|_: Date| {}),
+            format_weekday: Callback::new(|w: Weekday| format!("{w:?}")),
+            format_month: Callback::new(|m: Month| m.to_string()),
+            disabled: use_signal(|| false).into(),
+            today: date!(2024 - 06 - 15),
+            first_day_of_week: Weekday::Monday,
+            enabled_date_range,
+            view_registrations: use_signal(Vec::new),
+        }
+    }
+
+    /// Build a real, fully wired `BaseCalendarContext` (not a stand-in) for exercising the
+    /// signal-wiring accessor methods; must run inside `with_runtime`.
+    fn make_base_ctx(enabled_date_range: DateRange) -> BaseCalendarContext {
+        let view_date_sig = use_signal(|| enabled_date_range.start());
+        BaseCalendarContext {
+            focused_date: Signal::new(None),
+            view_date: view_date_sig.into(),
+            available_ranges: use_memo(|| AvailableRanges::new(&[])),
+            set_view_date: Callback::new(move |d: Date| {
+                let mut view_date_sig = view_date_sig;
+                view_date_sig.set(d);
+            }),
+            format_weekday: Callback::new(|w: Weekday| format!("{w:?}")),
+            format_month: Callback::new(|m: Month| m.to_string()),
+            disabled: use_signal(|| false).into(),
+            today: enabled_date_range.start(),
+            first_day_of_week: Weekday::Monday,
+            enabled_date_range,
+            view_registrations: use_signal(Vec::new),
+        }
+    }
+
+    #[test]
+    fn test_base_calendar_context_focused_date() {
+        with_runtime(|| {
+            let mut ctx =
+                make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+
+            assert_eq!(ctx.focused_date(), None);
+            ctx.set_focused_date(Some(date!(2024 - 06 - 15)));
+            assert_eq!(ctx.focused_date(), Some(date!(2024 - 06 - 15)));
+
+            assert!(ctx.is_focused(date!(2024 - 06 - 15)));
+            assert!(!ctx.is_focused(date!(2024 - 06 - 16)));
+        });
+    }
+
+    #[test]
+    fn test_base_calendar_context_set_view_date_clamps_to_enabled_range() {
+        with_runtime(|| {
+            let ctx = make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+
+            ctx.set_view_date(date!(2024 - 06 - 15));
+            assert_eq!(ctx.view_date(), date!(2024 - 06 - 15));
+
+            // Out-of-range requests are clamped into the enabled range.
+            ctx.set_view_date(date!(2025 - 03 - 01));
+            assert_eq!(ctx.view_date(), date!(2024 - 12 - 31));
+
+            ctx.set_view_date(date!(2020 - 01 - 01));
+            assert_eq!(ctx.view_date(), date!(2024 - 01 - 01));
+        });
+    }
+
+    #[test]
+    fn test_base_calendar_context_is_disabled_and_is_unavailable() {
+        with_runtime(|| {
+            let mut disabled_sig = use_signal(|| false);
+            let mut ctx =
+                make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+            ctx.disabled = disabled_sig.into();
+            assert!(!ctx.is_disabled(), "false signal must read back as false");
+            disabled_sig.set(true);
+            assert!(ctx.is_disabled(), "true signal must read back as true");
+
+            let disabled_ranges = [DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 20))];
+            ctx.available_ranges = use_memo(move || AvailableRanges::new(&disabled_ranges));
+            assert!(ctx.is_unavailable(date!(2024 - 06 - 15)));
+            assert!(!ctx.is_unavailable(date!(2024 - 06 - 01)));
+        });
+    }
+
+    #[test]
+    fn test_base_calendar_context_available_range_with_and_without_range_calendar() {
+        with_runtime(|| {
+            let ctx = make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+            // No `RangeCalendarContext` has been provided in this scope.
+            assert_eq!(ctx.available_range(), None);
+
+            // With a `RangeCalendarContext` whose anchor date is set, the base
+            // context's `available_range` looks up the available span around it.
+            let anchor_date = Signal::new(Some(date!(2024 - 06 - 15)));
+            use_context_provider(|| RangeCalendarContext {
+                anchor_date,
+                highlighted_range: Signal::new(None),
+                set_selected_range: Callback::new(|_: Option<DateRange>| {}),
+            });
+            assert_eq!(
+                ctx.available_range(),
+                Some(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31))),
+                "with no disabled ranges, the full enabled range is available"
+            );
+        });
+    }
+
+    #[test]
+    fn test_base_calendar_context_visible_month_count_and_registrations() {
+        with_runtime(|| {
+            let ctx = make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+            let a = ScopeId(101);
+            let b = ScopeId(102);
+
+            assert_eq!(ctx.visible_month_count(), 1, "no views registered yet");
+            assert_eq!(ctx.view_registrations.read().len(), 0);
+
+            ctx.register_calendar_view(a, None);
+            assert_eq!(
+                ctx.calendar_view_offset(a, None),
+                0,
+                "first registration order"
+            );
+            assert_eq!(ctx.visible_month_count(), 1);
+            assert_eq!(ctx.view_registrations.read().len(), 1);
+
+            // Re-registering the exact same (id, offset) must be a no-op, not a duplicate push.
+            ctx.register_calendar_view(a, None);
+            assert_eq!(
+                ctx.view_registrations.read().len(),
+                1,
+                "re-registering an identical (id, offset) must not add a duplicate entry"
+            );
+
+            ctx.register_calendar_view(b, Some(3));
+            assert_eq!(ctx.calendar_view_offset(b, Some(3)), 3);
+            assert_eq!(
+                ctx.visible_month_count(),
+                4,
+                "highest offset (3) + 1 determines the visible month count"
+            );
+
+            ctx.unregister_calendar_view(b);
+            assert_eq!(
+                ctx.visible_month_count(),
+                1,
+                "removing the highest-offset view shrinks the count back down"
+            );
+            assert_eq!(ctx.view_registrations.read().len(), 1);
+
+            // Unregistering the *only* remaining view must still remove it (regression
+            // guard for the "nothing to remove" short-circuit misfiring when every
+            // registered view happens to share the target id).
+            ctx.unregister_calendar_view(a);
+            assert!(
+                ctx.view_registrations.read().is_empty(),
+                "unregistering the last remaining view must empty the registrations"
+            );
+
+            // Unregistering an id that was never registered is a safe no-op.
+            ctx.unregister_calendar_view(a);
+            assert!(ctx.view_registrations.read().is_empty());
+        });
+    }
+
+    #[test]
+    fn test_calendar_context_accessors() {
+        with_runtime(|| {
+            let mut selected = use_signal(|| None::<Date>);
+            let last_set = use_signal(|| None::<Option<Date>>);
+            let ctx = CalendarContext {
+                selected_date: selected.into(),
+                set_selected_date: Callback::new(move |d| {
+                    let mut last_set = last_set;
+                    last_set.set(Some(d));
+                }),
+            };
+
+            assert_eq!(ctx.selected_date(), None);
+            selected.set(Some(date!(2024 - 06 - 15)));
+            assert_eq!(
+                ctx.selected_date(),
+                Some(date!(2024 - 06 - 15)),
+                "selected_date must reflect the underlying signal, not a fixed value"
+            );
+
+            ctx.set_selected_date(Some(date!(2024 - 07 - 01)));
+            assert_eq!(last_set(), Some(Some(date!(2024 - 07 - 01))));
+        });
+    }
+
+    fn make_range_ctx() -> (RangeCalendarContext, Signal<Option<DateRange>>) {
+        let anchor_date = Signal::new(None);
+        let highlighted_range = Signal::new(None);
+        let emitted = Signal::new(None::<DateRange>);
+        let ctx = RangeCalendarContext {
+            anchor_date,
+            highlighted_range,
+            set_selected_range: Callback::new(move |r: Option<DateRange>| {
+                let mut emitted = emitted;
+                emitted.set(r);
+            }),
+        };
+        (ctx, highlighted_range)
+    }
+
+    #[test]
+    fn test_range_calendar_context_set_selected_date_two_click_flow() {
+        with_runtime(|| {
+            let (mut ctx, highlighted_range) = make_range_ctx();
+
+            // First click sets the anchor and a same-day highlighted range.
+            ctx.set_selected_date(Some(date!(2024 - 06 - 10)));
+            assert_eq!(
+                highlighted_range(),
+                Some(DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 10)))
+            );
+
+            // Second click completes the range from the anchor.
+            ctx.set_selected_date(Some(date!(2024 - 06 - 20)));
+            assert_eq!(
+                highlighted_range(),
+                Some(DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 20)))
+            );
+        });
+    }
+
+    #[test]
+    fn test_range_calendar_context_set_hovered_date() {
+        with_runtime(|| {
+            let (mut ctx, highlighted_range) = make_range_ctx();
+
+            // No anchor yet: hovering does nothing.
+            ctx.set_hovered_date(date!(2024 - 06 - 15));
+            assert_eq!(highlighted_range(), None);
+
+            ctx.set_selected_date(Some(date!(2024 - 06 - 10)));
+            ctx.set_hovered_date(date!(2024 - 06 - 25));
+            assert_eq!(
+                highlighted_range(),
+                Some(DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 25)))
+            );
+        });
+    }
+
+    #[test]
+    fn test_range_calendar_context_reset_selection() {
+        with_runtime(|| {
+            let (mut ctx, highlighted_range) = make_range_ctx();
+
+            ctx.set_selected_date(Some(date!(2024 - 06 - 10)));
+            let reset_to = Some(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 01 - 02)));
+            ctx.reset_selection(reset_to);
+
+            assert_eq!(highlighted_range(), reset_to);
+            // The anchor was cleared, so a subsequent click starts a new anchor
+            // rather than completing a range against the old one.
+            ctx.set_selected_date(Some(date!(2024 - 03 - 01)));
+            assert_eq!(
+                highlighted_range(),
+                Some(DateRange::new(date!(2024 - 03 - 01), date!(2024 - 03 - 01)))
+            );
+        });
+    }
+
+    #[test]
+    fn test_calendar_view_context_offset_view_date_round_trip() {
+        with_runtime(|| {
+            let base_ctx =
+                make_base_ctx(DateRange::new(date!(2024 - 01 - 01), date!(2024 - 12 - 31)));
+            use_context_provider(|| base_ctx);
+            base_ctx.set_view_date(date!(2024 - 06 - 01));
+
+            let view_ctx = CalendarViewContext { offset: 2 };
+            assert_eq!(
+                view_ctx.offset_view_date(),
+                date!(2024 - 08 - 01),
+                "offset view date is n months after the base view date"
+            );
+
+            // Setting a date on the offset view adjusts the base view date back by the offset.
+            view_ctx.set_offset_view_date(date!(2024 - 09 - 15));
+            assert_eq!(base_ctx.view_date(), date!(2024 - 07 - 15));
+        });
     }
 }

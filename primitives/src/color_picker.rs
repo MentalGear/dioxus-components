@@ -637,4 +637,159 @@ mod tests {
         assert!(html.contains("custom-saturation"));
         assert!(html.contains("custom-value"));
     }
+
+    #[test]
+    fn color_hex_formats_uppercase_rgb() {
+        assert_eq!(color_hex(Color::new(0, 0, 0)), "#000000");
+        assert_eq!(color_hex(Color::new(255, 255, 255)), "#FFFFFF");
+        assert_eq!(color_hex(Color::new(0x12, 0x34, 0x56)), "#123456");
+    }
+
+    #[test]
+    fn area_value_from_hsv_scales_saturation_and_value_to_the_area_range() {
+        let hsv = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(0.0), 0.0, 0.0);
+        let origin = area_value_from_hsv(hsv);
+        assert_eq!((origin.x, origin.y), (0.0, 0.0));
+
+        let hsv = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(0.0), 1.0, 1.0);
+        let max = area_value_from_hsv(hsv);
+        assert_eq!((max.x, max.y), (COLOR_AREA_MAX, COLOR_AREA_MAX));
+
+        let hsv = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(0.0), 0.5, 0.25);
+        let mid = area_value_from_hsv(hsv);
+        assert_eq!((mid.x, mid.y), (50.0, 25.0));
+    }
+
+    #[test]
+    fn snap_area_value_rounds_to_the_nearest_step() {
+        let snapped = snap_area_value(ClientPoint::new(23.0, 77.0), 10.0);
+        assert_eq!((snapped.x, snapped.y), (20.0, 80.0));
+
+        let snapped = snap_area_value(ClientPoint::new(4.9, 5.1), 1.0);
+        assert_eq!((snapped.x, snapped.y), (5.0, 5.0));
+    }
+
+    #[test]
+    fn clamp_area_value_bounds_then_snaps() {
+        // Out-of-range inputs (both below min and above max) get clamped into
+        // [COLOR_AREA_MIN, COLOR_AREA_MAX] before snapping.
+        let clamped = clamp_area_value(ClientPoint::new(-50.0, 150.0), 10.0);
+        assert_eq!((clamped.x, clamped.y), (COLOR_AREA_MIN, COLOR_AREA_MAX));
+
+        let clamped = clamp_area_value(ClientPoint::new(23.0, 77.0), 10.0);
+        assert_eq!((clamped.x, clamped.y), (20.0, 80.0));
+    }
+
+    #[test]
+    fn area_percent_maps_the_area_range_to_zero_to_one_hundred() {
+        let percent = area_percent(ClientPoint::new(COLOR_AREA_MIN, COLOR_AREA_MAX));
+        assert_eq!((percent.width, percent.height), (0.0, 100.0));
+
+        let percent = area_percent(ClientPoint::new(50.0, 25.0));
+        assert_eq!((percent.width, percent.height), (50.0, 25.0));
+
+        // Out-of-range inputs are clamped into [0, 100].
+        let percent = area_percent(ClientPoint::new(-20.0, 200.0));
+        assert_eq!((percent.width, percent.height), (0.0, 100.0));
+    }
+
+    /// Run a closure inside a Dioxus runtime context so `ReadSignal`/`Callback` APIs are
+    /// available (mirrors `virtual/virtualizer.rs`'s `with_runtime`).
+    fn with_runtime(f: impl Fn() + 'static) {
+        let result = std::rc::Rc::new(std::cell::Cell::new(false));
+        let result2 = result.clone();
+        let test_fn = std::rc::Rc::new(f);
+        let mut dom = VirtualDom::new_with_props(
+            |props: TestHarnessProps| {
+                (props.test_fn)();
+                props.result.set(true);
+                rsx! { div {} }
+            },
+            TestHarnessProps {
+                test_fn,
+                result: result2,
+            },
+        );
+        dom.rebuild_in_place();
+        assert!(result.get(), "Test component did not run");
+    }
+
+    #[derive(Clone, Props)]
+    struct TestHarnessProps {
+        test_fn: std::rc::Rc<dyn Fn()>,
+        result: std::rc::Rc<std::cell::Cell<bool>>,
+    }
+
+    impl PartialEq for TestHarnessProps {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn color_picker_context_accessors_round_trip_through_on_color_change() {
+        with_runtime(|| {
+            let initial = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(10.0), 0.2, 0.3);
+            let color = use_signal(|| initial);
+            let mut last_emitted = use_signal(|| None::<Hsv<encoding::Srgb, f64>>);
+            let on_color_change = Callback::new(move |c| last_emitted.set(Some(c)));
+
+            let ctx = ColorPickerContext {
+                color: color.into(),
+                on_color_change,
+            };
+
+            assert_eq!(ctx.color(), initial);
+
+            let replaced = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(200.0), 0.9, 0.1);
+            ctx.set_color(replaced);
+            assert_eq!(
+                last_emitted(),
+                Some(replaced),
+                "set_color emits the full replacement"
+            );
+
+            ctx.set_hue(77.0);
+            let after_hue = last_emitted().expect("set_hue must emit");
+            assert_eq!(after_hue.hue, RgbHue::new(77.0));
+            assert_eq!(
+                (after_hue.saturation, after_hue.value),
+                (initial.saturation, initial.value),
+                "set_hue keeps saturation/value from the current color, not the last emitted one"
+            );
+
+            ctx.set_sv(0.6, 0.7);
+            let after_sv = last_emitted().expect("set_sv must emit");
+            assert_eq!((after_sv.saturation, after_sv.value), (0.6, 0.7));
+            assert_eq!(after_sv.hue, initial.hue, "set_sv keeps the current hue");
+        });
+    }
+
+    #[test]
+    fn set_area_value_scales_down_by_the_area_range_before_setting_sv() {
+        with_runtime(|| {
+            let initial = Hsv::<encoding::Srgb, f64>::new(RgbHue::new(10.0), 0.2, 0.3);
+            let color = use_signal(|| initial);
+            let mut last_emitted = use_signal(|| None::<Hsv<encoding::Srgb, f64>>);
+            let on_color_change = Callback::new(move |c| last_emitted.set(Some(c)));
+            let ctx = ColorPickerContext {
+                color: color.into(),
+                on_color_change,
+            };
+
+            // COLOR_AREA_RANGE is 100.0, so a ClientPoint of (50, 25) scales down
+            // to saturation=0.5, value=0.25 -- the inverse of `area_value_from_hsv`.
+            set_area_value(ctx, ClientPoint::new(50.0, 25.0));
+            let emitted = last_emitted().expect("set_area_value must emit through set_sv");
+            assert_eq!((emitted.saturation, emitted.value), (0.5, 0.25));
+            assert_eq!(
+                emitted.hue, initial.hue,
+                "set_area_value must not touch hue"
+            );
+
+            set_area_value(ctx, ClientPoint::new(0.0, 100.0));
+            let emitted = last_emitted().unwrap();
+            assert_eq!((emitted.saturation, emitted.value), (0.0, 1.0));
+        });
+    }
 }
