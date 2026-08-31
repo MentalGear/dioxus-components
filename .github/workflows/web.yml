@@ -1,14 +1,17 @@
 name: Web
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - main
-
+# Automatic triggers disabled until further notice (2026-08-30).
+# To reactivate, delete the 'on: workflow_dispatch' line and uncomment:
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     types: [opened, synchronize, reopened, ready_for_review]
+#     branches:
+#       - main
+#
+on: workflow_dispatch
 permissions:
   contents: read
 

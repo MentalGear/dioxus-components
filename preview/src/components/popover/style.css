@@ -236,3 +236,80 @@
 .dx-popover-trigger:focus-visible {
   box-shadow: 0 0 0 2px var(--focused-border-color);
 }
+
+/*
+ * Phase 4.4 (docs/plan.md): the web arm's *non-modal* content is a
+ * `<dialog popover="auto">` (top-layer promotion for clipping escape and
+ * light dismiss) -- see the identical block in ../tooltip/style.css for
+ * the full rationale. Note this is scoped to `[popover]` specifically
+ * (present only on the non-modal arm), not `[role="dialog"]`, so the modal
+ * arm (a plain div, Phase 4.2's job, unaffected by this slice) keeps its
+ * existing DOM-relative positioning untouched. `@supports`-gated the same
+ * way; no collision/flip logic (docs/plan.md Phase 5).
+ */
+@supports (anchor-name: --a) {
+  .dx-popover-content[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    transform: none;
+  }
+
+  .dx-popover-content[popover][data-side="top"] {
+    bottom: anchor(top);
+    left: anchor(center);
+    margin-bottom: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-popover-content[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-popover-content[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-popover-content[popover][data-side="left"] {
+    top: anchor(center);
+    right: anchor(left);
+    margin-right: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-popover-content[popover][data-side="top"][data-align="start"],
+  .dx-popover-content[popover][data-side="bottom"][data-align="start"] {
+    left: anchor(left);
+    transform: none;
+  }
+
+  .dx-popover-content[popover][data-side="top"][data-align="end"],
+  .dx-popover-content[popover][data-side="bottom"][data-align="end"] {
+    left: anchor(right);
+    transform: translateX(-100%);
+  }
+
+  .dx-popover-content[popover][data-side="left"][data-align="start"],
+  .dx-popover-content[popover][data-side="right"][data-align="start"] {
+    top: anchor(top);
+    transform: none;
+  }
+
+  .dx-popover-content[popover][data-side="left"][data-align="center"],
+  .dx-popover-content[popover][data-side="right"][data-align="center"] {
+    top: anchor(center);
+    transform: translateY(-50%);
+  }
+
+  .dx-popover-content[popover][data-side="left"][data-align="end"],
+  .dx-popover-content[popover][data-side="right"][data-align="end"] {
+    top: anchor(bottom);
+    transform: translateY(-100%);
+  }
+}

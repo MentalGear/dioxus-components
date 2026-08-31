@@ -5,7 +5,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct HoverCardCtx {
     // State
     open: Memo<bool>,
@@ -198,6 +198,12 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
             role: "button",
             aria_describedby: (ctx.open)().then(|| ctx.content_id.cloned()),
 
+            // See `crate::top_layer::anchor_name_style`: ties this trigger
+            // to the content's `position-anchor` so its `[data-side]` CSS
+            // still resolves relative to this trigger once the content is
+            // promoted to the top layer. Inert (empty) off the web arm.
+            style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
+
             ..props.attributes,
             {props.children}
         }
@@ -288,37 +294,121 @@ pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
     // Use use_id_or to handle the ID
     let id = use_id_or(ctx.content_id, props.id);
 
-    // Handle mouse events to keep the hover card open when hovered
-    let handle_mouse_enter = move |_: Event<MouseData>| {
-        if !(ctx.disabled)() {
-            ctx.set_open.call(true);
-        }
-    };
-
-    let handle_mouse_leave = move |_: Event<MouseData>| {
-        if !(ctx.disabled)() {
-            ctx.set_open.call(false);
-        }
-    };
-
     let render = use_animated_open(id, ctx.open);
 
+    // `HoverCardContentRendered` is a real component (not a plain fn) so it
+    // -- and the hooks it calls internally (this slice's `use_popover_sync`
+    // on the web arm) -- get a fresh scope each time `render()`
+    // mounts/unmounts it, matching this element's actual DOM lifetime. See
+    // `tooltip.rs`'s identical `TooltipContentRendered` comment for why a
+    // plain fn here would be a conditional-hook-call hazard instead.
     rsx! {
         if render() {
-            div {
-                id,
-                role: "tooltip",
-                "data-state": if is_open { "open" } else { "closed" },
-                "data-side": props.side.as_str(),
-                "data-align": props.align.as_str(),
-
-                // Mouse events to keep the hover card open when hovered
-                onmouseenter: handle_mouse_enter,
-                onmouseleave: handle_mouse_leave,
-
-                ..props.attributes,
-                {props.children}
+            HoverCardContentRendered {
+                id: id.cloned(),
+                open: ctx.open,
+                set_open: ctx.set_open,
+                disabled: ctx.disabled,
+                is_open,
+                side: props.side,
+                align: props.align,
+                attributes: props.attributes,
+                children: props.children,
             }
+        }
+    }
+}
+
+/// Web arm (Phase 4.4, docs/plan.md): promote to the top layer via
+/// `popover="manual"` (see `crate::top_layer::PopoverKind::Manual`'s doc for
+/// why `manual` and not `auto` — a `HoverCard`'s own mouseenter/mouseleave
+/// pair already owns its lifecycle, and MDN's own naming for this pattern
+/// ("hover card") does not imply light dismiss the way a click-triggered
+/// popover does).
+#[cfg(target_family = "wasm")]
+#[component]
+fn HoverCardContentRendered(
+    id: String,
+    open: Memo<bool>,
+    set_open: Callback<bool>,
+    disabled: ReadSignal<bool>,
+    is_open: bool,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+
+    let handle_mouse_enter = move |_: Event<MouseData>| {
+        if !disabled() {
+            set_open.call(true);
+        }
+    };
+    let handle_mouse_leave = move |_: Event<MouseData>| {
+        if !disabled() {
+            set_open.call(false);
+        }
+    };
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "tooltip",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            style: crate::top_layer::position_anchor_style(&id),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            onmouseenter: handle_mouse_enter,
+            onmouseleave: handle_mouse_leave,
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice — see
+/// `docs/recommended-implementations.md` Caveat 2.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn HoverCardContentRendered(
+    id: String,
+    // Unused on this arm -- kept as a same-named field so the shared,
+    // cfg-independent call site in `HoverCardContent` compiles unchanged on
+    // both arms.
+    open: Memo<bool>,
+    set_open: Callback<bool>,
+    disabled: ReadSignal<bool>,
+    is_open: bool,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let _ = open;
+    let handle_mouse_enter = move |_: Event<MouseData>| {
+        if !disabled() {
+            set_open.call(true);
+        }
+    };
+    let handle_mouse_leave = move |_: Event<MouseData>| {
+        if !disabled() {
+            set_open.call(false);
+        }
+    };
+
+    rsx! {
+        div {
+            id,
+            role: "tooltip",
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            onmouseenter: handle_mouse_enter,
+            onmouseleave: handle_mouse_leave,
+            ..attributes,
+            {children}
         }
     }
 }

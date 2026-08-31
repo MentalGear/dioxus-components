@@ -1,0 +1,13 @@
+{
+  "name": "top_layer",
+  "description": "A clipping/stacking fixture pairing Tooltip, HoverCard, and Popover with native <div popover>/<button popovertarget> references for the Phase 4.4 top-layer oracle.",
+  "authors": ["Evan Almloff"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

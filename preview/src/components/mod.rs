@@ -39,9 +39,8 @@ pub fn category_of(name: &str) -> ComponentCategory {
         | "color_picker" | "form" => ComponentCategory::Forms,
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
         | "dropdown_menu" => ComponentCategory::Navigation,
-        "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card" => {
-            ComponentCategory::Overlays
-        }
+        "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
+        | "top_layer" => ComponentCategory::Overlays,
         "toast" | "progress" | "skeleton" | "badge" => ComponentCategory::Feedback,
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
@@ -214,5 +213,6 @@ examples!(
     toggle_group,
     toolbar,
     tooltip,
+    top_layer,
     virtual_list[random_heights],
 );

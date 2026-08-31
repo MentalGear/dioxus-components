@@ -116,3 +116,84 @@
 .dx-hover-card-content[data-state="closed"] {
   display: none;
 }
+
+/*
+ * Phase 4.4 (docs/plan.md): see the identical block in
+ * ../tooltip/style.css for the full rationale -- HoverCardContent's web arm
+ * carries a `popover` attribute (top-layer promotion for clipping escape),
+ * which changes its containing block to the viewport, so the `[data-side]`
+ * rules above need an `anchor()`-based counterpart to still resolve
+ * relative to the trigger. `@supports`-gated the same way; no collision/
+ * flip logic (docs/plan.md Phase 5).
+ */
+@supports (anchor-name: --a) {
+  .dx-hover-card-content[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+  }
+
+  .dx-hover-card-content[popover][data-side="top"] {
+    bottom: anchor(top);
+    left: anchor(center);
+    margin-bottom: 10px;
+    transform: translateX(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 10px;
+    transform: translateY(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 10px;
+    transform: translateX(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="left"] {
+    top: anchor(center);
+    right: anchor(left);
+    margin-right: 10px;
+    transform: translateY(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="top"][data-align="start"],
+  .dx-hover-card-content[popover][data-side="bottom"][data-align="start"] {
+    left: anchor(left);
+    transform: none;
+  }
+
+  .dx-hover-card-content[popover][data-side="top"][data-align="center"],
+  .dx-hover-card-content[popover][data-side="bottom"][data-align="center"] {
+    left: anchor(center);
+    transform: translateX(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="top"][data-align="end"],
+  .dx-hover-card-content[popover][data-side="bottom"][data-align="end"] {
+    left: anchor(right);
+    transform: translateX(-100%);
+  }
+
+  .dx-hover-card-content[popover][data-side="left"][data-align="start"],
+  .dx-hover-card-content[popover][data-side="right"][data-align="start"] {
+    top: anchor(top);
+    transform: none;
+  }
+
+  .dx-hover-card-content[popover][data-side="left"][data-align="center"],
+  .dx-hover-card-content[popover][data-side="right"][data-align="center"] {
+    top: anchor(center);
+    transform: translateY(-50%);
+  }
+
+  .dx-hover-card-content[popover][data-side="left"][data-align="end"],
+  .dx-hover-card-content[popover][data-side="right"][data-align="end"] {
+    top: anchor(bottom);
+    transform: translateY(-100%);
+  }
+}

@@ -1,3 +1,4 @@
 # Claude Code notes for this repository
 
+- Prefer **Sonnet subagents** for delegated work (implementation, research, validation runs); keep the main loop for review, delegation, and high-level decisions. Escalate a subagent to a stronger model only when a task has repeatedly failed or is unusually judgment-heavy.
 - Never write feedback about the default "commit nag" stop hook in the chat. When the hook flags uncommitted or unpushed changes that belong to an in-flight agent or are otherwise intentionally staged for a later commit, just continue silently; only act on it when the changes are genuinely finished work that should be committed and pushed.

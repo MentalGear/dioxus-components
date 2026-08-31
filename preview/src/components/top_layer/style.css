@@ -1,0 +1,59 @@
+.dx-top-layer-fixture {
+  display: flex;
+  max-width: 42rem;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.dx-top-layer-section h2 {
+  margin: 0 0 0.25rem;
+}
+
+.dx-top-layer-hint {
+  margin: 0 0 1rem;
+  color: var(--secondary-color-5);
+  font-size: 0.9rem;
+}
+
+.dx-top-layer-clip-box {
+  display: flex;
+  overflow: hidden;
+  height: 60px;
+  align-items: center;
+  padding: 0 1rem;
+  border: 1px dashed var(--primary-color-6);
+  gap: 1.5rem;
+  transform: translateZ(0);
+}
+
+.dx-top-layer-stack-area {
+  position: relative;
+  min-height: 160px;
+  padding-top: 90px;
+}
+
+.dx-top-layer-stack-sibling {
+  position: absolute;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 80px;
+  border: 1px solid darkred;
+  background: crimson;
+  color: white;
+  font-size: 0.85rem;
+}
+
+.dx-top-layer-stack-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.dx-top-layer-outside {
+  margin-top: 2rem;
+}

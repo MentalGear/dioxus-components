@@ -1,12 +1,15 @@
 name: Pages
 
-on:
-  workflow_run:
-    workflows: ["Web"]
-    types: [completed]
-  pull_request:
-    types: [closed]
-
+# Automatic triggers disabled until further notice (2026-08-30).
+# To reactivate, delete the 'on: workflow_dispatch' line and uncomment:
+# on:
+#   workflow_run:
+#     workflows: ["Web"]
+#     types: [completed]
+#   pull_request:
+#     types: [closed]
+#
+on: workflow_dispatch
 permissions:
   actions: read
   contents: write
