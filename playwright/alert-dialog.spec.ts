@@ -11,6 +11,18 @@ test('test', async ({ page }) => {
   await expect(cancelButton).toBeFocused();
   // Hitting tab should move to the confirm button
   await page.keyboard.press('Tab');
+  const confirmButtonForTab = page.getByRole('button', { name: 'Delete' });
+  await expect(confirmButtonForTab).toBeFocused();
+  // Phase 4.2 (docs/plan.md): the always-modal AlertDialog is now a native
+  // `<dialog>` on the web arm. Chromium's own focus trap parks focus on
+  // `<body>` for exactly one Tab stop after the last focusable element
+  // before wrapping to the first (docs/phase4-spike-findings.md experiment
+  // 4a) -- harness correction for the new trap's documented shape, same as
+  // dialog.spec.ts's identical fix.
+  await page.keyboard.press('Tab');
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement === document.body))
+    .toBe(true);
   // Hitting tab again should move focus back to the cancel button
   await page.keyboard.press('Tab');
   await expect(cancelButton).toBeFocused();

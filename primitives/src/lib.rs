@@ -353,6 +353,99 @@ fn use_form_reset_listener(
     });
 }
 
+/// Drive `showModal()`/`close()` on the `<dialog>` element with the given
+/// `id` from `open`, guarded by the element's own `.open` DOM property.
+///
+/// Docs/plan.md Phase 4.2. Ported *by construction*, not by copying code,
+/// from `docs/phase4-spike-findings.md`'s `use_dialog_open_driver`
+/// (experiment 2's fix for experiment 1's stranded-signal defect, see
+/// `docs/recommended-implementations.md` Caveat 1). The guard (checking
+/// `dialog.open` before calling either method) mirrors
+/// [`crate::top_layer::use_popover_sync`]'s `:popover-open` check for the
+/// identical reason: a redundant call throws `InvalidStateError` (spike
+/// experiment 3b).
+///
+/// Never bind the `<dialog>` element's `open` attribute declaratively
+/// alongside this hook in the same build -- spike experiment 3c found that
+/// combination doesn't crash, it silently *skips* `showModal()` (Dioxus
+/// commits the declarative attribute during render, before this effect
+/// runs, so the guard's own condition is already false by the time it
+/// checks). That is exactly why this hook only exists in the
+/// `#[cfg(target_family = "wasm")]` leaf of `dialog.rs`/`alert_dialog.rs`'s
+/// component split (`docs/phase4-spike-findings.md` Construction B) -- the
+/// `not(wasm)` arm never binds `open` as an attribute either, since that
+/// arm renders a plain `div`, not a `<dialog>`, at all.
+///
+/// Gated on `target_family = "wasm"` for the same reason
+/// [`crate::top_layer::use_popover_sync`] is (see that function's doc): it
+/// is the only axis this repo's CI can build and check both sides of today.
+/// The correct production axis is a renderer Cargo feature mirroring this
+/// crate's own `web` feature, matching Construction B's finding that
+/// `dioxus-desktop` is a non-wasm binary with a real, working webview
+/// `eval` and belongs on this same arm, not on native/Blitz's no-op one.
+#[cfg(target_family = "wasm")]
+fn use_dialog_open_driver(
+    id: impl Readable<Target = String> + Copy + 'static,
+    open: impl Readable<Target = bool> + Copy + 'static,
+) {
+    use_effect(move || {
+        let want_open = open.cloned();
+        let id = id.cloned();
+        document::eval(&format!(
+            "const dialog = document.getElementById('{id}');
+            if (!dialog) return;
+            if ({want_open} && !dialog.open) dialog.showModal();
+            if (!{want_open} && dialog.open) dialog.close();"
+        ));
+    });
+}
+
+/// Sync the `<dialog>` element's native `close` event -- fired on Escape's
+/// default `cancel` action, a `::backdrop`/outside-click `close()` call we
+/// drive ourselves (see `dialog.rs`'s `use_dialog_backdrop_dismiss`), a
+/// `method="dialog"` form submission, or any other close, browser- or
+/// script-driven alike -- back into `set_open`, so the Rust signal can never
+/// strand.
+///
+/// This is the fix for the exact defect class
+/// `docs/recommended-implementations.md` Caveat 1 documents for upstream's
+/// first `<dialog>` (`b3f6de53`): a one-way `showModal()`/`close()` binding
+/// with no listener on the browser's own `close` event, so a native Escape
+/// left the `open` signal stranded at `true` and the dialog could never
+/// reopen (reproduced by execution in `docs/phase4-spike-findings.md`
+/// experiment 1; fixed the same way here as experiment 2's
+/// `use_dialog_close_sync`). Same eval-channel shape as
+/// `use_form_reset_listener` above and
+/// [`crate::top_layer::use_popover_sync`]'s browser-to-signal half.
+///
+/// See [`use_dialog_open_driver`]'s doc for why this is `#[cfg]`-gated the
+/// same way.
+#[cfg(target_family = "wasm")]
+fn use_dialog_close_sync(
+    id: impl Readable<Target = String> + Copy + 'static,
+    set_open: Callback<bool>,
+) {
+    use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const dialog = document.getElementById(id);
+            const onClose = () => dioxus.send(true);
+            dialog.addEventListener('close', onClose);
+            await dioxus.recv();
+            dialog.removeEventListener('close', onClose);",
+        );
+        let _ = eval.send(id.cloned());
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                set_open.call(false);
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
 /// Whether a completed (or aborted) close-animation cycle should still write
 /// its result to `show_in_dom`.
 ///

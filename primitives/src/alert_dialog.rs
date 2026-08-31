@@ -1,5 +1,24 @@
 //! Defines the [`AlertDialogRoot`] component and its sub-components.
+//!
+//! ## Native `<dialog>` modality (Phase 4.2, docs/plan.md)
+//!
+//! An alert dialog is always modal (APG alert-dialog pattern), so unlike
+//! `dialog.rs` there is no `is_modal` branch here -- [`AlertDialogContent`]
+//! is cfg-split directly, the same two arms as `dialog.rs`'s
+//! `DialogContentModal` (`docs/phase4-spike-findings.md` Construction B):
+//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//!   `div` + vendored `FocusTrap` path.
+//! - `#[cfg(target_family = "wasm")]`: a real `<dialog role="alertdialog">`
+//!   (the explicit `role` stays -- unlike a plain modal `Dialog`, this is a
+//!   genuine ARIA-subclass refinement of `<dialog>`'s implicit role,
+//!   <https://www.w3.org/TR/html-aria/#el-dialog>), driven by the same
+//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`] pair
+//!   `dialog.rs` uses. No backdrop-click dismiss: unlike `Dialog`,
+//!   `AlertDialogContent` has never called `use_outside_dismiss` (APG
+//!   discourages light-dismissing an alert dialog), and this slice does not
+//!   add an equivalent for the web arm either.
 
+#[cfg(not(target_family = "wasm"))]
 use crate::use_global_escape_listener;
 use crate::{use_animated_open, use_id_or, use_unique_id, FOCUS_TRAP_JS};
 use dioxus::document;
@@ -176,6 +195,9 @@ pub struct AlertDialogContentProps {
 ///     }
 /// }
 /// ```
+/// Native (Blitz) target -- byte-for-byte the pre-Phase-4.2 path: a plain
+/// `div` with the vendored `FocusTrap`.
+#[cfg(not(target_family = "wasm"))]
 #[component]
 pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
     let ctx: AlertDialogCtx = use_context();
@@ -215,6 +237,51 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
 
     rsx! {
         div {
+            id,
+            role: "alertdialog",
+            aria_modal: "true",
+            aria_labelledby: ctx.labelledby.clone(),
+            aria_describedby: ctx.describedby.clone(),
+            class: props.class.clone().unwrap_or_else(|| "dx-alert-dialog".to_string()),
+            ..props.attributes,
+            {props.children}
+        }
+    }
+}
+
+/// Web target (Phase 4.2, docs/plan.md) -- a real `<dialog>` opened with
+/// `showModal()`. `open` is never bound as an attribute here; the browser
+/// supplies the focus trap, focus restore, background inertness, and
+/// top-layer rendering. `role="alertdialog"` stays explicit -- see this
+/// module's doc comment.
+#[cfg(target_family = "wasm")]
+#[component]
+pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
+    let ctx: AlertDialogCtx = use_context();
+
+    let open = ctx.open;
+    let set_open = ctx.set_open;
+
+    let gen_id = use_unique_id();
+    let id = use_id_or(gen_id, props.id);
+
+    // An alert dialog is always modal, so lock page scroll for as long as
+    // it's open. See docs/plan.md Phase 3.2.
+    crate::scroll_lock::use_scroll_lock(open);
+
+    // Same eval-channel close-sync + `.open`-guarded open-driver pair as
+    // `dialog.rs`'s web modal arm -- see `crate::use_dialog_close_sync`/
+    // `crate::use_dialog_open_driver` (lib.rs) for the historical
+    // stranded-signal defect this fixes
+    // (docs/recommended-implementations.md Caveat 1). Deliberately no
+    // `use_global_escape_listener` and no focus-trap eval: the browser's own
+    // `showModal()`/`cancel`/`close` events already cover Escape, focus
+    // trap, and focus restore.
+    crate::use_dialog_close_sync(id, set_open);
+    crate::use_dialog_open_driver(id, open);
+
+    rsx! {
+        dialog {
             id,
             role: "alertdialog",
             aria_modal: "true",
