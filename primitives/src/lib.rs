@@ -515,6 +515,46 @@ fn use_dialog_close_sync(
 /// `showModal()` backdrop click's `event.target` *is* the `<dialog>` element
 /// (it contains itself), so `use_outside_dismiss`'s
 /// `!root.contains(e.target)` check can never fire for it.
+///
+/// ## The nested-dialog false positive (live-site bug report, 2026-09-01)
+///
+/// The rect test alone is not a sufficient discriminator, because the
+/// listener is bound directly on the `<dialog>` element and a native `click`
+/// bubbles: a click on *any* descendant control -- not just the backdrop --
+/// reaches this same handler. Two independent guards are required before the
+/// rect test is even consulted, both checked in the shared predicate below:
+///
+/// - **`event.detail === 0`**: per UI Events, a `click` is dispatched "when
+///   a pointing device button is pressed and released on an element" *or*
+///   "when an element is activated" -- e.g. Enter/Space on a focused button
+///   (`<https://www.w3.org/TR/uievents/#event-type-click>`). For the latter,
+///   non-pointer case, `detail` is 0: no pointing-device button was
+///   involved. In Chromium such a synthesized click also carries
+///   `clientX`/`clientY` of `0, 0`, which the rect test misreads as "outside"
+///   for any dialog not pinned at the viewport's top-left corner. Rejecting
+///   `detail === 0` up front means a keyboard-activated control's bubbled
+///   click is never even rect-tested.
+/// - **`event.target === dialog`**: a `showModal()` backdrop click's target
+///   is always the `<dialog>` element itself (see this function's doc
+///   above), so a *real* backdrop click and a real click on the dialog's own
+///   padding both have `event.target === dialog` -- the rect test alone
+///   already tells those two apart correctly. But a click that bubbled up
+///   from a descendant control carries that control as its target, never the
+///   dialog -- so requiring `event.target === dialog` rejects every bubbled
+///   click outright, independent of `detail`, without narrowing what counts
+///   as a real backdrop click.
+///
+/// Without both guards, activating a control nested inside the dialog's own
+/// content -- e.g. this crate's nested-`Dialog` demo's "Open Nested Dialog"
+/// button -- bubbles a `detail === 0` click up to the *outer* dialog's own
+/// listener, which (mis)reads it as an outside click and closes the outer
+/// dialog. Because the nested `<dialog>` is a DOM descendant of the outer
+/// one, the outer dialog's own close (`display: none` via its UA default
+/// styling) then forces the still-open nested dialog out of the top layer,
+/// which fires its own `close` event a moment later too -- the nested dialog
+/// visibly opens and then immediately closes, with focus never durably
+/// landing on anything inside it. See `docs/plan.md`/this crate's
+/// `native-dialog.spec.ts` Rule 7 for the oracle rules this fixes.
 #[cfg(feature = "web")]
 fn use_dialog_backdrop_dismiss(
     id: impl Readable<Target = String> + Copy + 'static,
@@ -525,6 +565,11 @@ fn use_dialog_backdrop_dismiss(
             "const id = await dioxus.recv();
             const dialog = document.getElementById(id);
             const onClick = (e) => {
+                // Ignore a click that isn't pointer-originated (a keyboard
+                // Enter/Space activation) and any click that bubbled up from
+                // a descendant control rather than landing on the dialog
+                // element itself -- see this hook's doc comment.
+                if (e.detail === 0 || e.target !== dialog) return;
                 const rect = dialog.getBoundingClientRect();
                 const inside = e.clientX >= rect.left && e.clientX <= rect.right
                     && e.clientY >= rect.top && e.clientY <= rect.bottom;
