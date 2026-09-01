@@ -89,6 +89,13 @@ pub struct HoverCardProps {
 /// - `data-disabled`: Indicates whether the item is disabled. Values are `true` or `false`.
 #[component]
 pub fn HoverCard(props: HoverCardProps) -> Element {
+    // See `Tooltip`'s identical call for why this must be at the root,
+    // installed well before the first open, rather than only from
+    // `use_anchor_position_fallback` (which only runs once `HoverCardContent`
+    // first mounts).
+    #[cfg(target_family = "wasm")]
+    use_effect(crate::top_layer::ensure_anchor_positioning_styles);
+
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
     // Generate a unique ID for the hover card content
     let content_id = use_unique_id();

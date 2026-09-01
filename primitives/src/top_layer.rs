@@ -27,6 +27,299 @@ use dioxus::document;
 #[cfg(target_family = "wasm")]
 use dioxus::prelude::*;
 
+#[cfg(target_family = "wasm")]
+use std::cell::Cell;
+
+#[cfg(target_family = "wasm")]
+thread_local! {
+    /// Whether [`ensure_anchor_positioning_styles`]'s `document::eval` has
+    /// already been scheduled once in this WASM instance -- same idempotency
+    /// guard shape as `scroll_lock.rs`'s
+    /// `SCROLLBAR_GUTTER_BASELINE_INSTALLED`.
+    static ANCHOR_POSITIONING_STYLES_INSTALLED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Installs the shared, engine-level anchor-positioning stylesheet described
+/// below, at most once per WASM instance -- mirrors
+/// `scroll_lock::ensure_scrollbar_gutter_baseline`'s idempotent
+/// style-tag-injection shape exactly (a Rust-side `Cell` guard, plus a
+/// JS-side `getElementById` check as a second guard that survives a
+/// hot-reload resetting Rust statics but leaving the already-injected tag in
+/// the live DOM).
+///
+/// ## The bug class this closes (docs/backlog.md item 1, 2026-09-01)
+///
+/// Before this function existed, the `@supports (anchor-name: --a)` block
+/// (per-`[data-side]`/`[data-align]` `anchor()` rules, `position-try-
+/// fallbacks: flip-block, flip-inline`) and the `[popover]` UA-stylesheet
+/// reset (`margin: 0; inset: auto;` -- undoing `[popover] { inset: 0; margin:
+/// auto; }`, which otherwise invokes CSS's auto-margin centering algorithm
+/// and lands content far from its trigger; see `use_anchor_position_fallback`'s
+/// doc above) had to be hand-copied into *every* consuming page's own
+/// `#[css_module]` stylesheet, because `manganis-core`'s `css_module_parser`
+/// does not scope classes referenced only inside `@supports`
+/// (`docs/issues/css-module-supports-scoping.md`) -- so each copy had to be a
+/// plain, unhashed `dx-anchor-*` marker class rather than a `Styles::`-routed
+/// one. Two consuming pages (`color_picker`, `date_picker`) shipped without
+/// their copy and silently fell back to un-anchored positioning until the
+/// gap was noticed and hand-patched (see the "Wiring-gap fix" comments this
+/// change removes from both files' `style.css`) -- a bug class, not a
+/// one-off: every *future* `dx-anchor-*`-marked overlay would have to
+/// remember to duplicate this same block into its own page's stylesheet, or
+/// fail the identical way. Injecting this once, engine-side, from the same
+/// Rust module that defines the marker-class contract
+/// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
+/// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
+/// `dx-anchor-popover`/`dx-anchor-dropdown-menu` content everywhere in the
+/// app, with no per-page CSS to remember.
+///
+/// Call this once per overlay content mount -- [`use_anchor_position_fallback`]
+/// does, since every current `dx-anchor-*` consumer (`tooltip.rs`,
+/// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, and anything built on
+/// `crate::popover` like `ColorPicker`/`DatePicker`) already calls that
+/// hook. A future
+/// `dx-anchor-*` consumer that doesn't call that hook for some reason should
+/// call this directly instead.
+///
+/// `:where(...)` (zero specificity) is used for the `[popover]` reset so it
+/// never has to out-specificity-fight a component's own rules -- author
+/// origin already beats the UA stylesheet regardless of specificity (see
+/// `tooltip.rs`'s call site... actually see the removed `../tooltip/
+/// style.css` comment history for the full citation), so zero specificity
+/// here is exactly enough to win against the *UA* default while leaving any
+/// component-authored override free to still take precedence if one is ever
+/// needed.
+///
+/// `border`/`overflow` resets are deliberately **not** included here, unlike
+/// the `margin`/`inset` ones: those two are genuine per-component style
+/// choices (`Tooltip` wants no border and never scrolls; `HoverCard`/
+/// `Popover` already declare a real border of their own, which -- being
+/// author-origin -- already beats the UA default with no reset needed), not
+/// a single correct answer every anchored overlay shares the way the
+/// centering-trap fix is. Each component's own stylesheet keeps whatever
+/// `border`/`overflow` reset it individually needs.
+#[cfg(target_family = "wasm")]
+pub(crate) fn ensure_anchor_positioning_styles() {
+    if ANCHOR_POSITIONING_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
+        return;
+    }
+    let eval = document::eval(&anchor_positioning_inject_js());
+    let _ = eval;
+}
+
+/// The idempotent (JS-side `getElementById` guarded, so safe to run more
+/// than once) style-tag-injection statement [`ensure_anchor_positioning_styles`]
+/// dispatches on its own, factored out into a plain JS-snippet-returning
+/// function rather than only living inside that eval call, so
+/// [`use_anchor_position_fallback`] below can prepend the *exact same*
+/// statement to the front of its own measurement script.
+///
+/// That prepending matters, and is not merely a convenience: this function's
+/// statement and a measurement's `getBoundingClientRect()` call dispatched
+/// from two *separate* `document::eval()` calls have no guaranteed relative
+/// ordering against each other from Rust's point of view (confirmed by
+/// execution: an earlier version of this fix called
+/// `ensure_anchor_positioning_styles()` from a `use_effect` declared just
+/// before `use_anchor_position_fallback`'s own measurement effect in the
+/// same function, relying on Dioxus's normal same-component effect-ordering
+/// guarantee -- and on a fresh page load, before this stylesheet had ever
+/// been injected, the measurement's `reposition()` still ran before the
+/// browser had applied the freshly-appended `<style>` tag's rules, so its
+/// `matches()` check saw the *pre-anchor* position and wrongly concluded
+/// this engine's CSS Anchor Positioning integration had failed, taking over
+/// with an inline-style override it never needed to make --
+/// `playwright/oracle/tier2-html/top-layer.spec.ts`'s Rule 8 ColorPicker
+/// case caught this on the very first cold load of that page). Two
+/// statements inside *one* `document::eval()` call, by contrast, are one
+/// synchronous JS script as far as the browser's engine is concerned:
+/// `appendChild`ing the `<style>` tag synchronously invalidates style for
+/// matching elements, and the very next statement's `getBoundingClientRect()`
+/// forces a synchronous style/layout recalc that is guaranteed to already
+/// see it -- no ordering assumption about *separate* `document::eval()`
+/// dispatches required at all.
+#[cfg(target_family = "wasm")]
+fn anchor_positioning_inject_js() -> String {
+    format!(
+        r#"
+        if (!document.getElementById('dx-anchor-positioning-styles')) {{
+            const style = document.createElement('style');
+            style.id = 'dx-anchor-positioning-styles';
+            style.textContent = {css};
+            document.head.appendChild(style);
+        }}
+        "#,
+        css = ANCHOR_POSITIONING_CSS_JS_LITERAL
+    )
+}
+
+/// The shared anchor-positioning stylesheet's CSS text, as a JS backtick
+/// template-literal source (i.e. this string itself already includes the
+/// wrapping backticks) -- see [`ensure_anchor_positioning_styles`]'s doc for
+/// the bug class this closes and why `border`/`overflow` resets are
+/// deliberately not part of it.
+#[cfg(target_family = "wasm")]
+const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
+:where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-dropdown-menu[popover]) {
+  margin: 0;
+  inset: auto;
+}
+
+@supports (anchor-name: --a) {
+  .dx-anchor-tooltip[popover],
+  .dx-anchor-popover[popover],
+  .dx-anchor-dropdown-menu[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    transform: none;
+    position-try-fallbacks: flip-block, flip-inline;
+  }
+
+  .dx-anchor-tooltip[popover][data-side="top"],
+  .dx-anchor-popover[popover][data-side="top"],
+  .dx-anchor-dropdown-menu[popover][data-side="top"] {
+    bottom: anchor(top);
+    left: anchor(center);
+    margin-bottom: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="right"],
+  .dx-anchor-popover[popover][data-side="right"],
+  .dx-anchor-dropdown-menu[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="bottom"],
+  .dx-anchor-popover[popover][data-side="bottom"],
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 8px;
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="left"],
+  .dx-anchor-popover[popover][data-side="left"],
+  .dx-anchor-dropdown-menu[popover][data-side="left"] {
+    top: anchor(center);
+    right: anchor(left);
+    margin-right: 8px;
+    transform: translateY(-50%);
+  }
+
+  .dx-anchor-hover-card[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    position-try-fallbacks: flip-block, flip-inline;
+  }
+
+  .dx-anchor-hover-card[popover][data-side="top"] {
+    bottom: anchor(top);
+    left: anchor(center);
+    margin-bottom: 10px;
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-hover-card[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 10px;
+    transform: translateY(-50%);
+  }
+
+  .dx-anchor-hover-card[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 10px;
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-hover-card[popover][data-side="left"] {
+    top: anchor(center);
+    right: anchor(left);
+    margin-right: 10px;
+    transform: translateY(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="top"][data-align="start"],
+  .dx-anchor-hover-card[popover][data-side="top"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="top"][data-align="start"],
+  .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
+  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"] {
+    left: anchor(left);
+    transform: none;
+  }
+
+  .dx-anchor-tooltip[popover][data-side="top"][data-align="center"],
+  .dx-anchor-hover-card[popover][data-side="top"][data-align="center"],
+  .dx-anchor-popover[popover][data-side="top"][data-align="center"],
+  .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
+  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-popover[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"] {
+    left: anchor(center);
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="top"][data-align="end"],
+  .dx-anchor-hover-card[popover][data-side="top"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="top"][data-align="end"],
+  .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
+  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"] {
+    left: anchor(right);
+    transform: translateX(-100%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="left"][data-align="start"],
+  .dx-anchor-hover-card[popover][data-side="left"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="left"][data-align="start"],
+  .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
+  .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
+  .dx-anchor-hover-card[popover][data-side="right"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="start"],
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"] {
+    top: anchor(top);
+    transform: none;
+  }
+
+  .dx-anchor-tooltip[popover][data-side="left"][data-align="center"],
+  .dx-anchor-hover-card[popover][data-side="left"][data-align="center"],
+  .dx-anchor-popover[popover][data-side="left"][data-align="center"],
+  .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
+  .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
+  .dx-anchor-hover-card[popover][data-side="right"][data-align="center"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="center"],
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"] {
+    top: anchor(center);
+    transform: translateY(-50%);
+  }
+
+  .dx-anchor-tooltip[popover][data-side="left"][data-align="end"],
+  .dx-anchor-hover-card[popover][data-side="left"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="left"][data-align="end"],
+  .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
+  .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
+  .dx-anchor-hover-card[popover][data-side="right"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="end"],
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"] {
+    top: anchor(bottom);
+    transform: translateY(-100%);
+  }
+}
+`"#;
+
 /// Which `popover` dismissal behaviour an element declares.
 /// WHATWG HTML §the-popover-attribute (see module docs for the link).
 ///
@@ -275,6 +568,15 @@ pub(crate) fn use_anchor_position_fallback(
     align: crate::ContentAlign,
     gap_px: u32,
 ) {
+    // Best-effort early install for repeat opens in this WASM instance --
+    // once this has run once (from any overlay), it's a same-tick Rust-side
+    // Cell check on every later call, nothing more. It is *not* what makes
+    // the very first, cold-load open correct, though: see
+    // `anchor_positioning_inject_js`'s doc for why that guarantee instead
+    // comes from prepending the identical injection statement onto the
+    // measurement eval's own script below.
+    use_effect(ensure_anchor_positioning_styles);
+
     crate::use_effect_with_cleanup(move || -> Box<dyn FnOnce()> {
         if !open.cloned() {
             return Box::new(|| {});
@@ -283,6 +585,12 @@ pub(crate) fn use_anchor_position_fallback(
         let anchor_id = anchor_id.clone();
         let side = side.as_str();
         let align = align.as_str();
+        // Prepended into the same `document::eval()` script as the
+        // measurement below -- see `anchor_positioning_inject_js`'s doc for
+        // why this specific pairing (one script, not two separate `eval()`
+        // calls) is what actually guarantees the stylesheet is in effect
+        // before `reposition()`'s first `getBoundingClientRect()` call.
+        let inject = anchor_positioning_inject_js();
         // Synchronous up to and including the first `reposition()` call
         // below, not deferred to `requestAnimationFrame`: this runs from an
         // effect declared (and therefore, on Dioxus's normal mount-order
@@ -306,6 +614,7 @@ pub(crate) fn use_anchor_position_fallback(
         // version's `await dioxus.recv()` tail is a real pending callback.
         let eval = document::eval(&format!(
             r#"
+            {inject}
             const content = document.getElementById('{id}');
             const trigger = document.querySelector(
                 '[style*="anchor-name: --dxa-{anchor_id}"]'

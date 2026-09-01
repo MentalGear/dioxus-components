@@ -242,6 +242,19 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     const result = await escapesClip(page, "#clip-popover-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
   });
+
+  // docs/backlog.md item 2: DropdownMenu's web arm migrated to
+  // `popover="auto"` (`DropdownMenuContentRendered`, `dropdown_menu.rs`).
+  // Written RED first against the pre-migration plain-div `DropdownMenuContent`
+  // (confirmed by execution: it clipped at the 60px ancestor exactly like
+  // Tooltip/HoverCard/Popover did before Phase 4.4).
+  test("DropdownMenu content escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-dropdown-menu-trigger").click();
+    await expect(page.locator("#clip-dropdown-menu-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-dropdown-menu-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
 });
 
 test.describe("Rule 2 — light dismiss for popover=auto (click outside closes it, and Rust state syncs)", () => {

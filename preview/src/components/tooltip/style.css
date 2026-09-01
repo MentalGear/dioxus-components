@@ -23,33 +23,23 @@
   font-size: 14px;
 
   /*
-   * `border`, `margin`, `inset` and `overflow` are reset explicitly here,
-   * even though no earlier rule in this file ever set the non-zero values
-   * they are undoing -- this content element carries the `popover`
-   * attribute (Phase 4.4, docs/plan.md) on the web arm, and every browser
-   * implementing the Popover API ships a UA stylesheet rule
-   * (`[popover] { inset: 0; margin: auto; border: solid; padding: 0.25em;
-   * overflow: auto; background-color: Canvas; color: CanvasText; }`,
-   * WHATWG HTML's popover section) that otherwise applies to *any* property
-   * this file leaves unset. Confirmed by execution against this repo's own
-   * preview build: with these four properties unset, a real rendered
-   * tooltip picked up a 3px solid white `border` and, on `[data-side="left"]`
-   * in particular, a huge (300px+) `margin-top`/`margin-bottom` and a
-   * negative `margin-left` -- the `top`/`right`/`bottom`/`left` sides this
-   * file's `[data-side]` rules below don't set for a given side fall back to
-   * the UA's `inset: 0`, and pairing that with the UA's `margin: auto` on an
-   * absolutely/fixed-positioned box with both opposing insets now set
-   * invokes the CSS auto-margin centering algorithm -- accidentally, not by
-   * this file's design -- landing the tooltip far from its trigger. `border:
-   * none` and `overflow: visible` undo the same UA rule's other two
-   * properties, which this file never needed either (this content has no
-   * border of its own -- the visual "point" is the `::after` arrow -- and
-   * never needs to scroll). `background-color`/`color` are unaffected: this
-   * rule already sets both further down, and author-origin declarations
-   * always win over the UA stylesheet regardless of specificity, so no
-   * additional reset is needed for those two.
+   * `border` and `overflow` undo the UA popover stylesheet's `[popover] {
+   * border: solid; overflow: auto; ... }` (WHATWG HTML's popover section) --
+   * this content carries the `popover` attribute on the web arm (Phase 4.4,
+   * docs/plan.md). This content has no border of its own (the visual
+   * "point" is the `::after` arrow) and never needs to scroll, so both are
+   * reset to nothing rather than to a real value. The matching `margin`/
+   * `inset` reset (undoing the same UA rule's `inset: 0; margin: auto`,
+   * which would otherwise invoke the CSS auto-margin centering algorithm and
+   * land the tooltip far from its trigger) now lives in the shared,
+   * engine-injected stylesheet every `dx-anchor-*`-marked overlay gets for
+   * free -- see `primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1).
+   * `background-color`/`color` are unaffected: this rule already sets both
+   * further down, and author-origin declarations always win over the UA
+   * stylesheet regardless of specificity, so no additional reset is needed
+   * for those two.
    */
-  inset: auto;
   line-height: 1.4;
 }
 
@@ -189,93 +179,20 @@
  * of its own `position` value, which breaks every `[data-side]` rule above
  * (they assume "absolute, relative to the nearest positioned ancestor",
  * i.e. `.dx-tooltip`). CSS Anchor Positioning is the platform's own,
- * still-CSS fix (see `top_layer::anchor_name_style`/`position_anchor_style`
- * in primitives/src, which set `anchor-name` on the trigger and
- * `position-anchor` on this content, both scoped to a unique id per
- * instance): `anchor()` resolves relative to that named anchor even from
- * the top layer. `@supports`-gated so an engine without Anchor Positioning
- * (not yet Firefox/WebKit as of this writing) falls back to the rules
- * above rather than an invalid declaration -- on such an engine, promoted
- * content still escapes clipping, just without trigger-relative placement.
- * Flip only (no shift/size -- docs/backlog.md row 10's remaining Phase 5
- * scope): `position-try-fallbacks: flip-block, flip-inline` is the CSS
- * Anchor Positioning spec's own collision-avoidance primitive --
- * <https://www.w3.org/TR/css-anchor-position-1/#fallback-var> and
- * <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>
- * (the `flip-block`/`flip-inline` "existing tactics" swap the block-axis or
- * inline-axis inset property pair, e.g. `bottom: anchor(top)` becomes
- * `top: anchor(bottom)`, when the preferred placement doesn't fit the
- * viewport). Declared once on the shared `[popover]` rule below rather than
- * per `[data-side]` rule: every one of the four side-specific rules sets
- * only one of the two axes explicitly (top/bottom sides set the block
- * inset; left/right sides set the inline inset), so a single "try
- * flip-block, then flip-inline" order is safe for all of them -- whichever
- * axis a given side didn't set is a no-op fallback for that instance.
- * Confirmed by execution (see this slice's PR/session notes): the browser
- * swaps only the relevant inset pair and leaves the cross-axis
- * align-based coordinate (and any `transform`) untouched, so
- * `[data-align]`'s `start`/`center`/`end` offset survives a flip exactly as
- * `primitives/src/top_layer.rs`'s JS fallback also assumes (see that
- * file's `use_anchor_position_fallback` doc for the matching non-anchor-
- * engine flip decision, and the contract both paths now share).
+ * still-CSS fix for that (`anchor-name`/`position-anchor`/`anchor()`), with
+ * `position-try-fallbacks: flip-block, flip-inline` (docs/backlog.md row 10)
+ * as its own collision-avoidance primitive on top.
+ *
+ * The `@supports (anchor-name: --a)` block that used to live here (per-
+ * `[data-side]`/`[data-align]` `anchor()` rules keyed on the
+ * `.dx-anchor-tooltip` marker class) now lives in a single, engine-injected
+ * stylesheet shared by every `dx-anchor-*`-marked overlay in the app --
+ * `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles` doc has
+ * the full rationale (docs/backlog.md item 1, 2026-09-01): hand-copying this
+ * block into every consuming page's own stylesheet is exactly the "forgot to
+ * duplicate it" bug class that bit `color_picker`/`date_picker`, and
+ * `#[css_module]` can't scope a class referenced only inside `@supports`
+ * anyway (`docs/issues/css-module-supports-scoping.md`), so there was never
+ * a reason for this to be per-page CSS rather than a single, engine-level
+ * rule keyed on the shared marker class.
  */
-@supports (anchor-name: --a) {
-  .dx-anchor-tooltip[popover] {
-    position: fixed;
-    margin: 0;
-    inset: auto;
-    position-try-fallbacks: flip-block, flip-inline;
-  }
-
-  .dx-anchor-tooltip[popover][data-side="top"] {
-    bottom: anchor(top);
-    left: anchor(center);
-    margin-bottom: 8px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-tooltip[popover][data-side="right"] {
-    top: anchor(center);
-    left: anchor(right);
-    margin-left: 8px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-tooltip[popover][data-side="bottom"] {
-    top: anchor(bottom);
-    left: anchor(center);
-    margin-top: 8px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-tooltip[popover][data-side="left"] {
-    top: anchor(center);
-    right: anchor(left);
-    margin-right: 8px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-tooltip[popover][data-side="top"][data-align="start"],
-  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"] {
-    left: anchor(left);
-    transform: none;
-  }
-
-  .dx-anchor-tooltip[popover][data-side="top"][data-align="end"],
-  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"] {
-    left: anchor(right);
-    transform: translateX(-100%);
-  }
-
-  .dx-anchor-tooltip[popover][data-side="left"][data-align="start"],
-  .dx-anchor-tooltip[popover][data-side="right"][data-align="start"] {
-    top: anchor(top);
-    transform: none;
-  }
-
-  .dx-anchor-tooltip[popover][data-side="left"][data-align="end"],
-  .dx-anchor-tooltip[popover][data-side="right"][data-align="end"] {
-    top: anchor(bottom);
-    transform: translateY(-100%);
-  }
-}

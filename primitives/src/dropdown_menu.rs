@@ -22,6 +22,16 @@ struct DropdownMenuContext {
     // Unique ID for the trigger button
     trigger_id: Signal<String>,
 
+    // The current `DropdownMenuContent`'s own element id, kept in sync by
+    // that component -- mirrors `PopoverCtx::content_id` (`popover.rs`).
+    // `DropdownMenuTrigger`'s `anchor-name` must key off *this* signal, not
+    // `trigger_id` (this is the trigger's own id, unrelated), so that
+    // `crate::top_layer::position_anchor_style` on the content side (built
+    // from the content's own id) and `anchor_name_style` on the trigger
+    // side name the same anchor. See `PopoverCtx::content_id`'s doc for the
+    // exact bug this guards against if the two ever named different ids.
+    content_id: Signal<String>,
+
     // Whether the open menu should lock page scrolling. See
     // docs/plan.md Phase 3.2.
     modal: ReadSignal<bool>,
@@ -123,6 +133,9 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
 
     let disabled = props.disabled;
     let trigger_id = use_unique_id();
+    // Placeholder value until `DropdownMenuContent` mounts and syncs its
+    // own id in -- see `DropdownMenuContext::content_id`'s doc.
+    let content_id = use_unique_id();
     let interacted_outside = use_signal(|| false);
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| DropdownMenuContext {
@@ -131,6 +144,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         disabled,
         focus,
         trigger_id,
+        content_id,
         modal: props.modal,
         interacted_outside,
     });
@@ -172,7 +186,30 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
                 let new_open = !(ctx.open)();
                 ctx.set_open.call(new_open);
             }
-            Key::Escape => ctx.set_open.call(false),
+            Key::Escape => {
+                // Web arm: `DropdownMenuContentRendered`'s `popover="auto"`
+                // owns Escape dismissal natively (WHATWG HTML's light-dismiss
+                // algorithm) -- returning here before `event.prevent_default()`
+                // below leaves the key's default action alone so the browser's
+                // own dismissal still runs. Calling both `set_open` *and*
+                // `prevent_default` unconditionally here (the pre-migration
+                // shape) would race that native algorithm, and the
+                // `prevent_default` specifically would suppress the
+                // browser's default action for the key outright -- the same
+                // "unconditional keydown-suppressor must never run on the
+                // web arm" lesson `PopoverContentRendered`'s doc documents
+                // for `use_global_escape_listener` (docs/plan.md Phase
+                // 4.4/4.2). This is a plain `cfg!()` compile-time branch on
+                // ordinary code, not a conditionally-called hook, so it
+                // carries none of that lesson's hook-order hazard -- no
+                // component-boundary split needed for this one arm. Native
+                // (Blitz) arm: unchanged, still closes here directly (Blitz
+                // has no popover-API light dismiss to defer to).
+                if cfg!(target_family = "wasm") {
+                    return;
+                }
+                ctx.set_open.call(false);
+            }
             Key::ArrowDown => {
                 ctx.focus.focus_next();
             }
@@ -276,6 +313,14 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
         disabled: disabled,
         aria_expanded: open,
         aria_haspopup: "listbox",
+        // See `crate::top_layer::anchor_name_style`: ties this trigger to
+        // the web-arm content's `position-anchor` (`DropdownMenuContentRendered`)
+        // so its anchor-positioned placement resolves relative to this
+        // trigger once promoted to the top layer. Inert (empty) off the web
+        // arm, and keyed on `ctx.content_id` -- not `ctx.trigger_id` above,
+        // this trigger's own id -- for the same reason `PopoverTrigger`
+        // does (see `PopoverCtx::content_id`'s doc in `popover.rs`).
+        style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
         onmounted: move |e: MountedEvent| {
             element.set(Some(e.data()));
         },
@@ -376,41 +421,186 @@ pub struct DropdownMenuContentProps {
 /// - `data-state`: Indicates the current state of the dropdown menu. values are `open` or `closed`.
 #[component]
 pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
-    let ctx: DropdownMenuContext = use_context();
+    let mut ctx: DropdownMenuContext = use_context();
 
     let unique_id = use_unique_id();
     let id = use_id_or(unique_id, props.id);
+
+    // Keep `ctx.content_id` in sync with this content's actual id -- see
+    // `DropdownMenuContext::content_id`'s doc. Mirrors `PopoverContent`'s
+    // identical `ctx.content_id.set(id())` in `popover.rs`.
+    use_effect(move || ctx.content_id.set(id()));
+
     let render = use_animated_open(id, ctx.open);
 
     // Lock page scroll while the menu is open and modal, matching Radix's
     // default. See docs/plan.md Phase 3.2. `DropdownMenuContent` itself
-    // never unmounts (only the `div` below does, via `render()`), so the
-    // lock is held by `ScrollLockGuard` -- a child mounted inside that same
-    // conditional -- rather than by this component directly; see that
-    // guard's doc comment.
+    // never unmounts (only the rendered content below does, via `render()`),
+    // so the lock is held by `ScrollLockGuard` -- a child mounted inside
+    // that same conditional -- rather than by this component directly; see
+    // that guard's doc comment.
     let modal = ctx.modal;
     let open = ctx.open;
     let scroll_lock_active = use_memo(move || modal() && open());
 
     rsx! {
         if render() {
-            div {
-                id,
-                role: "listbox",
-                aria_labelledby: "{ctx.trigger_id}",
-                "data-state": if (ctx.open)() { "open" } else { "closed" },
-                onpointerdown: move |event| {
-                    // The user is starting a click inside the dropdown menu.
-                    // Prevent the blur event from occurring during pointerdown,
-                    // to keep the dropdown menu open until pointerup happens,
-                    // thus enabling onclick/onselect events to fire.
-                    event.prevent_default();
-                    event.stop_propagation();
-                },
-                ..props.attributes,
-                crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
-                {props.children}
+            DropdownMenuContentRendered {
+                id: id.cloned(),
+                attributes: props.attributes,
+                scroll_lock_active,
+                children: props.children,
             }
+        }
+    }
+}
+
+/// Web arm (docs/backlog.md item 2, non-modal-overlay migration): promote
+/// the listbox to the top layer via `popover="auto"` so it escapes
+/// clipping/transformed ancestors, the same fix already shipped for
+/// `Tooltip`/`HoverCard`/non-modal `Popover` (docs/plan.md Phase 4.4). This
+/// also gains native light dismiss (WHATWG HTML's light-dismiss algorithm --
+/// Escape and outside-pointerdown) for free from the platform.
+///
+/// This does *not* need a full `use_outside_dismiss`/`use_global_escape_
+/// listener` removal the way `PopoverContentRendered` did, because
+/// `DropdownMenu` never called either: it already dismisses on "focus left
+/// the whole widget" via plain `onblur` handlers on `DropdownMenuTrigger`/
+/// `DropdownMenuItem` (no hook, no JS listener, no unconditional
+/// `preventDefault()`), which cannot fight the browser's own light-dismiss
+/// default action and are left running unchanged on this arm -- a real
+/// outside interaction still blurs whatever item/trigger had focus in the
+/// common case, so the two mechanisms usually agree rather than race. What
+/// *would* fight it is the root `DropdownMenu`'s keydown handler
+/// unconditionally consuming Escape; see that handler's own comment for the
+/// (non-hook, so no component-boundary split needed for that one arm)
+/// carve-out.
+///
+/// `crate::top_layer::use_popover_sync` drives `showPopover()`/
+/// `hidePopover()` from `open` and mirrors the browser's own `toggle` event
+/// (fired on light dismiss, Escape, or any other close) back into
+/// `set_open`, so the Rust signal can never strand the way `docs/
+/// recommended-implementations.md` Caveat 1 documents for `<dialog>`'s old
+/// one-way `showModal()`/`close()` binding. It also clears the focus
+/// collection on that path -- see its callback's own comment.
+#[cfg(target_family = "wasm")]
+#[component]
+fn DropdownMenuContentRendered(
+    id: String,
+    attributes: Vec<Attribute>,
+    scroll_lock_active: Memo<bool>,
+    children: Element,
+) -> Element {
+    let mut ctx: DropdownMenuContext = use_context();
+    let open = ctx.open;
+
+    crate::top_layer::use_popover_sync(
+        id.clone(),
+        open,
+        Callback::new(move |is_open: bool| {
+            if !is_open {
+                // Native light dismiss (Escape or outside pointerdown)
+                // fired -- clear the focus collection too, so a stale
+                // "something is still focused" reading can't disagree with
+                // `open` on the next interaction (the root's own `open` <->
+                // `focus.any_focused()` sync effect only reacts to focus
+                // changes, not to this direct `set_open` call, so the two
+                // must be kept in step here explicitly). Belt-and-suspenders
+                // with the common case: the item that actually held DOM
+                // focus is also blurred by the browser's own
+                // `[popover]:not(:popover-open) { display: none }` UA rule
+                // taking effect, which already clears focus via that item's
+                // own `onblur` handler.
+                ctx.focus.clear_focus();
+                ctx.interacted_outside.set(true);
+            }
+            ctx.set_open.call(is_open);
+        }),
+    );
+    // JS-measured static positioning fallback for engines without CSS
+    // Anchor Positioning -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `side`/`align` match the APG/Radix dropdown-menu default:
+    // anchored below the trigger, left-aligned with it (not centered, the
+    // `Tooltip`/`HoverCard`/`Popover` default -- a menu's items read
+    // left-to-right from the trigger's own left edge).
+    crate::top_layer::use_anchor_position_fallback(
+        id.clone(),
+        id.clone(),
+        open,
+        crate::ContentSide::Bottom,
+        crate::ContentAlign::Start,
+        4,
+    );
+
+    // See `tooltip.rs`'s `TooltipContentRendered` for why this hand-written,
+    // never-`Styles::`-routed marker class exists: it is what the shared,
+    // engine-injected anchor-positioning stylesheet (`top_layer::
+    // ensure_anchor_positioning_styles`) selects on, sidestepping
+    // `manganis-core`'s `css_module_parser` not scoping classes inside
+    // `@supports` bodies (`docs/issues/css-module-supports-scoping.md`).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            class: "dx-anchor-dropdown-menu"
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "listbox",
+            aria_labelledby: "{ctx.trigger_id}",
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            style: crate::top_layer::position_anchor_style(&id),
+            "data-state": if open() { "open" } else { "closed" },
+            onpointerdown: move |event| {
+                // The user is starting a click inside the dropdown menu.
+                // Prevent the blur event from occurring during pointerdown,
+                // to keep the dropdown menu open until pointerup happens,
+                // thus enabling onclick/onselect events to fire.
+                event.prevent_default();
+                event.stop_propagation();
+            },
+            ..attributes,
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
+/// popover-API support at all (`docs/recommended-implementations.md`
+/// Caveat 2), so light dismiss / Escape still need this crate's own
+/// blur-driven dismissal, and this is the functional floor: a plain,
+/// always-in-flow `div`, visible exactly when `render()` (`DropdownMenuContent`)
+/// mounts it.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn DropdownMenuContentRendered(
+    id: String,
+    attributes: Vec<Attribute>,
+    scroll_lock_active: Memo<bool>,
+    children: Element,
+) -> Element {
+    let ctx: DropdownMenuContext = use_context();
+
+    rsx! {
+        div {
+            id,
+            role: "listbox",
+            aria_labelledby: "{ctx.trigger_id}",
+            "data-state": if (ctx.open)() { "open" } else { "closed" },
+            onpointerdown: move |event| {
+                // The user is starting a click inside the dropdown menu.
+                // Prevent the blur event from occurring during pointerdown,
+                // to keep the dropdown menu open until pointerup happens,
+                // thus enabling onclick/onselect events to fire.
+                event.prevent_default();
+                event.stop_propagation();
+            },
+            ..attributes,
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
+            {children}
         }
     }
 }

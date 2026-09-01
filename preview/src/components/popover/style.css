@@ -46,20 +46,16 @@
 
 /*
  * Non-modal arm only (see the base rule's comment above for why this can't
- * live there unconditionally): resets the UA popover stylesheet's
- * `inset: 0`/`margin: auto` for the *non-anchor-positioning* fallback path
- * too, not just the `@supports` block below. Without this, a browser that
- * has the Popover API but not CSS Anchor Positioning (Firefox/WebKit as of
- * this writing) falls through to the plain `[data-side]` rules further
- * down, which -- like the tooltip/hover-card ones documented in
- * `../tooltip/style.css` -- only ever set two of the four inset sides,
- * leaving the other two (and all four margins) to leak in from the UA
- * stylesheet and badly mis-position the popover on exactly those engines.
+ * live there unconditionally): the UA popover stylesheet's `inset: 0`/
+ * `margin: auto` reset for this arm -- needed for the *non-anchor-
+ * positioning* fallback path too, not just the anchor-positioned one --
+ * now lives in the single, engine-injected stylesheet shared by every
+ * `dx-anchor-*`-marked overlay in the app (this content's non-modal arm
+ * carries `dx-anchor-popover` unconditionally; see `popover.rs`'s
+ * `PopoverNonModalContent`). See `primitives/src/top_layer.rs`'s
+ * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1) for the
+ * full rationale.
  */
-.dx-popover-content[popover] {
-  margin: 0;
-  inset: auto;
-}
 
 .dx-popover-content[data-state="open"] {
   animation: dx-popover-fade-in .2s ease-in-out;
@@ -278,83 +274,15 @@
 /*
  * Phase 4.4 (docs/plan.md): the web arm's *non-modal* content is a
  * `<dialog popover="auto">` (top-layer promotion for clipping escape and
- * light dismiss) -- see the identical block in ../tooltip/style.css for
- * the full rationale. Note this is scoped to `[popover]` specifically
- * (present only on the non-modal arm), not `[role="dialog"]`, so the modal
- * arm (a plain div, Phase 4.2's job, unaffected by this slice) keeps its
- * existing DOM-relative positioning untouched. `@supports`-gated the same
- * way. Flip-only collision avoidance (docs/backlog.md row 10): see the
- * fully worked-out `position-try-fallbacks` note in `../tooltip/style.css`'s
- * identical block, including the W3C CSS Anchor Positioning citations
- * (<https://www.w3.org/TR/css-anchor-position-1/#fallback-var>,
- * <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>)
- * and why one declaration on the shared `[popover]` rule covers every
- * `[data-side]` rule below.
+ * light dismiss). Note the top-layer CSS is scoped to `[popover]`
+ * specifically (present only on the non-modal arm), not `[role="dialog"]`,
+ * so the modal arm (a plain div, Phase 4.2's job, unaffected by this slice)
+ * keeps its existing DOM-relative positioning untouched.
+ *
+ * The `@supports (anchor-name: --a)` block that used to live here (keyed on
+ * the `.dx-anchor-popover` marker class) now lives in the single,
+ * engine-injected stylesheet shared by every `dx-anchor-*`-marked overlay in
+ * the app -- see `primitives/src/top_layer.rs`'s
+ * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1) and
+ * `../tooltip/style.css`'s identical comment for the full rationale.
  */
-@supports (anchor-name: --a) {
-  .dx-anchor-popover[popover] {
-    position: fixed;
-    margin: 0;
-    inset: auto;
-    position-try-fallbacks: flip-block, flip-inline;
-    transform: none;
-  }
-
-  .dx-anchor-popover[popover][data-side="top"] {
-    bottom: anchor(top);
-    left: anchor(center);
-    margin-bottom: 8px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-popover[popover][data-side="right"] {
-    top: anchor(center);
-    left: anchor(right);
-    margin-left: 8px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-popover[popover][data-side="bottom"] {
-    top: anchor(bottom);
-    left: anchor(center);
-    margin-top: 8px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-popover[popover][data-side="left"] {
-    top: anchor(center);
-    right: anchor(left);
-    margin-right: 8px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-popover[popover][data-side="top"][data-align="start"],
-  .dx-anchor-popover[popover][data-side="bottom"][data-align="start"] {
-    left: anchor(left);
-    transform: none;
-  }
-
-  .dx-anchor-popover[popover][data-side="top"][data-align="end"],
-  .dx-anchor-popover[popover][data-side="bottom"][data-align="end"] {
-    left: anchor(right);
-    transform: translateX(-100%);
-  }
-
-  .dx-anchor-popover[popover][data-side="left"][data-align="start"],
-  .dx-anchor-popover[popover][data-side="right"][data-align="start"] {
-    top: anchor(top);
-    transform: none;
-  }
-
-  .dx-anchor-popover[popover][data-side="left"][data-align="center"],
-  .dx-anchor-popover[popover][data-side="right"][data-align="center"] {
-    top: anchor(center);
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-popover[popover][data-side="left"][data-align="end"],
-  .dx-anchor-popover[popover][data-side="right"][data-align="end"] {
-    top: anchor(bottom);
-    transform: translateY(-100%);
-  }
-}

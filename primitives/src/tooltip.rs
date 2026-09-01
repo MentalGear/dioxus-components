@@ -81,6 +81,27 @@ pub struct TooltipProps {
 /// - `data-disabled`: Indicates if the tooltip is disabled. Values are `true` or `false`.
 #[component]
 pub fn Tooltip(props: TooltipProps) -> Element {
+    // Install the shared anchor-positioning stylesheet (`top_layer.rs`'s
+    // `ensure_anchor_positioning_styles`) as early as possible -- from this
+    // always-mounted root, not only from `use_anchor_position_fallback`
+    // (called only once `TooltipContent` first opens). Confirmed necessary
+    // by execution, not just tidier: CSS Anchor Positioning's `anchor()`
+    // resolution needs the stylesheet to have been part of the document for
+    // at least one full rendering lifecycle before the *very first* anchored
+    // element ever measures against it -- installing it only in the same
+    // script as that first measurement (tried first) left a real, if
+    // narrow, window where `anchor()` had not yet resolved by the time
+    // `getBoundingClientRect()` ran, wrongly tripping the JS fallback on a
+    // cold first open. Mounting `Tooltip` happens well before hover/focus
+    // can ever open its content, so by the time a real user (or a test)
+    // triggers the first open, the browser has had many rendering
+    // opportunities to establish it -- mirrors `scroll_lock.rs`'s own
+    // `ensure_scrollbar_gutter_baseline` being called from every
+    // scroll-lock-capable primitive's *root* component for the identical
+    // "must exist before first open" reason.
+    #[cfg(target_family = "wasm")]
+    use_effect(crate::top_layer::ensure_anchor_positioning_styles);
+
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
     let tooltip_id = use_unique_id();
 
