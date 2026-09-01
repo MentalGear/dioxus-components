@@ -12,8 +12,37 @@
  *     https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
  *   - APG dialog (modal) keyboard interaction — Escape closes the dialog and
  *     returns focus to the triggering element; Tab/Shift+Tab are trapped
- *     inside the dialog:
+ *     inside the dialog; and initial focus: "When a dialog opens, focus
+ *     moves to an element inside the dialog. Generally, focus is initially
+ *     set on the first focusable element.":
  *     https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/
+ *   - UI Events, the `click` event and `MouseEvent.detail`: a `click` is
+ *     dispatched "when a pointing device button is pressed and released on
+ *     an element" *or* "when an element is activated" (e.g. Enter/Space on a
+ *     focused button) -- and for the latter, non-pointer case, detail is 0
+ *     (no pointing-device button was pressed):
+ *     https://www.w3.org/TR/uievents/#event-type-click
+ *
+ * Rule 7's bug (live-site report, independent of the hydration fix that
+ * preceded it): `use_dialog_backdrop_dismiss` (primitives/src/lib.rs)
+ * distinguishes a backdrop click from a content click with a bounding-rect
+ * test against `event.clientX`/`clientY`. A keyboard activation (Enter or
+ * Space) of a button dispatches a `click` with `detail === 0` and, in
+ * Chromium, `clientX`/`clientY` of `0, 0` -- coordinates that do not
+ * correspond to any real pointer position and, for any dialog not pinned at
+ * the viewport's top-left corner, fall outside its content rect. The rect
+ * test reads that as "outside" and dismisses. Because the listener is bound
+ * directly on the `<dialog>` element and native `click` events bubble, this
+ * fires for *any* keyboard-activated control inside the dialog's content --
+ * including, in the nested-dialog fixture, the "Open Nested Dialog" button,
+ * whose bubbled synthetic click reaches the *outer* dialog's own listener
+ * and dismisses the outer dialog a tick after the nested one opens. Because
+ * the nested `<dialog>` is a DOM descendant of the outer one, closing the
+ * outer dialog (`display: none` via its own UA default styling) forces the
+ * still-open nested dialog out of the top layer too, so it also fires its
+ * own `close` event moments later -- from the user's perspective, "the
+ * nested dialog shows but closes immediately," and any focus placed inside
+ * it during that instant is lost.
  *
  * Fixture: preview/src/components/top_layer/component.rs (`TopLayerFixture`,
  * extended additively for this file — the "Native <dialog> ..." sections),
@@ -431,5 +460,110 @@ test.describe("Rule 6 — modal Popover (two-engine completion)", () => {
       Math.abs(measurement.contentTop - viewportCenterY),
       `${debug} -- content must not be viewport-centered`,
     ).toBeGreaterThan(150);
+  });
+});
+
+/**
+ * Rule 7 — keyboard activation of a control inside a modal `<dialog>` must
+ * never be misread as a backdrop click (see this file's header comment for
+ * the mechanism). Fixture: the existing nested-dialog demo
+ * (/component/?name=dialog, Phase 3.2), which already places a trigger
+ * ("Open Nested Dialog") inside the outer dialog's own content.
+ */
+
+/** Tabs forward from wherever focus currently is until an element with this
+ * accessible name is focused, or `maxSteps` is exhausted. */
+async function tabUntilFocused(page: Page, name: string, maxSteps = 10): Promise<void> {
+  for (let i = 0; i < maxSteps; i++) {
+    const focusedName = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return el ? (el.getAttribute("aria-label") || el.textContent || "").trim() : "";
+    });
+    if (focusedName === name) return;
+    await page.keyboard.press("Tab");
+  }
+  throw new Error(`could not reach a focusable element named ${JSON.stringify(name)} within ${maxSteps} Tabs`);
+}
+
+for (const key of ["Enter", "Space"] as const) {
+  test.describe(`Rule 7a/7b (${key}) — keyboard-activating the nested trigger must not dismiss either dialog, and focus must land inside the nested one`, () => {
+    test(`opening the outer dialog by keyboard, then activating "Open Nested Dialog" with ${key}, keeps both dialogs open and moves focus inside the nested one`, async ({
+      page,
+    }) => {
+      await gotoDialog(page);
+      const pageTrigger = page.getByRole("button", { name: "Show Dialog" });
+
+      // "open the dialog by keyboard": Tab to the trigger, Enter.
+      await pageTrigger.focus();
+      await page.keyboard.press("Enter");
+      const outer = page.getByRole("dialog").first();
+      await expect(outer, "outer dialog must open").toBeVisible();
+
+      // Tab from wherever showModal() placed focus to the nested trigger,
+      // entirely by keyboard (no `.click()`/`.focus()` shortcut onto it).
+      await tabUntilFocused(page, "Open Nested Dialog");
+
+      // Activate it by keyboard -- this is the synthesized, non-pointer
+      // `click` (detail === 0) this file's header describes.
+      await page.keyboard.press(key);
+
+      // 7a: both dialogs must still be open a moment later -- long enough
+      // for the historical top-layer-forced-removal cascade (outer closes
+      // -> nested's own `close` fires) to have played out if the bug were
+      // still present.
+      await page.waitForTimeout(250);
+      await expect(page.getByRole("dialog"), `${key}: both dialogs must remain open`).toHaveCount(2);
+      await expect(outer, `${key}: the outer dialog must still be open`).toBeVisible();
+      const nested = page.getByRole("dialog").nth(1);
+      await expect(nested, `${key}: the nested dialog must still be open`).toBeVisible();
+
+      // 7b: focus must land inside the nested dialog (APG: "When a dialog
+      // opens, focus moves to an element inside the dialog. Generally,
+      // focus is initially set on the first focusable element.") -- here,
+      // the nested dialog's own "Close Nested" button.
+      const focusInsideNested = await nested.evaluate((dialogEl) => dialogEl.contains(document.activeElement));
+      expect(focusInsideNested, `${key}: focus must be inside the nested dialog, was ${await focusReport(page)}`).toBe(true);
+    });
+  });
+}
+
+test.describe("Rule 7c — regression guard: a real pointer click on the backdrop still dismisses", () => {
+  test("opening the dialog by keyboard, a real mouse click far outside it still dismisses", async ({ page }) => {
+    await gotoDialog(page);
+    const trigger = page.getByRole("button", { name: "Show Dialog" });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    // A real pointer click (has a genuine clientX/clientY and detail === 1)
+    // at the viewport corner, far outside the dialog's content rect.
+    await page.mouse.click(2, 2);
+    await expect(page.getByRole("dialog"), "a real backdrop click must still dismiss the dialog").toHaveCount(0);
+  });
+});
+
+test.describe("Rule 7d — a keyboard activation of a control inside the dialog never dismisses it (the close button itself is the one exception, and closes by its own onclick, not by misfiring backdrop-dismiss)", () => {
+  test("keyboard-activating the dialog's own close button closes only that dialog, not via a false backdrop read that could equally have missed", async ({
+    page,
+  }) => {
+    await gotoDialog(page);
+    const trigger = page.getByRole("button", { name: "Show Dialog" });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const outer = page.getByRole("dialog").first();
+    await expect(outer).toBeVisible();
+
+    // Open the nested dialog (by keyboard, as above), then keyboard-close it
+    // via its own explicit close button -- a keyboard activation of a
+    // control *inside* the dialog that legitimately closes only the dialog
+    // it belongs to, leaving the outer one untouched.
+    await tabUntilFocused(page, "Open Nested Dialog");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog"), "both dialogs open before closing the nested one").toHaveCount(2);
+
+    await tabUntilFocused(page, "Close Nested");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog"), "closing the nested dialog's own close button must leave the outer one open").toHaveCount(1);
+    await expect(outer, "the outer dialog must still be open").toBeVisible();
   });
 });
