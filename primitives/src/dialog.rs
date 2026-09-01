@@ -30,8 +30,9 @@
 //!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`] (the
 //!   fix for the historical stranded-signal defect,
 //!   `docs/recommended-implementations.md` Caveat 1) plus
-//!   [`use_dialog_backdrop_dismiss`] for the "click far outside the dialog"
-//!   behaviour `dialog.spec.ts` already covers -- `use_outside_dismiss`
+//!   [`crate::use_dialog_backdrop_dismiss`] (now shared with `popover.rs`'s
+//!   modal web arm too) for the "click far outside the dialog" behaviour
+//!   `dialog.spec.ts` already covers -- `use_outside_dismiss`
 //!   itself is not reusable here, because a `showModal()` backdrop click's
 //!   `event.target` *is* the `<dialog>` element (it contains itself), so
 //!   `use_outside_dismiss`'s `!root.contains(e.target)` check can never fire
@@ -41,12 +42,13 @@
 //!   the focus trap, focus restore, inertness, and top layer, and its
 //!   `cancel`/`close` events (synced above) already handle Escape.
 
+#[cfg(not(target_family = "wasm"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
 use crate::{
     use_animated_open, use_controlled, use_global_escape_listener, use_id_or, use_outside_dismiss,
-    use_unique_id, FOCUS_TRAP_JS,
+    use_unique_id,
 };
 
 /// Context for the [`DialogRoot`] component
@@ -184,10 +186,7 @@ pub fn DialogRoot(props: DialogRootProps) -> Element {
     let render = use_animated_open(id, open);
 
     rsx! {
-        document::Script {
-            src: FOCUS_TRAP_JS,
-            defer: true
-        }
+        {crate::focus_trap_script()}
         if render() {
             div {
                 id,
@@ -432,7 +431,7 @@ fn DialogContentModal(
     // `popover=` does -- reproduces dialog.spec.ts's "clicking far outside
     // the dialog dismisses it" behaviour. See this module's doc comment for
     // why `use_outside_dismiss` itself can't be reused here.
-    use_dialog_backdrop_dismiss(id, move || set_open.call(false));
+    crate::use_dialog_backdrop_dismiss(id, move || set_open.call(false));
 
     rsx! {
         dialog {
@@ -446,54 +445,6 @@ fn DialogContentModal(
             {children}
         }
     }
-}
-
-/// Backdrop-click dismiss for the web modal arm's `<dialog>`.
-///
-/// `showModal()`'s `::backdrop` covers the entire viewport and owns
-/// hit-testing everywhere while the dialog is open
-/// (`docs/phase4-spike-findings.md` experiment 6: `elementFromPoint`
-/// resolves to the `<dialog>` element at every coordinate) -- and every
-/// pointer event over a `::backdrop` (or any other pseudo-element) is
-/// dispatched with its `target` set to the host element, i.e. the `<dialog>`
-/// itself. So the discriminator for "did this click land on the backdrop
-/// (dismiss) or on the dialog's own visible box (don't dismiss)" can't be
-/// `event.target` -- it's already the dialog element either way, including
-/// for clicks that land in the dialog's own padding/gap areas where no
-/// child happens to be. A bounding-rect check against the dialog's own
-/// rendered box (the same technique MDN's `<dialog>` guide recommends for
-/// this exact "click outside to close" pattern) tells the two apart
-/// correctly regardless of `event.target`.
-#[cfg(target_family = "wasm")]
-fn use_dialog_backdrop_dismiss(
-    id: impl Readable<Target = String> + Copy + 'static,
-    on_dismiss: impl FnMut() + Clone + 'static,
-) {
-    crate::use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            const dialog = document.getElementById(id);
-            const onClick = (e) => {
-                const rect = dialog.getBoundingClientRect();
-                const inside = e.clientX >= rect.left && e.clientX <= rect.right
-                    && e.clientY >= rect.top && e.clientY <= rect.bottom;
-                if (!inside) dioxus.send(true);
-            };
-            dialog.addEventListener('click', onClick);
-            await dioxus.recv();
-            dialog.removeEventListener('click', onClick);",
-        );
-        let _ = eval.send(id.cloned());
-        let mut on_dismiss = on_dismiss.clone();
-        spawn(async move {
-            while let Ok(true) = eval.recv::<bool>().await {
-                on_dismiss();
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
-    });
 }
 
 /// The props for the [`DialogTitle`] component

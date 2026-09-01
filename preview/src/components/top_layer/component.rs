@@ -41,6 +41,12 @@ pub fn TopLayerFixture() -> Element {
     let mut dialog_clip_open = use_signal(|| false);
     let mut dialog_inert_open = use_signal(|| false);
     let mut bg_clicks = use_signal(|| 0u32);
+    // Additive fixture for the two-engine overlay architecture completion
+    // (modal `Popover` -> native `<dialog>`/`showModal()` on the web arm):
+    // its own background-inertness click counter, mirroring `bg_clicks`
+    // above but kept separate so the two sections' assertions can never
+    // cross-contaminate each other's counts.
+    let mut popover_modal_bg_clicks = use_signal(|| 0u32);
 
     rsx! {
         div { class: Styles::dx_top_layer_fixture,
@@ -637,6 +643,97 @@ pub fn TopLayerFixture() -> Element {
                             id: "dialog-inert-close",
                             onclick: move |_| dialog_inert_open.set(false),
                             "Close"
+                        }
+                    }
+                }
+            }
+
+            section { class: Styles::dx_top_layer_section,
+                h2 { "Native <dialog> modal Popover (two-engine completion)" }
+                p { class: Styles::dx_top_layer_hint,
+                    "The modal "
+                    code { "Popover" }
+                    " below (default "
+                    code { "is_modal" }
+                    ") now renders a real "
+                    code { "<dialog>" }
+                    " opened with "
+                    code { "showModal()" }
+                    " on the web arm, driven by the same open-driver/"
+                    "close-sync/backdrop-dismiss trio as modal "
+                    code { "Dialog" }
+                    " -- except, unlike "
+                    code { "Dialog" }
+                    ", a modal "
+                    code { "Popover" }
+                    " stays anchored to its own trigger rather than "
+                    "viewport-centered. Three checks share the "
+                    code { "#popover-modal-clip-box" }
+                    "/inertness/anchor sub-fixtures below: clipping escape "
+                    "(same "
+                    code { "overflow: hidden" }
+                    " ancestor as the plain-Dialog case above), background "
+                    "inertness (click/focus must not reach the background "
+                    "button/input), and trigger-anchored placement -- the "
+                    "anchor trigger sits pinned near the top-left viewport "
+                    "corner, far from the viewport center, so a "
+                    "viewport-centered "
+                    code { "showModal()" }
+                    " (the UA default this migration must override) would "
+                    "measurably disagree with a trigger-anchored one."
+                }
+                div { id: "popover-modal-clip-box", class: Styles::dx_top_layer_clip_box,
+                    PopoverRoot { id: "popover-modal-clip-root",
+                        PopoverTrigger { id: "popover-modal-clip-trigger", "Modal popover clip trigger" }
+                        PopoverContent {
+                            id: "popover-modal-clip-content",
+                            // An explicit `width` (not just `min-width`) --
+                            // a native modal `<dialog>` (UA `dialog:modal {
+                            // width: fit-content; ... }`, un-reset by this
+                            // component's own CSS) sizes to its content's
+                            // natural line width by default. Without a cap,
+                            // this fixture's sentence-length text renders
+                            // wide enough that `align: Center`'s
+                            // `transform: translateX(-50%)` -- centering it
+                            // under a trigger sitting near this box's own
+                            // left edge -- pushes a meaningful chunk of the
+                            // content off the left edge of the *viewport*,
+                            // confusing this rule's clip-escape probe
+                            // (which needs the content to still land
+                            // somewhere `elementFromPoint` can see) with a
+                            // symptom that looks like clipping but is
+                            // actually just off-canvas.
+                            style: "min-height: 140px; width: 220px;",
+                            "Modal popover content, taller than the clip ancestor."
+                        }
+                    }
+                }
+
+                div {
+                    div { id: "popover-modal-inert-bg-count", "{popover_modal_bg_clicks()}" }
+                    button {
+                        id: "popover-modal-inert-bg-button",
+                        onclick: move |_| popover_modal_bg_clicks.set(popover_modal_bg_clicks() + 1),
+                        "Background button"
+                    }
+                    input { id: "popover-modal-inert-bg-input", placeholder: "Background input" }
+                }
+                PopoverRoot { id: "popover-modal-inert-root",
+                    PopoverTrigger { id: "popover-modal-inert-trigger", "Open inertness popover" }
+                    PopoverContent { id: "popover-modal-inert-content",
+                        "Modal popover inertness content."
+                    }
+                }
+
+                // Pinned well away from the viewport center (Escape/reopen
+                // and focus-restore cycles, plus the trigger-anchored
+                // placement measurement, all share this one trigger/content
+                // pair).
+                div { style: "position: fixed; top: 40px; left: 40px;",
+                    PopoverRoot { id: "popover-modal-anchor-root",
+                        PopoverTrigger { id: "popover-modal-anchor-trigger", "Modal popover anchor trigger" }
+                        PopoverContent { id: "popover-modal-anchor-content",
+                            "Modal popover anchored content."
                         }
                     }
                 }

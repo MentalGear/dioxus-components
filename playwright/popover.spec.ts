@@ -12,7 +12,20 @@ test("test", async ({ page }) => {
   // pressing tab again should focus the cancel button
   await page.keyboard.press("Tab");
   await expect(cancel).toBeFocused();
-  // pressing tab again should focus the confirm button again
+  // Native-dialog engine migration (two-engine overlay architecture
+  // completion): the modal `Popover` is now a real `<dialog>` +
+  // `showModal()` on the web arm, so this cycle goes through Chromium's own
+  // focus trap rather than the vendored `FocusTrap` -- same documented shape
+  // as `dialog.spec.ts`'s identical comment (docs/phase4-spike-findings.md
+  // experiment 4a): Chromium's native trap parks focus on `<body>` for
+  // exactly one Tab stop after the last focusable element before wrapping
+  // to the first (invisible to the user, does not let focus escape the
+  // dialog) -- a harness correction for the new trap's documented shape,
+  // not a behavior change under test.
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement === document.body))
+    .toBe(true);
   await page.keyboard.press("Tab");
   await expect(confirm).toBeFocused();
   // pressing enter should close the popover
@@ -72,9 +85,19 @@ test("rapid open/close/open settles on the correct final state", async ({ page }
 
   // Toggle open, closed, open again in rapid succession -- no waits, so the
   // close animation from the middle toggle is still in flight when the
-  // final open fires.
+  // final open fires. The middle "closed" toggle is Escape, not a second
+  // click on the trigger button: native-dialog engine migration (two-engine
+  // overlay architecture completion) -- the modal `Popover` is now a real
+  // `<dialog>` + `showModal()` on the web arm, and the trigger sits *outside*
+  // that dialog, so it is correctly background-inert (same rule
+  // `oracle/tier2-html/native-dialog.spec.ts` Rule 2 already covers for
+  // `Dialog`) and a raw click on it while open never reaches its handler at
+  // all -- Escape reaches the dialog's own `cancel`/`close` handling
+  // (synced back to `open` by `use_dialog_close_sync`) the same way a user
+  // closing it would, and still races `use_animated_open`'s exit cycle the
+  // exact same way a second trigger click used to.
   await popoverButton.click();
-  await popoverButton.click();
+  await page.keyboard.press("Escape");
   await popoverButton.click();
 
   // Final state must be open, and must *stay* open -- not flicker closed
@@ -109,8 +132,11 @@ test("an animation cancelled with no successor cycle still unmounts", async ({ p
   const domNode = page.locator('[role="dialog"]');
 
   // Start closing, then cancel its CSS animation directly -- simulating an
-  // external interruption, not a re-open.
-  await popoverButton.click();
+  // external interruption, not a re-open. Escape, not a second trigger
+  // click -- see the identical comment in the "rapid open/close/open" test
+  // above for why the (now correctly background-inert) trigger can no
+  // longer be clicked while this modal `Popover` is open.
+  await page.keyboard.press("Escape");
   await page.waitForTimeout(30);
   await page.evaluate(() => {
     const el = document.querySelector('[role="dialog"]');

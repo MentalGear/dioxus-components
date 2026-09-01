@@ -1,12 +1,62 @@
 //! Defines the [`PopoverRoot`] component and its sub-components.
+//!
+//! ## Native `<dialog>` modality for the modal arm (two-engine completion,
+//! docs/plan.md)
+//!
+//! `PopoverModalContent` is cfg-split the same way `dialog.rs`'s
+//! `DialogContentModal`/`alert_dialog.rs`'s `AlertDialogContent` are
+//! (`docs/phase4-spike-findings.md` Construction B):
+//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//!   `div` + vendored `FocusTrap` path (unchanged).
+//! - `#[cfg(target_family = "wasm")]`: a real `<dialog>` opened with
+//!   `showModal()`, driven by the exact same
+//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
+//!   [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
+//!   uses -- no focus-trap eval and no `use_global_escape_listener`/
+//!   `use_outside_dismiss` on this arm; the browser's own `showModal()`
+//!   supplies the focus trap, focus restore, background inertness, and top
+//!   layer.
+//!
+//! Unlike [`crate::dialog`]'s modal `Dialog`, a modal `Popover` stays
+//! **anchored to its trigger** rather than viewport-centered -- that is the
+//! one genuinely novel wrinkle of this migration. Before this slice, the
+//! (native-arm-shaped) `div` positioned itself the old DOM-relative way:
+//! plain `position: absolute` inside `PopoverRoot`'s `position: relative`
+//! wrapper, no top-layer promotion involved. A `<dialog>` shown via
+//! `showModal()` is promoted straight into the top layer regardless (its
+//! containing block becomes the viewport, same class of problem
+//! `docs/plan.md` Phase 4.4 hit for `popover="auto"` content -- see
+//! `top_layer.rs`'s module doc), and the UA stylesheet's `dialog:modal {
+//! position: fixed; inset: 0; margin: auto; }` actively re-centers it. So
+//! the web modal arm below carries the exact same `dx-anchor-popover`
+//! marker class and `position-anchor` style the non-modal arm already uses
+//! (`PopoverTrigger`'s `anchor-name` is keyed off `ctx.content_id`
+//! regardless of `is_modal`, so it was already correct for this arm too,
+//! unused until now) -- `top_layer.rs`'s shared, engine-injected
+//! anchor-positioning stylesheet now matches `:modal` alongside `[popover]`
+//! in every selector so the same `anchor()`/`position-try-fallbacks` rules
+//! (and the `margin: 0; inset: auto;` UA reset) apply to a `showModal()`
+//! dialog too. Confirmed by measurement (this slice's session) that this
+//! keeps the modal arm trigger-anchored rather than falling back to the
+//! UA's viewport-centered default.
 
+#[cfg(not(target_family = "wasm"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
+// `use_global_escape_listener`/`use_outside_dismiss` are only called from
+// native (Blitz) arms now -- `PopoverModalContent`'s native arm (its own
+// dismissal wiring, unchanged) and `PopoverNonModalContent`'s native arm
+// (Blitz has no Popover API, `docs/recommended-implementations.md` Caveat
+// 2). Both web arms get dismissal from the browser instead (`showModal()`'s
+// `cancel`/`close` events for modal, `popover="auto"` light dismiss for
+// non-modal) -- gated the same way so the wasm build never carries an
+// unused import.
 use crate::{
-    use_animated_open, use_controlled, use_global_escape_listener, use_id_or, use_outside_dismiss,
-    use_unique_id, ContentAlign, ContentSide, FOCUS_TRAP_JS,
+    use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
 };
+#[cfg(not(target_family = "wasm"))]
+use crate::{use_global_escape_listener, use_outside_dismiss};
 
 #[derive(Clone, Copy)]
 struct PopoverCtx {
@@ -19,6 +69,12 @@ struct PopoverCtx {
     #[allow(unused)]
     is_modal: ReadSignal<bool>,
     labelledby: Signal<String>,
+    // Only read by `use_outside_dismiss` calls, which now live solely in
+    // native (Blitz) arms (`PopoverModalContent`/`PopoverNonModalContent`'s
+    // `#[cfg(not(target_family = "wasm"))]` variants) -- both web arms get
+    // dismissal from the browser instead. `#[allow(unused)]` so the web
+    // build doesn't warn on a field genuinely unread there.
+    #[allow(unused)]
     root_id: Memo<String>,
 
     // The current `PopoverContent`'s own element id, kept in sync by that
@@ -247,8 +303,6 @@ pub struct PopoverContentProps {
 #[component]
 pub fn PopoverContent(props: PopoverContentProps) -> Element {
     let ctx: PopoverCtx = use_context();
-    let open = ctx.open;
-    let is_modal = ctx.is_modal;
 
     let gen_id = use_unique_id();
     let id = use_id_or(gen_id, props.id);
@@ -263,38 +317,19 @@ pub fn PopoverContent(props: PopoverContentProps) -> Element {
 
     let render = use_animated_open(id, ctx.open);
 
-    use_effect(move || {
-        if !render() {
-            return;
-        }
-        let is_modal = is_modal();
-        if !is_modal {
-            // If the dialog is not modal, we don't need to trap focus.
-            return;
-        }
-
-        let eval = document::eval(
-            r#"let id = await dioxus.recv();
-            let is_open = await dioxus.recv();
-            let dialog = document.getElementById(id);
-
-            if (is_open) {
-                dialog.trap = window.createFocusTrap(dialog);
-            }
-            if (!is_open && dialog.trap) {
-                dialog.trap.remove();
-                dialog.trap = null;
-            }"#,
-        );
-        let _ = eval.send(id.to_string());
-        let _ = eval.send(open.cloned());
-    });
+    // The vendored focus-trap eval used to live here, installed whenever
+    // `is_modal()` was true regardless of target -- that was correct before
+    // this migration, when the modal arm was a plain `div` on *both*
+    // targets. Now that the web modal arm is a real `<dialog>` +
+    // `showModal()` (see this module's doc comment), installing the trap
+    // there would fight the browser's own focus management, so trap
+    // installation moved to `PopoverModalContent`'s
+    // `#[cfg(not(target_family = "wasm"))]` arm, the only one that still
+    // needs it -- mirroring `dialog.rs`'s `DialogContentModal` native arm
+    // exactly.
 
     rsx! {
-        document::Script {
-            src: FOCUS_TRAP_JS,
-            defer: true
-        }
+        {crate::focus_trap_script()}
         if render() {
             PopoverContentRendered {
                 id,
@@ -370,10 +405,12 @@ pub fn PopoverContentRendered(
     }
 }
 
-/// Modal arm: unchanged from before this slice. Native
-/// `<dialog>`/`showModal()` top-layer wiring for the modal arm is Phase 4.2
-/// (docs/plan.md), not this slice's -- this scope is deliberately just the
-/// non-modal arm below.
+/// Native (Blitz) arm: byte-for-byte the pre-migration `div` + vendored
+/// `FocusTrap` path -- see this module's doc comment. The focus-trap eval
+/// that used to live in `PopoverContent` (installed there whenever
+/// `is_modal()` was true, regardless of target) now lives here instead,
+/// since this is the only arm that still needs it.
+#[cfg(not(target_family = "wasm"))]
 #[component]
 #[allow(clippy::too_many_arguments)]
 fn PopoverModalContent(
@@ -386,6 +423,7 @@ fn PopoverModalContent(
     is_open: bool,
 ) -> Element {
     let ctx: PopoverCtx = use_context();
+    let open = ctx.open;
     let set_open = ctx.set_open;
 
     // Add a escape key listener to the document when the popover is open. We can't
@@ -393,6 +431,25 @@ fn PopoverModalContent(
     // is highlighting text or interacting with another element.
     use_global_escape_listener(move || set_open.call(false));
     use_outside_dismiss(ctx.root_id, move || set_open.call(false));
+
+    let id_for_trap = id.clone();
+    use_effect(move || {
+        let eval = document::eval(
+            r#"let id = await dioxus.recv();
+            let is_open = await dioxus.recv();
+            let dialog = document.getElementById(id);
+
+            if (is_open) {
+                dialog.trap = window.createFocusTrap(dialog);
+            }
+            if (!is_open && dialog.trap) {
+                dialog.trap.remove();
+                dialog.trap = null;
+            }"#,
+        );
+        let _ = eval.send(id_for_trap.clone());
+        let _ = eval.send(open.cloned());
+    });
 
     rsx! {
         div {
@@ -402,6 +459,83 @@ fn PopoverModalContent(
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
             class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Web arm (native-dialog engine, two-engine overlay architecture
+/// completion): a real `<dialog>` opened with `showModal()`, driven by the
+/// exact same [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
+/// [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
+/// uses. No `use_global_escape_listener`/`use_outside_dismiss` and no
+/// focus-trap eval on this arm -- the browser's own `showModal()` supplies
+/// the focus trap, focus restore, background inertness, and top-layer
+/// rendering; its `cancel`/`close` events (synced below) already handle
+/// Escape.
+///
+/// Carries `dx-anchor-popover`/`position-anchor` -- see this module's doc
+/// comment ("trigger-anchored, not centered") for why a modal `Popover`
+/// needs this and modal `Dialog` (which *wants* the UA's viewport-centering)
+/// never does.
+#[cfg(target_family = "wasm")]
+#[component]
+#[allow(clippy::too_many_arguments)]
+fn PopoverModalContent(
+    id: String,
+    class: Option<String>,
+    side: ContentSide,
+    align: ContentAlign,
+    attributes: Vec<Attribute>,
+    children: Element,
+    is_open: bool,
+) -> Element {
+    let ctx: PopoverCtx = use_context();
+    let open = ctx.open;
+    let set_open = ctx.set_open;
+
+    // `use_dialog_open_driver`/`use_dialog_close_sync`/
+    // `use_dialog_backdrop_dismiss` all want a `Readable<Target = String>`
+    // to track this content's own element id, the same shape
+    // `dialog.rs`'s `Memo<String>` gives them -- but this component's whole
+    // call chain (`PopoverContent` -> `PopoverContentRendered` -> here) has
+    // always threaded a plain `String`, not a `Memo`, matching
+    // `PopoverNonModalContent`'s identical `id: String` shape. It never
+    // changes across this instance's own mounted lifetime -- a different id
+    // means a fresh mount, per `use_id_or`/`PopoverCtx::content_id`'s doc --
+    // so a plain, once-initialized `Signal` gives these hooks everything
+    // they need without threading a `Memo` through this whole file.
+    let id_signal = use_signal(|| id.clone());
+
+    crate::use_dialog_close_sync(id_signal, set_open);
+    crate::use_dialog_open_driver(id_signal, open);
+    // Native <dialog> has no built-in "click outside to dismiss" the way
+    // `popover=` does -- see `crate::use_dialog_backdrop_dismiss`'s doc for
+    // why `use_outside_dismiss` itself can't be reused for a `showModal()`
+    // dialog.
+    crate::use_dialog_backdrop_dismiss(id_signal, move || set_open.call(false));
+
+    // See `PopoverNonModalContent`'s identical marker-class comment below
+    // for why this is appended directly onto `class` rather than folded
+    // into `attributes`.
+    let class = format!(
+        "{} dx-anchor-popover",
+        class.unwrap_or_else(|| "dx-popover-content".to_string())
+    );
+
+    rsx! {
+        dialog {
+            id: id.clone(),
+            role: "dialog",
+            aria_modal: "true",
+            aria_labelledby: ctx.labelledby,
+            aria_hidden: (!is_open).then_some("true"),
+            style: crate::top_layer::position_anchor_style(&id),
+            class,
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
@@ -616,11 +750,16 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
             id,
             type: "button",
             // See `crate::top_layer::anchor_name_style`: ties this trigger
-            // to the non-modal content's `position-anchor` so its
-            // `[data-side]` CSS still resolves relative to this trigger
-            // once the content is promoted to the top layer (Phase 4.4).
-            // Inert (empty) off the web arm, and unused by the modal arm
-            // (Phase 4.2's job), which never sets `position-anchor`.
+            // to the content's `position-anchor` so its `[data-side]` CSS
+            // still resolves relative to this trigger once the content is
+            // promoted to the top layer -- non-modal via `popover="auto"`
+            // (Phase 4.4), modal via `showModal()` (this module's doc
+            // comment, native-dialog engine migration). Inert (empty
+            // string) on the native (Blitz) arm, which never promotes
+            // anything to a top layer and has no containing-block problem
+            // to solve; a real anchor name on the web arm, set
+            // unconditionally here regardless of `is_modal` since both web
+            // content arms need it now.
             //
             // Keyed on `ctx.content_id` -- *not* `id`/`ctx.labelledby`
             // above, which is this trigger's own id (used for the `id`
