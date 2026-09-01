@@ -60,6 +60,24 @@
   max-height: 300px;
   flex-direction: column;
   padding: 0.25rem;
+
+  /*
+   * Undoes the UA popover stylesheet's `[popover] { border: solid; ... }`
+   * (WHATWG HTML's popover section) -- on the web arm (Migration A slice
+   * 3/3), this listbox carries the `popover` attribute. This content has no
+   * border of its own (its `box-shadow` above draws the visible edge
+   * instead), so it is reset to nothing, same fix as
+   * `../dropdown_menu/style.css`'s `.dx-dropdown-menu-content`. `overflow`
+   * needs no matching reset here -- the explicit `hidden auto` above is
+   * author-origin already and beats the UA default regardless. The
+   * matching `margin`/`inset` reset, and the `@supports (anchor-name: --a)`
+   * anchor-positioning rules that keep this listbox anchored to
+   * `ComboboxInput` once promoted to the top layer, live in the shared,
+   * engine-injected stylesheet every `dx-anchor-*`-marked overlay gets for
+   * free -- see `primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles` doc.
+   */
+  border: none;
   border-radius: 0.5rem;
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));

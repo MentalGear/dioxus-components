@@ -70,13 +70,16 @@ thread_local! {
 /// Rust module that defines the marker-class contract
 /// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
 /// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
-/// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`
-/// (Migration A slice 2/3, `menubar.rs`'s `MenubarContentRendered`) content
+/// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`/
+/// `dx-anchor-select`/`dx-anchor-combobox` (Migration A slice 3/3,
+/// `select/components/list.rs`'s `SelectListRendered` and
+/// `combobox/components/list.rs`'s `ComboboxListRendered`) content
 /// everywhere in the app, with no per-page CSS to remember.
 ///
 /// Call this once per overlay content mount -- [`use_anchor_position_fallback`]
 /// does, since every current `dx-anchor-*` consumer (`tooltip.rs`,
-/// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, `menubar.rs`, and
+/// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, `menubar.rs`,
+/// `select/components/list.rs`, `combobox/components/list.rs`, and
 /// anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
 /// already calls that hook. A future
 /// `dx-anchor-*` consumer that doesn't call that hook for some reason should
@@ -161,7 +164,7 @@ fn anchor_positioning_inject_js() -> String {
 #[cfg(target_family = "wasm")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 :where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-dropdown-menu[popover],
-  .dx-anchor-menubar[popover]) {
+  .dx-anchor-menubar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
   margin: 0;
   inset: auto;
 }
@@ -170,7 +173,9 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover],
   .dx-anchor-popover[popover],
   .dx-anchor-dropdown-menu[popover],
-  .dx-anchor-menubar[popover] {
+  .dx-anchor-menubar[popover],
+  .dx-anchor-select[popover],
+  .dx-anchor-combobox[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
@@ -181,7 +186,9 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="top"],
   .dx-anchor-popover[popover][data-side="top"],
   .dx-anchor-dropdown-menu[popover][data-side="top"],
-  .dx-anchor-menubar[popover][data-side="top"] {
+  .dx-anchor-menubar[popover][data-side="top"],
+  .dx-anchor-select[popover][data-side="top"],
+  .dx-anchor-combobox[popover][data-side="top"] {
     bottom: anchor(top);
     left: anchor(center);
     margin-bottom: 8px;
@@ -191,7 +198,9 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="right"],
   .dx-anchor-popover[popover][data-side="right"],
   .dx-anchor-dropdown-menu[popover][data-side="right"],
-  .dx-anchor-menubar[popover][data-side="right"] {
+  .dx-anchor-menubar[popover][data-side="right"],
+  .dx-anchor-select[popover][data-side="right"],
+  .dx-anchor-combobox[popover][data-side="right"] {
     top: anchor(center);
     left: anchor(right);
     margin-left: 8px;
@@ -201,7 +210,9 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="bottom"],
   .dx-anchor-popover[popover][data-side="bottom"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"],
-  .dx-anchor-menubar[popover][data-side="bottom"] {
+  .dx-anchor-menubar[popover][data-side="bottom"],
+  .dx-anchor-select[popover][data-side="bottom"],
+  .dx-anchor-combobox[popover][data-side="bottom"] {
     top: anchor(bottom);
     left: anchor(center);
     margin-top: 8px;
@@ -211,7 +222,9 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="left"],
   .dx-anchor-popover[popover][data-side="left"],
   .dx-anchor-dropdown-menu[popover][data-side="left"],
-  .dx-anchor-menubar[popover][data-side="left"] {
+  .dx-anchor-menubar[popover][data-side="left"],
+  .dx-anchor-select[popover][data-side="left"],
+  .dx-anchor-combobox[popover][data-side="left"] {
     top: anchor(center);
     right: anchor(left);
     margin-right: 8px;
@@ -258,11 +271,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="top"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
+  .dx-anchor-select[popover][data-side="top"][data-align="start"],
+  .dx-anchor-combobox[popover][data-side="top"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
-  .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"] {
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-select[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-combobox[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
     transform: none;
   }
@@ -272,11 +289,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="top"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
+  .dx-anchor-select[popover][data-side="top"][data-align="center"],
+  .dx-anchor-combobox[popover][data-side="top"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
-  .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"] {
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-select[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-combobox[popover][data-side="bottom"][data-align="center"] {
     left: anchor(center);
     transform: translateX(-50%);
   }
@@ -286,11 +307,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="top"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
+  .dx-anchor-select[popover][data-side="top"][data-align="end"],
+  .dx-anchor-combobox[popover][data-side="top"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
-  .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"] {
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-select[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-combobox[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
     transform: translateX(-100%);
   }
@@ -300,11 +325,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="left"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
+  .dx-anchor-select[popover][data-side="left"][data-align="start"],
+  .dx-anchor-combobox[popover][data-side="left"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="start"],
   .dx-anchor-popover[popover][data-side="right"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
-  .dx-anchor-menubar[popover][data-side="right"][data-align="start"] {
+  .dx-anchor-menubar[popover][data-side="right"][data-align="start"],
+  .dx-anchor-select[popover][data-side="right"][data-align="start"],
+  .dx-anchor-combobox[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
     transform: none;
   }
@@ -314,11 +343,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="left"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
+  .dx-anchor-select[popover][data-side="left"][data-align="center"],
+  .dx-anchor-combobox[popover][data-side="left"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="center"],
   .dx-anchor-popover[popover][data-side="right"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
-  .dx-anchor-menubar[popover][data-side="right"][data-align="center"] {
+  .dx-anchor-menubar[popover][data-side="right"][data-align="center"],
+  .dx-anchor-select[popover][data-side="right"][data-align="center"],
+  .dx-anchor-combobox[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
     transform: translateY(-50%);
   }
@@ -328,11 +361,15 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover[popover][data-side="left"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
+  .dx-anchor-select[popover][data-side="left"][data-align="end"],
+  .dx-anchor-combobox[popover][data-side="left"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="end"],
   .dx-anchor-popover[popover][data-side="right"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
-  .dx-anchor-menubar[popover][data-side="right"][data-align="end"] {
+  .dx-anchor-menubar[popover][data-side="right"][data-align="end"],
+  .dx-anchor-select[popover][data-side="right"][data-align="end"],
+  .dx-anchor-combobox[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
     transform: translateY(-100%);
   }
@@ -354,7 +391,12 @@ pub(crate) enum PopoverKind {
     /// outside the popover (and any popovers it is nested in); showing one
     /// auto popover also closes unrelated open ones. Used by the non-modal
     /// [`crate::popover`] arm, whose existing `use_outside_dismiss`/
-    /// `use_global_escape_listener` wiring this replaces on the web arm.
+    /// `use_global_escape_listener` wiring this replaces on the web arm;
+    /// also `dropdown_menu.rs`, `menubar.rs`, and `select/components/
+    /// list.rs`'s `SelectListRendered` (Migration A slices 1-3), each of
+    /// which layers light dismiss on top of -- not instead of -- their own
+    /// existing blur-driven dismissal as a backstop; see each's own doc for
+    /// why `auto` is safe there specifically.
     Auto,
     /// `popover="manual"` — no light-dismiss; only an explicit
     /// `hidePopover()` (here, driven by our own `open` signal going false)
@@ -362,7 +404,12 @@ pub(crate) enum PopoverKind {
     /// which already own their entire open/close lifecycle via hover/focus
     /// and gain nothing from -- and would fight with -- native light
     /// dismiss (a `HoverCardContent` mouseenter re-opens across what would
-    /// otherwise be an outside click if `auto` briefly closed it first).
+    /// otherwise be an outside click if `auto` briefly closed it first);
+    /// also `context_menu.rs` (a point-opened menu with no persistent
+    /// trigger for `auto` to reason about) and `combobox/components/
+    /// list.rs`'s `ComboboxListRendered` (Migration A slice 3/3, reversed
+    /// from an initial `auto` attempt by execution -- see that component's
+    /// doc for the concrete regression that decision caught).
     Manual,
 }
 
@@ -456,6 +503,140 @@ pub(crate) fn use_popover_sync(
             const isOpen = el.matches(':popover-open');
             if ({want_open} && !isOpen) el.showPopover();
             if (!{want_open} && isOpen) el.hidePopover();"
+        ));
+    });
+}
+
+/// Variant of [`use_popover_sync`] for content whose *own* `data-state`
+/// (Radix-style) animates through a "closed but still mounted" phase --
+/// [`use_animated_open`]-driven content, unlike every other
+/// `use_popover_sync` call site. Forwards native/browser closes to
+/// `on_native_close` exactly like [`use_popover_sync`]; the difference is
+/// entirely on the "signal -> browser" side: `showPopover()` still runs
+/// reactively, every time `open` becomes `true` (not once, at mount -- see
+/// "Two execution-confirmed bugs" below for why once is not enough), but
+/// **`hidePopover()` is never called on our own closing path at all** --
+/// only a real DOM removal (this component's caller unmounting it once its
+/// own exit animation settles) ever takes this content out of the top
+/// layer.
+///
+/// ## Why this exists (Migration A slice 3/3): two execution-confirmed bugs
+///
+/// [`use_popover_sync`]'s own "signal -> browser" effect calls
+/// `hidePopover()` the instant `open` goes `false`. That is exactly right
+/// for content with no exit animation (every `use_popover_sync` call site
+/// before this slice: `Tooltip`/`HoverCard`/`Popover`/`DropdownMenu`/
+/// `ContextMenu`/`Menubar`, none of which keep their content mounted
+/// through a CSS animate-out -- Radix-style `data-state="closed"`
+/// animations on those are cosmetic fades that finish well after the
+/// element would already be gone). `SelectList`/`ComboboxList` are
+/// different: both render through [`use_animated_open`], which
+/// deliberately keeps the content mounted with `data-state="closed"` for
+/// its whole exit animation (plus a settle hold) before actually
+/// unmounting it -- `combobox.spec.ts`'s "keeps filtered options during
+/// keyboard close animation" test asserts exactly this, that the
+/// `data-state="closed"` element is still visible mid-animation.
+///
+/// **Bug 1 (animation race).** Confirmed by execution: an earlier version
+/// of this migration called [`use_popover_sync`] directly with the raw
+/// `open` signal (the same shape every prior `dx-anchor-*` consumer uses),
+/// and that test went red -- `hidePopover()` fired on the same tick `open`
+/// went `false`, which (per the UA popover stylesheet's
+/// `[popover]:not(:popover-open) { display: none }`) sets `display: none`
+/// on the content *before* [`use_animated_open`]'s own rAF-deferred
+/// `getAnimations()` check ever ran, so it always observed zero running
+/// animations and finished the close cycle immediately -- the exit
+/// animation was skipped outright, and Playwright's `toBeVisible()` on the
+/// still-should-be-animating `data-state="closed"` element failed. Never
+/// calling `hidePopover()` from the closing path at all -- only from a real
+/// unmount, once [`use_animated_open`] itself has already decided the
+/// animation (and its settle hold) is done -- sidesteps this entirely: the
+/// exit animation plays out undisturbed on an element that is still very
+/// much `:popover-open` the whole time.
+///
+/// **Bug 2 (reopen-while-still-mounted, `auto` only).** Confirmed by
+/// execution against `combobox.spec.ts`'s "filters and selects with the
+/// keyboard" test (intermittently red -- see this session's report):
+/// `auto`'s native light dismiss has no notion of "this input is the
+/// trigger that owns me" (`ComboboxInput`/`SelectTrigger` are never
+/// declared as this popover's invoker -- confirmed by execution that
+/// neither a `popovertarget` attribute nor `preventDefault()` on the
+/// trigger's own `pointerdown`/`click` stops it; WHATWG light dismiss
+/// treats *any* pointerdown outside the popover's own DOM subtree as
+/// "outside," full stop). So: select an option (closes, `open` -> `false`,
+/// content stays mounted mid-exit-animation per Bug 1's fix above):, then
+/// -- while that same instance is *still* mounted, `:popover-open` still
+/// `true` -- click the trigger again to reopen. The trigger's own
+/// `pointerdown` is classified as "outside" by native light dismiss, which
+/// closes the *still-showing* popover for real (a genuine
+/// `showPopover`/`hidePopover` pair, not merely a `data-state` flip) --
+/// forwarded correctly back into `on_native_close`, setting `open` to
+/// `false` -- **immediately followed**, same gesture, by the trigger's own
+/// `onclick` reading `open` and calling `set_open(true)` to reopen it. A
+/// one-time, mount-only `showPopover()` call (this function's first,
+/// insufficient version) never re-fires for this already-mounted instance,
+/// so `open` becomes `true` again in Rust/`data-state` while the actual
+/// DOM element stays hidden (`:not(:popover-open)`) -- a real, user-visible
+/// "second click does nothing" defect. Reacting to `open` on every
+/// transition (not just the first) fixes it the same way
+/// [`use_popover_sync`]'s own show effect already always has: whenever
+/// `open` is `true` and the element is not yet `:popover-open`,
+/// `showPopover()` runs again, regardless of *why* it had stopped being
+/// shown.
+///
+/// A *native* close (Escape / outside pointerdown, `auto` only) still
+/// bypasses the exit animation on its own path -- the browser's own hide
+/// algorithm sets `display: none` synchronously, before Rust ever learns
+/// about it -- but that is an accepted, well-known limit of the plain
+/// Popover API without `@starting-style`/`transition-behavior:
+/// allow-discrete` (out of scope here), not something this slice's oracle
+/// requires animated; the test Bug 1's fix targets only exercises a
+/// script-driven (Enter-key) close, exactly the path that fix keeps
+/// animatable.
+#[cfg(target_family = "wasm")]
+pub(crate) fn use_popover_shown_while_mounted(
+    id: String,
+    open: impl Readable<Target = bool> + Copy + 'static,
+    on_native_close: Callback<bool>,
+) {
+    // Browser -> signal: identical in shape to `use_popover_sync`'s own --
+    // forwards every native `toggle` for this element's whole mounted
+    // lifetime, unconditionally.
+    let id_for_listener = id.clone();
+    crate::use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const el = document.getElementById(id);
+            const onToggle = (e) => dioxus.send(e.newState === 'open');
+            el.addEventListener('toggle', onToggle);
+            await dioxus.recv();
+            el.removeEventListener('toggle', onToggle);",
+        );
+        let _ = eval.send(id_for_listener.clone());
+        spawn(async move {
+            while let Ok(is_open) = eval.recv::<bool>().await {
+                on_native_close.call(is_open);
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+
+    // Signal -> browser, show-only: reacts to the real `open` signal (not a
+    // one-shot mount effect -- see "Bug 2" above for why a reopen needs
+    // this to run again) so `showPopover()` fires every time `open` is
+    // `true` and the browser doesn't already agree; `hidePopover()` is
+    // deliberately never called here at all -- see "Bug 1" above -- only a
+    // real unmount ever closes this content.
+    use_effect(move || {
+        if !open.cloned() {
+            return;
+        }
+        let id = id.clone();
+        document::eval(&format!(
+            "const el = document.getElementById('{id}');
+            if (el && !el.matches(':popover-open')) el.showPopover();"
         ));
     });
 }
@@ -578,6 +759,23 @@ pub(crate) fn use_popover_sync(
 /// inline `style` attribute (a plain substring match -- cheap, and every
 /// trigger always sets this style whether or not it ends up used) rather
 /// than requiring a second id to be threaded through separately.
+///
+/// The query includes the closing `;` [`anchor_name_style`] always ends
+/// with (`anchor-name: --dxa-{id};`), not just `--dxa-{id}` bare --
+/// confirmed by execution to be required, not cosmetic: this repo's
+/// `use_unique_id` ids are plain incrementing integers rendered as decimal
+/// strings, so an id like `dxc-4` is a literal string *prefix* of `dxc-40`,
+/// `dxc-41`, etc. Migration A slice 3/3's `Combobox` page is the first
+/// consumer of this fallback with enough sibling anchored instances on one
+/// page (several demo variants, each contributing its own `ComboboxInput`)
+/// to actually hit this: without the trailing `;`, `document.querySelector`
+/// for anchor id `dxc-4`'s substring pattern matched a *different* input's
+/// `anchor-name: --dxa-dxc-40;` first in DOM order, measuring the wrong
+/// trigger's position entirely and landing the listbox hundreds of pixels
+/// off-screen (`combobox.spec.ts`'s "controlled value and controlled open
+/// stay in sync" test timing out clicking an option it could never reach).
+/// The `;` is never itself ambiguous across ids: it is not part of any
+/// digit sequence, so `dxc-4;` cannot appear inside `dxc-40;`.
 #[cfg(target_family = "wasm")]
 pub(crate) fn use_anchor_position_fallback(
     id: String,
@@ -636,7 +834,7 @@ pub(crate) fn use_anchor_position_fallback(
             {inject}
             const content = document.getElementById('{id}');
             const trigger = document.querySelector(
-                '[style*="anchor-name: --dxa-{anchor_id}"]'
+                '[style*="anchor-name: --dxa-{anchor_id};"]'
             );
             const align = '{align}';
             const gap = {gap_px};

@@ -15,6 +15,19 @@ pub(super) struct ComboboxContext {
     pub query: Memo<String>,
     pub set_query: Callback<String>,
     pub filter: Callback<(String, String), bool>,
+
+    /// The current `ComboboxInput`'s own element id, kept in sync by that
+    /// component -- mirrors
+    /// `DropdownMenuContext::content_id` (`dropdown_menu.rs`), except this
+    /// one holds the *trigger* side's id rather than the content side's:
+    /// `ComboboxList`'s listbox anchors to the input (there is no separate
+    /// trigger button here), and the input's id -- unlike `SelectTrigger`'s
+    /// already-stable `trigger_id` -- is generated locally by
+    /// `ComboboxInput` itself (`use_id_or`/`use_unique_id`), so it needs
+    /// this same sync-back to be visible to the listbox's anchor-name
+    /// wiring. See `PopoverCtx::content_id`'s doc in `popover.rs` for the
+    /// exact bug this guards against if the two ever named different ids.
+    pub input_id: Signal<String>,
 }
 
 impl ComboboxContext {

@@ -7,6 +7,9 @@ use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigge
 use dioxus_primitives::menubar::{Menubar, MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
+use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger, SelectValue};
+use dioxus_primitives::combobox::{Combobox, ComboboxInput, ComboboxList, ComboboxOption};
+use dioxus_primitives::toast::{use_toast, ToastOptions, ToastProvider};
 use dioxus_primitives::ContentSide;
 
 #[css_module("/src/components/top_layer/style.css")]
@@ -150,6 +153,42 @@ pub fn TopLayerFixture() -> Element {
                         }
                     }
 
+                    // Migration A slice 3/3 (final): Select's web arm ->
+                    // `popover="auto"` (`SelectListRendered`, `list.rs`).
+                    // Written RED first against the pre-migration plain div
+                    // (confirmed by execution: it clipped at the 60px
+                    // ancestor exactly like the others did pre-migration).
+                    Select::<String> { id: "clip-select-root",
+                        SelectTrigger { id: "clip-select-trigger", SelectValue { placeholder: "Select trigger" } }
+                        SelectList {
+                            id: "clip-select-content",
+                            style: "min-height: 100px;",
+                            SelectOption::<String> {
+                                index: 0usize,
+                                value: "one",
+                                "Option one"
+                            }
+                        }
+                    }
+
+                    // Migration A slice 3/3 (final): Combobox's web arm ->
+                    // `popover="auto"` (`ComboboxListRendered`, `list.rs`).
+                    // Written RED first against the pre-migration plain div
+                    // (confirmed by execution: it clipped at the 60px
+                    // ancestor exactly like the others did pre-migration).
+                    Combobox::<String> { id: "clip-combobox-root",
+                        ComboboxInput { id: "clip-combobox-trigger", aria_label: "Combobox trigger" }
+                        ComboboxList {
+                            id: "clip-combobox-content",
+                            style: "min-height: 100px;",
+                            ComboboxOption::<String> {
+                                index: 0usize,
+                                value: "one",
+                                "Option one"
+                            }
+                        }
+                    }
+
                     // Native reference: the browser's own implementation of the
                     // same WHATWG HTML feature, with no Dioxus involvement at
                     // all -- the calibration control for this rule.
@@ -221,6 +260,85 @@ pub fn TopLayerFixture() -> Element {
                     // An element well away from both triggers, for the
                     // light-dismiss ("click outside") assertions.
                     button { id: "outside-click-target", class: Styles::dx_top_layer_outside, "Click outside target" }
+                }
+            }
+
+            section { class: Styles::dx_top_layer_section,
+                h2 { "Toast top-layer stacking (Migration A slice 3/3, final)" }
+                p { class: Styles::dx_top_layer_hint,
+                    "The small red panel is a high-"
+                    code { "z-index" }
+                    " sibling pinned to the same fixed viewport corner the toast "
+                    "below will render at. Toasts never light-dismiss and never "
+                    "anchor to a trigger -- "
+                    code { "ToastProvider" }
+                    "'s region is `popover=\"manual\"` purely so it always paints "
+                    "in the top layer, above whatever else is on the page "
+                    "(top-layer stacking, the same rule as the section above). "
+                    "Click the trigger to add a toast and cover the sibling."
+                }
+                // `position: fixed`, not `absolute`, on both -- confirmed by
+                // execution to matter, not a style preference: moving an
+                // element into the top layer changes its containing block
+                // to the *initial* containing block regardless of its own
+                // `position` value (see `crate::top_layer::anchor_name_
+                // style`'s doc in `primitives/src/top_layer.rs` for the
+                // general rule this is an instance of), and for `position:
+                // absolute` specifically that initial containing block is
+                // sized like the viewport but anchored to the *document's*
+                // origin, not the current scroll position -- an earlier
+                // version of this fixture used `position: absolute; top: 0;
+                // left: 0` on the (popover-promoted) toast region nested
+                // inside a `position: relative` wrapper, which rendered
+                // correctly relative to that wrapper only when the page
+                // happened to be scrolled to the very top, and hundreds of
+                // pixels off-screen otherwise -- exactly the "toast not
+                // findable" failure this rule caught. `position: fixed`
+                // sidesteps this: fixed's containing block is the viewport
+                // itself either way, top layer or not, so `top: 0; left: 0`
+                // reliably means the actual visible viewport corner
+                // regardless of scroll -- matching this component's own
+                // real-world CSS (`preview/src/components/toast/style.css`'s
+                // `.dx-toast-container` is `position: fixed` for the same
+                // reason).
+                div {
+                    id: "toast-stack-sibling",
+                    style: "position: fixed; bottom: 0; right: 0; z-index: 99999; width: 40px; height: 20px; background: crimson;",
+                }
+                // No `id` here, deliberately: `ToastProviderProps` has no
+                // dedicated `id` field (the region's id has always been
+                // purely internal, generated by `use_unique_id` inside
+                // `toast.rs`, since the F6-focus-region wiring needs one
+                // but nothing caller-visible does) -- an `id` passed here
+                // would be absorbed by its `#[props(extends =
+                // GlobalAttributes)]` catch-all and spread onto the region
+                // div *after* its real, internally-known id (`..attributes`
+                // following `id: id.clone()` in `ToastRegionRendered`'s
+                // rsx), silently overriding the one `use_popover_shown_
+                // while_mounted`'s `document.getElementById` actually looks
+                // up -- confirmed by execution: this is exactly why an
+                // earlier version of this fixture's toast never became
+                // `:popover-open` at all.
+                //
+                // `top: auto; left: auto; margin: 0;` alongside `bottom`/
+                // `right` -- also confirmed necessary by execution, and the
+                // exact reason `preview/src/components/toast/style.css`'s
+                // real `.dx-toast-container[popover]` rule resets all four
+                // sides plus `margin`, not just the two this fixture cares
+                // about: the WHATWG popover UA stylesheet's `[popover] {
+                // inset: 0; margin: auto; ... }` still supplies `top: 0;
+                // left: 0` for the two sides this element's own style never
+                // mentions, and combined with the UA's own `margin: auto`
+                // (never triggered pre-popover, since the ordinary initial
+                // value of `margin` is `0`) that is exactly the four-sides-
+                // plus-auto-margin shape CSS's own centering algorithm
+                // looks for -- an earlier version of this fixture, setting
+                // only `bottom`/`right`, rendered the toast dead-centered
+                // in the viewport instead of at the corner, nowhere near
+                // the sibling.
+                ToastProvider {
+                    style: "position: fixed; top: auto; right: 0; bottom: 0; left: auto; margin: 0;",
+                    ToastStackTrigger {}
                 }
             }
 
@@ -523,6 +641,35 @@ pub fn TopLayerFixture() -> Element {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Adds a permanent toast on click -- a plain, unstyled use of
+/// [`use_toast`], split into its own component only because `use_toast`
+/// must be called from a descendant of `ToastProvider`, not `ToastProvider`
+/// itself.
+#[component]
+fn ToastStackTrigger() -> Element {
+    let toast_api = use_toast();
+
+    rsx! {
+        button {
+            id: "toast-stack-trigger",
+            // `ToastProvider`'s own children (this button) render in normal
+            // flow, wherever `ToastProvider` sits in the tree; the toast
+            // region itself (and the sibling above) are both `position:
+            // fixed` to the bottom-right viewport corner, well away from
+            // wherever this button's own normal-flow position happens to
+            // land, so nothing here needs to work around an overlap.
+            onclick: move |_| {
+                toast_api
+                    .info(
+                        "Stacking test".to_string(),
+                        ToastOptions::new().permanent(true),
+                    );
+            },
+            "Add toast"
         }
     }
 }

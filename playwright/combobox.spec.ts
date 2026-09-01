@@ -216,7 +216,12 @@ test("controlled value and controlled open stay in sync", async ({ page }) => {
     await expect(trigger).toHaveValue("Astro");
     await expect(storedValue).toHaveText("astro");
 
-    await page.getByRole("button", { name: "Open" }).click();
+    // exact: true — the default substring match also catches the docs
+    // sidebar's "Open navigation" button whenever the stylesheet that hides
+    // it at desktop widths has not fully applied yet (the same pre-existing
+    // race toast.spec.ts's own "close" lookup already guards against),
+    // sending the click to it instead of this demo's "Open" button.
+    await page.getByRole("button", { name: "Open", exact: true }).click();
     await expect(content(page)).toBeVisible();
 
     await list(page).getByRole("option", { name: "Dioxus" }).click();

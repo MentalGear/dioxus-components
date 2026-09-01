@@ -69,6 +69,30 @@
  *     `manual` mode never light-dismisses and `Menubar`'s Escape handling
  *     is APG-specific (per-trigger refocus) rather than a generic "does the
  *     Rust signal learn about a native close" check those two rules make.
+ *   - Migration A slice 3/3 (final): `Select`'s listbox renders
+ *     `popover="auto"` on the web arm (`select/components/list.rs`'s
+ *     `SelectListRendered`) -- its own pre-existing, more precise
+ *     blur-driven dismissal/focus-restore logic stays the primary
+ *     mechanism, with native light dismiss layered on as a backstop; see
+ *     that component's own doc for the full reasoning. `Combobox`'s listbox
+ *     renders `popover="manual"` instead -- an initial `auto` attempt was
+ *     reversed by execution: it broke `combobox.spec.ts`'s "dynamic option
+ *     removal" case, where an external control button (with its own
+ *     `prevent_default()`-guarded `pointerdown`, specifically so it does
+ *     not close the combobox) got light-dismissed anyway, since WHATWG
+ *     light dismiss classifies any outside pointerdown as "outside" full
+ *     stop, `prevent_default()` or not -- see
+ *     `combobox/components/list.rs`'s `ComboboxListRendered` doc for the
+ *     complete account. Both are exercised only by Rule 1 (clipping) below,
+ *     not rules 2/3, for the same reason `ContextMenu`/`Menubar` aren't:
+ *     each keeps its own more precise dismissal path as the actual
+ *     mechanism, with `auto` (where used) only ever a backstop. `Toast`'s
+ *     region renders `popover="manual"` (`toast.rs`'s `ToastRegionRendered`)
+ *     -- it has no open/close lifecycle and nothing to anchor to, so only
+ *     the stacking property (a new Rule 10, below) applies to it; Rule 1
+ *     does not, since a toast is not clipped by an ancestor the way a
+ *     trigger-anchored popup is (it is viewport-region positioned, not
+ *     positioned relative to any particular trigger element).
  *
  * Rules implemented (see this session's report for the full red/green
  * ledger per rule per component, both before and after the Phase 4.4
@@ -300,6 +324,95 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     await expect(page.locator("#clip-menubar-content")).toBeVisible();
     const result = await escapesClip(page, "#clip-menubar-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+
+  // Migration A slice 3/3 (final): Select's web arm migrated to
+  // `popover="auto"` (`SelectListRendered`, `select/components/list.rs`).
+  // Written RED first against the pre-migration plain `div` (confirmed by
+  // execution: it clipped at the 60px ancestor exactly like every other
+  // pre-migration listbox/menu here did). Not portal'd -- `SelectList`
+  // renders in place in the tree, so this was a real gap, not a case that
+  // turned out to already escape.
+  test("Select listbox escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-select-trigger").click();
+    await expect(page.locator("#clip-select-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-select-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+
+  // Migration A slice 3/3 (final): Combobox's web arm migrated to
+  // `popover="manual"` (`ComboboxListRendered`, `combobox/components/list.rs`
+  // -- see that component's doc for why `manual`, not `auto`). Written RED
+  // first against the pre-migration plain `div` (confirmed by execution: it
+  // clipped at the 60px ancestor exactly like the others did pre-migration).
+  // Opened via keyboard (ArrowDown) rather than a click, since a click on
+  // the input alone does not open this popup.
+  test("Combobox listbox escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-combobox-trigger").click();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#clip-combobox-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-combobox-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+});
+
+/**
+ * Rule 10 — Toast top-layer stacking (Migration A slice 3/3, final).
+ * `ToastProvider`'s region has no open/close lifecycle and never anchors to
+ * a trigger (see `primitives/src/toast.rs`'s `ToastRegionRendered` doc for
+ * why it renders `popover="manual"` rather than `auto`) -- the property
+ * that migration buys it is exactly Rule 4's: painting above a competing
+ * high-`z-index` sibling regardless of DOM/stacking-context position. The
+ * fixture pins a small (40x20px) high-`z-index` sibling and the toast
+ * region to the same `position: fixed` bottom-right viewport corner.
+ *
+ * No "before any toast exists" calibration half here, unlike every other
+ * rule in this file -- confirmed by execution that the premise doesn't
+ * hold for this fixture: the region itself is mounted (and, being
+ * `popover="manual"`, already `:popover-open`) from page load, before any
+ * toast is ever added, and even with zero toasts inside it the UA popover
+ * stylesheet's own `border`/`padding` defaults (this raw, unstyled
+ * `dioxus_primitives::toast::ToastProvider` carries none of the real
+ * component's own border/padding reset -- see
+ * `preview/src/components/toast/style.css`'s `.dx-toast-container[popover]`,
+ * which only applies to the *styled* wrapper) already give the empty
+ * region a real, nonzero-area box at that exact corner -- so the sibling
+ * is already covered before the click, not just after. That is itself
+ * further (if incidental) evidence the migration works -- the top layer
+ * promotion holds for the region continuously, not only while it holds a
+ * toast -- but it means the meaningful check is simply "the sibling is not
+ * what paints at that point once a toast exists," verified directly below
+ * instead of via a before/after diff.
+ */
+test.describe("Rule 10 — Toast top-layer stacking (a toast renders above a maximal-z-index sibling)", () => {
+  test("Toast renders above the high-z-index sibling", async ({ page }) => {
+    await gotoFixture(page);
+    // The sibling (and the toast region itself) are `position: fixed` to
+    // the bottom-right viewport corner -- always on-screen regardless of
+    // scroll, so no `scrollIntoViewIfNeeded` is needed for either of them
+    // (see `preview/src/components/top_layer/component.rs`'s comment on
+    // this section for why `fixed`, not `absolute`, is load-bearing here).
+    // The *trigger button* is a normal in-flow element well down this
+    // fixture page, though, and does need scrolling into view to be
+    // clickable below.
+    await page.locator("#toast-stack-trigger").scrollIntoViewIfNeeded();
+
+    await page.locator("#toast-stack-trigger").click();
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+
+    const hit = await page.evaluate(() => {
+      const sibling = document.getElementById("toast-stack-sibling")!;
+      const r = sibling.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!el) return { tag: null, insideRegion: false };
+      return { tag: `${el.tagName}#${el.id || "(no id)"}`, insideRegion: !!el.closest('[role="region"]') };
+    });
+    expect(hit.tag, "expected the toast region to paint above the high-z-index sibling").not.toBe(
+      "DIV#toast-stack-sibling",
+    );
+    expect(hit.insideRegion, `expected the hit (${hit.tag}) to land inside the toast region`).toBe(true);
   });
 });
 

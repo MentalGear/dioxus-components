@@ -245,21 +245,26 @@ pub fn ToastProvider(props: ToastProviderProps) -> Element {
         focus_region,
     });
 
+    // A stable id for the region -- needed on the web arm so
+    // `ToastRegionRendered`'s popover wiring can address this element by
+    // id (`document.getElementById`, matching every other `dx-anchor-*`/
+    // `popover` consumer's shape); harmless additive attribute on the
+    // native arm, which never reads it.
+    let region_id = use_unique_id();
+
     rsx! {
         // Render children
         {props.children}
 
         // Render toast container using portal
         PortalIn { portal,
-            div {
-                role: "region",
-                aria_label: "{length} notifications",
-                tabindex: "-1",
-                style: "--toast-count: {length}",
-                onmounted: move |e| {
+            ToastRegionRendered {
+                id: region_id.cloned(),
+                length,
+                attributes: props.attributes,
+                onmounted: move |e: MountedEvent| {
                     region_ref.set(Some(e.data()));
                 },
-                ..props.attributes,
 
                 ToastList {
                     // Render all toasts
@@ -294,6 +299,143 @@ pub fn ToastProvider(props: ToastProviderProps) -> Element {
 
         // Portal output at the end of the document
         PortalOut { portal }
+    }
+}
+
+/// Web arm (Migration A slice 3/3, final): promote the toast region to the
+/// top layer via `popover="manual"` so toasts are never clipped by an
+/// `overflow: hidden` ancestor and always paint above everything else on
+/// the page (WHATWG HTML's top layer), the same fix already shipped for
+/// every other non-modal overlay in this crate (docs/plan.md Phase 4.4,
+/// Migration A slices 1-3).
+///
+/// `manual`, not `auto` -- deliberately, and unlike every other migrated
+/// component in this crate: this region has no open/close lifecycle at
+/// all. It is mounted once, for the lifetime of the `ToastProvider`, and
+/// its own visibility never depends on whether it currently holds any
+/// toasts (`ToastList`'s `for` loop above is empty when there are none --
+/// the region itself stays mounted regardless, so `use_global_keydown_
+/// listener("F6", ..)` can always find and focus it). There is nothing
+/// here for `auto`'s light dismiss to ever legitimately fire on (Escape or
+/// an outside click closing the whole notification region would be
+/// actively wrong -- toasts dismiss individually, via their own close
+/// button or timeout, never as a group), so this calls
+/// [`crate::top_layer::use_popover_shown_while_mounted`] with a no-op
+/// native-close callback: nothing should ever native-close a `manual`
+/// popover in the first place (WHATWG HTML never light-dismisses one), so
+/// this is a defensive no-op, matching `ContextMenuContentRendered`'s
+/// identical reasoning for its own `manual` round trip
+/// (`context_menu.rs`).
+///
+/// No anchoring: unlike every other migrated overlay, toasts are not
+/// positioned relative to a trigger at all -- `.dx-toast-container` in the
+/// consuming page's stylesheet fixes them to a viewport corner
+/// (`position: fixed; right: 20px; bottom: 20px`) via plain CSS, with no
+/// `anchor-name`/`position-anchor` involved, so neither
+/// `crate::top_layer::anchor_name_style` nor `use_anchor_position_fallback`
+/// is called here, and this component carries no `dx-anchor-*` marker
+/// class (that class only exists to opt an element into the shared,
+/// engine-injected `@supports (anchor-name: --a)` block, which has nothing
+/// to contribute here).
+///
+/// ## The UA popover reset this needed (found by execution)
+///
+/// The WHATWG popover UA stylesheet's `[popover] { inset: 0; margin: auto;
+/// border: solid; padding: 0.25em; overflow: auto; background-color:
+/// Canvas; color: CanvasText; }` fights this region's own positioning the
+/// instant the attribute is added: author CSS already sets `right`/`bottom`
+/// (not `top`/`left`), so the UA's `inset: 0` still supplies `top: 0; left:
+/// 0` (author origin only overrides the *properties it actually
+/// declares*), and `margin: auto` (which the pre-popover initial value of
+/// `0` never triggered) combines with those to invoke the CSS
+/// auto-margin/over-constrained sizing algorithm -- confirmed by execution,
+/// this stretched the region across nearly the entire viewport instead of
+/// shrink-wrapping the toast list in its corner. `border`/`padding`/
+/// `background-color`/`color` also all apply for the same reason (the
+/// region declares none of them itself, only its child `.dx-toast`s do),
+/// painting a visible boxed panel behind the toasts that was never there
+/// before. The consuming page's own stylesheet
+/// (`preview/src/components/toast/style.css`'s `.dx-toast-container[popover]`)
+/// resets all of these back to their pre-popover values -- the same
+/// `margin: 0; inset: auto;` idiom the shared anchor-positioning engine
+/// uses for anchored overlays (`top_layer.rs`'s
+/// `ensure_anchor_positioning_styles` doc), applied here directly in the
+/// component's own stylesheet instead of that shared engine, since this
+/// region needs the reset without ever wanting anchor positioning itself.
+#[cfg(target_family = "wasm")]
+#[component]
+fn ToastRegionRendered(
+    id: String,
+    length: usize,
+    attributes: Vec<Attribute>,
+    onmounted: EventHandler<MountedEvent>,
+    children: Element,
+) -> Element {
+    // Always `true`: this region is mounted for the lifetime of
+    // `ToastProvider` and never closes, so it only ever needs the initial
+    // `showPopover()` -- see `use_popover_shown_while_mounted`'s doc,
+    // "Bug 2," for why real `open`-driven content needs this to react on
+    // every transition instead of a one-shot mount effect (not applicable
+    // here: `manual` never lets native light dismiss hide this out from
+    // under us the way `auto` can for `Select`/`Combobox`).
+    //
+    // `id` above is this function's own prop (`ToastProvider`'s internal,
+    // `use_unique_id`-generated region id -- `ToastProviderProps` has no
+    // caller-facing `id` field of its own), not anything read out of
+    // `attributes` -- keep it that way: an `id` a caller passed through
+    // `ToastProviderProps`'s `#[props(extends = GlobalAttributes)]`
+    // catch-all would land in `attributes` and, spread via `..attributes`
+    // below (after this `id: id.clone()`), silently win and override it,
+    // stranding `showPopover()`'s `document.getElementById(id)` above on a
+    // dead id that matches no element (confirmed by execution against this
+    // exact mistake in an earlier version of the top-layer oracle fixture,
+    // `preview/src/components/top_layer/component.rs` -- see its own
+    // comment on this).
+    let always_open = use_signal(|| true);
+    crate::top_layer::use_popover_shown_while_mounted(
+        id.clone(),
+        always_open,
+        Callback::new(|_: bool| {}),
+    );
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "region",
+            aria_label: "{length} notifications",
+            tabindex: "-1",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            style: "--toast-count: {length}",
+            onmounted: move |e| onmounted.call(e),
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
+/// popover-API support at all, so this stays the functional floor, a
+/// plain, always-in-flow `div`.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn ToastRegionRendered(
+    id: String,
+    length: usize,
+    attributes: Vec<Attribute>,
+    onmounted: EventHandler<MountedEvent>,
+    children: Element,
+) -> Element {
+    rsx! {
+        div {
+            id,
+            role: "region",
+            aria_label: "{length} notifications",
+            tabindex: "-1",
+            style: "--toast-count: {length}",
+            onmounted: move |e| onmounted.call(e),
+            ..attributes,
+            {children}
+        }
     }
 }
 
