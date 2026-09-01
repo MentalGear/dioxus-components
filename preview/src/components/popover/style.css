@@ -7,11 +7,32 @@
   position: fixed;
   z-index: 1000;
   display: flex;
+  overflow: visible;
   min-width: 200px;
   max-width: calc(100% - 2rem);
   box-sizing: border-box;
   flex-direction: column;
   padding: .25rem;
+
+  /*
+   * `border` and `overflow` reset the UA popover stylesheet's
+   * `[popover] { border: solid; overflow: auto; ... }` (WHATWG HTML's
+   * popover section) -- the *non-modal* arm of this content (Phase 4.4,
+   * docs/plan.md) carries the `popover` attribute; the modal arm (a plain
+   * `div`, Phase 4.2) never does and is unaffected either way. See the
+   * fully worked-out note on `.dx-tooltip-content` in
+   * `../tooltip/style.css` for why an unset property here is not simply
+   * "whatever this rule would otherwise imply" once `popover` is present.
+   * `inset`/`margin` are *not* reset unconditionally here, unlike that
+   * tooltip/hover-card note: this rule's own `margin-top: .5rem` and
+   * `transform: translate(-50%, -50%)` are this component's *modal*
+   * centering trick (`docs/plan.md` Phase 3.2, predating Phase 4.4), so
+   * zeroing `inset`/`margin` unconditionally would break that arm. The
+   * non-modal arm's own `inset`/`margin` reset lives in the `[popover]`
+   * rule just below instead, which -- being gated on that attribute --
+   * only ever touches the non-modal arm.
+   */
+  border: none;
   border-radius: .5rem;
   margin-top: .5rem;
   background: var(--light, var(--primary-color))
@@ -21,6 +42,23 @@
   transform: translate(-50%, -50%);
   transform-origin: top;
   will-change: transform, opacity;
+}
+
+/*
+ * Non-modal arm only (see the base rule's comment above for why this can't
+ * live there unconditionally): resets the UA popover stylesheet's
+ * `inset: 0`/`margin: auto` for the *non-anchor-positioning* fallback path
+ * too, not just the `@supports` block below. Without this, a browser that
+ * has the Popover API but not CSS Anchor Positioning (Firefox/WebKit as of
+ * this writing) falls through to the plain `[data-side]` rules further
+ * down, which -- like the tooltip/hover-card ones documented in
+ * `../tooltip/style.css` -- only ever set two of the four inset sides,
+ * leaving the other two (and all four margins) to leak in from the UA
+ * stylesheet and badly mis-position the popover on exactly those engines.
+ */
+.dx-popover-content[popover] {
+  margin: 0;
+  inset: auto;
 }
 
 .dx-popover-content[data-state="open"] {
@@ -248,67 +286,67 @@
  * way; no collision/flip logic (docs/plan.md Phase 5).
  */
 @supports (anchor-name: --a) {
-  .dx-popover-content[popover] {
+  .dx-anchor-popover[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
     transform: none;
   }
 
-  .dx-popover-content[popover][data-side="top"] {
+  .dx-anchor-popover[popover][data-side="top"] {
     bottom: anchor(top);
     left: anchor(center);
     margin-bottom: 8px;
     transform: translateX(-50%);
   }
 
-  .dx-popover-content[popover][data-side="right"] {
+  .dx-anchor-popover[popover][data-side="right"] {
     top: anchor(center);
     left: anchor(right);
     margin-left: 8px;
     transform: translateY(-50%);
   }
 
-  .dx-popover-content[popover][data-side="bottom"] {
+  .dx-anchor-popover[popover][data-side="bottom"] {
     top: anchor(bottom);
     left: anchor(center);
     margin-top: 8px;
     transform: translateX(-50%);
   }
 
-  .dx-popover-content[popover][data-side="left"] {
+  .dx-anchor-popover[popover][data-side="left"] {
     top: anchor(center);
     right: anchor(left);
     margin-right: 8px;
     transform: translateY(-50%);
   }
 
-  .dx-popover-content[popover][data-side="top"][data-align="start"],
-  .dx-popover-content[popover][data-side="bottom"][data-align="start"] {
+  .dx-anchor-popover[popover][data-side="top"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
     transform: none;
   }
 
-  .dx-popover-content[popover][data-side="top"][data-align="end"],
-  .dx-popover-content[popover][data-side="bottom"][data-align="end"] {
+  .dx-anchor-popover[popover][data-side="top"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
     transform: translateX(-100%);
   }
 
-  .dx-popover-content[popover][data-side="left"][data-align="start"],
-  .dx-popover-content[popover][data-side="right"][data-align="start"] {
+  .dx-anchor-popover[popover][data-side="left"][data-align="start"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
     transform: none;
   }
 
-  .dx-popover-content[popover][data-side="left"][data-align="center"],
-  .dx-popover-content[popover][data-side="right"][data-align="center"] {
+  .dx-anchor-popover[popover][data-side="left"][data-align="center"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
     transform: translateY(-50%);
   }
 
-  .dx-popover-content[popover][data-side="left"][data-align="end"],
-  .dx-popover-content[popover][data-side="right"][data-align="end"] {
+  .dx-anchor-popover[popover][data-side="left"][data-align="end"],
+  .dx-anchor-popover[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
     transform: translateY(-100%);
   }

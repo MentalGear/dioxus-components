@@ -32,23 +32,105 @@
   padding-top: 90px;
 }
 
+/*
+ * `position: fixed` at fixed viewport coordinates, not `absolute` within
+ * `.dx-top-layer-stack-area` (as this used to be) -- deliberately, for
+ * Rule 4 of `playwright/oracle/tier2-html/top-layer.spec.ts` ("top-layer
+ * stacking"), which opens the stacking `Popover` and then asserts
+ * `document.elementFromPoint()` at this sibling's center resolves to the
+ * popover's content, i.e. that top-layer content really paints above this
+ * plain in-flow sibling.
+ *
+ * Root cause found by execution, not assumed: this section renders below
+ * the fold on this repo's standard 1280x720 test viewport (it used to sit
+ * ~730px down the page, after the "Clipping escape" section above it), so
+ * the spec calls `Locator.scrollIntoViewIfNeeded()` on the sibling before
+ * measuring. `Popover`'s non-modal content is positioned by
+ * `top_layer.rs`'s `use_anchor_position_fallback` -- a one-shot
+ * `document::eval` that measures the trigger's `getBoundingClientRect()`
+ * *once*, when the popover opens, and (only where CSS `anchor()` didn't
+ * already land it correctly -- see that function's doc) writes the result
+ * back as literal `top`/`left` *pixel* values on a `position: fixed`
+ * element. Those pixel values are viewport-relative and, being plain
+ * numbers rather than a live `anchor()` reference, do not get
+ * recalculated if the page scrolls afterward -- `position: fixed`'s own
+ * defining behavior is to stay put on scroll. So: open the popover (its
+ * content lands correctly, overlapping the sibling) *then* scroll the page
+ * to bring the (still off-screen) sibling into view, and the sibling moves
+ * on screen while the popover content -- pinned by those stale pixel
+ * values -- does not, and they no longer overlap by the time the test
+ * measures. Confirmed by execution: capturing both rects immediately after
+ * opening (no scroll) shows genuine overlap; re-measuring after the same
+ * `scrollIntoViewIfNeeded()` the spec calls reproduces the failure exactly.
+ *
+ * The fix is not a CSS positioning bug in the library (the content is
+ * correctly placed relative to its trigger at the moment it opens; nothing
+ * in `top_layer.rs` claims to track a *subsequent* scroll, and no other
+ * test needs it to) -- it's this fixture creating a scroll that has no
+ * reason to exist. Anchoring the sibling and its trigger row to the
+ * viewport directly keeps the whole section on-screen on this repo's
+ * standard test viewport regardless of how much content sits above it on
+ * the page, which makes `scrollIntoViewIfNeeded()` a no-op (already in
+ * view, nothing scrolls) and removes the stale-pixel window entirely --
+ * deterministically, not just for this page's current content height.
+ *
+ * Fixing that surfaced a second, independent accident, found the same way
+ * (by re-running the oracle after the change above): the CALIBRATION test
+ * for this same rule -- `<div popover=auto>` with *no* author positioning
+ * at all, relying purely on the UA popover stylesheet's default
+ * `inset: 0; margin: auto`, which centers it in the *viewport* -- went from
+ * green to red the moment the sibling stopped needing a scroll. It was
+ * never actually anchored to the sibling either: it only overlapped before
+ * because scrolling the sibling into view also happened to leave the
+ * viewport's center close enough to the sibling's new on-screen position.
+ * With the sibling now fixed in place (never requiring a scroll), the
+ * viewport's actual center no longer coincides with it. `anchor-name` on
+ * the sibling plus `position-anchor`/`anchor()` on the native content (see
+ * `primitives/src/top_layer.rs`'s `anchor_name_style`/
+ * `position_anchor_style` for the identical platform feature the library
+ * itself relies on) ties the reference deterministically to the sibling
+ * instead of to viewport happenstance -- centering on the sibling's own
+ * center point, not a corner, so the comparison holds regardless of either
+ * box's exact size.
+ */
 .dx-top-layer-stack-sibling {
-  position: absolute;
+  position: fixed;
   z-index: 9999;
-  top: 0;
-  left: 0;
+  top: 84px;
+  left: 300px;
   width: 260px;
   height: 80px;
   border: 1px solid darkred;
+  anchor-name: --dx-stack-sibling;
   background: crimson;
   color: white;
   font-size: 0.85rem;
 }
 
+/*
+ * `.dx-anchor-stack-native` (see `component.rs`'s comment on this element)
+ * is a plain, unhashed class -- `#[css_module]` does not rewrite selectors
+ * nested inside an `@supports` block, only flat top-level ones, so a
+ * css_module-generated class here would silently never match. An engine
+ * without CSS Anchor Positioning falls back to the UA popover default
+ * (`inset: 0; margin: auto`), the same graceful degradation as every other
+ * `@supports (anchor-name: --a)` block in this workspace
+ * (`tooltip`/`hover_card`/`popover`'s `style.css`).
+ */
+@supports (anchor-name: --a) {
+  .dx-anchor-stack-native {
+    position: fixed;
+    margin: 0;
+    inset: anchor(center) auto auto anchor(center);
+    position-anchor: --dx-stack-sibling;
+    transform: translate(-50%, -50%);
+  }
+}
+
 .dx-top-layer-stack-row {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: fixed;
+  top: 84px;
+  left: 300px;
   display: flex;
   align-items: center;
   gap: 1.5rem;

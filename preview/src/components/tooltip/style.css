@@ -11,13 +11,45 @@
 .dx-tooltip-content {
   position: absolute;
   z-index: 1000;
+  overflow: visible;
   max-width: 250px;
   padding: 8px 12px;
+  border: none;
   border-radius: 0.5rem;
+  margin: 0;
   animation: dx-tooltip-fade-in 0.2s ease-in-out;
   background-color: var(--secondary-color-4);
   color: var(--primary-color);
   font-size: 14px;
+
+  /*
+   * `border`, `margin`, `inset` and `overflow` are reset explicitly here,
+   * even though no earlier rule in this file ever set the non-zero values
+   * they are undoing -- this content element carries the `popover`
+   * attribute (Phase 4.4, docs/plan.md) on the web arm, and every browser
+   * implementing the Popover API ships a UA stylesheet rule
+   * (`[popover] { inset: 0; margin: auto; border: solid; padding: 0.25em;
+   * overflow: auto; background-color: Canvas; color: CanvasText; }`,
+   * WHATWG HTML's popover section) that otherwise applies to *any* property
+   * this file leaves unset. Confirmed by execution against this repo's own
+   * preview build: with these four properties unset, a real rendered
+   * tooltip picked up a 3px solid white `border` and, on `[data-side="left"]`
+   * in particular, a huge (300px+) `margin-top`/`margin-bottom` and a
+   * negative `margin-left` -- the `top`/`right`/`bottom`/`left` sides this
+   * file's `[data-side]` rules below don't set for a given side fall back to
+   * the UA's `inset: 0`, and pairing that with the UA's `margin: auto` on an
+   * absolutely/fixed-positioned box with both opposing insets now set
+   * invokes the CSS auto-margin centering algorithm -- accidentally, not by
+   * this file's design -- landing the tooltip far from its trigger. `border:
+   * none` and `overflow: visible` undo the same UA rule's other two
+   * properties, which this file never needed either (this content has no
+   * border of its own -- the visual "point" is the `::after` arrow -- and
+   * never needs to scroll). `background-color`/`color` are unaffected: this
+   * rule already sets both further down, and author-origin declarations
+   * always win over the UA stylesheet regardless of specificity, so no
+   * additional reset is needed for those two.
+   */
+  inset: auto;
   line-height: 1.4;
 }
 
@@ -169,60 +201,60 @@
  * this slice's.
  */
 @supports (anchor-name: --a) {
-  .dx-tooltip-content[popover] {
+  .dx-anchor-tooltip[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
   }
 
-  .dx-tooltip-content[popover][data-side="top"] {
+  .dx-anchor-tooltip[popover][data-side="top"] {
     bottom: anchor(top);
     left: anchor(center);
     margin-bottom: 8px;
     transform: translateX(-50%);
   }
 
-  .dx-tooltip-content[popover][data-side="right"] {
+  .dx-anchor-tooltip[popover][data-side="right"] {
     top: anchor(center);
     left: anchor(right);
     margin-left: 8px;
     transform: translateY(-50%);
   }
 
-  .dx-tooltip-content[popover][data-side="bottom"] {
+  .dx-anchor-tooltip[popover][data-side="bottom"] {
     top: anchor(bottom);
     left: anchor(center);
     margin-top: 8px;
     transform: translateX(-50%);
   }
 
-  .dx-tooltip-content[popover][data-side="left"] {
+  .dx-anchor-tooltip[popover][data-side="left"] {
     top: anchor(center);
     right: anchor(left);
     margin-right: 8px;
     transform: translateY(-50%);
   }
 
-  .dx-tooltip-content[popover][data-side="top"][data-align="start"],
-  .dx-tooltip-content[popover][data-side="bottom"][data-align="start"] {
+  .dx-anchor-tooltip[popover][data-side="top"][data-align="start"],
+  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
     transform: none;
   }
 
-  .dx-tooltip-content[popover][data-side="top"][data-align="end"],
-  .dx-tooltip-content[popover][data-side="bottom"][data-align="end"] {
+  .dx-anchor-tooltip[popover][data-side="top"][data-align="end"],
+  .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
     transform: translateX(-100%);
   }
 
-  .dx-tooltip-content[popover][data-side="left"][data-align="start"],
-  .dx-tooltip-content[popover][data-side="right"][data-align="start"] {
+  .dx-anchor-tooltip[popover][data-side="left"][data-align="start"],
+  .dx-anchor-tooltip[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
     transform: none;
   }
 
-  .dx-tooltip-content[popover][data-side="left"][data-align="end"],
-  .dx-tooltip-content[popover][data-side="right"][data-align="end"] {
+  .dx-anchor-tooltip[popover][data-side="left"][data-align="end"],
+  .dx-anchor-tooltip[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
     transform: translateY(-100%);
   }

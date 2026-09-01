@@ -148,6 +148,140 @@ pub(crate) fn use_popover_sync(
     });
 }
 
+/// JS-measured static positioning fallback/self-check for engines where CSS
+/// Anchor Positioning doesn't land the content next to its trigger. Confirmed
+/// by execution to be *required*, not merely a nice-to-have: once an element
+/// is promoted to the top layer via `popover`, its containing block becomes
+/// the viewport regardless of its own `position` value (see
+/// [`position_anchor_style`]'s doc) -- which means the pre-4.4 `[data-side]`
+/// rules in `tooltip`/`hover_card`/`popover`'s `style.css` (written for the
+/// old DOM-relative `position: absolute`) do not gracefully degrade into
+/// "roughly right, just not collision-aware" on an engine that can't resolve
+/// `anchor()`; they degrade into detached from the trigger entirely -- the
+/// "tooltip not working" symptom this fixes.
+///
+/// Deliberately does *not* gate on `CSS.supports('anchor-name: --a')` alone,
+/// unlike the CSS `@supports` blocks this pairs with (those stay -- they're
+/// what makes Chromium's positioning correct from the very first layout,
+/// before this effect's synchronous correction below even runs). Confirmed
+/// by execution against a real, current-at-time-of-writing Firefox build:
+/// `CSS.supports('anchor-name: --a')` reports `true` there (the property
+/// parses), yet a popover-promoted element's `anchor()`-based `top`/`left`
+/// still failed to resolve against its trigger -- a real, engine-specific
+/// popover/anchor-positioning integration gap that a syntax-support check
+/// cannot see. So instead this *measures the outcome*: it compares the
+/// content's actual position to the trigger-relative position this
+/// component's own `[data-side]`/`[data-align]` contract promises, and
+/// only overrides with inline styles when they disagree by more than a
+/// couple of pixels (rounding/subpixel noise). On an engine where `anchor()`
+/// already resolved correctly (this repo's Chromium, confirmed by
+/// execution), the computed and actual positions match and nothing is
+/// touched -- no extra reflow, no risk of fighting a working anchor
+/// resolution.
+///
+/// Deliberately a one-shot measurement taken when `open` becomes true, not a
+/// live-tracking `ResizeObserver`/scroll listener: this is static
+/// positioning parity with the pre-4.4 behavior, not collision detection or
+/// scroll-following (`docs/plan.md` Phase 5 is where that belongs).
+///
+/// `anchor_id` must be the exact same string [`anchor_name_style`] was
+/// built from for this overlay's trigger (every call site threads its
+/// content's own id through both, so they always match by construction --
+/// see `PopoverCtx::content_id`'s doc in `popover.rs` for the bug this
+/// guards against for that component specifically). The trigger element
+/// itself is found by matching that id's `anchor-name` back out of its
+/// inline `style` attribute (a plain substring match -- cheap, and every
+/// trigger always sets this style whether or not it ends up used) rather
+/// than requiring a second id to be threaded through separately.
+#[cfg(target_family = "wasm")]
+pub(crate) fn use_anchor_position_fallback(
+    id: String,
+    anchor_id: String,
+    open: impl Readable<Target = bool> + Copy + 'static,
+    side: crate::ContentSide,
+    align: crate::ContentAlign,
+    gap_px: u32,
+) {
+    use_effect(move || {
+        if !open.cloned() {
+            return;
+        }
+        let id = id.clone();
+        let anchor_id = anchor_id.clone();
+        let side = side.as_str();
+        let align = align.as_str();
+        // Synchronous, not deferred to `requestAnimationFrame`: this runs
+        // from a `use_effect` declared (and therefore, on Dioxus's normal
+        // mount-order guarantee, run) after `use_popover_sync`'s own effect
+        // in every call site, so `showPopover()` has already been
+        // dispatched -- and `getBoundingClientRect()`/`offsetWidth` force a
+        // synchronous layout in every engine regardless of paint timing, so
+        // there is nothing to wait a frame for. Confirmed by execution to
+        // matter, not just simpler: an earlier version of this function
+        // wrapped its body in `requestAnimationFrame(() => {{ ... }})` and
+        // it silently never ran at all on a real Firefox build -- the
+        // `document::eval` call is a bare, uncaptured expression (the same
+        // fire-and-forget shape `use_popover_sync`'s own synchronous
+        // `document::eval` calls use throughout this file), and its
+        // returned handle is dropped at the end of this closure; dropping it
+        // before a callback deferred to a later task/frame ever fires
+        // appears to tear down the JS side before that callback runs. A
+        // synchronous body has no such window.
+        document::eval(&format!(
+            r#"
+            const content = document.getElementById('{id}');
+            const trigger = document.querySelector(
+                '[style*="anchor-name: --dxa-{anchor_id}"]'
+            );
+            if (content && trigger) {{
+                const t = trigger.getBoundingClientRect();
+                const c = content.getBoundingClientRect();
+                const cw = content.offsetWidth;
+                const ch = content.offsetHeight;
+                const side = '{side}';
+                const align = '{align}';
+                const gap = {gap_px};
+                let top;
+                let left;
+                if (side === 'top') {{
+                    top = t.top - gap - ch;
+                }} else if (side === 'bottom') {{
+                    top = t.bottom + gap;
+                }} else if (align === 'start') {{
+                    top = t.top;
+                }} else if (align === 'end') {{
+                    top = t.bottom - ch;
+                }} else {{
+                    top = t.top + t.height / 2 - ch / 2;
+                }}
+                if (side === 'left') {{
+                    left = t.left - gap - cw;
+                }} else if (side === 'right') {{
+                    left = t.right + gap;
+                }} else if (align === 'start') {{
+                    left = t.left;
+                }} else if (align === 'end') {{
+                    left = t.right - cw;
+                }} else {{
+                    left = t.left + t.width / 2 - cw / 2;
+                }}
+                // Tolerance for rounding/subpixel noise -- see this
+                // function's doc for why this checks the *outcome* rather
+                // than trusting a feature-detection flag.
+                if (Math.abs(c.top - top) > 2 || Math.abs(c.left - left) > 2) {{
+                    content.style.position = 'fixed';
+                    content.style.margin = '0';
+                    content.style.inset = 'auto';
+                    content.style.transform = 'none';
+                    content.style.top = top + 'px';
+                    content.style.left = left + 'px';
+                }}
+            }}
+            "#
+        ));
+    });
+}
+
 // No native (Blitz) counterpart: every call site
 // (`tooltip.rs`/`hover_card.rs`/`popover.rs`) is itself inside a
 // `#[cfg(target_family = "wasm")]`-only component -- the modal/non-modal
