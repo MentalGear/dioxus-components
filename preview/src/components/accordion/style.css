@@ -34,7 +34,6 @@
 .dx-accordion-content {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 300ms ease;
 }
 
 .dx-accordion-content > * {
@@ -43,7 +42,45 @@
 }
 
 .dx-accordion-content[data-open="true"] {
+  animation: dx-accordion-open 300ms ease;
   grid-template-rows: 1fr;
+}
+
+.dx-accordion-content[data-open="false"] {
+  animation: dx-accordion-close 300ms ease;
+}
+
+/*
+ * A `transition` on `grid-template-rows` only plays when the property
+ * changes on an element already present in the render tree. `AccordionContent`
+ * is only mounted once it starts opening (see `use_animated_open`), so the
+ * very first paint of a newly-opened item already has `data-open="true"` --
+ * there is no earlier frame for a transition to interpolate from, and the
+ * panel snaps open instantly. A `@keyframes` animation does not have this
+ * problem: it always plays its `from` keyframe on the frame it is applied,
+ * even to a brand-new element, so both directions animate. This mirrors why
+ * bits-ui/Radix drive their accordion content with `@keyframes` (their
+ * `accordion-down`/`accordion-up`, animating `height: 0 -> var(--bits-accordion-content-height)`)
+ * rather than a transition.
+ */
+@keyframes dx-accordion-open {
+  from {
+    grid-template-rows: 0fr;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes dx-accordion-close {
+  from {
+    grid-template-rows: 1fr;
+  }
+
+  to {
+    grid-template-rows: 0fr;
+  }
 }
 
 .dx-accordion {
