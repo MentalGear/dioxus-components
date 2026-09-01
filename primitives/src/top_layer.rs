@@ -161,9 +161,22 @@ fn anchor_positioning_inject_js() -> String {
 /// wrapping backticks) -- see [`ensure_anchor_positioning_styles`]'s doc for
 /// the bug class this closes and why `border`/`overflow` resets are
 /// deliberately not part of it.
+///
+/// Every `.dx-anchor-popover[popover]` selector below has a
+/// `.dx-anchor-popover:modal` sibling (native-dialog engine migration,
+/// two-engine overlay architecture completion): a modal `Popover`'s web arm
+/// is a real `<dialog>` opened with `showModal()`, so it carries the
+/// `dx-anchor-popover` marker class the same way the non-modal arm's
+/// `<dialog popover="auto">` does, but never the `popover` attribute itself
+/// (`showModal()` and the Popover API are two different top-layer
+/// mechanisms -- see `popover.rs`'s module doc). `:modal` is the CSS
+/// pseudo-class a `<dialog>` matches for as long as it is shown via
+/// `showModal()` -- the natural selector to key the exact same reset/
+/// `anchor()` treatment off for that arm, mirroring `[popover]`'s role for
+/// the Popover-API arms without needing a second marker class.
 #[cfg(target_family = "wasm")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
-:where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-dropdown-menu[popover],
+:where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-popover:modal, .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
   margin: 0;
   inset: auto;
@@ -172,6 +185,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 @supports (anchor-name: --a) {
   .dx-anchor-tooltip[popover],
   .dx-anchor-popover[popover],
+  .dx-anchor-popover:modal,
   .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover],
   .dx-anchor-select[popover],
@@ -185,6 +199,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="top"],
   .dx-anchor-popover[popover][data-side="top"],
+  .dx-anchor-popover:modal[data-side="top"],
   .dx-anchor-dropdown-menu[popover][data-side="top"],
   .dx-anchor-menubar[popover][data-side="top"],
   .dx-anchor-select[popover][data-side="top"],
@@ -197,6 +212,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="right"],
   .dx-anchor-popover[popover][data-side="right"],
+  .dx-anchor-popover:modal[data-side="right"],
   .dx-anchor-dropdown-menu[popover][data-side="right"],
   .dx-anchor-menubar[popover][data-side="right"],
   .dx-anchor-select[popover][data-side="right"],
@@ -209,6 +225,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="bottom"],
   .dx-anchor-popover[popover][data-side="bottom"],
+  .dx-anchor-popover:modal[data-side="bottom"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"],
   .dx-anchor-menubar[popover][data-side="bottom"],
   .dx-anchor-select[popover][data-side="bottom"],
@@ -221,6 +238,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="left"],
   .dx-anchor-popover[popover][data-side="left"],
+  .dx-anchor-popover:modal[data-side="left"],
   .dx-anchor-dropdown-menu[popover][data-side="left"],
   .dx-anchor-menubar[popover][data-side="left"],
   .dx-anchor-select[popover][data-side="left"],
@@ -269,6 +287,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="top"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="top"][data-align="start"],
   .dx-anchor-popover[popover][data-side="top"][data-align="start"],
+  .dx-anchor-popover:modal[data-side="top"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
   .dx-anchor-select[popover][data-side="top"][data-align="start"],
@@ -276,6 +295,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-popover:modal[data-side="bottom"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="start"],
@@ -287,6 +307,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="top"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="top"][data-align="center"],
   .dx-anchor-popover[popover][data-side="top"][data-align="center"],
+  .dx-anchor-popover:modal[data-side="top"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
   .dx-anchor-select[popover][data-side="top"][data-align="center"],
@@ -294,6 +315,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-popover:modal[data-side="bottom"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="center"],
@@ -305,6 +327,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="top"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="top"][data-align="end"],
   .dx-anchor-popover[popover][data-side="top"][data-align="end"],
+  .dx-anchor-popover:modal[data-side="top"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
   .dx-anchor-select[popover][data-side="top"][data-align="end"],
@@ -312,6 +335,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-popover:modal[data-side="bottom"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="end"],
@@ -323,6 +347,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="left"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="left"][data-align="start"],
   .dx-anchor-popover[popover][data-side="left"][data-align="start"],
+  .dx-anchor-popover:modal[data-side="left"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
   .dx-anchor-select[popover][data-side="left"][data-align="start"],
@@ -330,6 +355,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="start"],
   .dx-anchor-popover[popover][data-side="right"][data-align="start"],
+  .dx-anchor-popover:modal[data-side="right"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="start"],
   .dx-anchor-select[popover][data-side="right"][data-align="start"],
@@ -341,6 +367,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="left"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="left"][data-align="center"],
   .dx-anchor-popover[popover][data-side="left"][data-align="center"],
+  .dx-anchor-popover:modal[data-side="left"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
   .dx-anchor-select[popover][data-side="left"][data-align="center"],
@@ -348,6 +375,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="center"],
   .dx-anchor-popover[popover][data-side="right"][data-align="center"],
+  .dx-anchor-popover:modal[data-side="right"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="center"],
   .dx-anchor-select[popover][data-side="right"][data-align="center"],
@@ -359,6 +387,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="left"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="left"][data-align="end"],
   .dx-anchor-popover[popover][data-side="left"][data-align="end"],
+  .dx-anchor-popover:modal[data-side="left"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
   .dx-anchor-select[popover][data-side="left"][data-align="end"],
@@ -366,6 +395,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="end"],
   .dx-anchor-popover[popover][data-side="right"][data-align="end"],
+  .dx-anchor-popover:modal[data-side="right"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="end"],
   .dx-anchor-select[popover][data-side="right"][data-align="end"],

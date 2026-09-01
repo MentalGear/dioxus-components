@@ -20,7 +20,8 @@
 
 #[cfg(not(target_family = "wasm"))]
 use crate::use_global_escape_listener;
-use crate::{use_animated_open, use_id_or, use_unique_id, FOCUS_TRAP_JS};
+use crate::{use_animated_open, use_id_or, use_unique_id};
+#[cfg(not(target_family = "wasm"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -128,10 +129,7 @@ pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
     let render_element = use_animated_open(id, open);
 
     rsx! {
-        document::Script {
-            src: FOCUS_TRAP_JS,
-            defer: true
-        }
+        {crate::focus_trap_script()}
         if render_element() {
             div {
                 id,

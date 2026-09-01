@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dioxus::core::{current_scope_id, use_drop};
 use dioxus::prelude::*;
+#[cfg(not(target_family = "wasm"))]
 use dioxus::prelude::{asset, manganis, Asset};
 use dioxus_core::AttributeValue::Text;
 use time::OffsetDateTime;
@@ -59,7 +60,45 @@ mod top_layer;
 pub(crate) mod r#virtual;
 pub mod virtual_list;
 
+/// The vendored `focus-trap` JS bundle (`primitives/src/ts/focus-trap.ts`,
+/// compiled by `primitives/build.rs`'s `lazy_js_bundle` step). Native (Blitz)
+/// modal overlays (`dialog.rs`/`alert_dialog.rs`/`popover.rs`'s
+/// `#[cfg(not(target_family = "wasm"))]` arms) are its only remaining
+/// consumers -- every web-arm modal overlay now uses the native-dialog
+/// engine (`showModal()`'s own focus trap/restore/inertness/top-layer),
+/// completing the two-engine overlay architecture (docs/plan.md). `#[cfg]`
+/// -gated to that same axis so the wasm/web build never references, and
+/// therefore never bundles, this asset at all -- see [`focus_trap_script`]
+/// (this file), the only thing that ever names this constant.
+#[cfg(not(target_family = "wasm"))]
 pub(crate) const FOCUS_TRAP_JS: Asset = asset!("/src/js/focus-trap.js");
+
+/// Renders the `<script>` tag that loads [`FOCUS_TRAP_JS`] -- native
+/// (Blitz) arm only. `dialog.rs`/`alert_dialog.rs`/`popover.rs`'s Root
+/// components all call this instead of rendering `document::Script`
+/// directly, so the wasm/web build's rendered tree never mentions
+/// `FOCUS_TRAP_JS` at all (a plain `#[cfg]` on the tag inside one shared
+/// `rsx!` call wouldn't get you that -- the *other* branch's body would
+/// still need to name the wasm-absent constant to type-check; splitting
+/// into two whole function bodies, one per target, is what actually keeps
+/// the reference out of the wasm compilation unit). A no-op on the web arm:
+/// every modal overlay's web-arm focus handling comes from the browser's
+/// own `showModal()` now, so there is nothing to load there.
+#[cfg(not(target_family = "wasm"))]
+pub(crate) fn focus_trap_script() -> Element {
+    rsx! {
+        document::Script {
+            src: FOCUS_TRAP_JS,
+            defer: true
+        }
+    }
+}
+
+/// See [`focus_trap_script`]'s doc -- the web/wasm arm's no-op counterpart.
+#[cfg(target_family = "wasm")]
+pub(crate) fn focus_trap_script() -> Element {
+    rsx! {}
+}
 
 /// Generate a runtime-unique id.
 fn use_unique_id() -> Signal<String> {
@@ -438,6 +477,63 @@ fn use_dialog_close_sync(
         spawn(async move {
             while let Ok(true) = eval.recv::<bool>().await {
                 set_open.call(false);
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
+/// Backdrop-click dismiss for a web modal arm's `<dialog>` (`showModal()`).
+///
+/// `showModal()`'s `::backdrop` covers the entire viewport and owns
+/// hit-testing everywhere while the dialog is open
+/// (`docs/phase4-spike-findings.md` experiment 6: `elementFromPoint`
+/// resolves to the `<dialog>` element at every coordinate) -- and every
+/// pointer event over a `::backdrop` (or any other pseudo-element) is
+/// dispatched with its `target` set to the host element, i.e. the `<dialog>`
+/// itself. So the discriminator for "did this click land on the backdrop
+/// (dismiss) or on the dialog's own visible box (don't dismiss)" can't be
+/// `event.target` -- it's already the dialog element either way, including
+/// for clicks that land in the dialog's own padding/gap areas where no
+/// child happens to be. A bounding-rect check against the dialog's own
+/// rendered box (the same technique MDN's `<dialog>` guide recommends for
+/// this exact "click outside to close" pattern) tells the two apart
+/// correctly regardless of `event.target`.
+///
+/// Originally `dialog.rs`-only (Phase 4.2, docs/plan.md); moved here so
+/// `popover.rs`'s modal web arm (native-dialog Popover migration) can share
+/// it with `alert_dialog.rs`/`dialog.rs` rather than reimplementing it --
+/// the same trio as [`use_dialog_open_driver`]/[`use_dialog_close_sync`].
+/// `use_outside_dismiss` itself is not reusable here, because a
+/// `showModal()` backdrop click's `event.target` *is* the `<dialog>` element
+/// (it contains itself), so `use_outside_dismiss`'s
+/// `!root.contains(e.target)` check can never fire for it.
+#[cfg(target_family = "wasm")]
+fn use_dialog_backdrop_dismiss(
+    id: impl Readable<Target = String> + Copy + 'static,
+    on_dismiss: impl FnMut() + Clone + 'static,
+) {
+    use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const dialog = document.getElementById(id);
+            const onClick = (e) => {
+                const rect = dialog.getBoundingClientRect();
+                const inside = e.clientX >= rect.left && e.clientX <= rect.right
+                    && e.clientY >= rect.top && e.clientY <= rect.bottom;
+                if (!inside) dioxus.send(true);
+            };
+            dialog.addEventListener('click', onClick);
+            await dioxus.recv();
+            dialog.removeEventListener('click', onClick);",
+        );
+        let _ = eval.send(id.cloned());
+        let mut on_dismiss = on_dismiss.clone();
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                on_dismiss();
             }
         });
         move || {
