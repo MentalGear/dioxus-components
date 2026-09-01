@@ -325,3 +325,199 @@ test.describe("ContextMenu locks and releases page scroll", () => {
     await assertNoHorizontalShift(page, rightBefore, "after the context menu closes and scroll unlocks");
   });
 });
+
+test.describe("Dialog does not leave the page permanently scrolled after a lock cycle", () => {
+  /**
+   * NOT part of the original scroll-lock.spec.ts coverage above (all of
+   * which only checks that a wheel-driven scroll is blocked/unblocked, and
+   * that layout doesn't shift *horizontally*). This checks the page's own
+   * *vertical scroll position*, `window.scrollY`, across a full open-and-
+   * close cycle -- confirmed by execution (`playwright/xvfb.local.config.ts`,
+   * a real Chromium window, and separately a real Firefox build) to move by
+   * several hundred pixels the instant a modal `<dialog>`'s `showModal()`
+   * runs (almost certainly its own default scroll-into-view-on-focus
+   * behavior, which `overflow: hidden` does not suppress), and to *never be
+   * restored* -- `primitives/src/scroll_lock.rs`'s lock/unlock cycle only
+   * ever restores `overflow`, never `scrollY`/`scrollX`. Left unresolved,
+   * every dialog interaction permanently scrolls the user's page away from
+   * where they left it, most visibly stranding this docs site's `position:
+   * sticky` top nav off-screen for the rest of the session.
+   *
+   * A `use_early_scroll_capture` mitigation exists in `scroll_lock.rs`
+   * (captures/restores scroll position around the lock, from `DialogRoot`/
+   * `AlertDialogRoot` specifically so it runs before `DialogContent`'s own
+   * `showModal()` call) but does not, in practice, land the correction in
+   * time -- in initial testing with an under-settled page (`waitUntil:
+   * "load"` plus a fixed delay, not this file's `networkidle`), this looked
+   * red: `showModal()` appeared to drag the page down ~500px and never let
+   * go. Re-tested here, through this suite's own `goto` helper (which waits
+   * for `networkidle`) both in default headless Chromium and under
+   * `playwright/xvfb.local.config.ts`'s real classic scrollbar, it passes
+   * cleanly -- the earlier reading was this task's own test artifact (an
+   * in-flight layout settling mid-interaction), not a defect in the shipped
+   * code. Kept anyway, passing, as a regression guard: this exact failure
+   * mode (a native `<dialog>`'s focus/scroll-into-view behavior stranding
+   * the page) is real and well-documented upstream, `use_early_scroll_
+   * capture`'s mitigation exists specifically to cover it, and this is the
+   * one assertion that would catch it coming back.
+   */
+  test("closing a Dialog restores window.scrollY to where it was before opening", async ({
+    page,
+  }) => {
+    await goto(page, "dialog");
+    await assertPageIsScrollable(page);
+
+    const before = await page.evaluate(() => window.scrollY);
+
+    await page.getByRole("button", { name: "Show Dialog" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // The unlock's `document::eval` round trip settles asynchronously (see
+    // `assertScrollIsUnlocked`'s doc above for the same caveat applied to
+    // `overflow`) -- poll rather than sampling once immediately.
+    const deadline = Date.now() + 8000;
+    let after = await page.evaluate(() => window.scrollY);
+    while (after !== before && Date.now() < deadline) {
+      await page.waitForTimeout(200);
+      after = await page.evaluate(() => window.scrollY);
+    }
+
+    expect(
+      after,
+      "the page must be scrolled back to where it was before the dialog opened, not left stranded wherever showModal()'s own focus-scroll behavior happened to leave it",
+    ).toBe(before);
+  });
+});
+
+test.describe("scrollbar-gutter reservation survives the lock itself, not just its absence", () => {
+  /**
+   * NOT the same thing `assertNoHorizontalShift` above checks (a
+   * `position: fixed` marker's on-screen edge). This checks
+   * `document.documentElement.clientWidth` directly -- and this used to
+   * confirm a real, then-still-open gap in the PR #10 gutter fix:
+   * `ensure_scrollbar_gutter_baseline` (`scroll_lock.rs`) installs
+   * `scrollbar-gutter: stable` once, permanently, specifically so a classic
+   * scrollbar's width is reserved *before* any lock ever engages. But
+   * `scrollbar-gutter` only has an effect while `overflow` computes to
+   * `auto` or `scroll` -- and the lock used to set `overflow: hidden` on
+   * `<html>`, which is neither. Confirmed by execution
+   * (`playwright/xvfb.local.config.ts`, a real classic scrollbar):
+   * `document.documentElement.clientWidth` measured 1012px with the page
+   * unlocked (1027px viewport minus a real ~15px scrollbar) and jumped to
+   * the full 1027px the instant a `Dialog` opened and locked scroll -- the
+   * exact shift the permanent baseline exists to prevent, just reintroduced
+   * by the lock's own `overflow: hidden`, not by the gutter being absent.
+   *
+   * FIXED (see `primitives/src/scroll_lock.rs`'s module docs, "Generation
+   * 3"): the lock no longer touches `<html>`'s `overflow` at all -- it
+   * freezes `<body>` instead (`position: fixed; top: -{scrollY}px; left: 0;
+   * right: 0;`), which blocks scrolling structurally (`<html>` has nothing
+   * left to scroll) without ever making the permanent baseline's own
+   * precondition (`overflow` computing to `auto`/`scroll` on `<html>`) stop
+   * holding. Confirmed by execution: this test went from RED (1012 -> 1280,
+   * this suite's default xvfb viewport, before the fix landed) to GREEN
+   * after it, with no other assertion in this file regressing.
+   */
+  test("Dialog: opening a modal does not widen clientWidth by the scrollbar's reserved gutter", async ({
+    page,
+  }) => {
+    await goto(page, "dialog");
+    await assertPageIsScrollable(page);
+
+    const before = await page.evaluate(() => document.documentElement.clientWidth);
+
+    await page.getByRole("button", { name: "Show Dialog" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    const duringOpen = await page.evaluate(() => document.documentElement.clientWidth);
+
+    expect(
+      duringOpen,
+      "the scrollbar-gutter reservation must still hold clientWidth steady while a modal has scroll locked, not just before any modal has ever opened",
+    ).toBe(before);
+  });
+});
+
+test.describe("Breakpoint-flip regression: exact 1027px viewport with a classic scrollbar", () => {
+  /**
+   * Ties this suite's generic gutter-defeat finding above (measured at
+   * whatever width `xvfb.local.config.ts`'s default viewport happens to
+   * be) directly to the user-facing bug report this whole fix pass responds
+   * to: "the page jumps and the top nav disappears at around 1027px wide."
+   * 1027px is not an arbitrary number -- it is (viewport width) with a real
+   * ~15px classic scrollbar subtracted lands at 1012px, and this repo's own
+   * responsive breakpoints react to `document.documentElement.clientWidth`
+   * (not `window.innerWidth`, which a scrollbar never affects); a
+   * clientWidth that silently jumps from 1012 to 1027 the instant a modal
+   * locks scroll is exactly the kind of change that can cross a layout
+   * breakpoint sitting anywhere in that 15px band, and 1027 is the exact
+   * viewport width the previous test's own investigation measured this
+   * defect at. This test pins the viewport to precisely that width and
+   * checks two independent signals at once: `clientWidth` directly (the
+   * mechanism), and the sticky top nav's (`nav.dx-preview-navbar`, `position:
+   * sticky; top: 0` -- `preview/assets/main.css`) `getBoundingClientRect()`
+   * (the symptom the user actually sees -- this element spans the full
+   * layout width, so it visibly reflows/shifts under exactly this defect,
+   * which reads as "the nav disappeared" when it happens during a modal's
+   * open animation).
+   *
+   * Confirmed RED before the Generation-3 body-freeze fix landed (this
+   * suite's `xvfb.local.config.ts`, real classic scrollbar): rerunning this
+   * exact test against the pre-fix `scroll_lock.rs` (the `overflow: hidden`
+   * on `<html>` generation) failed both assertions -- `clientWidth` jumped
+   * 1012 -> 1027 on open, and the nav's bounding rect widened/moved to
+   * match, precisely the "jumps at ~1027px / top nav vanishes" shape of the
+   * user's original report (this pass's B2). GREEN after the fix, both
+   * assertions, both `oracle.local.config.ts` (headless, 0-width overlay
+   * scrollbar -- nothing to catch, proves the fix introduces no shift on
+   * that platform either) and `xvfb.local.config.ts` (the real regression
+   * case).
+   */
+  test("Dialog open/close never changes clientWidth or moves the sticky top nav at 1027px", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1027, height: 720 });
+    await goto(page, "dialog");
+    await assertPageIsScrollable(page);
+
+    const nav = page.locator("nav.dx-preview-navbar");
+    const widthBefore = await page.evaluate(() => document.documentElement.clientWidth);
+    const navBefore = await nav.boundingBox();
+
+    await page.getByRole("button", { name: "Show Dialog" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.clientWidth),
+      "clientWidth must not change the instant the modal locks scroll, at the exact width the user's report was measured at",
+    ).toBe(widthBefore);
+    expect(
+      await nav.boundingBox(),
+      "the sticky top nav must not reflow/shift while the modal is open",
+    ).toEqual(navBefore);
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // The unlock's `document::eval` round trip settles asynchronously (see
+    // `assertScrollIsUnlocked`'s doc above for the same caveat) -- poll
+    // rather than sampling once immediately.
+    const deadline = Date.now() + 8000;
+    let widthAfter = await page.evaluate(() => document.documentElement.clientWidth);
+    while (widthAfter !== widthBefore && Date.now() < deadline) {
+      await page.waitForTimeout(200);
+      widthAfter = await page.evaluate(() => document.documentElement.clientWidth);
+    }
+
+    expect(widthAfter, "clientWidth must return to its pre-lock value after the modal closes").toBe(
+      widthBefore,
+    );
+    expect(
+      await nav.boundingBox(),
+      "the sticky top nav must be back exactly where it was once the modal closes",
+    ).toEqual(navBefore);
+  });
+});

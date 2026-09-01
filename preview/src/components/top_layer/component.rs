@@ -128,6 +128,20 @@ pub fn TopLayerFixture() -> Element {
                         }
                         div {
                             id: "stack-native-content",
+                            // Plain, hand-written marker class -- never run
+                            // through `#[css_module]`'s hashing, deliberately:
+                            // that hashing only rewrites selectors it finds as
+                            // flat top-level rules, not ones nested inside an
+                            // `@supports` block (confirmed by execution: the
+                            // hashed class landed on this element, but the
+                            // `@supports`-scoped rule below kept referencing
+                            // the *unhashed* name, so it silently never
+                            // matched). Same reasoning and the same fix as
+                            // `primitives/src/tooltip.rs`'s `dx-anchor-tooltip`
+                            // (see its comment) -- this fixture just needs its
+                            // own instance since it isn't a primitives
+                            // component.
+                            class: "dx-anchor-stack-native",
                             popover: "auto",
                             style: "min-width: 200px; border: 1px solid; padding: 0.5rem; background: Canvas; color: CanvasText;",
                             "Native stacking content"

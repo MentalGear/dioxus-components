@@ -343,6 +343,37 @@ fn TooltipContentRendered(
     children: Element,
 ) -> Element {
     crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+    // JS-measured static positioning fallback for Firefox/WebKit (no CSS
+    // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `anchor_id` is this content's own `id`: `TooltipTrigger`'s
+    // `anchor-name` is keyed off `ctx.tooltip_id`, which `TooltipContent`
+    // (below) keeps synced to this same id.
+    crate::top_layer::use_anchor_position_fallback(id.clone(), id.clone(), open, side, align, 8);
+
+    // `dx-anchor-tooltip` is a plain, hand-written marker class -- never
+    // routed through `Styles::` in any consuming app's `#[css_module(..)]`
+    // file -- so it can be referenced from inside a plain CSS `@supports`
+    // block without being silently dropped by that macro's class-scoping
+    // pass. See `../../preview/src/components/tooltip/style.css`'s
+    // `@supports (anchor-name: --a)` block for why this is required: that
+    // macro's parser (`manganis-core`'s `css_module_parser`) only recurses
+    // into `@media`/`@layer`/`@container`/`@include` bodies when rewriting
+    // class selectors to their per-module hashed form (confirmed by
+    // inspecting `css_module_parser.rs`'s `at_rule` match arm) -- `@supports`
+    // is not in that list, so a selector like `.dx-tooltip-content[popover]`
+    // written inside one is left completely unscoped in the compiled
+    // stylesheet and can never match the real (hashed-class) element the
+    // preview app renders, silently killing the entire anchor-positioning
+    // enhancement there. A selector built from *this* class instead --
+    // never declared anywhere the macro's scoping pass *does* look, so
+    // never hash-rewritten anywhere -- matches by construction, in any
+    // consumer, css_module-scoped or not.
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            class: "dx-anchor-tooltip"
+        }),
+    ]);
 
     rsx! {
         div {

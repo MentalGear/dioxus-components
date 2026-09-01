@@ -20,6 +20,28 @@ struct PopoverCtx {
     is_modal: ReadSignal<bool>,
     labelledby: Signal<String>,
     root_id: Memo<String>,
+
+    // The current `PopoverContent`'s own element id, kept in sync by that
+    // component (mirrors `TooltipCtx::tooltip_id`/`HoverCardCtx::content_id`
+    // in `tooltip.rs`/`hover_card.rs`) -- *not* the same thing as
+    // `labelledby` above, which is the *trigger's* id (content's
+    // `aria-labelledby` points at the trigger, describing the popover by
+    // what opened it). `PopoverTrigger`'s `anchor-name` must key off
+    // *this* signal, not `labelledby`: `crate::top_layer::
+    // position_anchor_style` on the content side builds `--dxa-<content's
+    // own id>`, so the trigger's `anchor-name` has to name that same id for
+    // `position-anchor` to ever resolve. Confirmed by execution: before this
+    // field existed, the trigger declared `anchor-name: --dxa-<labelledby>`
+    // (i.e. its own id) while the content declared
+    // `position-anchor: --dxa-<content id>` -- two different ids -- so
+    // every `anchor()` value in `../../preview/src/components/popover/
+    // style.css`'s `@supports` block silently failed to resolve (an
+    // `anchor()` naming a nonexistent `anchor-name` is invalid at
+    // computed-value time) and the non-modal popover rendered at the
+    // fallback `top:0; left:0` corner instead of next to its trigger, on
+    // *any* browser, anchor-positioning-capable or not.
+    #[allow(unused)]
+    content_id: Signal<String>,
 }
 
 /// The props for the [`PopoverRoot`] component.
@@ -110,6 +132,9 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
     let labelledby = use_unique_id();
     let gen_root_id = use_unique_id();
     let root_id = use_id_or(gen_root_id, props.id);
+    // See `PopoverCtx::content_id`'s doc: placeholder value until
+    // `PopoverContent` mounts and syncs its own id in.
+    let content_id = use_unique_id();
 
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
 
@@ -119,6 +144,7 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
         is_modal: props.is_modal,
         labelledby,
         root_id,
+        content_id,
     });
 
     rsx! {
@@ -217,6 +243,14 @@ pub fn PopoverContent(props: PopoverContentProps) -> Element {
 
     let gen_id = use_unique_id();
     let id = use_id_or(gen_id, props.id);
+
+    // Keep `ctx.content_id` in sync with this content's actual id -- see
+    // `PopoverCtx::content_id`'s doc. Mirrors `TooltipContent`'s identical
+    // `ctx.tooltip_id.set(id())` in `tooltip.rs`.
+    {
+        let mut content_id = ctx.content_id;
+        use_effect(move || content_id.set(id()));
+    }
 
     let render = use_animated_open(id, ctx.open);
 
@@ -401,6 +435,42 @@ fn PopoverNonModalContent(
 ) -> Element {
     let ctx: PopoverCtx = use_context();
     crate::top_layer::use_popover_sync(id.clone(), ctx.open, ctx.set_open);
+    // JS-measured static positioning fallback for Firefox/WebKit (no CSS
+    // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `anchor_id` is this content's own `id`: `PopoverTrigger`'s
+    // `anchor-name` is keyed off `ctx.content_id`, which `PopoverContent`
+    // keeps synced to this same id (see `PopoverCtx::content_id`'s doc).
+    crate::top_layer::use_anchor_position_fallback(
+        id.clone(),
+        id.clone(),
+        ctx.open,
+        side,
+        align,
+        8,
+    );
+
+    // See `tooltip.rs`'s `TooltipContentRendered` for why this hand-written,
+    // never-`Styles::`-routed marker class exists: it is what the
+    // `@supports (anchor-name: --a)` block in `../../preview/src/components/
+    // popover/style.css` selects on, sidestepping `manganis-core`'s
+    // `css_module_parser` not scoping classes inside `@supports` bodies.
+    //
+    // Appended directly onto `class` (not merged into `attributes`, unlike
+    // the identical fix in `tooltip.rs`/`hover_card.rs`): this component,
+    // unlike those two, renders its consumer-supplied class through a
+    // dedicated `class: Option<String>` prop rather than folding it into
+    // `attributes` -- and that field is written into this element's `class`
+    // attribute *before* `..attributes` is spread below. Merging the marker
+    // into `attributes` instead would add a second, later `class` attribute
+    // that silently overwrites this one rather than combining with it (only
+    // `merge_attributes` itself concatenates same-named `class` attributes;
+    // plain rsx attribute lists do not) -- confirmed by execution: doing it
+    // that way rendered `class="dx-anchor-popover"` alone, with
+    // `dx-popover-content`/its hashed preview variant dropped entirely.
+    let class = format!(
+        "{} dx-anchor-popover",
+        class.unwrap_or_else(|| "dx-popover-content".to_string())
+    );
 
     rsx! {
         dialog {
@@ -409,7 +479,7 @@ fn PopoverNonModalContent(
             style: crate::top_layer::position_anchor_style(&id),
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
-            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
+            class,
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
@@ -542,7 +612,16 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
             // once the content is promoted to the top layer (Phase 4.4).
             // Inert (empty) off the web arm, and unused by the modal arm
             // (Phase 4.2's job), which never sets `position-anchor`.
-            style: crate::top_layer::anchor_name_style(&id.cloned()),
+            //
+            // Keyed on `ctx.content_id` -- *not* `id`/`ctx.labelledby`
+            // above, which is this trigger's own id (used for the `id`
+            // attribute and, via `PopoverContent`'s `aria-labelledby`, an
+            // unrelated ARIA relationship). See `PopoverCtx::content_id`'s
+            // doc for why those must not be conflated: `position_anchor_
+            // style` on the content side is always built from the
+            // content's own id, so this side has to name that same id, not
+            // the trigger's.
+            style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
             onclick: move |e| {
                 e.stop_propagation();
                 ctx.set_open.call(!(ctx.open)());

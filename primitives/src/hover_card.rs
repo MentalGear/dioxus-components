@@ -1,9 +1,13 @@
 //! Defines the [`HoverCard`] component and its subcomponents.
 
+#[cfg(target_family = "wasm")]
+use crate::merge_attributes;
 use crate::{
     use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
 };
 use dioxus::prelude::*;
+#[cfg(target_family = "wasm")]
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct HoverCardCtx {
@@ -339,6 +343,12 @@ fn HoverCardContentRendered(
     children: Element,
 ) -> Element {
     crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+    // JS-measured static positioning fallback for Firefox/WebKit (no CSS
+    // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `anchor_id` is this content's own `id`: `HoverCardTrigger`'s
+    // `anchor-name` is keyed off `ctx.content_id`, which this component
+    // (below) keeps synced to this same id.
+    crate::top_layer::use_anchor_position_fallback(id.clone(), id.clone(), open, side, align, 10);
 
     let handle_mouse_enter = move |_: Event<MouseData>| {
         if !disabled() {
@@ -350,6 +360,18 @@ fn HoverCardContentRendered(
             set_open.call(false);
         }
     };
+
+    // See `tooltip.rs`'s `TooltipContentRendered` for why this hand-written,
+    // never-`Styles::`-routed marker class exists: it is what the
+    // `@supports (anchor-name: --a)` block in `../../preview/src/components/
+    // hover_card/style.css` selects on, sidestepping `manganis-core`'s
+    // `css_module_parser` not scoping classes inside `@supports` bodies.
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            class: "dx-anchor-hover-card"
+        }),
+    ]);
 
     rsx! {
         div {

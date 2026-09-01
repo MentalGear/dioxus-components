@@ -111,6 +111,11 @@ pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
         props.on_open_change.call(v);
     });
     let open = use_memo(move || (props.open)().unwrap_or_else(&*open_signal));
+    // See `scroll_lock::use_early_scroll_capture`'s doc / `DialogRoot`'s
+    // identical call: captures scroll position before `showModal()` (called
+    // from `AlertDialogContent`, mounted as a consequence of the same `open`
+    // flip) gets a chance to move it.
+    crate::scroll_lock::use_early_scroll_capture(open);
     use_context_provider(|| AlertDialogCtx {
         open,
         set_open,
