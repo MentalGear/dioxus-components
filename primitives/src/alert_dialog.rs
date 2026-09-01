@@ -6,9 +6,9 @@
 //! `dialog.rs` there is no `is_modal` branch here -- [`AlertDialogContent`]
 //! is cfg-split directly, the same two arms as `dialog.rs`'s
 //! `DialogContentModal` (`docs/phase4-spike-findings.md` Construction B):
-//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//! - `#[cfg(not(feature = "web"))]`: byte-for-byte the pre-existing
 //!   `div` + vendored `FocusTrap` path.
-//! - `#[cfg(target_family = "wasm")]`: a real `<dialog role="alertdialog">`
+//! - `#[cfg(feature = "web")]`: a real `<dialog role="alertdialog">`
 //!   (the explicit `role` stays -- unlike a plain modal `Dialog`, this is a
 //!   genuine ARIA-subclass refinement of `<dialog>`'s implicit role,
 //!   <https://www.w3.org/TR/html-aria/#el-dialog>), driven by the same
@@ -18,10 +18,10 @@
 //!   discourages light-dismissing an alert dialog), and this slice does not
 //!   add an equivalent for the web arm either.
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use crate::use_global_escape_listener;
 use crate::{use_animated_open, use_id_or, use_unique_id};
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -200,7 +200,7 @@ pub struct AlertDialogContentProps {
 /// ```
 /// Native (Blitz) target -- byte-for-byte the pre-Phase-4.2 path: a plain
 /// `div` with the vendored `FocusTrap`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
     let ctx: AlertDialogCtx = use_context();
@@ -257,7 +257,7 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
 /// supplies the focus trap, focus restore, background inertness, and
 /// top-layer rendering. `role="alertdialog"` stays explicit -- see this
 /// module's doc comment.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
     let ctx: AlertDialogCtx = use_context();

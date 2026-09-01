@@ -1,10 +1,10 @@
 //! Defines the [`Menubar`] component and its sub-components.
 
 use dioxus::prelude::*;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use crate::merge_attributes;
 use crate::{
     collection::{
@@ -613,7 +613,7 @@ pub fn MenubarContent(props: MenubarContentProps) -> Element {
 /// deferred; here it cannot, so `prevent_default()` staying unconditional
 /// (no compile-time wasm skip, unlike `DropdownMenu`'s Escape arm) is the
 /// correct choice, not an oversight.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let ctx: MenubarContext = use_context();
@@ -695,7 +695,7 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
 /// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
 /// popover-API support at all, so this stays the functional floor, a plain,
 /// always-in-flow `div`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let menu_ctx: MenubarMenuContext = use_context();

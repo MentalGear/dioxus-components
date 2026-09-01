@@ -99,7 +99,7 @@ pub fn Tooltip(props: TooltipProps) -> Element {
     // `ensure_scrollbar_gutter_baseline` being called from every
     // scroll-lock-capable primitive's *root* component for the identical
     // "must exist before first open" reason.
-    #[cfg(target_family = "wasm")]
+    #[cfg(feature = "web")]
     use_effect(crate::top_layer::ensure_anchor_positioning_styles);
 
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
@@ -352,7 +352,7 @@ pub fn TooltipContent(props: TooltipContentProps) -> Element {
 /// drives `showPopover()`/`hidePopover()` from `open` and mirrors the
 /// browser's own `toggle` event back into `set_open` in case anything ever
 /// hides it outside that signal.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn TooltipContentRendered(
     id: String,
@@ -416,7 +416,7 @@ fn TooltipContentRendered(
 /// (`docs/recommended-implementations.md` Caveat 2), so this is the
 /// functional floor — a plain, always-in-flow div, visible exactly when
 /// `render()` (above) mounts it.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn TooltipContentRendered(
     id: String,

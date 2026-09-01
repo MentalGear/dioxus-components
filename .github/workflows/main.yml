@@ -52,6 +52,15 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-features
 
+  cfg-axis:
+    if: github.event.pull_request.draft == false
+    name: Cfg axis guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce markup cfgs split on the `web` feature, not target_family
+        run: scripts/check-cfg-axis.sh
+
   test:
     if: github.event.pull_request.draft == false
     name: Test Suite

@@ -544,7 +544,7 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
 /// `use_outside_dismiss`/the root `Escape` handler below stay the *only*
 /// dismissal path, unchanged from pre-migration -- exactly per this
 /// slice's instruction to keep them.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn ContextMenuContentRendered(
     id: String,
@@ -674,7 +674,7 @@ fn ContextMenuContentRendered(
 /// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
 /// popover-API support at all, so this stays the functional floor, a plain
 /// `position: fixed` div with no `popover` attribute.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn ContextMenuContentRendered(
     id: String,

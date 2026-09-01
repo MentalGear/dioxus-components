@@ -205,7 +205,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
                 // component-boundary split needed for this one arm. Native
                 // (Blitz) arm: unchanged, still closes here directly (Blitz
                 // has no popover-API light dismiss to defer to).
-                if cfg!(target_family = "wasm") {
+                if cfg!(feature = "web") {
                     return;
                 }
                 ctx.set_open.call(false);
@@ -483,7 +483,7 @@ pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
 /// recommended-implementations.md` Caveat 1 documents for `<dialog>`'s old
 /// one-way `showModal()`/`close()` binding. It also clears the focus
 /// collection on that path -- see its callback's own comment.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn DropdownMenuContentRendered(
     id: String,
@@ -574,7 +574,7 @@ fn DropdownMenuContentRendered(
 /// blur-driven dismissal, and this is the functional floor: a plain,
 /// always-in-flow `div`, visible exactly when `render()` (`DropdownMenuContent`)
 /// mounts it.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn DropdownMenuContentRendered(
     id: String,

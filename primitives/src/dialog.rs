@@ -21,9 +21,9 @@
 //! slice on both targets, per docs/plan.md Phase 4.2's scope.
 //! `DialogContentModal` (`is_modal: true`) is cfg-split
 //! (`docs/phase4-spike-findings.md` Construction B):
-//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//! - `#[cfg(not(feature = "web"))]`: byte-for-byte the pre-existing
 //!   `div` + vendored `FocusTrap` path.
-//! - `#[cfg(target_family = "wasm")]`: a real `<dialog>` element, `open`
+//! - `#[cfg(feature = "web")]`: a real `<dialog>` element, `open`
 //!   never bound as an attribute (Construction B's central finding: binding
 //!   it declaratively in the same build as a guarded `showModal()` call
 //!   doesn't crash, it silently skips the modal state entirely), driven by
@@ -42,7 +42,7 @@
 //!   the focus trap, focus restore, inertness, and top layer, and its
 //!   `cancel`/`close` events (synced above) already handle Escape.
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -350,7 +350,7 @@ fn DialogContentNonModal(
 
 /// `is_modal: true` arm, native (Blitz) target -- byte-for-byte the
 /// pre-Phase-4.2 path: a plain `div` with the vendored `FocusTrap`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn DialogContentModal(
     id: Memo<String>,
@@ -408,7 +408,7 @@ fn DialogContentModal(
 /// focus trap, focus restore, background inertness, and top-layer
 /// rendering, so this arm installs none of the native arm's JS
 /// counterparts.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn DialogContentModal(
     id: Memo<String>,
