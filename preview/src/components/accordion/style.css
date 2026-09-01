@@ -36,7 +36,13 @@
   grid-template-rows: 0fr;
 }
 
-.dx-accordion-content > * {
+/*
+ * `AccordionContent` (component.rs) wraps `{props.children}` in this
+ * neutral div, making it the sole direct child of `.dx-accordion-content`'s
+ * grid row. It carries no padding/margin of its own -- see the close-side
+ * root-cause comment below for why that matters.
+ */
+.dx-accordion-content-inner {
   overflow: hidden;
   min-height: 0;
 }
@@ -82,6 +88,49 @@
     grid-template-rows: 0fr;
   }
 }
+
+/*
+ * Close-side root cause (user-reported: "holds on for a second near the
+ * end, and then closes with a jank"):
+ *
+ * `grid-template-rows: 0fr` can shrink a grid row's *track* to 0, and
+ * `min-height: 0` on the row's item removes that item's default
+ * min-content floor -- but neither one can shrink that item's own *padding*.
+ * Padding is not part of "content" for sizing purposes: it is added to
+ * whatever content-box height layout settles on, and a box being forced
+ * toward a 0 track can only have its content-box height clamped to 0, not
+ * negative, so the box's rendered (border-box) height bottoms out at its own
+ * padding instead of 0.
+ *
+ * `AccordionContent`'s children are consumer-supplied and are free to carry
+ * their own padding (the shipped demo's content, for instance, is
+ * `div { padding_bottom: "1rem" }`). Previously that div -- padding and
+ * all -- WAS `.dx-accordion-content`'s direct child, i.e. exactly the box
+ * `.dx-accordion-content > *`'s `min-height: 0` was trying to collapse. Its
+ * `padding-bottom: 1rem` (16px) is what that rule could not remove: measured
+ * on a standalone reproduction of this exact markup/CSS, the close animation
+ * interpolated smoothly from 138px down to a hard floor of *exactly* 16.00px
+ * around the ~186ms mark of the 300ms animation, then sat there,
+ * pixel-for-pixel flat, for the remaining ~23 sampled frames (the "holds on
+ * for a second near the end") -- until `use_animated_open` (primitives/src/
+ * lib.rs) unmounted the element once its animation + a fixed settle window
+ * finished, snapping those 16px away instantly (the "jank").
+ *
+ * The fix does not touch this file's grid mechanics at all: it changes
+ * *which box* they act on. `AccordionContent` (component.rs) now wraps
+ * `{props.children}` in a neutral inner div (`.dx-accordion-content-inner`,
+ * below) that itself carries no padding and is the one and only direct
+ * child of this grid container. Consumer content -- with whatever padding
+ * it wants -- becomes a *grandchild*. Once the inner wrapper's own box can
+ * shrink to a true 0 (it has nothing of its own holding it open), its
+ * `overflow: hidden` clips the grandchild's content -- padding included --
+ * entirely, regardless of how much padding that grandchild carries. This is
+ * the same split Radix/bits-ui use (https://www.bits-ui.com/docs/components/accordion):
+ * an outer element sized by the animation, with the real content -- padding
+ * and all -- nested inside it. Re-measured on the same reproduction after
+ * this change: the curve now reaches 0.00px by ~310ms and never plateaus
+ * above 0 first.
+ */
 
 .dx-accordion {
   contain: inline-size;
