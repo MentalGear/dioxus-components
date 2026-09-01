@@ -209,7 +209,17 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
         ReadSignal::new(ctx.interacted_outside),
     );
 
-    // Handle escape key to close the menu
+    // Handle escape key to close the menu. Unlike `DropdownMenu`'s root
+    // keydown handler (`dropdown_menu.rs`), this one needs no compile-time
+    // wasm skip for Escape: `ContextMenuContentRendered`'s web arm renders
+    // `popover="manual"`, and WHATWG HTML's popover light-dismiss algorithm
+    // (the thing a `prevent_default()` here would otherwise race) only
+    // ever applies to `auto`/`hint` popovers -- a `manual` popover has no
+    // Escape-triggered close of its own to suppress, so `prevent_default()`
+    // unconditionally closing it here, on every target, is exactly the
+    // pre-migration behavior with nothing new to conflict with (verified
+    // against the WHATWG spec text for `manual` during this migration's
+    // design pass, not assumed).
     let handle_keydown = move |event: Event<KeyboardData>| {
         if open() && event.key() == Key::Escape {
             event.prevent_default();
@@ -465,11 +475,108 @@ pub struct ContextMenuContentProps {
 /// - `data-state`: Indicates if the state of the context menu. Values are `open` or `closed`.
 #[component]
 pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
-    let mut ctx: ContextMenuCtx = use_context();
-    let position = ctx.position;
-    let (x, y) = position();
-
+    let ctx: ContextMenuCtx = use_context();
     let open = ctx.open;
+
+    let unique_id = use_unique_id();
+    let id = use_id_or(unique_id, props.id);
+
+    let render = use_animated_open(id, open);
+
+    // Lock page scroll while the menu is open and modal, matching Radix's
+    // default. See docs/plan.md Phase 3.2. `ContextMenuContent` itself
+    // never unmounts (only the rendered content below does, via `render()`),
+    // so the lock is held by `ScrollLockGuard` -- a child mounted inside
+    // that same conditional -- rather than by this component directly; see
+    // that guard's doc comment.
+    let modal = ctx.modal;
+    let scroll_lock_active = use_memo(move || modal() && open());
+
+    rsx! {
+        if render() {
+            ContextMenuContentRendered {
+                id: id.cloned(),
+                attributes: props.attributes,
+                scroll_lock_active,
+                children: props.children,
+            }
+        }
+    }
+}
+
+/// Web arm (Migration A, slice 2/3): promote the point-opened menu to the
+/// top layer via `popover="manual"` so its `position: fixed; left/top`
+/// coordinates escape clipping/transformed ancestors the same way
+/// `DropdownMenuContentRendered` already does for the anchored menu case
+/// (`dropdown_menu.rs`) -- see that file's doc for the general mechanism.
+///
+/// `manual`, not `auto`, deliberately: `ContextMenu` opens at a raw click
+/// point, not next to a persistent trigger element, so there is no
+/// `anchor-name` to key positioning off of -- `position_anchor_style`/
+/// `anchor_name_style` (`top_layer.rs`) are not used here at all, and the
+/// existing `left`/`top` inline styles (computed from the click's client
+/// coordinates, unrelated to CSS Anchor Positioning) need no change: once
+/// promoted to the top layer, `position: fixed` is relative to the
+/// viewport regardless of any transformed ancestor -- which is exactly the
+/// clipping bug this migration fixes (a `transform`-ed ancestor otherwise
+/// becomes the containing block for a `position: fixed` descendant, per
+/// CSS's own rules, clipping/mispositioning it inside `overflow: hidden`
+/// ancestors like this file's `#clip-box` oracle fixture).
+///
+/// `manual` (not `auto`) is also the dismissal decision this slice's task
+/// called out for justification: `auto`'s native light dismiss (Escape,
+/// outside pointerdown) would race this component's own `use_outside_dismiss`
+/// and root-level Escape handling below, which already implement APG's
+/// exact close-and-refocus semantics (Radix's `onCloseAutoFocus`,
+/// `interacted_outside` distinguishing an outside dismiss from an internal
+/// one -- see `ContextMenuCtx::interacted_outside`'s doc). `auto` cannot
+/// replicate that distinction: a native light dismiss has no way to tell
+/// Rust *why* it closed, so reusing `DropdownMenuContentRendered`'s
+/// "native close also sets `interacted_outside`" callback shape here would
+/// wrongly mark every close -- including Escape and item-select -- as an
+/// outside interaction, silently breaking `use_refocus_on_close_unless`'s
+/// Escape/select refocus for this component (confirmed a real risk during
+/// execution's design pass, not just a hypothetical: see the file's own
+/// oracle-focus-restore "ContextMenu returns focus to its trigger on
+/// Escape" case, which this migration must keep green). `manual` sidesteps
+/// the whole question: WHATWG HTML never light-dismisses a manual popover
+/// (Escape and outside pointerdown are no-ops to the platform for it), so
+/// `use_outside_dismiss`/the root `Escape` handler below stay the *only*
+/// dismissal path, unchanged from pre-migration -- exactly per this
+/// slice's instruction to keep them.
+#[cfg(target_family = "wasm")]
+#[component]
+fn ContextMenuContentRendered(
+    id: String,
+    attributes: Vec<Attribute>,
+    scroll_lock_active: Memo<bool>,
+    children: Element,
+) -> Element {
+    let mut ctx: ContextMenuCtx = use_context();
+    let open = ctx.open;
+    let (x, y) = (ctx.position)();
+
+    // Drive `showPopover()`/`hidePopover()` from `open`. Unlike
+    // `DropdownMenuContentRendered`'s use of this same helper, the callback
+    // here does *not* touch `interacted_outside`/`focus` on a native close
+    // -- see this component's own doc for why: a `manual` popover is never
+    // closed by the platform on its own, so this round trip only ever
+    // echoes a close *this crate itself* already initiated (via
+    // `use_outside_dismiss` or the root `Escape` handler, both of which
+    // already set whatever state that specific close needs before this
+    // echo ever arrives) -- reapplying `ctx.set_open.call(is_open)` here is
+    // therefore always a same-value, idempotent no-op, kept only so this
+    // content's `:popover-open` state can never strand relative to `open`
+    // (the same defect class `use_popover_sync`'s own doc cites for
+    // `<dialog>`'s old one-way binding), not because this callback needs to
+    // *decide* anything.
+    crate::top_layer::use_popover_sync(
+        id.clone(),
+        open,
+        Callback::new(move |is_open: bool| {
+            ctx.set_open.call(is_open);
+        }),
+    );
 
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
@@ -503,20 +610,6 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
             });
         }
     });
-
-    let unique_id = use_unique_id();
-    let id = use_id_or(unique_id, props.id);
-
-    let render = use_animated_open(id, open);
-
-    // Lock page scroll while the menu is open and modal, matching Radix's
-    // default. See docs/plan.md Phase 3.2. `ContextMenuContent` itself
-    // never unmounts (only the `div` below does, via `render()`), so the
-    // lock is held by `ScrollLockGuard` -- a child mounted inside that same
-    // conditional -- rather than by this component directly; see that
-    // guard's doc comment.
-    let modal = ctx.modal;
-    let scroll_lock_active = use_memo(move || modal() && open());
 
     use_outside_dismiss(ctx.root_id, move || {
         ctx.interacted_outside.set(true);
@@ -552,29 +645,135 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
     });
 
     rsx! {
-        if render() {
-            div {
-                id,
-                role: "menu",
-                aria_orientation: "vertical",
-                position: "fixed",
-                left: "{x}px",
-                top: "{y}px",
-                tabindex: if focused() { "0" } else { "-1" },
-                pointer_events: open().then_some("auto"),
-                "data-state": if open() { "open" } else { "closed" },
-                onkeydown,
-                onblur: move |_| {
-                    if focused() {
-                        ctx.focus.clear_focus();
-                    }
-                },
-                onmounted: move |evt| menu_ref.set(Some(evt.data())),
-                ..props.attributes,
+        div {
+            id: id.clone(),
+            role: "menu",
+            aria_orientation: "vertical",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            position: "fixed",
+            left: "{x}px",
+            top: "{y}px",
+            tabindex: if focused() { "0" } else { "-1" },
+            pointer_events: open().then_some("auto"),
+            "data-state": if open() { "open" } else { "closed" },
+            onkeydown,
+            onblur: move |_| {
+                if focused() {
+                    ctx.focus.clear_focus();
+                }
+            },
+            onmounted: move |evt| menu_ref.set(Some(evt.data())),
+            ..attributes,
 
-                crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
-                {props.children}
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
+/// popover-API support at all, so this stays the functional floor, a plain
+/// `position: fixed` div with no `popover` attribute.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn ContextMenuContentRendered(
+    id: String,
+    attributes: Vec<Attribute>,
+    scroll_lock_active: Memo<bool>,
+    children: Element,
+) -> Element {
+    let mut ctx: ContextMenuCtx = use_context();
+    let open = ctx.open;
+    let (x, y) = (ctx.position)();
+
+    let onkeydown = move |event: Event<KeyboardData>| {
+        match event.key() {
+            Key::Escape => ctx.focus.clear_focus(),
+            Key::ArrowDown => {
+                ctx.focus.focus_next();
             }
+            Key::ArrowUp => {
+                if open() {
+                    ctx.focus.focus_prev();
+                }
+            }
+            Key::Home => ctx.focus.focus_first(),
+            Key::End => ctx.focus.focus_last(),
+            _ => return,
+        }
+        event.prevent_default();
+    };
+
+    let mut menu_ref: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
+    let focused = move || open() && !ctx.focus.any_focused();
+    // If the menu is open, but no item is focused, focus the div itself to capture events
+    use_effect(move || {
+        let Some(menu) = menu_ref() else {
+            return;
+        };
+        if focused() {
+            spawn(async move {
+                // Focus the menu itself to capture keyboard events
+                _ = menu.set_focus(true).await;
+            });
+        }
+    });
+
+    use_outside_dismiss(ctx.root_id, move || {
+        ctx.interacted_outside.set(true);
+        ctx.focus.clear_focus();
+        ctx.set_open.call(false);
+    });
+
+    // A `position: fixed` menu pinned to a click point drifts away from the
+    // click target as soon as the page scrolls. Native context menus block
+    // scroll while open; match that by suppressing wheel/touchmove outside
+    // the menu without mutating page-level overflow styles.
+    use_effect_with_cleanup(move || {
+        if !open() {
+            return Box::new(|| {}) as Box<dyn FnOnce()>;
+        }
+        let root = ctx.root_id;
+        let eval = dioxus::document::eval(
+            "const id = await dioxus.recv(); \
+             const f = (e) => { \
+                 const r = document.getElementById(id); \
+                 if (!r || !r.contains(e.target)) e.preventDefault(); \
+             }; \
+             window.addEventListener('wheel', f, { capture: true, passive: false }); \
+             window.addEventListener('touchmove', f, { capture: true, passive: false }); \
+             await dioxus.recv(); \
+             window.removeEventListener('wheel', f, true); \
+             window.removeEventListener('touchmove', f, true);",
+        );
+        let _ = eval.send(root.cloned());
+        Box::new(move || {
+            let _ = eval.send(true);
+        })
+    });
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "menu",
+            aria_orientation: "vertical",
+            position: "fixed",
+            left: "{x}px",
+            top: "{y}px",
+            tabindex: if focused() { "0" } else { "-1" },
+            pointer_events: open().then_some("auto"),
+            "data-state": if open() { "open" } else { "closed" },
+            onkeydown,
+            onblur: move |_| {
+                if focused() {
+                    ctx.focus.clear_focus();
+                }
+            },
+            onmounted: move |evt| menu_ref.set(Some(evt.data())),
+            ..attributes,
+
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
+            {children}
         }
     }
 }

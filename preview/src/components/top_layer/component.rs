@@ -1,8 +1,10 @@
 use dioxus::prelude::*;
 use dioxus_primitives::alert_dialog::{AlertDialogContent, AlertDialogRoot, AlertDialogTitle};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
+use dioxus_primitives::context_menu::{ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger};
 use dioxus_primitives::dropdown_menu::{DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger};
 use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigger};
+use dioxus_primitives::menubar::{Menubar, MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
 use dioxus_primitives::ContentSide;
@@ -103,6 +105,51 @@ pub fn TopLayerFixture() -> Element {
                         }
                     }
 
+                    // Migration A slice 2/3: ContextMenu's web arm ->
+                    // `popover="manual"` (`ContextMenuContentRendered`,
+                    // `context_menu.rs`). Written RED first against the
+                    // pre-migration plain, `position: fixed`-only div
+                    // (confirmed by execution: it clipped at the 60px
+                    // ancestor exactly like DropdownMenu did pre-4.4/pre-
+                    // slice-2). Opened by right-click, like every other
+                    // `ContextMenu` in this workspace.
+                    ContextMenu { id: "clip-context-menu-root",
+                        ContextMenuTrigger { id: "clip-context-menu-trigger", "ContextMenu trigger (right-click)" }
+                        ContextMenuContent {
+                            id: "clip-context-menu-content",
+                            style: "min-height: 100px;",
+                            ContextMenuItem {
+                                value: "one".to_string(),
+                                index: 0usize,
+                                on_select: move |_: String| {},
+                                "Item one"
+                            }
+                        }
+                    }
+
+                    // Migration A slice 2/3: Menubar menus' web arm ->
+                    // `popover="auto"`, anchored to their own trigger
+                    // (`MenubarContentRendered`, `menubar.rs`). Written RED
+                    // first against the pre-migration plain,
+                    // `position: absolute`-only div (confirmed by
+                    // execution: it clipped at the 60px ancestor exactly
+                    // like DropdownMenu did pre-4.4/pre-slice-2).
+                    Menubar { id: "clip-menubar-root",
+                        MenubarMenu { index: 0usize,
+                            MenubarTrigger { id: "clip-menubar-trigger", "Menubar trigger" }
+                            MenubarContent {
+                                id: "clip-menubar-content",
+                                style: "min-height: 100px;",
+                                MenubarItem {
+                                    index: 0usize,
+                                    value: "one".to_string(),
+                                    on_select: move |_: String| {},
+                                    "Item one"
+                                }
+                            }
+                        }
+                    }
+
                     // Native reference: the browser's own implementation of the
                     // same WHATWG HTML feature, with no Dioxus involvement at
                     // all -- the calibration control for this rule.
@@ -174,6 +221,53 @@ pub fn TopLayerFixture() -> Element {
                     // An element well away from both triggers, for the
                     // light-dismiss ("click outside") assertions.
                     button { id: "outside-click-target", class: Styles::dx_top_layer_outside, "Click outside target" }
+                }
+            }
+
+            section { class: Styles::dx_top_layer_section,
+                h2 { "Point-positioned vs. anchored scroll behavior (Migration A slice 2/3)" }
+                p { class: Styles::dx_top_layer_hint,
+                    "Both controls below sit normally in-flow (no clip ancestor, plenty of "
+                    "room on every side) so a modest scroll cannot itself cross a "
+                    "viewport-edge flip threshold -- these rules aren't about "
+                    "flipping (Rules 5-7 already cover that), they're about what "
+                    "happens to already-open content while the page scrolls. "
+                    code { "ContextMenu" }
+                    " opens at a raw click point with no anchor -- pre-migration "
+                    "behavior (measured, then preserved by this migration) is "
+                    "that its content stays at the click's "
+                    code { "viewport" }
+                    "-relative position, i.e. it does not move on screen as the "
+                    "page scrolls underneath it (same as a native OS context "
+                    "menu). "
+                    code { "Menubar" }
+                    "'s content, by contrast, is anchored to its own trigger "
+                    "(like " code { "DropdownMenu" } "'s Rule 8 case) and must "
+                    "keep tracking that trigger's position through a scroll."
+                }
+                ContextMenu { id: "scroll-context-menu-root",
+                    ContextMenuTrigger { id: "scroll-context-menu-trigger", "Scroll test: right-click here" }
+                    ContextMenuContent { id: "scroll-context-menu-content",
+                        ContextMenuItem {
+                            value: "one".to_string(),
+                            index: 0usize,
+                            on_select: move |_: String| {},
+                            "Item one"
+                        }
+                    }
+                }
+                Menubar { id: "scroll-menubar-root",
+                    MenubarMenu { index: 0usize,
+                        MenubarTrigger { id: "scroll-menubar-trigger", "Scroll test menu" }
+                        MenubarContent { id: "scroll-menubar-content",
+                            MenubarItem {
+                                index: 0usize,
+                                value: "one".to_string(),
+                                on_select: move |_: String| {},
+                                "Item one"
+                            }
+                        }
+                    }
                 }
             }
 
