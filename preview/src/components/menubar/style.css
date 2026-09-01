@@ -48,8 +48,35 @@
   z-index: 1000;
   top: 100%;
   left: 0;
+
+  /*
+   * `overflow` and `border` undo the UA popover stylesheet's `[popover] {
+   * border: solid; overflow: auto; ... }` (WHATWG HTML's popover section) --
+   * on the web arm (Migration A slice 2/3), this content carries the
+   * `popover` attribute. This content has no border of its own (its edge is
+   * drawn by the `box-shadow` below) and never needs to scroll, so both are
+   * reset to nothing -- same fix as `../dropdown_menu/style.css`'s
+   * `.dx-dropdown-menu-content`. The matching `margin`/`inset` reset, and
+   * the `@supports (anchor-name: --a)` anchor-positioning rules that keep
+   * each menu anchored to its own trigger once promoted to the top layer,
+   * live in the shared, engine-injected stylesheet every `dx-anchor-*`-
+   * marked overlay gets for free -- see `primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles` doc. On an engine without CSS
+   * Anchor Positioning, this rule's own `position: absolute; top: 100%;
+   * left: 0` stays the fallback placement -- irrelevant to whichever
+   * anchored path is actually active, since
+   * `use_anchor_position_fallback`'s JS-measured correction always
+   * overrides with inline styles, which win regardless.
+   */
+  overflow: visible;
   min-width: 200px;
+
+  /* Clamp to the viewport so a menu never induces horizontal page scroll on
+     narrow screens -- same reasoning as ../dropdown_menu/style.css's
+     identical rule. */
+  max-width: calc(100vw - 2rem);
   padding: 0.25rem;
+  border: none;
   border-radius: 0.5rem;
   margin-top: 0.5rem;
   background: var(--light, var(--primary-color))

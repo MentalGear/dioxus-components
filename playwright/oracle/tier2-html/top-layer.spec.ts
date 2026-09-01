@@ -52,6 +52,23 @@
  *     `popover="auto"|"manual"` kind, so all three components (Tooltip,
  *     HoverCard, Popover) are checked for rule 1; rule 4 uses `Popover`
  *     (the click-triggered case is the easiest to drive deterministically).
+ *   - Migration A slice 2/3 (`ContextMenu`/`Menubar`, `docs/plan.md` Phase
+ *     5.2's point-anchor case is explicitly out of scope for this file):
+ *     `ContextMenu` also renders `popover="manual"` on the web arm, for a
+ *     reason distinct from Tooltip/HoverCard's: it opens at a raw click
+ *     point with no persistent trigger to key an outside-vs-internal
+ *     dismissal distinction off of the way `auto`'s native light dismiss
+ *     would need, so it keeps its own pre-existing `use_outside_dismiss` +
+ *     root `Escape` handler entirely unchanged (see
+ *     `primitives/src/context_menu.rs`'s `ContextMenuContentRendered` doc
+ *     for the full reasoning and the focus-restore risk this avoids).
+ *     `Menubar` menus render `popover="auto"`, anchored to their own
+ *     trigger like `DropdownMenu` -- Rule 1 (clipping) and the new Rule 9
+ *     (scroll behavior, below) cover both; rules 2/3 (light dismiss/Escape)
+ *     stay scoped to `Popover` as documented above, since `ContextMenu`'s
+ *     `manual` mode never light-dismisses and `Menubar`'s Escape handling
+ *     is APG-specific (per-trigger refocus) rather than a generic "does the
+ *     Rust signal learn about a native close" check those two rules make.
  *
  * Rules implemented (see this session's report for the full red/green
  * ledger per rule per component, both before and after the Phase 4.4
@@ -253,6 +270,35 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     await page.locator("#clip-dropdown-menu-trigger").click();
     await expect(page.locator("#clip-dropdown-menu-content")).toBeVisible();
     const result = await escapesClip(page, "#clip-dropdown-menu-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+
+  // Migration A slice 2/3: ContextMenu's web arm migrated to
+  // `popover="manual"` (`ContextMenuContentRendered`, `context_menu.rs`).
+  // Written RED first against the pre-migration plain `position: fixed`
+  // div (confirmed by execution: it clipped at the 60px ancestor exactly
+  // like the others did pre-migration -- a `transform`-ed ancestor becomes
+  // the containing block for a `position: fixed` descendant, per ordinary
+  // CSS, regardless of the popover migration).
+  test("ContextMenu content escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-context-menu-trigger").click({ button: "right" });
+    await expect(page.locator("#clip-context-menu-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-context-menu-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+
+  // Migration A slice 2/3: Menubar menus' web arm migrated to
+  // `popover="auto"`, anchored to their own trigger
+  // (`MenubarContentRendered`, `menubar.rs`). Written RED first against the
+  // pre-migration plain `position: absolute` div (confirmed by execution:
+  // it clipped at the 60px ancestor exactly like DropdownMenu's identical
+  // pre-migration shape did).
+  test("Menubar content escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-menubar-trigger").click();
+    await expect(page.locator("#clip-menubar-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-menubar-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
   });
 });
@@ -614,6 +660,87 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
 
     const before = await offsetOf();
     await page.evaluate(() => window.scrollBy(0, 150));
+    await page.waitForTimeout(150);
+    const after = await offsetOf();
+
+    const debug = JSON.stringify({ before, after });
+    expect(after.top, debug).toBeCloseTo(before.top, 0);
+    expect(after.left, debug).toBeCloseTo(before.left, 0);
+  });
+});
+
+/**
+ * Rule 9 — point-positioned vs. anchored scroll behavior (Migration A slice
+ * 2/3). Rule 8 above already covers the *anchored* case (content tracks its
+ * trigger through a scroll); this rule adds the two shapes slice 2 migrated:
+ *
+ *   - `ContextMenu` opens at a raw click point with **no** anchor at all
+ *     (`ContextMenuContentRendered`, `context_menu.rs` -- deliberately not
+ *     anchored, per this slice's own scope: "CSS anchors need an element,
+ *     do NOT anchor"). Its pre-migration behavior -- measured against an
+ *     unmodified `position: fixed` div, *before* writing this rule, per
+ *     this slice's own instruction to preserve whatever that behavior
+ *     already was -- is that `position: fixed`'s containing block is the
+ *     viewport (absent a transformed ancestor), so the content stays at
+ *     the click's *viewport-relative* position and does not move on screen
+ *     as the page scrolls underneath it -- the same thing a native OS
+ *     context menu does, and explicitly what Radix's own `ContextMenu`
+ *     does too (cited in this slice's own task description). Promoting it
+ *     to the top layer via `popover="manual"` does not change this: a
+ *     top-layer element's containing block is *also* the viewport, so the
+ *     inline `top`/`left` pixel values set at open time keep meaning
+ *     exactly what they meant before migrating.
+ *   - `Menubar` menus, by contrast, anchor each menu's content to its own
+ *     trigger (`MenubarContentRendered`, `menubar.rs`) -- the same shape
+ *     `DropdownMenu`'s Rule 8 case exercises -- and so must keep tracking
+ *     that trigger through a scroll exactly as Rule 8 already checks for
+ *     `Popover`.
+ *
+ * Fixture: the "Point-positioned vs. anchored scroll behavior" section of
+ * `TopLayerFixture` -- both controls sit normally in-flow, away from any
+ * clip ancestor or viewport edge, so a 120px scroll cannot itself cross a
+ * flip threshold (Rules 5-7 already guard flipping; this rule is only about
+ * what happens to already-open content during a scroll).
+ */
+test.describe("Rule 9 — point-positioned vs. anchored scroll behavior", () => {
+  test("ContextMenu content stays at its click's viewport position while the page scrolls (does not track the page)", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#scroll-context-menu-trigger").scrollIntoViewIfNeeded();
+    await page.locator("#scroll-context-menu-trigger").click({ button: "right" });
+    await expect(page.locator("#scroll-context-menu-content")).toBeVisible();
+
+    const rectOfContent = () => rectOf(page, "#scroll-context-menu-content");
+    const before = await rectOfContent();
+    await page.evaluate(() => window.scrollBy(0, 120));
+    // No positioning logic runs on scroll for this component at all (no
+    // fallback, no listener) -- a short settle is still given so this
+    // assertion cannot pass merely because it ran before a paint.
+    await page.waitForTimeout(150);
+    const after = await rectOfContent();
+
+    const debug = JSON.stringify({ before, after });
+    // Viewport-relative position unchanged -- the content did not move on
+    // screen, i.e. it did *not* track the page's scroll.
+    expect(after.top, debug).toBeCloseTo(before.top, 0);
+    expect(after.left, debug).toBeCloseTo(before.left, 0);
+  });
+
+  test("Menubar content tracks its trigger through a scroll", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#scroll-menubar-trigger").scrollIntoViewIfNeeded();
+    await page.locator("#scroll-menubar-trigger").click();
+    await expect(page.locator("#scroll-menubar-content")).toBeVisible();
+
+    const offsetOf = async () =>
+      page.evaluate(() => {
+        const c = document.getElementById("scroll-menubar-content")!.getBoundingClientRect();
+        const t = document.getElementById("scroll-menubar-trigger")!.getBoundingClientRect();
+        return { top: c.top - t.bottom, left: c.left - t.left };
+      });
+
+    const before = await offsetOf();
+    await page.evaluate(() => window.scrollBy(0, 120));
+    // rAF-throttled, same as Rule 8's identical wait.
     await page.waitForTimeout(150);
     const after = await offsetOf();
 

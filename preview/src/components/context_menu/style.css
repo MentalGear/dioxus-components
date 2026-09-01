@@ -1,12 +1,42 @@
 .dx-context-menu-content {
   z-index: 1000;
+
+  /*
+   * Migration A (slice 2/3): on the web arm this content carries
+   * `popover="manual"` (`primitives/src/context_menu.rs`,
+   * `ContextMenuContentRendered`) so it renders in the top layer instead of
+   * clipping inside `overflow: hidden`/transformed ancestors. Unlike
+   * `../dropdown_menu/style.css`'s identical-looking reset, this one is
+   * *not* paired with the shared `dx-anchor-*` engine stylesheet
+   * (`primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles`):
+   * `ContextMenu` opens at a raw click point, not next to a persistent
+   * trigger, so it never sets `anchor-name`/`position-anchor` and is not
+   * `dx-anchor-*`-marked -- `overflow`/`border` here and `margin`/`inset`
+   * below are written out directly instead.
+   *
+   * `overflow`/`border` undo the UA popover stylesheet's `[popover] {
+   * border: solid; overflow: auto; ... }` -- this menu draws its own edge
+   * via `box-shadow` below and never needs to scroll. `margin`/`inset`
+   * (below, with the rest of the box-model properties) undo that same
+   * stylesheet's `inset: 0; margin: auto;`, which otherwise invokes CSS's
+   * auto-margin centering algorithm and fights the `position: fixed;
+   * left/top` coordinates `ContextMenuContentRendered` sets inline from the
+   * click position -- `inset: auto` releases the `right`/`bottom` edges the
+   * UA default would otherwise pin to 0 (stretching this box edge-to-edge)
+   * while leaving the inline `top`/`left` free to still win via the
+   * ordinary cascade.
+   */
+  overflow: visible;
   min-width: 220px;
   padding: 0.25rem;
+  border: none;
   border-radius: 0.5rem;
+  margin: 0;
   background: var(--dark, var(--primary-color-5))
     var(--light, var(--primary-color));
   box-shadow: inset 0 0 0 1px var(--dark, var(--primary-color-7))
     var(--light, var(--primary-color-6));
+  inset: auto;
   opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;

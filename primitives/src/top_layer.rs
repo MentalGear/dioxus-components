@@ -70,14 +70,15 @@ thread_local! {
 /// Rust module that defines the marker-class contract
 /// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
 /// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
-/// `dx-anchor-popover`/`dx-anchor-dropdown-menu` content everywhere in the
-/// app, with no per-page CSS to remember.
+/// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`
+/// (Migration A slice 2/3, `menubar.rs`'s `MenubarContentRendered`) content
+/// everywhere in the app, with no per-page CSS to remember.
 ///
 /// Call this once per overlay content mount -- [`use_anchor_position_fallback`]
 /// does, since every current `dx-anchor-*` consumer (`tooltip.rs`,
-/// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, and anything built on
-/// `crate::popover` like `ColorPicker`/`DatePicker`) already calls that
-/// hook. A future
+/// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, `menubar.rs`, and
+/// anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
+/// already calls that hook. A future
 /// `dx-anchor-*` consumer that doesn't call that hook for some reason should
 /// call this directly instead.
 ///
@@ -159,7 +160,8 @@ fn anchor_positioning_inject_js() -> String {
 /// deliberately not part of it.
 #[cfg(target_family = "wasm")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
-:where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-dropdown-menu[popover]) {
+:where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-dropdown-menu[popover],
+  .dx-anchor-menubar[popover]) {
   margin: 0;
   inset: auto;
 }
@@ -167,7 +169,8 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 @supports (anchor-name: --a) {
   .dx-anchor-tooltip[popover],
   .dx-anchor-popover[popover],
-  .dx-anchor-dropdown-menu[popover] {
+  .dx-anchor-dropdown-menu[popover],
+  .dx-anchor-menubar[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
@@ -177,7 +180,8 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="top"],
   .dx-anchor-popover[popover][data-side="top"],
-  .dx-anchor-dropdown-menu[popover][data-side="top"] {
+  .dx-anchor-dropdown-menu[popover][data-side="top"],
+  .dx-anchor-menubar[popover][data-side="top"] {
     bottom: anchor(top);
     left: anchor(center);
     margin-bottom: 8px;
@@ -186,7 +190,8 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="right"],
   .dx-anchor-popover[popover][data-side="right"],
-  .dx-anchor-dropdown-menu[popover][data-side="right"] {
+  .dx-anchor-dropdown-menu[popover][data-side="right"],
+  .dx-anchor-menubar[popover][data-side="right"] {
     top: anchor(center);
     left: anchor(right);
     margin-left: 8px;
@@ -195,7 +200,8 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="bottom"],
   .dx-anchor-popover[popover][data-side="bottom"],
-  .dx-anchor-dropdown-menu[popover][data-side="bottom"] {
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"],
+  .dx-anchor-menubar[popover][data-side="bottom"] {
     top: anchor(bottom);
     left: anchor(center);
     margin-top: 8px;
@@ -204,7 +210,8 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 
   .dx-anchor-tooltip[popover][data-side="left"],
   .dx-anchor-popover[popover][data-side="left"],
-  .dx-anchor-dropdown-menu[popover][data-side="left"] {
+  .dx-anchor-dropdown-menu[popover][data-side="left"],
+  .dx-anchor-menubar[popover][data-side="left"] {
     top: anchor(center);
     right: anchor(left);
     margin-right: 8px;
@@ -250,10 +257,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="top"][data-align="start"],
   .dx-anchor-popover[popover][data-side="top"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
+  .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="start"],
-  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"] {
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
     transform: none;
   }
@@ -262,10 +271,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="top"][data-align="center"],
   .dx-anchor-popover[popover][data-side="top"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
+  .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="center"],
-  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"] {
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"] {
     left: anchor(center);
     transform: translateX(-50%);
   }
@@ -274,10 +285,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="top"][data-align="end"],
   .dx-anchor-popover[popover][data-side="top"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
+  .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-popover[popover][data-side="bottom"][data-align="end"],
-  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"] {
+  .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
     transform: translateX(-100%);
   }
@@ -286,10 +299,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="left"][data-align="start"],
   .dx-anchor-popover[popover][data-side="left"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
+  .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="start"],
   .dx-anchor-popover[popover][data-side="right"][data-align="start"],
-  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"] {
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
+  .dx-anchor-menubar[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
     transform: none;
   }
@@ -298,10 +313,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="left"][data-align="center"],
   .dx-anchor-popover[popover][data-side="left"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
+  .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="center"],
   .dx-anchor-popover[popover][data-side="right"][data-align="center"],
-  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"] {
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
+  .dx-anchor-menubar[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
     transform: translateY(-50%);
   }
@@ -310,10 +327,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-hover-card[popover][data-side="left"][data-align="end"],
   .dx-anchor-popover[popover][data-side="left"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
+  .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
   .dx-anchor-hover-card[popover][data-side="right"][data-align="end"],
   .dx-anchor-popover[popover][data-side="right"][data-align="end"],
-  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"] {
+  .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
+  .dx-anchor-menubar[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
     transform: translateY(-100%);
   }

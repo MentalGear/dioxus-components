@@ -1,7 +1,11 @@
 //! Defines the [`Menubar`] component and its sub-components.
 
 use dioxus::prelude::*;
+#[cfg(target_family = "wasm")]
+use dioxus_attributes::attributes;
 
+#[cfg(target_family = "wasm")]
+use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
@@ -149,6 +153,15 @@ struct MenubarMenuContext {
     is_open: Memo<bool>,
     disabled: ReadSignal<bool>,
     initial_focus: Signal<Option<CollectionPlacement>>,
+
+    // The current `MenubarContent`'s own element id for *this* menu, kept
+    // in sync by that component -- mirrors `DropdownMenuContext::content_id`
+    // (`dropdown_menu.rs`). `MenubarTrigger`'s `anchor-name` must key off
+    // this signal (not some menubar-wide id) so each menu's content anchors
+    // to *its own* trigger, not another menu's -- see
+    // `DropdownMenuContext::content_id`'s doc for the exact bug this guards
+    // against if trigger and content ever named different ids.
+    content_id: Signal<String>,
 }
 
 impl MenubarMenuContext {
@@ -256,6 +269,9 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
     let focus = use_collection_provider(ctx.focus.loop_signal());
     let initial_focus = use_signal(|| None);
     let disabled = move || (ctx.disabled)() || (props.disabled)();
+    // Placeholder value until `MenubarContent` mounts and syncs its own id
+    // in -- see `MenubarMenuContext::content_id`'s doc.
+    let content_id = use_unique_id();
 
     let mut menu_ctx = use_context_provider(|| MenubarMenuContext {
         index: props.index,
@@ -263,6 +279,7 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
         is_open,
         disabled: props.disabled,
         initial_focus,
+        content_id,
     });
 
     use_effect(move || {
@@ -419,6 +436,15 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     rsx! {
         button {
             onmounted,
+            // See `crate::top_layer::anchor_name_style`: ties this trigger
+            // to the web-arm content's `position-anchor`
+            // (`MenubarContentRendered`) so its anchor-positioned placement
+            // resolves relative to *this* trigger once promoted to the top
+            // layer. Inert (empty) off the web arm, and keyed on
+            // `menu_ctx.content_id` -- not this menu's own index -- for the
+            // same reason `DropdownMenuTrigger` keys off
+            // `ctx.content_id` (see that doc).
+            style: crate::top_layer::anchor_name_style(&menu_ctx.content_id.cloned()),
             onpointerup: move |_| {
                 if !disabled() {
                     let new_open = if is_open() { None } else { Some(index.cloned()) };
@@ -528,23 +554,159 @@ pub struct MenubarContentProps {
 /// - `data-state`: Indicates if the menu is open or closed. Values are `open` or `closed`.
 #[component]
 pub fn MenubarContent(props: MenubarContentProps) -> Element {
-    let menu_ctx: MenubarMenuContext = use_context();
+    let mut menu_ctx: MenubarMenuContext = use_context();
 
     let unique_id = use_unique_id();
     let id = use_id_or(unique_id, props.id);
+
+    // Keep `menu_ctx.content_id` in sync with this content's actual id --
+    // see `MenubarMenuContext::content_id`'s doc. Mirrors
+    // `DropdownMenuContent`'s identical `ctx.content_id.set(id())`
+    // (`dropdown_menu.rs`).
+    use_effect(move || menu_ctx.content_id.set(id()));
 
     let render = use_animated_open(id, menu_ctx.is_open);
     use_deferred_collection_focus(menu_ctx.focus, menu_ctx.initial_focus, render);
 
     rsx! {
         if render() {
-            div {
-                id,
-                role: "menu",
-                "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
-                ..props.attributes,
-                {props.children}
+            MenubarContentRendered {
+                id: id.cloned(),
+                attributes: props.attributes,
+                children: props.children,
             }
+        }
+    }
+}
+
+/// Web arm (Migration A, slice 2/3): promote each menu's content to the top
+/// layer via `popover="auto"`, anchored to its own trigger -- the same
+/// mechanism `DropdownMenuContentRendered` uses (`dropdown_menu.rs`), which
+/// see for the general `popover`/CSS-anchor wiring this mirrors.
+///
+/// `auto`, not `manual`: unlike `ContextMenu` (point-opened, no persistent
+/// trigger to key dismissal off of), each `MenubarMenu` already has exactly
+/// the shape `DropdownMenu` does -- a trigger button plus content anchored
+/// to it -- and `auto`'s native light dismiss (Escape, outside pointerdown)
+/// is free, spec-correct insurance alongside this crate's own blur-driven
+/// close (`MenubarTrigger`/`MenubarItem`'s `onblur` below), not a
+/// competing mechanism: closing this content -- by any means, native or
+/// Rust-driven -- makes the previously-focused item within it not
+/// focusable (`[popover]:not(:popover-open) { display: none }`), which the
+/// UA blurs synchronously as part of hiding it, so the *existing*
+/// `onblur`-driven close-and-focus-clear logic still fires and still owns
+/// what happens next; native light dismiss only ever supplies the same
+/// "something outside happened" signal blur already does, for the rare
+/// outside interaction that would not otherwise cause a blur (verified
+/// during this migration's design pass; see the `use_popover_sync`
+/// callback below).
+///
+/// Escape is still handled entirely by `MenubarMenu`'s own `onkeydown`
+/// (unchanged, still calls `prevent_default()` unconditionally): APG
+/// requires Escape to move focus to *this specific menu's own trigger*
+/// (`ctx.focus.set_focus(Some(props.index))`), which native light dismiss
+/// has no way to know how to do (it has no notion of "which trigger opened
+/// this"), so this component keeps driving that close+refocus itself
+/// rather than deferring to the platform the way `DropdownMenuContent`
+/// does -- there is exactly one trigger for `DropdownMenu`, so "return
+/// focus to the trigger" needs no such per-index bookkeeping and can be
+/// deferred; here it cannot, so `prevent_default()` staying unconditional
+/// (no compile-time wasm skip, unlike `DropdownMenu`'s Escape arm) is the
+/// correct choice, not an oversight.
+#[cfg(target_family = "wasm")]
+#[component]
+fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
+    let ctx: MenubarContext = use_context();
+    let menu_ctx: MenubarMenuContext = use_context();
+    let open = menu_ctx.is_open;
+    let index = menu_ctx.index;
+
+    // Drive `showPopover()`/`hidePopover()` from `open`, and sync a native
+    // close back into `ctx.open_menu` -- but *only* when this menu is still
+    // the one recorded as open. Confirmed necessary by execution's design
+    // pass, not defensive boilerplate: `Menubar`'s own effect
+    // (`Menubar`'s `use_effect` reacting to `ctx.focus.focused_index()`)
+    // can move `ctx.open_menu` straight from `Some(this index)` to
+    // `Some(another index)` in one step (arrow-key navigation between
+    // triggers while a menu is open) -- and per WHATWG HTML, showing the
+    // *new* menu's `auto` popover natively closes this (now-unrelated)
+    // sibling `auto` popover for us, firing this same `toggle` callback
+    // with `is_open: false` *after* `ctx.open_menu` already points at the
+    // other menu. An unconditional `ctx.set_open_menu.call(None)` here
+    // would then wrongly close the menu the user just switched to. Guarding
+    // on "is `ctx.open_menu` still `Some(this index)`" makes the callback a
+    // no-op in that case, while still correctly closing on every close that
+    // *is* this menu's own (Escape, item-select, an actual outside
+    // interaction) -- all of which either already set `ctx.open_menu` to
+    // `None` themselves (making this call idempotent) or never touched it
+    // (the rare native-only outside-close case this sync exists for).
+    crate::top_layer::use_popover_sync(
+        id.clone(),
+        open,
+        Callback::new(move |is_open: bool| {
+            if !is_open && (ctx.open_menu)() == Some(index.cloned()) {
+                ctx.set_open_menu.call(None);
+            }
+        }),
+    );
+    // JS-measured static positioning fallback for engines without CSS
+    // Anchor Positioning -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `side`/`align` and the 8px gap match this menu's pre-migration
+    // CSS (`../menubar/style.css`'s `top: 100%; left: 0; margin-top:
+    // 0.5rem` -- 0.5rem == 8px at the default root font size): anchored
+    // below the trigger, left-aligned with it, matching
+    // `DropdownMenuContentRendered`'s identical bottom/start choice for the
+    // same visual shape.
+    crate::top_layer::use_anchor_position_fallback(
+        id.clone(),
+        id.clone(),
+        open,
+        crate::ContentSide::Bottom,
+        crate::ContentAlign::Start,
+        8,
+    );
+
+    // See `dropdown_menu.rs`'s `DropdownMenuContentRendered` for why this
+    // hand-written, never-`Styles::`-routed marker class exists: it is what
+    // the shared, engine-injected anchor-positioning stylesheet
+    // (`top_layer::ensure_anchor_positioning_styles`) selects on,
+    // sidestepping `manganis-core`'s `css_module_parser` not scoping
+    // classes inside `@supports` bodies.
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            class: "dx-anchor-menubar"
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "menu",
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            style: crate::top_layer::position_anchor_style(&id),
+            "data-state": if open() { "open" } else { "closed" },
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
+/// popover-API support at all, so this stays the functional floor, a plain,
+/// always-in-flow `div`.
+#[cfg(not(target_family = "wasm"))]
+#[component]
+fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
+    let menu_ctx: MenubarMenuContext = use_context();
+
+    rsx! {
+        div {
+            id,
+            role: "menu",
+            "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
+            ..attributes,
+            {children}
         }
     }
 }
