@@ -139,3 +139,92 @@
 .dx-top-layer-outside {
   margin-top: 2rem;
 }
+
+/*
+ * Near-viewport-edge flip fixture (docs/backlog.md row 10; W3C CSS Anchor
+ * Positioning's `position-try-fallbacks`, not a WHATWG HTML feature -- see
+ * `playwright/oracle/tier2-html/top-layer.spec.ts`'s header for why this
+ * rule lives in this tier-2 file anyway). `position: fixed` at a real
+ * viewport edge, same reasoning as `.dx-top-layer-stack-sibling` above: a
+ * deterministic, scroll-independent trigger position, so a trigger whose
+ * preferred `side` points off-viewport is a fixture property, not an
+ * accident of how tall the page happens to be above it.
+ */
+.dx-top-layer-edge-bottom-row {
+  position: fixed;
+  right: 1rem;
+  bottom: 4px;
+  left: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.dx-top-layer-edge-right-col {
+  position: fixed;
+  top: 120px;
+  right: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+/*
+ * `anchor-name` on the two native-reference triggers -- plain top-level
+ * rules, safe to route through `#[css_module]`'s normal hashing (only
+ * selectors nested inside `@supports` need the hand-written
+ * `dx-anchor-*` marker-class workaround; see
+ * docs/issues/css-module-supports-scoping.md).
+ */
+.dx-top-layer-edge-native-trigger-bottom {
+  anchor-name: --dx-edge-bottom-native;
+}
+
+.dx-top-layer-edge-native-trigger-right {
+  anchor-name: --dx-edge-right-native;
+}
+
+/*
+ * Native `<div popover>` + `position-try-fallbacks` reference content --
+ * the CALIBRATION control for the flip rules: the browser's own
+ * implementation of the W3C CSS Anchor Positioning spec feature
+ * (<https://www.w3.org/TR/css-anchor-position-1/#fallback-var>), no
+ * library code involved. `dx-anchor-edge-*-native` are hand-written marker
+ * classes, not `Styles::`-routed, for the same reason as
+ * `.dx-anchor-stack-native` above: `#[css_module]`'s scoping pass never
+ * recurses into `@supports` bodies, so a hashed class here would silently
+ * never match.
+ */
+@supports (anchor-name: --a) {
+  .dx-anchor-edge-bottom-native[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    position-try-fallbacks: flip-block;
+  }
+
+  .dx-anchor-edge-bottom-native[popover][data-side="bottom"] {
+    top: anchor(bottom);
+    left: anchor(center);
+    margin-top: 8px;
+    position-anchor: --dx-edge-bottom-native;
+    transform: translateX(-50%);
+  }
+
+  .dx-anchor-edge-right-native[popover] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    position-try-fallbacks: flip-inline;
+  }
+
+  .dx-anchor-edge-right-native[popover][data-side="right"] {
+    top: anchor(center);
+    left: anchor(right);
+    margin-left: 8px;
+    position-anchor: --dx-edge-right-native;
+    transform: translateY(-50%);
+  }
+}

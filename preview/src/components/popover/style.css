@@ -283,13 +283,20 @@
  * (present only on the non-modal arm), not `[role="dialog"]`, so the modal
  * arm (a plain div, Phase 4.2's job, unaffected by this slice) keeps its
  * existing DOM-relative positioning untouched. `@supports`-gated the same
- * way; no collision/flip logic (docs/plan.md Phase 5).
+ * way. Flip-only collision avoidance (docs/backlog.md row 10): see the
+ * fully worked-out `position-try-fallbacks` note in `../tooltip/style.css`'s
+ * identical block, including the W3C CSS Anchor Positioning citations
+ * (<https://www.w3.org/TR/css-anchor-position-1/#fallback-var>,
+ * <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>)
+ * and why one declaration on the shared `[popover]` rule covers every
+ * `[data-side]` rule below.
  */
 @supports (anchor-name: --a) {
   .dx-anchor-popover[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
+    position-try-fallbacks: flip-block, flip-inline;
     transform: none;
   }
 

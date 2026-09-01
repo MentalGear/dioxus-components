@@ -64,6 +64,49 @@
  *   3. Escape closes `popover="auto"` AND Rust state syncs.
  *   4. Top-layer stacking — a popover opened after a high-z-index sibling
  *      renders above it.
+ *   5. Near-viewport-edge flip — see "Rules 5-7" below.
+ *
+ * ## Rules 5-7 — CSS Anchor Positioning flip (docs/backlog.md row 10)
+ *
+ * Unlike every rule above, this trio's citation is the **W3C CSS Anchor
+ * Positioning** spec, not WHATWG HTML — this tier's "standard" principle
+ * (docs/conformance-harness.md) is satisfied by that spec instead:
+ *   - `position-try-fallbacks` and the `flip-block`/`flip-inline` "existing
+ *     tactics":
+ *     <https://www.w3.org/TR/css-anchor-position-1/#fallback-var>
+ *     <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>
+ *
+ * It lives in this file anyway (rather than a new spec file) because it
+ * exercises the exact same fixture family (anchor-positioned `popover`
+ * content) and the exact same per-component dismissal split documented
+ * above — a sibling file would just re-import all of that context.
+ *
+ * Fixture: the "Near-viewport-edge flip" section of `TopLayerFixture`
+ * (`preview/src/components/top_layer/component.rs`) — a bottom-edge row and
+ * a right-edge column, each pinned by `position: fixed` a few pixels from
+ * that viewport edge (deterministic regardless of page height/scroll, same
+ * reasoning as the existing stacking-sibling fixture). Every trigger in a
+ * row/column requests the side pointing *off* that viewport edge
+ * (`side="bottom"` a few px from the bottom; `side="right"` a few px from
+ * the right), so the preferred placement cannot fit and only a flip lands
+ * it on-screen. Each row/column also carries a native `<div popover>` +
+ * `position-try-fallbacks` reference (CALIBRATION) — the browser's own
+ * implementation of the identical spec feature, no Dioxus code involved.
+ *
+ * Rule 5 (block-axis flip): a bottom-edge trigger with `side="bottom"`
+ * renders its content fully inside the viewport, above the trigger.
+ * Rule 6 (inline-axis flip): a right-edge trigger with `side="right"`
+ * renders its content fully inside the viewport, to the left of the
+ * trigger. All three anchor-positioned components (Tooltip, HoverCard,
+ * non-modal Popover) support every `ContentSide` value, so the inline axis
+ * applies to all three — no side is skipped here.
+ * Rule 7 (no spurious flip): a normal, mid-viewport placement (the existing
+ * "Stacking popover" from the section above, `side="bottom"` far from any
+ * edge) renders unflipped, below its trigger — this is the regression guard
+ * for `primitives/src/top_layer.rs`'s `use_anchor_position_fallback`: since
+ * that hook's JS fallback now accepts *either* the primary or the flipped
+ * placement as contract-legal (see its doc), this rule confirms it isn't
+ * accepting a flip that never should have happened in the common case.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -98,8 +141,27 @@ const gotoFixture = (page: Page) =>
  * no anchor-positioning applied at all, so the UA default
  * `position: fixed; inset: 0; margin: auto` centers it in the viewport --
  * nowhere near the clip ancestor). Whichever candidate point falls outside
- * the ancestor's box is used; if content and ancestor don't overlap at
- * all, every candidate qualifies.
+ * the ancestor's box *and inside the actual browser viewport* is used; if
+ * content and ancestor don't overlap at all, every on-screen candidate
+ * qualifies.
+ *
+ * The viewport bound matters, confirmed by execution: `element.getBounding
+ * ClientRect()` reports a box's full geometry regardless of whether any of
+ * it is actually on-screen, but `document.elementFromPoint()` is a
+ * viewport-relative API that returns `null` for any coordinate outside
+ * `[0, innerWidth) x [0, innerHeight)` -- always, regardless of what
+ * top-layer content would otherwise paint there. `use_anchor_position_
+ * fallback` (primitives/src/top_layer.rs) can legitimately compute a
+ * static (non-collision-aware; that's Phase 5's remaining scope) position
+ * that runs partly off-screen for this fixture's unstyled, unconstrained-
+ * width tooltip content -- a real, on-screen escape from the clip ancestor
+ * either way, just not always at the *first* candidate in box-corner
+ * order. Without this bound, a build could flip between candidate corners
+ * that are on- vs off-screen for reasons unrelated to top-layer escape
+ * (timing/measurement noise in exactly where the unconstrained-width
+ * content lands), intermittently reporting a real escape as a false
+ * negative merely because `elementFromPoint` was asked about a pixel that
+ * does not exist.
  */
 async function escapesClip(
   page: Page,
@@ -125,11 +187,13 @@ async function escapesClip(
       ];
       const outsideAncestor = (x: number, y: number) =>
         x < a.left || x > a.right || y < a.top || y > a.bottom;
-      const probe = candidates.find(([x, y]) => outsideAncestor(x, y));
+      const onScreen = (x: number, y: number) =>
+        x >= 0 && x < window.innerWidth && y >= 0 && y < window.innerHeight;
+      const probe = candidates.find(([x, y]) => outsideAncestor(x, y) && onScreen(x, y));
       if (!probe) {
         return {
           escapes: false,
-          reason: `every candidate point in content's box (${JSON.stringify(c)}) falls inside the ancestor's box (${JSON.stringify(a)}) -- cannot distinguish escape from containment this way`,
+          reason: `no on-screen candidate in content's box (${JSON.stringify(c)}) falls outside the ancestor's box (${JSON.stringify(a)}) within the viewport (${window.innerWidth}x${window.innerHeight}) -- cannot distinguish escape from containment this way`,
         };
       }
       const [x, y] = probe;
@@ -259,5 +323,138 @@ test.describe("Rule 4 — top-layer stacking (a popover opened after a high-z-in
       return el ? `${el.tagName}#${el.id || "(no id)"}` : null;
     });
     expect(hit).toBe("DIALOG#stack-popover-content");
+  });
+});
+
+/**
+ * Rects and viewport size for the flip rules below. `getBoundingClientRect`
+ * is the same viewport-relative measurement `escapesClip` above already
+ * relies on for the same reason: layout-box geometry, unaffected by paint
+ * effects, and directly comparable to `window.inner{Width,Height}`.
+ */
+async function rectOf(page: Page, selector: string) {
+  return page.locator(selector).evaluate((el) => {
+    const r = (el as HTMLElement).getBoundingClientRect();
+    return { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  });
+}
+
+async function viewportSize(page: Page) {
+  return page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+}
+
+// A 1px tolerance throughout the flip rules below for the same
+// rounding/subpixel reason `use_anchor_position_fallback`'s own >2px
+// tolerance exists (primitives/src/top_layer.rs) -- comparisons here are
+// looser (1px) since they only need "fully inside the viewport"/"on the
+// correct side of the trigger," not exact pixel equality to a formula.
+const EDGE_TOLERANCE = 1;
+
+test.describe("Rule 5 — block-axis flip: a bottom-edge trigger with side=\"bottom\" renders its content fully inside the viewport, above the trigger (W3C CSS Anchor Positioning, position-try-fallbacks: flip-block, https://www.w3.org/TR/css-anchor-position-1/#fallback-var)", () => {
+  async function assertFlippedAbove(page: Page, triggerSelector: string, contentSelector: string) {
+    const trigger = await rectOf(page, triggerSelector);
+    const content = await rectOf(page, contentSelector);
+    const viewport = await viewportSize(page);
+    const debug = JSON.stringify({ trigger, content, viewport });
+    // Fully inside the viewport -- not clipped or partially off the bottom
+    // edge, which is what the *preferred* (unflipped) placement would do
+    // here (the trigger sits only a few px from the bottom edge).
+    expect(content.top, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+    expect(content.bottom, debug).toBeLessThanOrEqual(viewport.height + EDGE_TOLERANCE);
+    // And specifically *above* the trigger, not merely inside the
+    // viewport by some other accident (e.g. shift/clamp) -- a real flip.
+    expect(content.bottom, debug).toBeLessThanOrEqual(trigger.top + EDGE_TOLERANCE);
+  }
+
+  test("CALIBRATION: native <div popover> + position-try-fallbacks: flip-block flips above", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-bottom-native-trigger").click();
+    await expect(page.locator("#edge-bottom-native-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-native-trigger", "#edge-bottom-native-content");
+  });
+
+  test("Tooltip content flips above its bottom-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-bottom-tooltip-trigger").hover();
+    await expect(page.locator("#edge-bottom-tooltip-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-tooltip-trigger", "#edge-bottom-tooltip-content");
+  });
+
+  test("HoverCard content flips above its bottom-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-bottom-hovercard-trigger").hover();
+    await expect(page.locator("#edge-bottom-hovercard-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-hovercard-trigger", "#edge-bottom-hovercard-content");
+  });
+
+  test("Popover (non-modal) content flips above its bottom-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-bottom-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator("#edge-bottom-popover-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-popover-trigger", "#edge-bottom-popover-content");
+  });
+});
+
+test.describe("Rule 6 — inline-axis flip: a right-edge trigger with side=\"right\" renders its content fully inside the viewport, to the left of the trigger (W3C CSS Anchor Positioning, position-try-fallbacks: flip-inline, https://www.w3.org/TR/css-anchor-position-1/#fallback-var)", () => {
+  async function assertFlippedLeft(page: Page, triggerSelector: string, contentSelector: string) {
+    const trigger = await rectOf(page, triggerSelector);
+    const content = await rectOf(page, contentSelector);
+    const viewport = await viewportSize(page);
+    const debug = JSON.stringify({ trigger, content, viewport });
+    expect(content.left, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+    expect(content.right, debug).toBeLessThanOrEqual(viewport.width + EDGE_TOLERANCE);
+    expect(content.right, debug).toBeLessThanOrEqual(trigger.left + EDGE_TOLERANCE);
+  }
+
+  // All three anchor-positioned components (Tooltip, HoverCard, non-modal
+  // Popover) accept every `ContentSide` value, so the inline axis applies
+  // to all three -- no "block-axis only" narrowing needed here.
+  test("CALIBRATION: native <div popover> + position-try-fallbacks: flip-inline flips left", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-right-native-trigger").click();
+    await expect(page.locator("#edge-right-native-content")).toBeVisible();
+    await assertFlippedLeft(page, "#edge-right-native-trigger", "#edge-right-native-content");
+  });
+
+  test("Tooltip content flips left of its right-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-right-tooltip-trigger").hover();
+    await expect(page.locator("#edge-right-tooltip-content")).toBeVisible();
+    await assertFlippedLeft(page, "#edge-right-tooltip-trigger", "#edge-right-tooltip-content");
+  });
+
+  test("HoverCard content flips left of its right-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-right-hovercard-trigger").hover();
+    await expect(page.locator("#edge-right-hovercard-content")).toBeVisible();
+    await assertFlippedLeft(page, "#edge-right-hovercard-trigger", "#edge-right-hovercard-content");
+  });
+
+  test("Popover (non-modal) content flips left of its right-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-right-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator("#edge-right-popover-content")).toBeVisible();
+    await assertFlippedLeft(page, "#edge-right-popover-trigger", "#edge-right-popover-content");
+  });
+});
+
+test.describe("Rule 7 — normal mid-viewport placement is unchanged (no spurious flip)", () => {
+  // Regression guard for the primitives/src/top_layer.rs
+  // `use_anchor_position_fallback` interaction fix: that hook's JS fallback
+  // now accepts *either* the primary or the flipped placement as
+  // contract-legal (see its doc) precisely so it never fights a real CSS
+  // flip -- this rule confirms the common (nothing-needs-to-flip) case
+  // still renders at the primary, unflipped placement, i.e. that the
+  // widened acceptance didn't turn into "accept anything."
+  test("Popover (non-modal) with plenty of room stays on its preferred (bottom) side", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#stack-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator("#stack-popover-content")).toBeVisible();
+    const trigger = await rectOf(page, "#stack-popover-trigger");
+    const content = await rectOf(page, "#stack-popover-content");
+    const debug = JSON.stringify({ trigger, content });
+    // Below the trigger (side="bottom", unflipped) -- a block-axis flip
+    // would have put it above instead.
+    expect(content.top, debug).toBeGreaterThanOrEqual(trigger.bottom - EDGE_TOLERANCE);
   });
 });

@@ -197,14 +197,34 @@
  * (not yet Firefox/WebKit as of this writing) falls back to the rules
  * above rather than an invalid declaration -- on such an engine, promoted
  * content still escapes clipping, just without trigger-relative placement.
- * No collision/flip logic here -- that is docs/plan.md Phase 5's job, not
- * this slice's.
+ * Flip only (no shift/size -- docs/backlog.md row 10's remaining Phase 5
+ * scope): `position-try-fallbacks: flip-block, flip-inline` is the CSS
+ * Anchor Positioning spec's own collision-avoidance primitive --
+ * <https://www.w3.org/TR/css-anchor-position-1/#fallback-var> and
+ * <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>
+ * (the `flip-block`/`flip-inline` "existing tactics" swap the block-axis or
+ * inline-axis inset property pair, e.g. `bottom: anchor(top)` becomes
+ * `top: anchor(bottom)`, when the preferred placement doesn't fit the
+ * viewport). Declared once on the shared `[popover]` rule below rather than
+ * per `[data-side]` rule: every one of the four side-specific rules sets
+ * only one of the two axes explicitly (top/bottom sides set the block
+ * inset; left/right sides set the inline inset), so a single "try
+ * flip-block, then flip-inline" order is safe for all of them -- whichever
+ * axis a given side didn't set is a no-op fallback for that instance.
+ * Confirmed by execution (see this slice's PR/session notes): the browser
+ * swaps only the relevant inset pair and leaves the cross-axis
+ * align-based coordinate (and any `transform`) untouched, so
+ * `[data-align]`'s `start`/`center`/`end` offset survives a flip exactly as
+ * `primitives/src/top_layer.rs`'s JS fallback also assumes (see that
+ * file's `use_anchor_position_fallback` doc for the matching non-anchor-
+ * engine flip decision, and the contract both paths now share).
  */
 @supports (anchor-name: --a) {
   .dx-anchor-tooltip[popover] {
     position: fixed;
     margin: 0;
     inset: auto;
+    position-try-fallbacks: flip-block, flip-inline;
   }
 
   .dx-anchor-tooltip[popover][data-side="top"] {
