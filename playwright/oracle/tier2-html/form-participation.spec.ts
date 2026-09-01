@@ -418,6 +418,66 @@ test.describe("Rule 4 — required with no value blocks submission and sets vali
   });
 });
 
+/**
+ * Rule 4 extension — visible feedback for a blocked submit (live-site
+ * report, item 2, 2026-09-01). Rule 4 above already proves the *block*
+ * itself works (submitCount stays "0"); what was missing is that
+ * `required` lives on each library control's visually-hidden native mirror
+ * (`aria-hidden="true"`), and Chrome refuses to focus a non-focusable
+ * hidden control or show its native validation bubble on one -- confirmed
+ * via the browser console on submit: "An invalid form control ... is not
+ * focusable." `component.rs`'s `watch_invalid_js` bridges this onto the
+ * VISIBLE control (fixture-only fix, not a primitives change -- see that
+ * function's doc for why): `data-invalid="true"` on every blocked control's
+ * visible counterpart, and focus on the first one, matching a real
+ * browser's own reportValidity() behavior of focusing/bubble-anchoring
+ * only the first invalid control.
+ */
+test.describe("Rule 4 extension — a blocked submit gives visible feedback on the VISIBLE control, not just its hidden mirror", () => {
+  test("focuses the first invalid control's visible counterpart", async ({ page }) => {
+    await gotoForm(page);
+    await submitRequiredAndRead(page);
+    // `chk-required-lib` is the first required control in document order.
+    const active = await page.evaluate(() => document.activeElement?.id ?? null);
+    expect(active).toBe("chk-required-lib");
+  });
+
+  test("marks every blocked control's visible counterpart data-invalid, not just the focused one", async ({ page }) => {
+    await gotoForm(page);
+    await submitRequiredAndRead(page);
+
+    await expect(page.locator("#chk-required-lib")).toHaveAttribute("data-invalid", "true");
+    await expect(page.locator("#switch-required-lib")).toHaveAttribute("data-invalid", "true");
+    // The first radio in the group -- native reportValidity() itself
+    // focuses/anchors on the first radio of an unsatisfied required group,
+    // so this fixture's bridge follows the same convention.
+    await expect(page.locator("#tier-lib-small")).toHaveAttribute("data-invalid", "true");
+    await expect(
+      page.getByRole("button", { name: "Fruit, required (library)" }),
+    ).toHaveAttribute("data-invalid", "true");
+  });
+
+  test("clears data-invalid once the control is fixed", async ({ page }) => {
+    await gotoForm(page);
+    await submitRequiredAndRead(page);
+    await expect(page.locator("#chk-required-lib")).toHaveAttribute("data-invalid", "true");
+
+    await page.locator("#chk-required-lib").click();
+
+    await expect(page.locator("#chk-required-lib")).not.toHaveAttribute("data-invalid", "true");
+  });
+
+  test("clears every data-invalid marker on form reset", async ({ page }) => {
+    await gotoForm(page);
+    await submitRequiredAndRead(page);
+    await expect(page.locator('[data-invalid="true"]').first()).toBeVisible();
+
+    await page.locator("#required-reset").click();
+
+    await expect(page.locator('[data-invalid="true"]')).toHaveCount(0);
+  });
+});
+
 test.describe("Rule 6 — form reset restores the initial value", () => {
   test("CALIBRATION: native checkbox reset restores checked-by-default", async ({ page }) => {
     await gotoForm(page);
