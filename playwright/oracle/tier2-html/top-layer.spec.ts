@@ -295,12 +295,24 @@ test.describe("Rule 3 — Escape closes popover=auto, and Rust state syncs", () 
 });
 
 test.describe("Rule 4 — top-layer stacking (a popover opened after a high-z-index sibling renders above it)", () => {
+  // Scroll the section into view *before* opening (item 2, 2026-09-01: the
+  // stacking section went back to in-flow layout -- see
+  // `preview/src/components/top_layer/style.css`'s comment on
+  // `.dx-top-layer-stack-sibling` -- so it can render below the fold again),
+  // not after: opening first and scrolling afterward is exactly what Rule 8
+  // below exercises deliberately, and doing it here too would make this
+  // rule's assertion race the fallback's rAF-throttled re-measure for no
+  // reason this rule needs to take on -- confirmed by execution, this
+  // ordering (scroll, then open) is deterministic where the reverse briefly
+  // isn't. `#stack-sibling` is used (not the trigger) because its box is
+  // taller than the trigger row's, so scrolling it fully into view also
+  // covers the row.
   test("CALIBRATION: native <div popover=auto> renders above the high-z-index sibling", async ({ page }) => {
     await gotoFixture(page);
+    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
     await page.locator("#stack-native-trigger").evaluate((el) => (el as HTMLElement).click());
     await expect(page.locator("#stack-native-content")).toBeVisible();
 
-    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
     const hit = await page.evaluate(() => {
       const sibling = document.getElementById("stack-sibling")!;
       const r = sibling.getBoundingClientRect();
@@ -312,10 +324,10 @@ test.describe("Rule 4 — top-layer stacking (a popover opened after a high-z-in
 
   test("Popover (non-modal) renders above the high-z-index sibling", async ({ page }) => {
     await gotoFixture(page);
+    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
     await page.locator("#stack-popover-trigger").evaluate((el) => (el as HTMLElement).click());
     await expect(page.locator("#stack-popover-content")).toBeVisible();
 
-    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
     const hit = await page.evaluate(() => {
       const sibling = document.getElementById("stack-sibling")!;
       const r = sibling.getBoundingClientRect();
@@ -445,9 +457,14 @@ test.describe("Rule 7 — normal mid-viewport placement is unchanged (no spuriou
   // contract-legal (see its doc) precisely so it never fights a real CSS
   // flip -- this rule confirms the common (nothing-needs-to-flip) case
   // still renders at the primary, unflipped placement, i.e. that the
-  // widened acceptance didn't turn into "accept anything."
+  // widened acceptance didn't turn into "accept anything." Scrolled into
+  // view before opening (item 2, 2026-09-01; see Rule 4's comment above) --
+  // this rule's whole premise is "plenty of room," which the fixture's
+  // below-the-fold resting position (now that the stacking section is
+  // in-flow again) does not give it.
   test("Popover (non-modal) with plenty of room stays on its preferred (bottom) side", async ({ page }) => {
     await gotoFixture(page);
+    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
     await page.locator("#stack-popover-trigger").evaluate((el) => (el as HTMLElement).click());
     await expect(page.locator("#stack-popover-content")).toBeVisible();
     const trigger = await rectOf(page, "#stack-popover-trigger");
@@ -456,5 +473,139 @@ test.describe("Rule 7 — normal mid-viewport placement is unchanged (no spuriou
     // Below the trigger (side="bottom", unflipped) -- a block-axis flip
     // would have put it above instead.
     expect(content.top, debug).toBeGreaterThanOrEqual(trigger.bottom - EDGE_TOLERANCE);
+  });
+});
+
+/**
+ * Rule 8 — scroll tracking (docs decision 2026-09-01, from a live-site
+ * report: the `ColorPicker` popup floated viewport-fixed while the page
+ * scrolled, detached from its trigger). Two independent positioning paths
+ * exist (`primitives/src/top_layer.rs`'s `use_anchor_position_fallback`
+ * doc, "Scroll/resize tracking"), so both need their own case here:
+ *
+ *   - The CSS-anchor path (native `anchor()` in the stylesheet): the
+ *     platform re-resolves this on scroll for free, with no JS involved at
+ *     all -- this fixture's own `Popover`/`Tooltip`/`HoverCard` all land on
+ *     this path in this repo's Chromium once `popover/style.css`'s
+ *     `@supports` block is loaded, which is the case for every page in this
+ *     workspace *except* `color_picker`'s own (see the wiring-gap fix in
+ *     `preview/src/components/color_picker/style.css`, added the same day
+ *     as this rule) -- so the fixture page used here for the CSS-path case
+ *     is `color_picker`, the exact composition the live-site report was
+ *     filed against, not this file's own `TopLayerFixture`.
+ *   - The JS-measured fallback path (`use_anchor_position_fallback`'s
+ *     "neither matches" branch): only engages when the CSS path failed to
+ *     land the content correctly, and is the path this file's own
+ *     `TopLayerFixture` exercises for its stacking `Popover` -- confirmed
+ *     by execution (this session's diagnosis): even with `popover/
+ *     style.css`'s `@supports` block loaded on this page, the stacking
+ *     popover's content still carries inline `top`/`left` after opening,
+ *     the fallback's own tell. That is exactly the scroll-detach case this
+ *     rule's tracking fix targets, so it is exercised here rather than
+ *     assumed.
+ *
+ * Both cases assert the same thing: the content-to-trigger offset,
+ * measured as content's top-left corner relative to the trigger's
+ * bounding box, is unchanged after a 100-150px scroll. `toBeCloseTo(_, 0)`
+ * (whole-pixel tolerance) accounts for subpixel rounding across the two
+ * `getBoundingClientRect()` reads, not for any real drift.
+ */
+test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps its position relative to its trigger while the page scrolls", () => {
+  test("Popover (non-modal) on the JS-measured fallback path tracks its trigger through a scroll", async ({ page }) => {
+    await gotoFixture(page);
+    // Scrolled comfortably into view *before* opening (same reasoning as
+    // Rule 4/7 above): this rule's own 100-150px scroll happens *after*
+    // opening, deliberately -- that is the thing under test -- so the
+    // starting position needs enough headroom on both axes that the modest
+    // follow-up scroll below cannot itself cross a flip threshold (which
+    // would legitimately change the offset for a reason unrelated to
+    // tracking, and this rule isn't the one guarding flip behavior --
+    // Rules 5-7 already do).
+    await page.locator("#stack-sibling").scrollIntoViewIfNeeded();
+    await page.locator("#stack-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator("#stack-popover-content")).toBeVisible();
+
+    // Confirm this really is the fallback path (the case this rule exists
+    // to cover), not a false-positive pass because CSS anchoring silently
+    // took over instead: the fallback is the only thing that ever writes an
+    // inline `top` on this element (see `use_anchor_position_fallback`).
+    const inlineTop = await page.locator("#stack-popover-content").evaluate(
+      (el) => (el as HTMLElement).style.top,
+    );
+    expect(inlineTop, "expected the JS fallback path to be active here").not.toBe("");
+
+    const offsetOf = async () =>
+      page.evaluate(() => {
+        const c = document.getElementById("stack-popover-content")!.getBoundingClientRect();
+        const t = document.getElementById("stack-popover-trigger")!.getBoundingClientRect();
+        return { top: c.top - t.bottom, left: c.left - t.left };
+      });
+
+    const before = await offsetOf();
+    await page.evaluate(() => window.scrollBy(0, 120));
+    // The fix is rAF-throttled (`use_anchor_position_fallback`'s
+    // `rafScheduled` flag) -- a couple of frames is enough for it to land.
+    await page.waitForTimeout(150);
+    const after = await offsetOf();
+
+    const debug = JSON.stringify({ before, after });
+    expect(after.top, debug).toBeCloseTo(before.top, 0);
+    expect(after.left, debug).toBeCloseTo(before.left, 0);
+  });
+
+  test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=color_picker&", {
+      timeout: NAV_TIMEOUT,
+      waitUntil: "networkidle",
+    });
+
+    // Pre-scroll so the trigger sits with plenty of room below it before
+    // opening -- at scrollY=0 on this page the trigger is close enough to
+    // the bottom of the viewport that the popover's own height doesn't fit
+    // below it, and `position-try-fallbacks: flip-block` (this component's
+    // existing, separately-tested CSS flip -- Rule 5 above) correctly flips
+    // it above instead. That flip is real, native CSS behavior, not
+    // anything wrong with tracking, but this rule isn't about flipping --
+    // it is about the offset staying put once *unflipped* -- so it
+    // pre-scrolls into a stable, unflipped starting position first, the
+    // same reasoning as Rule 8's fallback-path case above.
+    await page.evaluate(() => window.scrollBy(0, 300));
+    const trigger = page.getByRole("button", { name: /Color picker/i }).first();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const content = page.getByRole("dialog");
+    await expect(content).toBeVisible();
+
+    // Confirm this really is the CSS-anchor path (no inline `top` -- the
+    // fallback never engaged), so this test cannot pass merely because the
+    // JS fallback's own tracking (already covered above) papered over a
+    // CSS-anchor regression here.
+    const inlineTop = await content.evaluate((el) => (el as HTMLElement).style.top);
+    expect(inlineTop, "expected the CSS-anchor path to be active here").toBe("");
+
+    // Let the open-state fade-in settle before taking the "before" reading:
+    // `dx-color-picker-popover-fade-in` (`.15s ease-out`,
+    // `color_picker/style.css`) transiently animates this element, and
+    // confirmed by execution, `getBoundingClientRect()` mid-animation can
+    // read a not-yet-settled box on this path -- unrelated to tracking (it
+    // resolves to the same final rect either way), but this rule needs a
+    // stable "before" to compare "after" against.
+    await page.waitForTimeout(200);
+
+    const offsetOf = async () =>
+      page.evaluate(() => {
+        const c = document.querySelector("dialog[popover]")!.getBoundingClientRect();
+        const t = document.querySelector('[style*="anchor-name"]')!.getBoundingClientRect();
+        return { top: c.top - t.bottom, left: c.left - t.left };
+      });
+
+    const before = await offsetOf();
+    await page.evaluate(() => window.scrollBy(0, 150));
+    await page.waitForTimeout(150);
+    const after = await offsetOf();
+
+    const debug = JSON.stringify({ before, after });
+    expect(after.top, debug).toBeCloseTo(before.top, 0);
+    expect(after.left, debug).toBeCloseTo(before.left, 0);
   });
 });

@@ -215,10 +215,47 @@ pub(crate) fn use_popover_sync(
 /// addition, with the same deliberately narrow scope: flip only, never
 /// shift or resize (that remainder of Phase 5 is still open).
 ///
-/// Deliberately a one-shot measurement taken when `open` becomes true, not a
-/// live-tracking `ResizeObserver`/scroll listener: this is static
-/// positioning parity with the pre-4.4 behavior, not collision detection or
-/// scroll-following (`docs/plan.md` Phase 5 is where that belongs).
+/// ## Scroll/resize tracking (decision 2026-09-01)
+///
+/// Originally a one-shot measurement taken when `open` becomes true, not a
+/// live-tracking listener -- reasoned at the time as static positioning
+/// parity with the pre-4.4 behavior, with scroll-following deliberately
+/// deferred to `docs/plan.md` Phase 5. The repository owner reported, from
+/// live-site testing, an anchored overlay (`ColorPicker`'s popup) floating
+/// viewport-fixed while the page scrolled underneath it -- detached from its
+/// trigger -- and explicitly decided scroll-following is now in scope,
+/// superseding that deferral for this one narrow case: **only** while an
+/// overlay is open **and** this function's own measurement has judged CSS
+/// Anchor Positioning non-conforming and taken over with inline styles (the
+/// "neither matches" branch below). The function tracks its own outcome in
+/// the `usingFallback` flag closed over by `reposition()`; once a call sets
+/// it, every subsequent call -- including ones driven by the listeners added
+/// below -- skips the `matches()` check and unconditionally recomputes and
+/// re-applies the inline position. When CSS Anchor Positioning already
+/// placed the content correctly, `usingFallback` never flips and no
+/// listener is ever added: the platform's own `anchor()` re-resolution
+/// already tracks scroll for free there, and installing a listener would be
+/// redundant work that also risks fighting a live CSS flip mid-scroll.
+///
+/// When tracking is active, capture-phase (so scroll inside a nested
+/// scroll container is seen too -- `scroll` does not bubble, only capture
+/// reaches it from `window`), passive `scroll` and a plain `resize`
+/// listener on `window` re-run the same `reposition()` function, rAF-
+/// throttled (a `rafScheduled` flag drops any additional event that fires
+/// before the next paint) so a fast scroll gesture doesn't queue up more
+/// synchronous layout work than one measurement per frame. The flip
+/// decision is re-evaluated on every re-measure (`reposition()` always
+/// recomputes `primary`/`flipped` from the current, live
+/// `getBoundingClientRect()`/viewport size), so a resize that changes which
+/// side fits gets the same flip treatment the initial placement does. Both
+/// listeners are removed -- via the same `dioxus.recv()`-gated teardown
+/// every other eval-channel hook in this crate uses (see
+/// `use_popover_sync` above) -- when `open` goes false or this component
+/// unmounts; nothing is left listening on `window` past the overlay's own
+/// lifetime. Deliberately narrow, matching the flip-only scope above it: no
+/// shift/collision-avoidance beyond the existing flip, and no
+/// `ResizeObserver` on the trigger or content elements -- only `window`
+/// `scroll`/`resize`, which is all a *position* (not size) correction needs.
 ///
 /// `anchor_id` must be the exact same string [`anchor_name_style`] was
 /// built from for this overlay's trigger (every call site threads its
@@ -238,44 +275,67 @@ pub(crate) fn use_anchor_position_fallback(
     align: crate::ContentAlign,
     gap_px: u32,
 ) {
-    use_effect(move || {
+    crate::use_effect_with_cleanup(move || -> Box<dyn FnOnce()> {
         if !open.cloned() {
-            return;
+            return Box::new(|| {});
         }
         let id = id.clone();
         let anchor_id = anchor_id.clone();
         let side = side.as_str();
         let align = align.as_str();
-        // Synchronous, not deferred to `requestAnimationFrame`: this runs
-        // from a `use_effect` declared (and therefore, on Dioxus's normal
-        // mount-order guarantee, run) after `use_popover_sync`'s own effect
-        // in every call site, so `showPopover()` has already been
-        // dispatched -- and `getBoundingClientRect()`/`offsetWidth` force a
-        // synchronous layout in every engine regardless of paint timing, so
-        // there is nothing to wait a frame for. Confirmed by execution to
-        // matter, not just simpler: an earlier version of this function
-        // wrapped its body in `requestAnimationFrame(() => {{ ... }})` and
-        // it silently never ran at all on a real Firefox build -- the
-        // `document::eval` call is a bare, uncaptured expression (the same
-        // fire-and-forget shape `use_popover_sync`'s own synchronous
-        // `document::eval` calls use throughout this file), and its
-        // returned handle is dropped at the end of this closure; dropping it
-        // before a callback deferred to a later task/frame ever fires
-        // appears to tear down the JS side before that callback runs. A
-        // synchronous body has no such window.
-        document::eval(&format!(
+        // Synchronous up to and including the first `reposition()` call
+        // below, not deferred to `requestAnimationFrame`: this runs from an
+        // effect declared (and therefore, on Dioxus's normal mount-order
+        // guarantee, run) after `use_popover_sync`'s own effect in every
+        // call site, so `showPopover()` has already been dispatched -- and
+        // `getBoundingClientRect()`/`offsetWidth` force a synchronous layout
+        // in every engine regardless of paint timing, so there is nothing to
+        // wait a frame for. Confirmed by execution to matter, not just
+        // simpler: an earlier version of this function wrapped its body in
+        // `requestAnimationFrame(() => {{ ... }})` and it silently never ran
+        // at all on a real Firefox build -- an eval's `document::eval` call
+        // is a bare, uncaptured expression whose returned handle can be
+        // dropped at the end of a synchronous closure with no ill effect
+        // (the same fire-and-forget shape `use_popover_sync`'s own
+        // synchronous `document::eval` calls use throughout this file), but
+        // dropping it before a callback deferred to a later task/frame ever
+        // fires appears to tear down the JS side before that callback runs.
+        // A synchronous body has no such window -- which is exactly why,
+        // below, the eval handle *is* kept alive (not dropped) for as long
+        // as tracking might need it: unlike the one-shot original, this
+        // version's `await dioxus.recv()` tail is a real pending callback.
+        let eval = document::eval(&format!(
             r#"
             const content = document.getElementById('{id}');
             const trigger = document.querySelector(
                 '[style*="anchor-name: --dxa-{anchor_id}"]'
             );
-            if (content && trigger) {{
+            const align = '{align}';
+            const gap = {gap_px};
+            const side = '{side}';
+            // The only side `position-try-fallbacks: flip-block,
+            // flip-inline` can ever swap this one to: top/bottom flip
+            // on the block axis, left/right on the inline axis -- each
+            // of the four sides has exactly one relevant flip axis, so
+            // there is exactly one opposite candidate, not a set of
+            // four.
+            const opposite = {{ top: 'bottom', bottom: 'top', left: 'right', right: 'left' }}[side];
+
+            // Sticky once flipped true by a `reposition()` call below --
+            // see this function's doc, "Scroll/resize tracking": once this
+            // engine's anchor-positioning integration has been judged
+            // non-conforming, every later re-measure (scroll/resize-driven
+            // or not) skips the `matches()` check and unconditionally
+            // re-applies the inline position, rather than re-litigating
+            // whether CSS anchoring "started working" mid-overlay.
+            let usingFallback = false;
+
+            function reposition() {{
+                if (!content || !trigger) return;
                 const t = trigger.getBoundingClientRect();
                 const c = content.getBoundingClientRect();
                 const cw = content.offsetWidth;
                 const ch = content.offsetHeight;
-                const align = '{align}';
-                const gap = {gap_px};
                 const vw = window.innerWidth;
                 const vh = window.innerHeight;
 
@@ -312,14 +372,6 @@ pub(crate) fn use_anchor_position_fallback(
                     return {{ top, left }};
                 }}
 
-                const side = '{side}';
-                // The only side `position-try-fallbacks: flip-block,
-                // flip-inline` can ever swap this one to: top/bottom flip
-                // on the block axis, left/right on the inline axis -- each
-                // of the four sides has exactly one relevant flip axis, so
-                // there is exactly one opposite candidate, not a set of
-                // four.
-                const opposite = {{ top: 'bottom', bottom: 'top', left: 'right', right: 'left' }}[side];
                 const primary = place(side);
                 const flipped = place(opposite);
 
@@ -330,41 +382,80 @@ pub(crate) fn use_anchor_position_fallback(
                     return Math.abs(c.top - pos.top) <= 2 && Math.abs(c.left - pos.left) <= 2;
                 }}
 
-                if (matches(primary) || matches(flipped)) {{
+                if (!usingFallback && (matches(primary) || matches(flipped))) {{
                     // A working anchor-positioning engine placed this at
                     // one of the two contract-legal spots -- its own
                     // preferred side, or the CSS `position-try-fallbacks`
                     // flip of it. Never override: doing so here would fight
                     // a legitimate flip and stomp it back off-viewport (see
-                    // this function's doc).
-                }} else {{
-                    // Neither matches: this engine's anchor-positioning
-                    // integration failed outright (the pre-existing case
-                    // this function exists for). Make the same flip
-                    // decision from plain viewport math, so a non-anchor
-                    // engine gets flip parity with the CSS path -- flip
-                    // only, no shift/size (docs/backlog.md row 10's
-                    // remaining Phase 5 scope stays open).
-                    let target = primary;
-                    if (side === 'top' && primary.top < 0) {{
-                        target = flipped;
-                    }} else if (side === 'bottom' && primary.top + ch > vh) {{
-                        target = flipped;
-                    }} else if (side === 'left' && primary.left < 0) {{
-                        target = flipped;
-                    }} else if (side === 'right' && primary.left + cw > vw) {{
-                        target = flipped;
-                    }}
-                    content.style.position = 'fixed';
-                    content.style.margin = '0';
-                    content.style.inset = 'auto';
-                    content.style.transform = 'none';
-                    content.style.top = target.top + 'px';
-                    content.style.left = target.left + 'px';
+                    // this function's doc). And never install scroll/resize
+                    // tracking below for this overlay: `anchor()` already
+                    // re-resolves on scroll for free on an engine that gets
+                    // here.
+                    return;
                 }}
+
+                // Neither matches (or a previous call already committed to
+                // this branch -- see `usingFallback` above): this engine's
+                // anchor-positioning integration failed outright (the
+                // pre-existing case this function exists for). Make the
+                // same flip decision from plain viewport math, so a
+                // non-anchor engine gets flip parity with the CSS path --
+                // flip only, no shift/size (docs/backlog.md row 10's
+                // remaining Phase 5 scope stays open).
+                usingFallback = true;
+                let target = primary;
+                if (side === 'top' && primary.top < 0) {{
+                    target = flipped;
+                }} else if (side === 'bottom' && primary.top + ch > vh) {{
+                    target = flipped;
+                }} else if (side === 'left' && primary.left < 0) {{
+                    target = flipped;
+                }} else if (side === 'right' && primary.left + cw > vw) {{
+                    target = flipped;
+                }}
+                content.style.position = 'fixed';
+                content.style.margin = '0';
+                content.style.inset = 'auto';
+                content.style.transform = 'none';
+                content.style.top = target.top + 'px';
+                content.style.left = target.left + 'px';
+            }}
+
+            reposition();
+
+            if (usingFallback) {{
+                // Only once this engine's own measurement has judged CSS
+                // Anchor Positioning non-conforming: re-run the same
+                // measurement on scroll/resize so the overlay tracks its
+                // trigger instead of staying pinned at the pixel values
+                // computed at open time. `scroll` is added on `window` with
+                // `capture: true` because the event does not bubble --
+                // capture on `window` is the only way to observe a scroll
+                // on a nested scroll container, not just the document
+                // itself. rAF-throttled: `rafScheduled` collapses any
+                // number of scroll/resize events firing before the next
+                // paint into a single `reposition()` call.
+                let rafScheduled = false;
+                const onTrack = () => {{
+                    if (rafScheduled) return;
+                    rafScheduled = true;
+                    requestAnimationFrame(() => {{
+                        rafScheduled = false;
+                        reposition();
+                    }});
+                }};
+                window.addEventListener('scroll', onTrack, {{ capture: true, passive: true }});
+                window.addEventListener('resize', onTrack, {{ passive: true }});
+                await dioxus.recv();
+                window.removeEventListener('scroll', onTrack, true);
+                window.removeEventListener('resize', onTrack);
             }}
             "#
         ));
+        Box::new(move || {
+            let _ = eval.send(true);
+        })
     });
 }
 

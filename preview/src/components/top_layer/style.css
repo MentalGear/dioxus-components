@@ -33,71 +33,38 @@
 }
 
 /*
- * `position: fixed` at fixed viewport coordinates, not `absolute` within
- * `.dx-top-layer-stack-area` (as this used to be) -- deliberately, for
- * Rule 4 of `playwright/oracle/tier2-html/top-layer.spec.ts` ("top-layer
- * stacking"), which opens the stacking `Popover` and then asserts
- * `document.elementFromPoint()` at this sibling's center resolves to the
- * popover's content, i.e. that top-layer content really paints above this
- * plain in-flow sibling.
+ * `position: absolute` within `.dx-top-layer-stack-area`, back to in-flow
+ * layout (2026-09-01) -- not `position: fixed` at literal viewport
+ * coordinates, which this rule used for one prior round after a live-site
+ * report surfaced a second, unrelated bug: `position: fixed` here made this
+ * whole section float over the page during ordinary scrolling on the demo
+ * site regardless of whether anything was open, which is exactly the
+ * "user-visible pollution" the report flagged. That prior round's own
+ * comment (preserved in git history on this line) explains *why* `fixed`
+ * was reached for in the first place: `Popover`'s non-modal content used to
+ * be positioned by `top_layer.rs`'s `use_anchor_position_fallback` as a
+ * strictly *one-shot* measurement -- correct when the popover opened, but
+ * never recalculated if the page scrolled afterward, which made
+ * `playwright/oracle/tier2-html/top-layer.spec.ts` Rule 4's
+ * `scrollIntoViewIfNeeded()` (needed because this section could render
+ * below the fold) drag the sibling on-screen while the popover content,
+ * pinned by stale pixel values, stayed put -- no longer overlapping by the
+ * time the test measured. Pinning this section to the viewport worked
+ * around that by making the scroll a no-op, but traded a test-harness
+ * problem for a real one on the live page.
  *
- * Root cause found by execution, not assumed: this section renders below
- * the fold on this repo's standard 1280x720 test viewport (it used to sit
- * ~730px down the page, after the "Clipping escape" section above it), so
- * the spec calls `Locator.scrollIntoViewIfNeeded()` on the sibling before
- * measuring. `Popover`'s non-modal content is positioned by
- * `top_layer.rs`'s `use_anchor_position_fallback` -- a one-shot
- * `document::eval` that measures the trigger's `getBoundingClientRect()`
- * *once*, when the popover opens, and (only where CSS `anchor()` didn't
- * already land it correctly -- see that function's doc) writes the result
- * back as literal `top`/`left` *pixel* values on a `position: fixed`
- * element. Those pixel values are viewport-relative and, being plain
- * numbers rather than a live `anchor()` reference, do not get
- * recalculated if the page scrolls afterward -- `position: fixed`'s own
- * defining behavior is to stay put on scroll. So: open the popover (its
- * content lands correctly, overlapping the sibling) *then* scroll the page
- * to bring the (still off-screen) sibling into view, and the sibling moves
- * on screen while the popover content -- pinned by those stale pixel
- * values -- does not, and they no longer overlap by the time the test
- * measures. Confirmed by execution: capturing both rects immediately after
- * opening (no scroll) shows genuine overlap; re-measuring after the same
- * `scrollIntoViewIfNeeded()` the spec calls reproduces the failure exactly.
- *
- * The fix is not a CSS positioning bug in the library (the content is
- * correctly placed relative to its trigger at the moment it opens; nothing
- * in `top_layer.rs` claims to track a *subsequent* scroll, and no other
- * test needs it to) -- it's this fixture creating a scroll that has no
- * reason to exist. Anchoring the sibling and its trigger row to the
- * viewport directly keeps the whole section on-screen on this repo's
- * standard test viewport regardless of how much content sits above it on
- * the page, which makes `scrollIntoViewIfNeeded()` a no-op (already in
- * view, nothing scrolls) and removes the stale-pixel window entirely --
- * deterministically, not just for this page's current content height.
- *
- * Fixing that surfaced a second, independent accident, found the same way
- * (by re-running the oracle after the change above): the CALIBRATION test
- * for this same rule -- `<div popover=auto>` with *no* author positioning
- * at all, relying purely on the UA popover stylesheet's default
- * `inset: 0; margin: auto`, which centers it in the *viewport* -- went from
- * green to red the moment the sibling stopped needing a scroll. It was
- * never actually anchored to the sibling either: it only overlapped before
- * because scrolling the sibling into view also happened to leave the
- * viewport's center close enough to the sibling's new on-screen position.
- * With the sibling now fixed in place (never requiring a scroll), the
- * viewport's actual center no longer coincides with it. `anchor-name` on
- * the sibling plus `position-anchor`/`anchor()` on the native content (see
- * `primitives/src/top_layer.rs`'s `anchor_name_style`/
- * `position_anchor_style` for the identical platform feature the library
- * itself relies on) ties the reference deterministically to the sibling
- * instead of to viewport happenstance -- centering on the sibling's own
- * center point, not a corner, so the comparison holds regardless of either
- * box's exact size.
+ * `use_anchor_position_fallback` now re-measures on scroll/resize whenever
+ * it owns positioning (see that function's doc, "Scroll/resize tracking")
+ * -- the actual fix for the underlying staleness, not just this fixture's
+ * symptom of it -- which is what makes reverting to in-flow layout safe
+ * again: `top-layer.spec.ts`'s own scroll-tracking rule now covers exactly
+ * the scenario this section's fixed positioning used to paper over.
  */
 .dx-top-layer-stack-sibling {
-  position: fixed;
+  position: absolute;
   z-index: 9999;
-  top: 84px;
-  left: 300px;
+  top: 0;
+  left: 0;
   width: 260px;
   height: 80px;
   border: 1px solid darkred;
@@ -128,9 +95,9 @@
 }
 
 .dx-top-layer-stack-row {
-  position: fixed;
-  top: 84px;
-  left: 300px;
+  position: absolute;
+  top: 0;
+  left: 0;
   display: flex;
   align-items: center;
   gap: 1.5rem;
