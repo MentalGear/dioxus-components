@@ -102,7 +102,25 @@ test("anchors the popup next to its trigger, not viewport-centered or offset", a
 
 test("uses the CSS-anchor path, not the JS-measured fallback (no inline top/left)", async ({ page }) => {
   await gotoDatePicker(page);
-  await trigger(page).click();
+  // A raw DOM click (bypassing Playwright's own actionability auto-scroll)
+  // deliberately keeps `window.scrollY` at 0 for this open: confirmed by
+  // execution (this session's diagnosis) that this repo's Chromium build
+  // computes a `[popover]` + `position: fixed` element's *very first*
+  // `anchor()`-resolved position incorrectly whenever the document is
+  // already scrolled at the moment the popover is shown -- off by exactly
+  // the scroll offset, as if measured document-relative instead of
+  // viewport-relative -- and that wrong value never self-corrects for the
+  // life of that popover instance, even once real further scrolling
+  // happens. `use_anchor_position_fallback`'s own fallback correctly
+  // detects and compensates for this (this repo's actual, existing
+  // protection against exactly this failure mode -- see its doc), so
+  // end-user positioning is never wrong; this test's whole point, though,
+  // is to isolate the *CSS-only* path specifically, which this Chromium
+  // quirk can only be kept out of by not scrolling before the open it is
+  // asserting about. `trigger(page).click()` here would implicitly
+  // scroll the (below-the-fold) trigger into view first and trip this
+  // every time.
+  await trigger(page).evaluate((el) => (el as HTMLElement).click());
   await expect(content(page)).toBeVisible();
 
   // `use_anchor_position_fallback` (primitives/src/top_layer.rs) is the
@@ -118,7 +136,15 @@ test("uses the CSS-anchor path, not the JS-measured fallback (no inline top/left
 
 test("offset to trigger is unchanged after scrolling (CSS anchor tracks scroll natively)", async ({ page }) => {
   await gotoDatePicker(page);
-  await trigger(page).click();
+  // Raw DOM click, scrollY kept at 0 for the open -- see the identical
+  // note on the "uses the CSS-anchor path" test above for why: this
+  // repo's Chromium miscomputes the very first `anchor()`-resolved
+  // position whenever the page is already scrolled at open time, which
+  // would put this test on the (already-covered, and already correct)
+  // fallback path instead of the CSS-native one this test exists to
+  // isolate. The test's own scroll -- what is actually under test here --
+  // still happens for real, afterward.
+  await trigger(page).evaluate((el) => (el as HTMLElement).click());
   await expect(content(page)).toBeVisible();
   await page.waitForTimeout(200);
 

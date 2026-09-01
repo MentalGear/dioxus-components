@@ -980,7 +980,82 @@ pub(crate) fn use_anchor_position_fallback(
 
             reposition();
 
+            // Settle loop, deferred across animation frames, *only* once the
+            // synchronous call just above has already committed to the
+            // fallback (`usingFallback`): confirmed by execution (this
+            // session's diagnosis, `date-picker.spec.ts`'s "anchors the
+            // popup" case) that the synchronous call above can run *before*
+            // this content's own children have finished growing into their
+            // final size -- `DatePickerPopover`'s calendar grid, populated
+            // by a nested component's own reactive render, was still
+            // measuring an intermediate 352x178px box (narrower-grid/
+            // shorter-before-rows placeholder shape) at the exact tick this
+            // effect ran, rather than its final 276x278px, throwing off
+            // `place()`'s `cw`/`ch`-dependent math (here, the align="center"
+            // horizontal centering) by however much the box still had left
+            // to grow -- 38px off center on that box's ~76px of subsequent
+            // width growth. A **content-size** race, not a scroll/layout-
+            // timing one: `getBoundingClientRect()`/`offsetWidth` already
+            // force a synchronous style/layout recalc (this function's doc
+            // above), so the geometry read back is never stale relative to
+            // the DOM as it stood at that instant -- the DOM itself just
+            // wasn't finished changing shape yet. A single extra
+            // `requestAnimationFrame` call was tried first and confirmed by
+            // execution (console-instrumented) to still observe the
+            // pre-grow 352px box even several real frames and 300ms later:
+            // whatever later render pass grows the grid does not land
+            // within one, or even a handful of, animation frames of this
+            // effect's own -- so instead of guessing a frame count, this
+            // polls `content.offsetWidth`/`offsetHeight` once per frame and
+            // keeps re-running `reposition()` until two consecutive frames
+            // read the *same* box size (the settle signal: nothing is still
+            // resizing), capped at `MAX_SETTLE_FRAMES` frames as a backstop
+            // against a pathological page that never stabilizes.
+            //
+            // Gated on `usingFallback` -- *not* run unconditionally -- for a
+            // reason confirmed by execution the hard way (`top-layer.spec.ts`
+            // Rule 8's ColorPicker case, a real regression this exact
+            // unconditional shape caused first): once the first call has
+            // judged CSS Anchor Positioning conforming, every extra
+            // `reposition()` call in a naive unconditional loop re-runs the
+            // *same* `matches()` decision from scratch, and each of those
+            // re-checks is one more chance for one transient frame --
+            // mid-fade-in-animation, mid this-same content-growth window,
+            // anything that momentarily moves the content's painted rect
+            // off the anchor-computed one by more than the 2px tolerance --
+            // to be wrongly read as "the engine failed," latching
+            // `usingFallback` true *permanently* (it is deliberately sticky,
+            // this function's doc above) for a case that was never actually
+            // broken. Only entering this loop when the first call already
+            // committed to the fallback removes that risk entirely: from
+            // that point on every `reposition()` call skips the `matches()`
+            // check outright (`usingFallback` short-circuits the `if` below)
+            // and unconditionally re-applies fresh inline geometry -- the
+            // decision to accept the fallback's placement is never
+            // relitigated, only its geometry is refined. A CSS-Anchor-
+            // Positioning engine that placed this correctly on the first
+            // call is instead left completely alone, exactly as before this
+            // loop existed.
             if (usingFallback) {{
+                const MAX_SETTLE_FRAMES = 30; // ~0.5s at 60fps
+                let lastW = content.offsetWidth;
+                let lastH = content.offsetHeight;
+                let stableStreak = 0;
+                let frame = 0;
+                const settle = () => {{
+                    frame++;
+                    reposition();
+                    const w = content.offsetWidth;
+                    const h = content.offsetHeight;
+                    stableStreak = (w === lastW && h === lastH) ? stableStreak + 1 : 0;
+                    lastW = w;
+                    lastH = h;
+                    if (stableStreak < 2 && frame < MAX_SETTLE_FRAMES) {{
+                        requestAnimationFrame(settle);
+                    }}
+                }};
+                requestAnimationFrame(settle);
+
                 // Only once this engine's own measurement has judged CSS
                 // Anchor Positioning non-conforming: re-run the same
                 // measurement on scroll/resize so the overlay tracks its

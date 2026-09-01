@@ -26,4 +26,6 @@ Everything outstanding across the plan, the harness, and follow-ups discovered d
 
 | 20 | date_picker e2e spec — none exists today (calendar.spec.ts does not cover DatePicker) | Ready | S–M | Found during mutation-kill work; segment typing/arrows/backspace verified only ad hoc |
 
+| 21 | Residual env-only anchor flake: top-layer ColorPicker CSS-path test fails ~40% in this sandbox (initial anchor() freezes at a wrong offset, correlated with slow page loads; end users unaffected — the JS fallback compensates) | A different environment (real CI machine) to check reproducibility, or a Chromium anchor-positioning fix upstream | S to verify | Investigated 2026-09-01: hook-side settle-loop bug fixed, scroll-at-open quirk worked around test-side; this residue looks like a browser-build engine bug, deliberately not papered over |
+
 Standing rule for every item: the definition-of-done loop from [`plan.md`](./plan.md) — rule-cited oracle red first, provenance per `lifting-from-forks.md` §1, checks green, ledger updated.

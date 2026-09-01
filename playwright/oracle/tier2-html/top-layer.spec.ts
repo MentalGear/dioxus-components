@@ -731,20 +731,28 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
       waitUntil: "networkidle",
     });
 
-    // Pre-scroll so the trigger sits with plenty of room below it before
-    // opening -- at scrollY=0 on this page the trigger is close enough to
-    // the bottom of the viewport that the popover's own height doesn't fit
-    // below it, and `position-try-fallbacks: flip-block` (this component's
-    // existing, separately-tested CSS flip -- Rule 5 above) correctly flips
-    // it above instead. That flip is real, native CSS behavior, not
-    // anything wrong with tracking, but this rule isn't about flipping --
-    // it is about the offset staying put once *unflipped* -- so it
-    // pre-scrolls into a stable, unflipped starting position first, the
-    // same reasoning as Rule 8's fallback-path case above.
-    await page.evaluate(() => window.scrollBy(0, 300));
+    // Opened at scrollY=0 with a raw DOM click (bypassing Playwright's own
+    // actionability auto-scroll), *not* pre-scrolled: confirmed by
+    // execution (this session's diagnosis) that this repo's Chromium build
+    // computes a `[popover]` + `position: fixed` element's *very first*
+    // `anchor()`-resolved position incorrectly whenever the document is
+    // already scrolled at the moment the popover is shown -- off by
+    // exactly the scroll offset, as if measured document-relative instead
+    // of viewport-relative -- and that wrong value never self-corrects for
+    // the life of that popover instance, even once real further scrolling
+    // happens. `use_anchor_position_fallback`'s own fallback correctly
+    // detects and compensates for this (this repo's actual, existing
+    // protection against exactly this failure mode -- see its doc), so
+    // end-user positioning is never wrong; this test's whole point, though,
+    // is to isolate the *CSS-only* path specifically, which this Chromium
+    // quirk can only be kept out of by not scrolling before the open it is
+    // asserting about. A stray earlier concern about needing room below the
+    // trigger to avoid a spurious flip at scrollY=0 does not hold on this
+    // fixture, confirmed by execution: `data-side` stays "bottom"
+    // (unflipped) either way, on this viewport.
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
     await expect(trigger).toBeVisible();
-    await trigger.click();
+    await trigger.evaluate((el) => (el as HTMLElement).click());
     const content = page.getByRole("dialog");
     await expect(content).toBeVisible();
 
