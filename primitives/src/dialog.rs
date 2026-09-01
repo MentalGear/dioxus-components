@@ -165,6 +165,10 @@ pub fn DialogRoot(props: DialogRootProps) -> Element {
     let dialog_describedby = use_unique_id();
 
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
+    // See this function's doc: captures scroll position before `showModal()`
+    // (called from `DialogContent`, mounted as a consequence of the same
+    // `open` flip) gets a chance to move it.
+    crate::scroll_lock::use_early_scroll_capture(open);
 
     let unique_id = use_unique_id();
     let id = use_id_or(unique_id, props.id);
