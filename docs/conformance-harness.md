@@ -120,12 +120,22 @@ The three tiers above all ask "does this component *behave* correctly?" against 
 # 1. Build the fullstack SSG artifact (mirrors CI's web.yml: ssg: true,
 #    features: fullstack — omit --base-path to serve at "/" locally).
 cd preview
-dx build --ssg --features fullstack --platform web
+#    --force-sequential: dx otherwise races its own client and server
+#    sub-builds, and the client's index.html write can clobber the
+#    server's prerendered output (observed 2026-09-01).
+dx build --ssg --features fullstack --platform web --force-sequential true
 
-# 2. Serve the static output plainly (no dx dev server involved at all).
-#    Site dir: preview/target/dx/preview/debug/web/public (relative to
-#    the workspace root: target/dx/preview/debug/web/public).
-python3 -m http.server 8090 -d target/dx/preview/debug/web/public
+# 2. Snapshot, then serve the static output plainly (no dx dev server).
+#    Site dir: target/dx/preview/debug/web/public (workspace-root
+#    relative). Snapshot it: this is the SAME directory `dx run --web`
+#    serves for the CSR lane, and the SSG build leaves prerendered route
+#    pages (component/, dashboard/, docs/, demos/) in it -- a later CSR
+#    client then mounts on top of that prerendered markup and every
+#    chrome element appears twice (duplicate navbar/footer/toast region,
+#    axe `landmark-unique`, scroll-lock and native-dialog reds). Delete
+#    those route directories before going back to the CSR lane.
+cp -r ../target/dx/preview/debug/web/public /tmp/ssg-site
+python3 -m http.server 8090 -d /tmp/ssg-site
 
 # 3. Run the hydration-parity oracle (and/or any other spec) against it.
 cd ../playwright
@@ -164,6 +174,8 @@ Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` al
 - **Tier 2:** partially implemented — `top-layer.spec.ts`, `native-dialog.spec.ts`, `form-participation.spec.ts` (the last one researched-but-not-yet-fixtured per its own README).
 - **Tier 3:** `tier3-radix/scroll-lock.spec.ts` implemented; otherwise not implemented.
 - **Hydration/deployment parity:** implemented (`oracle/hydration-parity.spec.ts`, 2026-09-01) — 3 rules, all run against the local SSG lane. Not wired into CI yet (`docs/backlog.md`, "SSG lane in CI").
+- **Preview composition (source-level guard, not an oracle):** `scripts/check-preview-composition.sh` + `docs/preview-composition.md` (2026-09-01) — preview markup composes only themed wrappers from `crate::components::*`; a raw `dioxus_primitives::` component in a fixture or dashboard renders classless (the "collapsed library switch" incident). Its browser-visible half is covered by the existing form-participation oracle plus an SSR render test in `preview/src/components/form/component.rs`.
+- **Accordion close-animation regression:** `playwright/accordion-animation.spec.ts` (2026-09-01) — samples the content height per frame during close and asserts it reaches ~0 before unmount with no mid-curve plateau (the padding-floor jank `accordion.spec.ts`'s smoothness check could not see); runs against the app route by default and against a standalone reproduction page with `ACCORDION_MODE=repro`.
 
 ---
 

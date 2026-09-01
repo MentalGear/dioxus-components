@@ -344,6 +344,13 @@ pub fn TopLayerFixture() -> Element {
                 // the sibling.
                 ToastProvider {
                     style: "position: fixed; top: auto; right: 0; bottom: 0; left: auto; margin: 0;",
+                    // The app shell already mounts a toast region on every
+                    // page; two `role="region"` landmarks sharing the
+                    // primitive's default "N notifications" name fail axe's
+                    // `landmark-unique` on the all-components page. The
+                    // primitive spreads `..attributes` after its own
+                    // `aria_label`, so this override wins.
+                    aria_label: "Top-layer fixture notifications",
                     ToastStackTrigger {}
                 }
             }
