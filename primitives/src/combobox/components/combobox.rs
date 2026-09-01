@@ -7,7 +7,7 @@ use crate::{
     selectable::{
         use_selectable_root, use_single_selectable_value, RcPartialEqValue, SelectionMode,
     },
-    use_controlled, Controlled,
+    use_controlled, use_unique_id, Controlled,
 };
 
 /// Props for [`Combobox`].
@@ -89,12 +89,16 @@ fn use_combobox_root(
     );
     let (query, set_query) = use_controlled(query.value, query.default.cloned(), query.on_change);
     let open = selectable.open;
+    // Placeholder value until `ComboboxInput` mounts and syncs its own id
+    // in -- see `ComboboxContext::input_id`'s doc.
+    let input_id = use_unique_id();
 
     use_context_provider(|| ComboboxContext {
         selectable,
         query,
         set_query,
         filter,
+        input_id,
     });
 
     open

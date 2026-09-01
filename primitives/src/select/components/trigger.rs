@@ -71,6 +71,17 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
     rsx! {
         button {
             id: ctx.selectable.trigger_id,
+            // See `crate::top_layer::anchor_name_style`: ties this trigger
+            // to the web-arm listbox's `position-anchor`
+            // (`SelectListRendered`, `list.rs`) so its anchor-positioned
+            // placement resolves relative to this trigger once promoted to
+            // the top layer. Keyed on `ctx.selectable.trigger_id` -- this
+            // button's own, already-stable id -- rather than a separately
+            // synced content id like `DropdownMenu`/`Menubar` use: unlike
+            // those two, this id is already fixed and known here, so no
+            // extra id-sync plumbing is needed for the two sides to agree.
+            // Inert (empty) off the web arm.
+            style: crate::top_layer::anchor_name_style(&ctx.selectable.trigger_id.cloned()),
             // Standard HTML attributes
             disabled: (ctx.selectable.disabled)(),
             type: "button",

@@ -29,6 +29,11 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
     let id = use_unique_id();
     let id = use_id_or(id, props.id);
 
+    // Keep `ctx.input_id` in sync with this input's actual id -- see
+    // `ComboboxContext::input_id`'s doc. Mirrors `DropdownMenuContent`'s
+    // identical `ctx.content_id.set(id())` (`dropdown_menu.rs`).
+    use_effect(move || ctx.input_id.set(id()));
+
     let open = ctx.selectable.open;
     let query = ctx.query;
     let set_query = ctx.set_query;
@@ -83,6 +88,20 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
             event.stop_propagation();
         }
         Key::Escape if open() => {
+            // No wasm carve-out here, unlike `Select`/`DropdownMenu`:
+            // `ComboboxListRendered`'s web arm renders `popover="manual"`
+            // (`list.rs`), not `auto` -- see that component's doc for why
+            // (confirmed by execution: `auto`'s light dismiss closed this
+            // popup on *any* external click, including ones this
+            // component's own demos/tests rely on leaving it open across,
+            // e.g. `combobox.spec.ts`'s "dynamic option removal" case).
+            // WHATWG HTML's popover light-dismiss algorithm -- the thing a
+            // `prevent_default()` here would otherwise race -- only ever
+            // applies to `auto`/`hint` popovers, so a `manual` popover has
+            // no Escape-triggered close of its own to suppress here on any
+            // target; this stays the sole, unconditional dismissal path,
+            // matching `ContextMenuContentRendered`'s identical `manual`
+            // reasoning (`context_menu.rs`).
             ctx.set_open(false);
             event.prevent_default();
             event.stop_propagation();
@@ -93,6 +112,15 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
     rsx! {
         input {
             id,
+            // See `crate::top_layer::anchor_name_style`: ties this input to
+            // the web-arm listbox's `position-anchor`
+            // (`ComboboxListRendered`, `list.rs`) so its anchor-positioned
+            // placement resolves relative to this input once promoted to
+            // the top layer. Keyed on `ctx.input_id` (kept in sync with
+            // this element's own id above), the same reason
+            // `DropdownMenuTrigger` keys off `ctx.content_id` -- see that
+            // doc. Inert (empty) off the web arm.
+            style: crate::top_layer::anchor_name_style(&ctx.input_id.cloned()),
             r#type: "text",
             value: display_value(),
             placeholder: props.placeholder,

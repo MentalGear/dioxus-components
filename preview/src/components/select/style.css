@@ -46,6 +46,21 @@
   z-index: 1000;
   top: 100%;
   left: 0;
+
+  /*
+   * `overflow`/`border` undo the UA popover stylesheet's `[popover] {
+   * border: solid; overflow: auto; ... }` (WHATWG HTML's popover section) --
+   * on the web arm (Migration A slice 3/3), this listbox carries the
+   * `popover` attribute. This content has no border of its own and never
+   * scrolls (no `max-height` here), so both are reset to nothing, same fix
+   * as `../dropdown_menu/style.css`'s `.dx-dropdown-menu-content`. The
+   * matching `margin`/`inset` reset, and the `@supports (anchor-name: --a)`
+   * anchor-positioning rules that keep this listbox anchored to its trigger
+   * once promoted to the top layer, live in the shared, engine-injected
+   * stylesheet every `dx-anchor-*`-marked overlay gets for free -- see
+   * `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles` doc.
+   */
+  overflow: visible;
   min-width: 100%;
 
   /* Clamp to the viewport so the list never induces horizontal page scroll on
@@ -53,6 +68,7 @@
   max-width: calc(100vw - 2rem);
   box-sizing: border-box;
   padding: 0.25rem;
+  border: none;
   border-radius: 0.5rem;
   margin-top: 0.25rem;
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-5));
@@ -62,6 +78,33 @@
   pointer-events: none;
   transform-origin: top;
   will-change: transform, opacity;
+}
+
+/*
+ * `min-width: 100%` above resolves against this element's containing block
+ * -- pre-migration, that was `.dx-select` (the trigger+list wrapper,
+ * `position: relative` above); post-migration, promoting this listbox to
+ * the top layer makes its containing block the *viewport* instead (see
+ * `primitives/src/top_layer.rs`'s `position_anchor_style` doc), so the same
+ * percentage would silently start meaning "100% of the viewport width"
+ * instead of "as wide as the trigger." `anchor-size()` is CSS Anchor
+ * Positioning's own answer to exactly this
+ * (<https://www.w3.org/TR/css-anchor-position-1/#anchor-size>): with
+ * `position-anchor` already pointing at `SelectTrigger` (set inline by
+ * `position_anchor_style`), the no-argument axis-matching form resolves to
+ * that anchor's own width, restoring the pre-migration "at least as wide as
+ * the trigger" contract. `@supports`-gated alongside the rest of this
+ * engine's anchor rules so a browser without Anchor Positioning keeps the
+ * plain (if now viewport-relative) percentage rather than an invalid
+ * declaration -- `use_anchor_position_fallback`'s JS fallback does not
+ * correct width, only position, so this is the one place width-fallback
+ * still matters; tracked as the same remaining Phase 5 gap
+ * (docs/backlog.md row 10) as JS-fallback collision/shift avoidance.
+ */
+@supports (anchor-name: --a) {
+  .dx-select-list[popover] {
+    min-width: anchor-size(width);
+  }
 }
 
 .dx-select-list[data-state="open"] {
