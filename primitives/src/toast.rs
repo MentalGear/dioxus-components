@@ -362,7 +362,7 @@ pub fn ToastProvider(props: ToastProviderProps) -> Element {
 /// `ensure_anchor_positioning_styles` doc), applied here directly in the
 /// component's own stylesheet instead of that shared engine, since this
 /// region needs the reset without ever wanting anchor positioning itself.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn ToastRegionRendered(
     id: String,
@@ -416,7 +416,7 @@ fn ToastRegionRendered(
 /// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
 /// popover-API support at all, so this stays the functional floor, a
 /// plain, always-in-flow `div`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn ToastRegionRendered(
     id: String,

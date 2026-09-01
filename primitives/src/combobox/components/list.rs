@@ -1,12 +1,12 @@
 //! ComboboxList component.
 
 use dioxus::prelude::*;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 use super::super::context::ComboboxContext;
 use crate::listbox::use_listbox_container;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use crate::merge_attributes;
 
 /// Props for [`ComboboxList`].
@@ -102,7 +102,7 @@ pub fn ComboboxList(props: ComboboxListProps) -> Element {
 /// `showPopover()`/`hidePopover()` to the raw `open` signal breaks (see the
 /// linked doc for the exact mechanism) -- this reasoning is orthogonal to
 /// the `auto`-vs-`manual` reversal above and holds either way.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let ctx: ComboboxContext = use_context();
@@ -164,7 +164,7 @@ fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Elemen
 /// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
 /// popover-API support at all, so this stays the functional floor, a plain,
 /// always-in-flow `div`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let ctx: ComboboxContext = use_context();

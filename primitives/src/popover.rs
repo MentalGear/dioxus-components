@@ -6,9 +6,9 @@
 //! `PopoverModalContent` is cfg-split the same way `dialog.rs`'s
 //! `DialogContentModal`/`alert_dialog.rs`'s `AlertDialogContent` are
 //! (`docs/phase4-spike-findings.md` Construction B):
-//! - `#[cfg(not(target_family = "wasm"))]`: byte-for-byte the pre-existing
+//! - `#[cfg(not(feature = "web"))]`: byte-for-byte the pre-existing
 //!   `div` + vendored `FocusTrap` path (unchanged).
-//! - `#[cfg(target_family = "wasm")]`: a real `<dialog>` opened with
+//! - `#[cfg(feature = "web")]`: a real `<dialog>` opened with
 //!   `showModal()`, driven by the exact same
 //!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
 //!   [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
@@ -40,7 +40,7 @@
 //! keeps the modal arm trigger-anchored rather than falling back to the
 //! UA's viewport-centered default.
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -50,12 +50,12 @@ use dioxus::prelude::*;
 // (Blitz has no Popover API, `docs/recommended-implementations.md` Caveat
 // 2). Both web arms get dismissal from the browser instead (`showModal()`'s
 // `cancel`/`close` events for modal, `popover="auto"` light dismiss for
-// non-modal) -- gated the same way so the wasm build never carries an
+// non-modal) -- gated the same way so the web build never carries an
 // unused import.
 use crate::{
     use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
 };
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use crate::{use_global_escape_listener, use_outside_dismiss};
 
 #[derive(Clone, Copy)]
@@ -71,7 +71,7 @@ struct PopoverCtx {
     labelledby: Signal<String>,
     // Only read by `use_outside_dismiss` calls, which now live solely in
     // native (Blitz) arms (`PopoverModalContent`/`PopoverNonModalContent`'s
-    // `#[cfg(not(target_family = "wasm"))]` variants) -- both web arms get
+    // `#[cfg(not(feature = "web"))]` variants) -- both web arms get
     // dismissal from the browser instead. `#[allow(unused)]` so the web
     // build doesn't warn on a field genuinely unread there.
     #[allow(unused)]
@@ -191,7 +191,7 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
     // `PopoverNonModalContent` first mounts). Covers every consumer built on
     // `PopoverRoot` too (`ColorPicker`, `DatePicker`), not just this
     // workspace's own "Popover" page.
-    #[cfg(target_family = "wasm")]
+    #[cfg(feature = "web")]
     use_effect(crate::top_layer::ensure_anchor_positioning_styles);
 
     let labelledby = use_unique_id();
@@ -324,7 +324,7 @@ pub fn PopoverContent(props: PopoverContentProps) -> Element {
     // `showModal()` (see this module's doc comment), installing the trap
     // there would fight the browser's own focus management, so trap
     // installation moved to `PopoverModalContent`'s
-    // `#[cfg(not(target_family = "wasm"))]` arm, the only one that still
+    // `#[cfg(not(feature = "web"))]` arm, the only one that still
     // needs it -- mirroring `dialog.rs`'s `DialogContentModal` native arm
     // exactly.
 
@@ -410,7 +410,7 @@ pub fn PopoverContentRendered(
 /// that used to live in `PopoverContent` (installed there whenever
 /// `is_modal()` was true, regardless of target) now lives here instead,
 /// since this is the only arm that still needs it.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 #[allow(clippy::too_many_arguments)]
 fn PopoverModalContent(
@@ -482,7 +482,7 @@ fn PopoverModalContent(
 /// comment ("trigger-anchored, not centered") for why a modal `Popover`
 /// needs this and modal `Dialog` (which *wants* the UA's viewport-centering)
 /// never does.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 #[allow(clippy::too_many_arguments)]
 fn PopoverModalContent(
@@ -565,7 +565,7 @@ fn PopoverModalContent(
 /// `set_open`, so the Rust signal can never strand the way `docs/
 /// recommended-implementations.md` Caveat 1 documents for `<dialog>`'s old
 /// one-way `showModal()`/`close()` binding.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn PopoverNonModalContent(
     id: String,
@@ -636,7 +636,7 @@ fn PopoverNonModalContent(
 /// popover-API support at all (`docs/recommended-implementations.md`
 /// Caveat 2), so light dismiss / Escape still need this crate's own
 /// JS-driven listeners.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn PopoverNonModalContent(
     id: String,

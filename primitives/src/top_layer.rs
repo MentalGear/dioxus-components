@@ -22,15 +22,15 @@
 //!   <https://html.spec.whatwg.org/multipage/popover.html#dom-showpopover>,
 //!   <https://html.spec.whatwg.org/multipage/popover.html#dom-hidepopover>
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus::document;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus::prelude::*;
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use std::cell::Cell;
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 thread_local! {
     /// Whether [`ensure_anchor_positioning_styles`]'s `document::eval` has
     /// already been scheduled once in this WASM instance -- same idempotency
@@ -102,7 +102,7 @@ thread_local! {
 /// a single correct answer every anchored overlay shares the way the
 /// centering-trap fix is. Each component's own stylesheet keeps whatever
 /// `border`/`overflow` reset it individually needs.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 pub(crate) fn ensure_anchor_positioning_styles() {
     if ANCHOR_POSITIONING_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
         return;
@@ -141,7 +141,7 @@ pub(crate) fn ensure_anchor_positioning_styles() {
 /// forces a synchronous style/layout recalc that is guaranteed to already
 /// see it -- no ordering assumption about *separate* `document::eval()`
 /// dispatches required at all.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 fn anchor_positioning_inject_js() -> String {
     format!(
         r#"
@@ -174,7 +174,7 @@ fn anchor_positioning_inject_js() -> String {
 /// `showModal()` -- the natural selector to key the exact same reset/
 /// `anchor()` treatment off for that arm, mirroring `[popover]`'s role for
 /// the Popover-API arms without needing a second marker class.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 :where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-popover:modal, .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
@@ -409,12 +409,12 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 /// Which `popover` dismissal behaviour an element declares.
 /// WHATWG HTML §the-popover-attribute (see module docs for the link).
 ///
-/// Only referenced from the `#[cfg(target_family = "wasm")]` leaf render
+/// Only referenced from the `#[cfg(feature = "web")]` leaf render
 /// functions in `tooltip.rs`/`hover_card.rs`/`popover.rs` -- the native
 /// (Blitz) arm never renders the `popover` attribute at all (see
 /// `use_popover_sync`'s doc) -- so this whole type is `#[cfg]`-gated too,
 /// rather than degrading to a dead stub on that target.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PopoverKind {
     /// `popover="auto"` — light-dismisses on Escape and on a pointerdown
@@ -443,7 +443,7 @@ pub(crate) enum PopoverKind {
     Manual,
 }
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 impl PopoverKind {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -485,17 +485,22 @@ impl PopoverKind {
 /// permanently hidden. See each call site (`tooltip.rs`, `hover_card.rs`,
 /// `popover.rs`) for the matching `#[cfg]` split on the attribute itself.
 ///
-/// It is gated on `target_family = "wasm"` for now because that is the only
-/// axis this repo's CI (web build + host `cargo check`) can build and check
-/// both sides of. Per `docs/phase4-spike-findings.md` Construction B, the
-/// *correct* production axis is a renderer Cargo feature mirroring this
-/// crate's own `web` feature — `dioxus-desktop` is a non-wasm binary with a
-/// real, working webview `eval`, and belongs on this same web-style arm,
-/// not on the native/no-op one `not(target_family = "wasm")` would route it
-/// to. Swap the `cfg` predicate here (and at every call site) for that
-/// feature once one exists; nothing else about this hook's shape needs to
-/// change.
-#[cfg(target_family = "wasm")]
+/// It is gated on `feature = "web"` (a renderer Cargo feature this crate
+/// already defines), not `target_family = "wasm"` — `dioxus-desktop` is a
+/// non-wasm binary with a real, working webview `eval`, and belongs on this
+/// same web-style arm, not on the native/no-op one `target_family = "wasm"`
+/// would wrongly exclude it from. `target_family = "wasm"` was the original
+/// gate here; it was corrected to `feature = "web"` after a 2026-09-01
+/// production incident (`docs/recommended-implementations.md` Caveat 1)
+/// showed the fullstack SSG prerender — a host (non-wasm) binary built with
+/// this feature on — rendered the native-arm markup instead, because the
+/// old gate excluded it. See `docs/recommended-implementations.md` Caveat 1
+/// for the corrected rule: markup/attribute choice keys off this renderer
+/// feature; only genuinely wasm-only *execution* internals (none exist in
+/// this hook's body — `document::eval` itself compiles and runs inertly on
+/// any renderer with no document context) would still key off
+/// `target_family`.
+#[cfg(feature = "web")]
 pub(crate) fn use_popover_sync(
     id: String,
     open: impl Readable<Target = bool> + Copy + 'static,
@@ -623,7 +628,7 @@ pub(crate) fn use_popover_sync(
 /// requires animated; the test Bug 1's fix targets only exercises a
 /// script-driven (Enter-key) close, exactly the path that fix keeps
 /// animatable.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 pub(crate) fn use_popover_shown_while_mounted(
     id: String,
     open: impl Readable<Target = bool> + Copy + 'static,
@@ -806,7 +811,7 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// stay in sync" test timing out clicking an option it could never reach).
 /// The `;` is never itself ambiguous across ids: it is not part of any
 /// digit sequence, so `dxc-4;` cannot appear inside `dxc-40;`.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 pub(crate) fn use_anchor_position_fallback(
     id: String,
     anchor_id: String,
@@ -1092,7 +1097,7 @@ pub(crate) fn use_anchor_position_fallback(
 
 // No native (Blitz) counterpart: every call site
 // (`tooltip.rs`/`hover_card.rs`/`popover.rs`) is itself inside a
-// `#[cfg(target_family = "wasm")]`-only component -- the modal/non-modal
+// `#[cfg(feature = "web")]`-only component -- the modal/non-modal
 // and mount/unmount boundaries in those files are real child-component
 // boundaries specifically so the *hook call* can differ per arm without a
 // conditional-hook-call hazard (see each file's comment), so a same-named
@@ -1134,7 +1139,7 @@ pub(crate) fn use_anchor_position_fallback(
 /// meaningful alongside `popover`, so it degrades to an inert empty `style`
 /// value off the web arm rather than being `#[cfg]`-gated at every call
 /// site.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 pub(crate) fn anchor_name_style(id: &str) -> String {
     format!("anchor-name: --dxa-{id};")
 }
@@ -1144,16 +1149,17 @@ pub(crate) fn anchor_name_style(id: &str) -> String {
 /// from the web-arm leaf render functions (the native arm never promotes
 /// content to the top layer, so it has no containing-block problem to
 /// solve), so -- like [`PopoverKind`] -- this has no native counterpart.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 pub(crate) fn position_anchor_style(id: &str) -> String {
     format!("position-anchor: --dxa-{id};")
 }
 
-/// No-op on every non-wasm target -- see [`anchor_name_style`]'s doc. Unlike
-/// [`position_anchor_style`], this one *is* called unconditionally (every
-/// trigger sets it, regardless of target), so it needs a real native stub
-/// rather than being `#[cfg]`-gated away entirely.
-#[cfg(not(target_family = "wasm"))]
+/// No-op whenever this crate's `web` feature is off -- see
+/// [`anchor_name_style`]'s doc. Unlike [`position_anchor_style`], this one
+/// *is* called unconditionally (every trigger sets it, regardless of
+/// build), so it needs a real native stub rather than being `#[cfg]`-gated
+/// away entirely.
+#[cfg(not(feature = "web"))]
 pub(crate) fn anchor_name_style(_id: &str) -> String {
     String::new()
 }

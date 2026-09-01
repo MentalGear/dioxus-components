@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dioxus::core::{current_scope_id, use_drop};
 use dioxus::prelude::*;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 use dioxus::prelude::{asset, manganis, Asset};
 use dioxus_core::AttributeValue::Text;
 use time::OffsetDateTime;
@@ -63,28 +63,32 @@ pub mod virtual_list;
 /// The vendored `focus-trap` JS bundle (`primitives/src/ts/focus-trap.ts`,
 /// compiled by `primitives/build.rs`'s `lazy_js_bundle` step). Native (Blitz)
 /// modal overlays (`dialog.rs`/`alert_dialog.rs`/`popover.rs`'s
-/// `#[cfg(not(target_family = "wasm"))]` arms) are its only remaining
+/// `#[cfg(not(feature = "web"))]` arms) are its only remaining
 /// consumers -- every web-arm modal overlay now uses the native-dialog
 /// engine (`showModal()`'s own focus trap/restore/inertness/top-layer),
 /// completing the two-engine overlay architecture (docs/plan.md). `#[cfg]`
-/// -gated to that same axis so the wasm/web build never references, and
-/// therefore never bundles, this asset at all -- see [`focus_trap_script`]
-/// (this file), the only thing that ever names this constant.
-#[cfg(not(target_family = "wasm"))]
+/// -gated on this crate's `web` feature (not `target_family = "wasm"` --
+/// see `docs/recommended-implementations.md` Caveat 1 for why that axis was
+/// corrected) so that neither the wasm client nor a host build with `web`
+/// on (the fullstack SSG server) ever references, and therefore never
+/// bundles, this asset at all -- see [`focus_trap_script`] (this file), the
+/// only thing that ever names this constant.
+#[cfg(not(feature = "web"))]
 pub(crate) const FOCUS_TRAP_JS: Asset = asset!("/src/js/focus-trap.js");
 
 /// Renders the `<script>` tag that loads [`FOCUS_TRAP_JS`] -- native
 /// (Blitz) arm only. `dialog.rs`/`alert_dialog.rs`/`popover.rs`'s Root
 /// components all call this instead of rendering `document::Script`
-/// directly, so the wasm/web build's rendered tree never mentions
-/// `FOCUS_TRAP_JS` at all (a plain `#[cfg]` on the tag inside one shared
-/// `rsx!` call wouldn't get you that -- the *other* branch's body would
-/// still need to name the wasm-absent constant to type-check; splitting
-/// into two whole function bodies, one per target, is what actually keeps
-/// the reference out of the wasm compilation unit). A no-op on the web arm:
+/// directly, so no build with this crate's `web` feature on ever mentions
+/// `FOCUS_TRAP_JS` in its rendered tree at all (a plain `#[cfg]` on the tag
+/// inside one shared `rsx!` call wouldn't get you that -- the *other*
+/// branch's body would still need to name the feature-absent constant to
+/// type-check; splitting into two whole function bodies, one per feature,
+/// is what actually keeps the reference out of that build's compilation
+/// unit). A no-op on the web arm:
 /// every modal overlay's web-arm focus handling comes from the browser's
 /// own `showModal()` now, so there is nothing to load there.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 pub(crate) fn focus_trap_script() -> Element {
     rsx! {
         document::Script {
@@ -94,8 +98,8 @@ pub(crate) fn focus_trap_script() -> Element {
     }
 }
 
-/// See [`focus_trap_script`]'s doc -- the web/wasm arm's no-op counterpart.
-#[cfg(target_family = "wasm")]
+/// See [`focus_trap_script`]'s doc -- the web arm's no-op counterpart.
+#[cfg(feature = "web")]
 pub(crate) fn focus_trap_script() -> Element {
     rsx! {}
 }
@@ -410,19 +414,20 @@ fn use_form_reset_listener(
 /// commits the declarative attribute during render, before this effect
 /// runs, so the guard's own condition is already false by the time it
 /// checks). That is exactly why this hook only exists in the
-/// `#[cfg(target_family = "wasm")]` leaf of `dialog.rs`/`alert_dialog.rs`'s
+/// `#[cfg(feature = "web")]` leaf of `dialog.rs`/`alert_dialog.rs`'s
 /// component split (`docs/phase4-spike-findings.md` Construction B) -- the
-/// `not(wasm)` arm never binds `open` as an attribute either, since that
-/// arm renders a plain `div`, not a `<dialog>`, at all.
+/// `not(feature = "web")` arm never binds `open` as an attribute either,
+/// since that arm renders a plain `div`, not a `<dialog>`, at all.
 ///
-/// Gated on `target_family = "wasm"` for the same reason
-/// [`crate::top_layer::use_popover_sync`] is (see that function's doc): it
-/// is the only axis this repo's CI can build and check both sides of today.
-/// The correct production axis is a renderer Cargo feature mirroring this
-/// crate's own `web` feature, matching Construction B's finding that
-/// `dioxus-desktop` is a non-wasm binary with a real, working webview
-/// `eval` and belongs on this same arm, not on native/Blitz's no-op one.
-#[cfg(target_family = "wasm")]
+/// Gated on `feature = "web"`, not `target_family = "wasm"`, for the same
+/// reason [`crate::top_layer::use_popover_sync`] is (see that function's
+/// doc): `dioxus-desktop` is a non-wasm binary with a real, working webview
+/// `eval` and belongs on this same arm, not on native/Blitz's no-op one --
+/// and, confirmed by the 2026-09-01 production incident
+/// (`docs/recommended-implementations.md` Caveat 1), the fullstack SSG
+/// prerender is a *host* (non-wasm) binary that also belongs on this arm
+/// whenever this crate's `web` feature is on.
+#[cfg(feature = "web")]
 fn use_dialog_open_driver(
     id: impl Readable<Target = String> + Copy + 'static,
     open: impl Readable<Target = bool> + Copy + 'static,
@@ -459,7 +464,7 @@ fn use_dialog_open_driver(
 ///
 /// See [`use_dialog_open_driver`]'s doc for why this is `#[cfg]`-gated the
 /// same way.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 fn use_dialog_close_sync(
     id: impl Readable<Target = String> + Copy + 'static,
     set_open: Callback<bool>,
@@ -510,7 +515,7 @@ fn use_dialog_close_sync(
 /// `showModal()` backdrop click's `event.target` *is* the `<dialog>` element
 /// (it contains itself), so `use_outside_dismiss`'s
 /// `!root.contains(e.target)` check can never fire for it.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 fn use_dialog_backdrop_dismiss(
     id: impl Readable<Target = String> + Copy + 'static,
     on_dismiss: impl FnMut() + Clone + 'static,

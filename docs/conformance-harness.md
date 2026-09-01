@@ -108,15 +108,62 @@ When a Radix behaviour looks idiosyncratic, reach for **bits-ui** (or another ma
 
 ---
 
+## Hydration/deployment parity — orthogonal to the other three tiers
+
+The three tiers above all ask "does this component *behave* correctly?" against a `dx serve` dev-server client. They cannot catch a defect that only exists in the **deployed build shape** — fullstack SSG, prerendered by a host (non-wasm) server binary and then hydrated by the wasm client — because none of them ever build or serve that shape. `oracle/hydration-parity.spec.ts` closes that gap. Its rule source is the WHATWG hydration-adjacent contract (server and client must render the same tree) plus Dioxus's own hydration model, not any of the three tiers' rule sources, so it is filed at `oracle/` top level rather than under `tier1-apg/`, `tier2-html/`, or `tier3-radix/`.
+
+**Why this exists:** the 2026-09-01 production incident (`docs/recommended-implementations.md` Caveat 1) — primitives split rendered markup on `target_family = "wasm"`, which is false on the SSG server's host binary, so the deployed site's server prerender and wasm client hydration disagreed on markup structurally, breaking events page-wide on every hard-loaded page.
+
+**The SSG lane — how to build and run it locally:**
+
+```bash
+# 1. Build the fullstack SSG artifact (mirrors CI's web.yml: ssg: true,
+#    features: fullstack — omit --base-path to serve at "/" locally).
+cd preview
+#    --force-sequential: dx otherwise races its own client and server
+#    sub-builds, and the client's index.html write can clobber the
+#    server's prerendered output (observed 2026-09-01).
+dx build --ssg --features fullstack --platform web --force-sequential true
+
+# 2. Snapshot, then serve the static output plainly (no dx dev server).
+#    Site dir: target/dx/preview/debug/web/public (workspace-root
+#    relative). Snapshot it: this is the SAME directory `dx run --web`
+#    serves for the CSR lane, and the SSG build leaves prerendered route
+#    pages (component/, dashboard/, docs/, demos/) in it -- a later CSR
+#    client then mounts on top of that prerendered markup and every
+#    chrome element appears twice (duplicate navbar/footer/toast region,
+#    axe `landmark-unique`, scroll-lock and native-dialog reds). Delete
+#    those route directories before going back to the CSR lane.
+cp -r ../target/dx/preview/debug/web/public /tmp/ssg-site
+python3 -m http.server 8090 -d /tmp/ssg-site
+
+# 3. Run the hydration-parity oracle (and/or any other spec) against it.
+cd ../playwright
+npx playwright test --config=ssg.local.config.ts oracle/hydration-parity.spec.ts
+```
+
+`playwright/ssg.local.config.ts` (cloned from `baseline.local.config.ts`) has no `webServer` entry, so it never starts or waits on a dev server — start the static server yourself first. It does not change the base URL for the rest of this repo's specs, which hardcode `http://127.0.0.1:8080`: to run one of *those* against the SSG lane, also serve the same site directory on port 8080 (a second `http.server` process over the same directory is harmless). `oracle/hydration-parity.spec.ts` itself hardcodes port 8090.
+
+A quick manual check that needs no Playwright at all — the fastest way to tell whether a build landed on the web arm or the native arm:
+
+```bash
+grep -o 'dx-toast[^>]*' target/dx/preview/debug/web/public/index.html
+# web arm (correct):    ...dx-toast-container-XXXXXXXX" ... popover="manual" ...
+# native arm (the bug): ...dx-toast-container-XXXXXXXX" data-node-hydration="..." (no popover)
+```
+
+---
+
 ## Layout
 
 ```
 playwright/oracle/
-  tier1-apg/           rules citing an APG pattern section
-  tier2-html/          rules citing an HTML spec section
-  tier3-radix/         labelled opinion
-  reference/           vendored APG example pages, pinned by commit
-  subjects/            adapters: route + selectors per implementation
+  tier1-apg/                 rules citing an APG pattern section
+  tier2-html/                rules citing an HTML spec section
+  tier3-radix/                labelled opinion
+  hydration-parity.spec.ts   SSG-server/wasm-client markup parity (its own axis, no tier)
+  reference/                 vendored APG example pages, pinned by commit
+  subjects/                  adapters: route + selectors per implementation
 ```
 
 Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` already does. The run matrix is *rule × subject*; the output is a conformance matrix per component, which doubles as the library's accessibility scorecard.
@@ -124,8 +171,11 @@ Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` al
 ## Status
 
 - **Tier 1:** one rule implemented (focus restore on Escape), executed, 4 fail / 1 control passes. Not yet calibrated against an APG page — the control is internal.
-- **Tier 2:** researched, not implemented. Needs a form fixture; none exists in `preview/`.
-- **Tier 3:** not implemented.
+- **Tier 2:** partially implemented — `top-layer.spec.ts`, `native-dialog.spec.ts`, `form-participation.spec.ts` (the last one researched-but-not-yet-fixtured per its own README).
+- **Tier 3:** `tier3-radix/scroll-lock.spec.ts` implemented; otherwise not implemented.
+- **Hydration/deployment parity:** implemented (`oracle/hydration-parity.spec.ts`, 2026-09-01) — 3 rules, all run against the local SSG lane. Not wired into CI yet (`docs/backlog.md`, "SSG lane in CI").
+- **Preview composition (source-level guard, not an oracle):** `scripts/check-preview-composition.sh` + `docs/preview-composition.md` (2026-09-01) — preview markup composes only themed wrappers from `crate::components::*`; a raw `dioxus_primitives::` component in a fixture or dashboard renders classless (the "collapsed library switch" incident). Its browser-visible half is covered by the existing form-participation oracle plus an SSR render test in `preview/src/components/form/component.rs`.
+- **Accordion close-animation regression:** `playwright/accordion-animation.spec.ts` (2026-09-01) — samples the content height per frame during close and asserts it reaches ~0 before unmount with no mid-curve plateau (the padding-floor jank `accordion.spec.ts`'s smoothness check could not see); runs against the app route by default and against a standalone reproduction page with `ACCORDION_MODE=repro`.
 
 ---
 

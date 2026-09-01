@@ -1,12 +1,12 @@
 //! Defines the [`HoverCard`] component and its subcomponents.
 
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use crate::merge_attributes;
 use crate::{
     use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
 };
 use dioxus::prelude::*;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
@@ -93,7 +93,7 @@ pub fn HoverCard(props: HoverCardProps) -> Element {
     // installed well before the first open, rather than only from
     // `use_anchor_position_fallback` (which only runs once `HoverCardContent`
     // first mounts).
-    #[cfg(target_family = "wasm")]
+    #[cfg(feature = "web")]
     use_effect(crate::top_layer::ensure_anchor_positioning_styles);
 
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
@@ -336,7 +336,7 @@ pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
 /// pair already owns its lifecycle, and MDN's own naming for this pattern
 /// ("hover card") does not imply light dismiss the way a click-triggered
 /// popover does).
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn HoverCardContentRendered(
     id: String,
@@ -399,7 +399,7 @@ fn HoverCardContentRendered(
 
 /// Native (Blitz) arm: unchanged from before this slice — see
 /// `docs/recommended-implementations.md` Caveat 2.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn HoverCardContentRendered(
     id: String,

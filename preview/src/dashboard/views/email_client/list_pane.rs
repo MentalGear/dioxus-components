@@ -1,12 +1,11 @@
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Check, ChevronDown};
-use dioxus_primitives::select as primitive_select;
 
 use crate::components::avatar::{AvatarImageSize, AvatarShape, ImageAvatar};
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::item::{
     Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemMediaVariant, ItemTitle,
 };
+use crate::components::select::{SelectGroup, SelectGroupLabel, SelectMulti, SelectOption};
 use crate::components::tabs::component::{TabList, TabTrigger, Tabs};
 use crate::components::virtual_list::VirtualList;
 use crate::dashboard::common::{
@@ -16,9 +15,6 @@ use crate::dashboard::common::{
 
 use super::avatars::avatar_profile_for_key;
 use super::state::{EmailClientState, EmailClientStateStoreExt, EmailClientStateStoreImplExt};
-
-#[css_module("/src/components/select/style.css")]
-struct SelectStyles;
 
 #[derive(Clone, PartialEq)]
 pub(super) enum ListRow {
@@ -83,46 +79,31 @@ pub(super) fn ListPane(
                         }
                     }
                 }
-                primitive_select::SelectMulti::<MessageTag> {
-                    class: SelectStyles::dx_select,
+                SelectMulti::<MessageTag> {
                     values: Some(tags.clone()),
                     default_values: vec![],
                     on_values_change: move |values| {
                         state.set_selected_tags(values);
                     },
-                    primitive_select::SelectTrigger {
-                        class: format!("{} ec-filter-trigger", SelectStyles::dx_select_trigger),
-                        aria_label: "Filter by tag",
+                    trigger_class: "ec-filter-trigger",
+                    trigger_aria_label: "Filter by tag",
+                    list_class: "ec-filter-list",
+                    list_aria_label: "Filter by tag",
+                    trigger: rsx! {
                         LucideIcon { kind: IconKind::Filter }
                         if !tags.is_empty() {
                             span { class: "ec-filter-count", "{tags.len()}" }
                         }
-                        ChevronDown {
-                            class: "dx-select-expand-icon",
-                            size: "20px",
-                            stroke: "var(--primary-color-7)",
-                        }
-                    }
-                    primitive_select::SelectList {
-                        class: format!("{} ec-filter-list", SelectStyles::dx_select_list),
-                        aria_label: "Filter by tag",
-                        primitive_select::SelectGroup {
-                            primitive_select::SelectGroupLabel { class: SelectStyles::dx_select_group_label, "Tags" }
-                            for (index, tag) in MessageTag::ALL.iter().enumerate() {
-                                primitive_select::SelectOption::<MessageTag> {
-                                    class: SelectStyles::dx_select_option,
-                                    key: "{tag.label()}",
-                                    index,
-                                    value: *tag,
-                                    text_value: "{tag.label()}",
-                                    {tag.label()}
-                                    primitive_select::SelectItemIndicator {
-                                        Check {
-                                            size: "1rem",
-                                            stroke: "var(--secondary-color-5)",
-                                        }
-                                    }
-                                }
+                    },
+                    SelectGroup {
+                        SelectGroupLabel { "Tags" }
+                        for (index, tag) in MessageTag::ALL.iter().enumerate() {
+                            SelectOption::<MessageTag> {
+                                key: "{tag.label()}",
+                                index,
+                                value: *tag,
+                                text_value: "{tag.label()}",
+                                {tag.label()}
                             }
                         }
                     }

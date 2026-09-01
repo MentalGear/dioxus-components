@@ -2,11 +2,11 @@
 
 use crate::{listbox::use_listbox_container, use_effect};
 use dioxus::prelude::*;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 use super::super::context::SelectContext;
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 use crate::merge_attributes;
 
 /// The props for the [`SelectList`] component
@@ -160,7 +160,7 @@ fn select_list_onkeydown(mut ctx: SelectContext) -> impl FnMut(KeyboardEvent) {
                 // here would race it. Native (Blitz) arm: unchanged, closes
                 // here directly (Blitz has no popover-API light dismiss to
                 // defer to).
-                if cfg!(target_family = "wasm") {
+                if cfg!(feature = "web") {
                     return;
                 }
                 ctx.set_open(false);
@@ -221,7 +221,7 @@ fn select_list_onkeydown(mut ctx: SelectContext) -> impl FnMut(KeyboardEvent) {
 ///   doc for the animate-out race that binding would otherwise cause with
 ///   [`crate::use_animated_open`] (`SelectList`, above), and why this
 ///   mount/unmount-scoped variant avoids it.
-#[cfg(target_family = "wasm")]
+#[cfg(feature = "web")]
 #[component]
 fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let mut ctx: SelectContext = use_context();
@@ -323,7 +323,7 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
 /// popover-API support at all (`docs/recommended-implementations.md`
 /// Caveat 2), so this stays the functional floor, a plain, always-in-flow
 /// `div`.
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(feature = "web"))]
 #[component]
 fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let mut ctx: SelectContext = use_context();
