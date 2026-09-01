@@ -1,43 +1,67 @@
+// Composition rule for this fixture (and every other preview page): compose
+// ONLY themed wrappers from `crate::components::*`, never a bare
+// `dioxus_primitives::` component directly. `preview/src/components/<name>/
+// component.rs` is the one place per component where the raw primitive is
+// imported and given its `css_module` theme class (e.g. `.dx-checkbox` in
+// `../checkbox/style.css`, `.dx-switch` in `../switch/style.css`); every
+// *other* file, this one included, is expected to reach for that themed
+// wrapper the same way `components/slider/variants/dynamic_range/mod.rs`
+// imports `crate::components::switch::Switch` or `components/card/variants/
+// main/mod.rs` imports `crate::components::{button, input, label}`. This
+// file being itself a `component.rs` does not exempt it: unlike the ~45
+// wrapper files, there is no `dioxus_primitives::form` primitive for it to
+// wrap -- it is a fixture composing *other* components, so the rule applies
+// to it exactly as it does to a variant demo. `scripts/check-preview-
+// composition.sh` enforces this over `preview/src`; see
+// `docs/preview-composition.md` for the full rule and rationale.
+//
+// Two confirmed incidents of violating it, both by construction (execution-
+// verified, not just plausible):
+//
 // Item 1 fix (2026-09-01, live-site report): "checkboxes and radio buttons
-// collapse visually when toggled on/off." This fixture used to import the
-// *raw* `dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator}` and
+// collapse visually when toggled on/off." This fixture imported the *raw*
+// `dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator}` and
 // `dioxus_primitives::radio_group::{RadioGroup, RadioItem}` primitives
-// directly, unlike every other consumer in this preview app -- see e.g.
-// `components/slider/variants/dynamic_range/mod.rs` importing
-// `crate::components::switch::Switch`, or `components/card/variants/main/
-// mod.rs` importing `crate::components::{button, input, label}`: the
-// established pattern in this workspace is for one component's fixture/demo
-// to compose *another* component's themed wrapper (`preview/src/components/
-// <name>/component.rs`), not the bare `dioxus_primitives` type, because the
-// theme wrapper is what attaches the fixed-size CSS classes
-// (`.dx-checkbox`/`.dx-checkbox-indicator` in `../checkbox/style.css`,
-// `.dx-radio-item` in `../radio_group/style.css`). Without those classes,
-// `Checkbox`'s `<button>` has no explicit `width`/`height` at all -- its box
-// is sized purely by its content -- and `CheckboxIndicator` renders its
-// children (the checkmark) *only* while checked (see
-// `primitives/src/checkbox.rs`'s doc: "children will only be rendered when
-// the checkbox is checked"), so the button visibly grows for the glyph when
-// checked and collapses back to a zero-content box when unchecked.
-// `RadioItem`'s entire visual (the circle) is a `.dx-radio-item::before`
-// pseudo-element that plain `dioxus_primitives::radio_group::RadioItem`
-// never gets without that class, so its `<button>` collapses to whatever a
-// bare, empty `<button>` renders as in every state. Confirmed by measurement
-// against `/component/?name=checkbox` and `/component/?name=radio_group`
-// (both themed, both stable-sized in every state) vs. this fixture
-// pre-fix (both collapsing) -- see this session's report for the exact
-// `getBoundingClientRect()` numbers. Fixed here, not in
-// `primitives/src/checkbox.rs` or `radio_group.rs`: the *conditional-
-// children* behavior of `CheckboxIndicator` is correct, documented API (a
-// consumer's indicator content need not be a fixed-size glyph), and
-// `RadioItem`'s primitive renders no built-in visual by design (it is a
-// headless primitive) -- the actual defect was this one fixture forgetting
-// the theme layer every sibling fixture already applies.
+// directly. Without the theme class, `Checkbox`'s `<button>` has no explicit
+// `width`/`height` at all -- its box is sized purely by its content -- and
+// `CheckboxIndicator` renders its children (the checkmark) *only* while
+// checked (see `primitives/src/checkbox.rs`'s doc: "children will only be
+// rendered when the checkbox is checked"), so the button visibly grows for
+// the glyph when checked and collapses back to a zero-content box when
+// unchecked. `RadioItem`'s entire visual (the circle) is a
+// `.dx-radio-item::before` pseudo-element that plain
+// `dioxus_primitives::radio_group::RadioItem` never gets without that class,
+// so its `<button>` collapses to whatever a bare, empty `<button>` renders as
+// in every state. Confirmed by measurement against `/component/?name=checkbox`
+// and `/component/?name=radio_group` (both themed, both stable-sized in every
+// state) vs. this fixture pre-fix (both collapsing). Fixed here, not in
+// `primitives/src/checkbox.rs` or `radio_group.rs`: the *conditional-children*
+// behavior of `CheckboxIndicator` is correct, documented API (a consumer's
+// indicator content need not be a fixed-size glyph), and `RadioItem`'s
+// primitive renders no built-in visual by design (it is a headless
+// primitive) -- the actual defect was this one fixture forgetting the theme
+// layer every sibling fixture already applies.
+//
+// Item 2 fix (2026-09-01, live-site report): "Notifications (library switch)"
+// and "Opt-in, required (library switch)" render visually collapsed, the same
+// way. This fixture also imported the *raw* `dioxus_primitives::switch::
+// {Switch, SwitchThumb}` and `dioxus_primitives::select::{Select, SelectList,
+// SelectOption, SelectTrigger, SelectValue}` primitives directly, the same
+// root cause as Item 1: `Switch`'s `<button>` gets no `width`/`height`
+// without `.dx-switch` (`../switch/style.css`: `all: unset; width: 2rem;
+// height: 1.15rem; ...`), so it collapses to an empty button's intrinsic
+// size. Confirmed by an SSR test below asserting `#switch-lib` carries a
+// `dx-switch`-prefixed class, red before this fix (no `class` attribute on
+// that button at all) and green after. Fixed here by switching to
+// `crate::components::switch::Switch` (which renders its own themed
+// `SwitchThumb` internally -- the explicit `SwitchThumb {}` child this
+// fixture previously passed is gone) and `crate::components::select::*`.
 use crate::components::checkbox::Checkbox;
 use crate::components::radio_group::{RadioGroup, RadioItem};
+use crate::components::select::{Select, SelectOption};
+use crate::components::switch::Switch;
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::CheckboxState;
-use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger, SelectValue};
-use dioxus_primitives::switch::{Switch, SwitchThumb};
 
 #[css_module("/src/components/form/style.css")]
 struct Styles;
@@ -343,9 +367,7 @@ pub fn FormFixture() -> Element {
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
                             label { r#for: "switch-lib", "Notifications (library switch)" }
-                            Switch { id: "switch-lib", name: "notify-lib", value: "subscribed",
-                                SwitchThumb {}
-                            }
+                            Switch { id: "switch-lib", name: "notify-lib", value: "subscribed" }
                         }
                         div { class: Styles::dx_form_field,
                             label { r#for: "switch-native", "Notifications (native reference)" }
@@ -396,16 +418,15 @@ pub fn FormFixture() -> Element {
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
                             span { "Fruit (library select)" }
-                            Select::<String> { name: "fruit-lib", default_value: Some("apple".to_string()),
-                                SelectTrigger { aria_label: "Fruit (library)",
-                                    SelectValue {}
-                                }
-                                SelectList { aria_label: "Fruit options (library)",
-                                    SelectOption::<String> { index: 0usize, value: "apple", "Apple" }
-                                    SelectOption::<String> { index: 1usize, value: "banana", "Banana" }
-                                    SelectOption::<String> { index: 2usize, value: "cherry", "Cherry" }
-                                    SelectOption::<String> { index: 3usize, value: "date", "Date" }
-                                }
+                            Select::<String> {
+                                name: "fruit-lib",
+                                default_value: Some("apple".to_string()),
+                                trigger_aria_label: "Fruit (library)",
+                                list_aria_label: "Fruit options (library)",
+                                SelectOption::<String> { index: 0usize, value: "apple", "Apple" }
+                                SelectOption::<String> { index: 1usize, value: "banana", "Banana" }
+                                SelectOption::<String> { index: 2usize, value: "cherry", "Cherry" }
+                                SelectOption::<String> { index: 3usize, value: "date", "Date" }
                             }
                         }
                         div { class: Styles::dx_form_field,
@@ -473,8 +494,11 @@ pub fn FormFixture() -> Element {
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
                             label { r#for: "switch-required-lib", "Opt-in, required (library switch)" }
-                            Switch { id: "switch-required-lib", name: "opt-in-required-lib", value: "subscribed", required: true,
-                                SwitchThumb {}
+                            Switch {
+                                id: "switch-required-lib",
+                                name: "opt-in-required-lib",
+                                value: "subscribed",
+                                required: true,
                             }
                         }
                         div { class: Styles::dx_form_field,
@@ -527,15 +551,15 @@ pub fn FormFixture() -> Element {
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
                             span { "Fruit, required (library select)" }
-                            Select::<String> { name: "fruit-required-lib", required: true,
-                                SelectTrigger { aria_label: "Fruit, required (library)",
-                                    SelectValue { placeholder: "Choose a fruit" }
-                                }
-                                SelectList { aria_label: "Fruit options, required (library)",
-                                    SelectOption::<String> { index: 0usize, value: "apple", "Apple" }
-                                    SelectOption::<String> { index: 1usize, value: "banana", "Banana" }
-                                    SelectOption::<String> { index: 2usize, value: "cherry", "Cherry" }
-                                }
+                            Select::<String> {
+                                name: "fruit-required-lib",
+                                required: true,
+                                trigger_aria_label: "Fruit, required (library)",
+                                list_aria_label: "Fruit options, required (library)",
+                                placeholder: "Choose a fruit",
+                                SelectOption::<String> { index: 0usize, value: "apple", "Apple" }
+                                SelectOption::<String> { index: 1usize, value: "banana", "Banana" }
+                                SelectOption::<String> { index: 2usize, value: "cherry", "Cherry" }
                             }
                         }
                         div { class: Styles::dx_form_field,
@@ -558,5 +582,58 @@ pub fn FormFixture() -> Element {
                 pre { id: "required-result", class: Styles::dx_form_result, "data-submit-count": "0" }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Returns the substring of `html` for the single opening tag containing
+    /// `needle` (e.g. `id="switch-lib"`) -- from the tag's preceding `<` to
+    /// its closing `>`. Panics with the full document on a miss, so a
+    /// failure is easy to diagnose.
+    fn tag_containing<'a>(html: &'a str, needle: &str) -> &'a str {
+        let at = html
+            .find(needle)
+            .unwrap_or_else(|| panic!("expected to find `{needle}` in:\n{html}"));
+        let start = html[..at].rfind('<').expect("tag has an opening `<`");
+        let end = at + html[at..].find('>').expect("tag has a closing `>`");
+        &html[start..=end]
+    }
+
+    /// Returns the value of `attr="..."` inside `tag`.
+    fn attr_value<'a>(tag: &'a str, attr: &str) -> &'a str {
+        let pat = format!("{attr}=\"");
+        let start = tag
+            .find(&pat)
+            .unwrap_or_else(|| panic!("expected `{attr}` attribute in tag: {tag}"))
+            + pat.len();
+        let end = start + tag[start..].find('"').expect("attribute value is quoted");
+        &tag[start..end]
+    }
+
+    /// Item 1 fix (2026-09-01, live-site report): a themed control's class
+    /// is what actually carries its fixed size (see this file's header
+    /// comment, and `../switch/style.css`'s `.dx-switch { all: unset; width:
+    /// 2rem; ...}`). `#[css_module]` hash-suffixes every class it generates
+    /// (confirmed by execution -- the rendered class is `dx-switch-<8 hex
+    /// chars>`, never the literal `dx-switch`), so this matches on the
+    /// prefix rather than the exact class name.
+    #[test]
+    fn switch_lib_carries_the_themed_dx_switch_class() {
+        let mut dom = VirtualDom::new(FormFixture);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        let tag = tag_containing(&html, "id=\"switch-lib\"");
+        let class = attr_value(tag, "class");
+        assert!(
+            class
+                .split_whitespace()
+                .any(|token| token.starts_with("dx-switch-")),
+            "expected a dx-switch-<hash>-prefixed class on #switch-lib (see \
+             crate::components::switch::Switch), got class=\"{class}\" from tag: {tag}"
+        );
     }
 }
