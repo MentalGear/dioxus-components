@@ -179,6 +179,42 @@ pub(crate) fn use_popover_sync(
 /// touched -- no extra reflow, no risk of fighting a working anchor
 /// resolution.
 ///
+/// ## The flip contract (docs/backlog.md row 10)
+///
+/// The stylesheets this pairs with (`tooltip`/`hover_card`/`popover`
+/// `style.css`, `@supports` blocks) now declare
+/// `position-try-fallbacks: flip-block, flip-inline` on the anchored
+/// `[popover]` rule -- the CSS Anchor Positioning spec's own collision-
+/// avoidance primitive
+/// (<https://www.w3.org/TR/css-anchor-position-1/#fallback-var>). On an
+/// engine that implements it, a preferred placement that doesn't fit the
+/// viewport can legitimately paint at the *opposite* side on the relevant
+/// axis instead -- e.g. `[data-side="bottom"]` rendering physically above
+/// its trigger. That is intentional disagreement with the naive "actual
+/// equals `[data-side]`'s own formula" check this function used to make
+/// unconditionally, and this function runs after that flip has already
+/// painted (see the mount-order/timing note further down) -- so this
+/// function computes **both** candidate positions (the primary side's own
+/// formula, and the same formula with only the relevant axis's side
+/// swapped -- top/bottom sides flip on the block axis, left/right sides on
+/// the inline axis, matching `flip-block`/`flip-inline` exactly) and
+/// accepts the painted position if it matches *either* one. Only when it
+/// matches **neither** -- meaning this engine's anchor-positioning
+/// integration failed outright, the pre-existing case this function was
+/// written for -- does it override with inline styles at all. This is the
+/// one load-bearing rule change here: naively re-checking only the primary
+/// formula would see a legitimate CSS flip as "wrong" and stomp it back to
+/// the off-viewport primary position, fighting the platform's own fix.
+///
+/// When it does override (no working anchor-positioning engine at all), it
+/// now makes the *same* flip decision itself, from plain
+/// `getBoundingClientRect()`/`window.inner{Width,Height}` viewport math:
+/// if the primary placement would overflow the relevant viewport edge, it
+/// uses the flipped placement instead. This closes the "legacy engines get
+/// no flip at all" gap docs/backlog.md row 10 notes alongside the CSS
+/// addition, with the same deliberately narrow scope: flip only, never
+/// shift or resize (that remainder of Phase 5 is still open).
+///
 /// Deliberately a one-shot measurement taken when `open` becomes true, not a
 /// live-tracking `ResizeObserver`/scroll listener: this is static
 /// positioning parity with the pre-4.4 behavior, not collision detection or
@@ -238,43 +274,93 @@ pub(crate) fn use_anchor_position_fallback(
                 const c = content.getBoundingClientRect();
                 const cw = content.offsetWidth;
                 const ch = content.offsetHeight;
-                const side = '{side}';
                 const align = '{align}';
                 const gap = {gap_px};
-                let top;
-                let left;
-                if (side === 'top') {{
-                    top = t.top - gap - ch;
-                }} else if (side === 'bottom') {{
-                    top = t.bottom + gap;
-                }} else if (align === 'start') {{
-                    top = t.top;
-                }} else if (align === 'end') {{
-                    top = t.bottom - ch;
-                }} else {{
-                    top = t.top + t.height / 2 - ch / 2;
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+
+                // Same trigger-relative formula the `[data-side]`/
+                // `[data-align]` CSS contract promises, parameterised over
+                // *which* side is currently being placed -- called once for
+                // the primary side and once for its flip-axis opposite (see
+                // this function's doc, "The flip contract").
+                function place(effectiveSide) {{
+                    let top;
+                    let left;
+                    if (effectiveSide === 'top') {{
+                        top = t.top - gap - ch;
+                    }} else if (effectiveSide === 'bottom') {{
+                        top = t.bottom + gap;
+                    }} else if (align === 'start') {{
+                        top = t.top;
+                    }} else if (align === 'end') {{
+                        top = t.bottom - ch;
+                    }} else {{
+                        top = t.top + t.height / 2 - ch / 2;
+                    }}
+                    if (effectiveSide === 'left') {{
+                        left = t.left - gap - cw;
+                    }} else if (effectiveSide === 'right') {{
+                        left = t.right + gap;
+                    }} else if (align === 'start') {{
+                        left = t.left;
+                    }} else if (align === 'end') {{
+                        left = t.right - cw;
+                    }} else {{
+                        left = t.left + t.width / 2 - cw / 2;
+                    }}
+                    return {{ top, left }};
                 }}
-                if (side === 'left') {{
-                    left = t.left - gap - cw;
-                }} else if (side === 'right') {{
-                    left = t.right + gap;
-                }} else if (align === 'start') {{
-                    left = t.left;
-                }} else if (align === 'end') {{
-                    left = t.right - cw;
-                }} else {{
-                    left = t.left + t.width / 2 - cw / 2;
-                }}
+
+                const side = '{side}';
+                // The only side `position-try-fallbacks: flip-block,
+                // flip-inline` can ever swap this one to: top/bottom flip
+                // on the block axis, left/right on the inline axis -- each
+                // of the four sides has exactly one relevant flip axis, so
+                // there is exactly one opposite candidate, not a set of
+                // four.
+                const opposite = {{ top: 'bottom', bottom: 'top', left: 'right', right: 'left' }}[side];
+                const primary = place(side);
+                const flipped = place(opposite);
+
                 // Tolerance for rounding/subpixel noise -- see this
                 // function's doc for why this checks the *outcome* rather
                 // than trusting a feature-detection flag.
-                if (Math.abs(c.top - top) > 2 || Math.abs(c.left - left) > 2) {{
+                function matches(pos) {{
+                    return Math.abs(c.top - pos.top) <= 2 && Math.abs(c.left - pos.left) <= 2;
+                }}
+
+                if (matches(primary) || matches(flipped)) {{
+                    // A working anchor-positioning engine placed this at
+                    // one of the two contract-legal spots -- its own
+                    // preferred side, or the CSS `position-try-fallbacks`
+                    // flip of it. Never override: doing so here would fight
+                    // a legitimate flip and stomp it back off-viewport (see
+                    // this function's doc).
+                }} else {{
+                    // Neither matches: this engine's anchor-positioning
+                    // integration failed outright (the pre-existing case
+                    // this function exists for). Make the same flip
+                    // decision from plain viewport math, so a non-anchor
+                    // engine gets flip parity with the CSS path -- flip
+                    // only, no shift/size (docs/backlog.md row 10's
+                    // remaining Phase 5 scope stays open).
+                    let target = primary;
+                    if (side === 'top' && primary.top < 0) {{
+                        target = flipped;
+                    }} else if (side === 'bottom' && primary.top + ch > vh) {{
+                        target = flipped;
+                    }} else if (side === 'left' && primary.left < 0) {{
+                        target = flipped;
+                    }} else if (side === 'right' && primary.left + cw > vw) {{
+                        target = flipped;
+                    }}
                     content.style.position = 'fixed';
                     content.style.margin = '0';
                     content.style.inset = 'auto';
                     content.style.transform = 'none';
-                    content.style.top = top + 'px';
-                    content.style.left = left + 'px';
+                    content.style.top = target.top + 'px';
+                    content.style.left = target.left + 'px';
                 }}
             }}
             "#

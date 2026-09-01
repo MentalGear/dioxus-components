@@ -4,6 +4,7 @@ use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
+use dioxus_primitives::ContentSide;
 
 #[css_module("/src/components/top_layer/style.css")]
 struct Styles;
@@ -151,6 +152,139 @@ pub fn TopLayerFixture() -> Element {
                     // An element well away from both triggers, for the
                     // light-dismiss ("click outside") assertions.
                     button { id: "outside-click-target", class: Styles::dx_top_layer_outside, "Click outside target" }
+                }
+            }
+
+            section { class: Styles::dx_top_layer_section,
+                h2 { "Near-viewport-edge flip (CSS position-try-fallbacks)" }
+                p { class: Styles::dx_top_layer_hint,
+                    "W3C CSS Anchor Positioning's "
+                    code { "position-try-fallbacks" }
+                    " ("
+                    a {
+                        href: "https://www.w3.org/TR/css-anchor-position-1/#fallback-var",
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                        "spec"
+                    }
+                    ") -- a CSS-spec citation, not WHATWG HTML, unlike the rest of "
+                    "this fixture; see the oracle spec's header for why this rule "
+                    "still lives in this tier-2 file. Every trigger below is "
+                    "pinned by fixed positioning right at a viewport edge, with "
+                    "its preferred "
+                    code { "side" }
+                    " pointing off-viewport -- the bottom row's triggers request "
+                    code { "side=\"bottom\"" }
+                    " while sitting a few pixels from the bottom edge; the right "
+                    "column's request "
+                    code { "side=\"right\"" }
+                    " a few pixels from the right edge -- so content can only "
+                    "render fully on-screen by flipping to the opposite side on "
+                    "the relevant axis. A native "
+                    code { "<div popover>" }
+                    " + "
+                    code { "position-try-fallbacks" }
+                    " reference sits in each row/column too: the browser's own "
+                    "implementation of the identical spec feature, no library "
+                    "code involved (CALIBRATION)."
+                }
+                div { class: Styles::dx_top_layer_edge_bottom_row,
+                    Tooltip {
+                        TooltipTrigger { id: "edge-bottom-tooltip-trigger", "Bottom tooltip" }
+                        TooltipContent {
+                            id: "edge-bottom-tooltip-content",
+                            side: ContentSide::Bottom,
+                            "Flips above its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    HoverCard {
+                        HoverCardTrigger { id: "edge-bottom-hovercard-trigger", "Bottom hover card" }
+                        HoverCardContent {
+                            id: "edge-bottom-hovercard-content",
+                            side: ContentSide::Bottom,
+                            "Flips above its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    PopoverRoot { id: "edge-bottom-popover-root", is_modal: false,
+                        PopoverTrigger { id: "edge-bottom-popover-trigger", "Bottom popover" }
+                        PopoverContent {
+                            id: "edge-bottom-popover-content",
+                            side: ContentSide::Bottom,
+                            "Flips above its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    // Native reference (CALIBRATION): the browser's own
+                    // `position-try-fallbacks: flip-block` on a plain
+                    // `<div popover>`, anchored via the `dx-top-layer-edge-
+                    // native-trigger-bottom` class's `anchor-name` (see
+                    // style.css). No Dioxus positioning logic involved.
+                    button {
+                        id: "edge-bottom-native-trigger",
+                        class: Styles::dx_top_layer_edge_native_trigger_bottom,
+                        popovertarget: "edge-bottom-native-content",
+                        "Native bottom trigger"
+                    }
+                    div {
+                        id: "edge-bottom-native-content",
+                        // Plain, hand-written marker class -- see this
+                        // file's `dx-anchor-stack-native` comment above for
+                        // why (`@supports`-nested selectors aren't scoped
+                        // by `#[css_module]`).
+                        class: "dx-anchor-edge-bottom-native",
+                        popover: "auto",
+                        "data-side": "bottom",
+                        style: "min-height: 60px; min-width: 200px; border: 1px solid; padding: 0.5rem; background: Canvas; color: CanvasText;",
+                        "Native reference: flips above via position-try-fallbacks: flip-block."
+                    }
+                }
+
+                div { class: Styles::dx_top_layer_edge_right_col,
+                    Tooltip {
+                        TooltipTrigger { id: "edge-right-tooltip-trigger", "Right tooltip" }
+                        TooltipContent {
+                            id: "edge-right-tooltip-content",
+                            side: ContentSide::Right,
+                            "Flips left of its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    HoverCard {
+                        HoverCardTrigger { id: "edge-right-hovercard-trigger", "Right hover card" }
+                        HoverCardContent {
+                            id: "edge-right-hovercard-content",
+                            side: ContentSide::Right,
+                            "Flips left of its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    PopoverRoot { id: "edge-right-popover-root", is_modal: false,
+                        PopoverTrigger { id: "edge-right-popover-trigger", "Right popover" }
+                        PopoverContent {
+                            id: "edge-right-popover-content",
+                            side: ContentSide::Right,
+                            "Flips left of its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    // Native reference (CALIBRATION): `position-try-
+                    // fallbacks: flip-inline` counterpart of the row above.
+                    button {
+                        id: "edge-right-native-trigger",
+                        class: Styles::dx_top_layer_edge_native_trigger_right,
+                        popovertarget: "edge-right-native-content",
+                        "Native right trigger"
+                    }
+                    div {
+                        id: "edge-right-native-content",
+                        class: "dx-anchor-edge-right-native",
+                        popover: "auto",
+                        "data-side": "right",
+                        style: "min-width: 200px; border: 1px solid; padding: 0.5rem; background: Canvas; color: CanvasText;",
+                        "Native reference: flips left via position-try-fallbacks: flip-inline."
+                    }
                 }
             }
 
