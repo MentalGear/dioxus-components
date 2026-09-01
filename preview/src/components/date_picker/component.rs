@@ -169,7 +169,20 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
                 roving_loop: props.roving_loop,
                 attributes: merged,
                 date_picker::DatePickerPopover {
+                    // Item 3 fix (2026-09-01, live-site report): matches
+                    // `ColorPickerPopover`'s own `is_modal: false`
+                    // (`../color_picker/component.rs`) -- a calendar
+                    // dropdown, like a color swatch popover, is meant to sit
+                    // anchored next to its trigger, not centered as a modal
+                    // dialog. Requires `primitives/src/date_picker.rs`'s
+                    // `DatePickerPopover` to actually forward `is_modal` to
+                    // `PopoverRoot` (previously dropped -- see that fix's
+                    // comment) and this page's `style.css` to carry the
+                    // `@supports (anchor-name: --a)` block every other
+                    // non-modal-arm consumer has, or this would only trade
+                    // one broken position for another.
                     popover_root: PopoverRoot,
+                    is_modal: false,
                     DatePickerInput {
                         on_format_day_placeholder: props.on_format_day_placeholder,
                         on_format_month_placeholder: props.on_format_month_placeholder,
@@ -203,7 +216,10 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
                 roving_loop: props.roving_loop,
                 attributes: merged,
                 date_picker::DatePickerPopover {
+                    // See the comment on `DatePicker`'s own
+                    // `date_picker::DatePickerPopover` above -- identical fix.
                     popover_root: PopoverRoot,
+                    is_modal: false,
                     DateRangePickerInput {
                         on_format_day_placeholder: props.on_format_day_placeholder,
                         on_format_month_placeholder: props.on_format_month_placeholder,

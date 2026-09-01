@@ -376,6 +376,27 @@ pub fn DatePickerPopover(props: DatePickerPopoverProps) -> Element {
 
     rsx! {
         PopoverRoot {
+            // Item 3 fix (2026-09-01, live-site report): `is_modal` was
+            // declared on `DatePickerPopoverProps` (documented "whether the
+            // popover is a modal and should capture focus") but never
+            // actually forwarded here, so it silently had no effect --
+            // every `DatePickerPopover` rendered with `PopoverRoot`'s own
+            // default (`is_modal: true`) no matter what a caller passed.
+            // See `preview/src/components/date_picker/component.rs` for why
+            // this mattered in practice: `PopoverModalContent`'s DOM-
+            // relative "centering trick" (`position: absolute; left: 50%;
+            // transform: translateX(-50%)`, `../popover/style.css`) centers
+            // the calendar under its *positioned ancestor* (the narrow
+            // `.dx-date-picker` input group), not its trigger, and has no
+            // collision/edge-avoidance -- so a calendar wider than that
+            // ancestor renders partly off-screen whenever the ancestor sits
+            // near a viewport edge, confirmed by execution (measured
+            // ~-138px of a 276px-wide calendar sitting off the left edge on
+            // this repo's dev server). Forwarding `is_modal` here is what
+            // lets that preview component's `is_modal: false` actually
+            // switch the calendar onto the non-modal, trigger-anchored arm
+            // instead.
+            is_modal: props.is_modal,
             open: open(),
             on_open_change: move |v| open.set(v),
             attributes: props.attributes,

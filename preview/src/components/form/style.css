@@ -66,3 +66,18 @@
     font-size: 0.85rem;
     white-space: pre-wrap;
 }
+
+/*
+ * Item 2 fix (2026-09-01, live-site report): visible feedback for a blocked
+ * "Required blocking" submit. `required` lives on each library control's
+ * visually-hidden native mirror, which Chrome cannot focus or show its own
+ * validation bubble on -- see `component.rs`'s `watch_invalid_js` doc for
+ * the full mechanics. That listener bridges the browser's own invalid state
+ * onto the visible control by setting `data-invalid="true"` on it (cleared
+ * on the next change or on form reset); this is the only styling for that
+ * marker.
+ */
+.dx-form [data-invalid="true"] {
+    box-shadow: 0 0 0 2px var(--primary-error-color);
+    outline: none;
+}

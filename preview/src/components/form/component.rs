@@ -1,6 +1,41 @@
+// Item 1 fix (2026-09-01, live-site report): "checkboxes and radio buttons
+// collapse visually when toggled on/off." This fixture used to import the
+// *raw* `dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator}` and
+// `dioxus_primitives::radio_group::{RadioGroup, RadioItem}` primitives
+// directly, unlike every other consumer in this preview app -- see e.g.
+// `components/slider/variants/dynamic_range/mod.rs` importing
+// `crate::components::switch::Switch`, or `components/card/variants/main/
+// mod.rs` importing `crate::components::{button, input, label}`: the
+// established pattern in this workspace is for one component's fixture/demo
+// to compose *another* component's themed wrapper (`preview/src/components/
+// <name>/component.rs`), not the bare `dioxus_primitives` type, because the
+// theme wrapper is what attaches the fixed-size CSS classes
+// (`.dx-checkbox`/`.dx-checkbox-indicator` in `../checkbox/style.css`,
+// `.dx-radio-item` in `../radio_group/style.css`). Without those classes,
+// `Checkbox`'s `<button>` has no explicit `width`/`height` at all -- its box
+// is sized purely by its content -- and `CheckboxIndicator` renders its
+// children (the checkmark) *only* while checked (see
+// `primitives/src/checkbox.rs`'s doc: "children will only be rendered when
+// the checkbox is checked"), so the button visibly grows for the glyph when
+// checked and collapses back to a zero-content box when unchecked.
+// `RadioItem`'s entire visual (the circle) is a `.dx-radio-item::before`
+// pseudo-element that plain `dioxus_primitives::radio_group::RadioItem`
+// never gets without that class, so its `<button>` collapses to whatever a
+// bare, empty `<button>` renders as in every state. Confirmed by measurement
+// against `/component/?name=checkbox` and `/component/?name=radio_group`
+// (both themed, both stable-sized in every state) vs. this fixture
+// pre-fix (both collapsing) -- see this session's report for the exact
+// `getBoundingClientRect()` numbers. Fixed here, not in
+// `primitives/src/checkbox.rs` or `radio_group.rs`: the *conditional-
+// children* behavior of `CheckboxIndicator` is correct, documented API (a
+// consumer's indicator content need not be a fixed-size glyph), and
+// `RadioItem`'s primitive renders no built-in visual by design (it is a
+// headless primitive) -- the actual defect was this one fixture forgetting
+// the theme layer every sibling fixture already applies.
+use crate::components::checkbox::Checkbox;
+use crate::components::radio_group::{RadioGroup, RadioItem};
 use dioxus::prelude::*;
-use dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator, CheckboxState};
-use dioxus_primitives::radio_group::{RadioGroup, RadioItem};
+use dioxus_primitives::checkbox::CheckboxState;
 use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger, SelectValue};
 use dioxus_primitives::switch::{Switch, SwitchThumb};
 
@@ -39,6 +74,47 @@ fn read_form_data_js(form_id: &str, result_id: &str) -> String {
 /// render internally. Invalid targets for one submit attempt are batched
 /// (via a microtask) into a single, replacing write so repeated attempts
 /// don't accumulate stale entries.
+///
+/// Item 2 fix (2026-09-01, live-site report): "Required blocking (form B)
+/// seems broken, at least visually." The block itself always worked (tier-2
+/// rule 4 in `form-participation.spec.ts` was already green) -- `required`
+/// lives on each control's visually-hidden native mirror (`BubbleInput` in
+/// `primitives/src/checkbox.rs`, the hidden `<input type="radio">` in
+/// `radio_group.rs`, the hidden `<select>` in `select/components/select.rs`,
+/// all marked `aria-hidden="true" tabindex="-1"`), and Chrome refuses to
+/// focus a non-focusable hidden control or show its native validation
+/// bubble on one -- confirmed via the browser console on submit: "An
+/// invalid form control with name='...' is not focusable." So the missing
+/// piece was purely user-visible feedback, not the blocking mechanics.
+///
+/// Fixed here, in the fixture, rather than in the primitives: bridging
+/// native constraint-validation feedback onto a *visible* stand-in for an
+/// invalid hidden control is a UI-layer decision each consumer's markup is
+/// best placed to make (which element counts as "the visible one," how to
+/// style it) -- a primitives-level validity bridge would need a public API
+/// for a library-wide default that this one fixture's fix does not have to
+/// invent (see this session's report, "follow-up candidates").
+///
+/// The mapping from an invalid hidden control to its visible counterpart is
+/// the same trick across every control this fixture pairs a hidden mirror
+/// with: the mirror is the element carrying `aria-hidden="true"`, and its
+/// paired visible control is the nearest `<button>` inside the shared
+/// `.dx-form-field` wrapper (the class both the `<div>` and `<fieldset>`
+/// field containers use) -- `Checkbox`, `RadioItem`, `Switch`, and
+/// `SelectTrigger` are all rendered as a `<button>` (see their respective
+/// primitives), so one selector covers all four. A plain native reference
+/// control (no hidden mirror, not `aria-hidden`) maps to itself, since it
+/// already *is* the visible control. Only the *first* blocked control (in
+/// `invalid`-firing order, which follows document order) receives focus --
+/// matching a real browser's own reportValidity() behavior of focusing and
+/// bubble-anchoring on just the first invalid control, not every one at
+/// once -- while every blocked control's visible counterpart gets
+/// `data-invalid="true"` (styled by this page's `style.css`) so the whole
+/// batch is visible, not just the focused one. Cleared once the control's
+/// underlying constraint validation actually resolves (checked via
+/// `checkValidity()` on interaction, or unconditionally on the form's own
+/// `reset`) -- see `reviewInvalidMarkers` below for why that has to be a
+/// re-check against real validity rather than a simple "on change" listener.
 fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
     format!(
         r#"
@@ -46,22 +122,126 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
         const report = document.getElementById('{report_id}');
         if (form && report && !form.dataset.dxInvalidWired) {{
             form.dataset.dxInvalidWired = '1';
+
+            // `[class*="dx-form-field"]`, not `.dx-form-field`: `#[css_module]`
+            // hash-suffixes every class it generates (confirmed by execution --
+            // the rendered class here is `dx-form-field-<8 hex chars>`, not the
+            // literal name `Styles::dx_form_field` reads in Rust source), so an
+            // exact class selector never matches any real element.
+            function fieldContainerOf(el) {{
+                return el.closest('[class*="dx-form-field"]');
+            }}
+            function visibleCounterpart(target) {{
+                if (target.getAttribute('aria-hidden') !== 'true') return target;
+                const container = fieldContainerOf(target);
+                return container ? container.querySelector('button') : null;
+            }}
+
             let pending = new Set();
+            let order = [];
             let scheduled = false;
             form.addEventListener('invalid', (event) => {{
                 const target = event.target;
                 pending.add(target.name || target.id || target.tagName);
+                order.push(target);
                 if (!scheduled) {{
                     scheduled = true;
                     setTimeout(() => {{
                         report.textContent = Array.from(pending).join('\n');
                         const count = parseInt(report.getAttribute('data-invalid-count') || '0', 10);
                         report.setAttribute('data-invalid-count', String(count + 1));
+
+                        let focused = false;
+                        for (const invalidTarget of order) {{
+                            const visible = visibleCounterpart(invalidTarget);
+                            if (!visible) continue;
+                            visible.setAttribute('data-invalid', 'true');
+                            if (!focused) {{
+                                visible.focus();
+                                focused = true;
+                            }}
+                        }}
+
                         pending = new Set();
+                        order = [];
                         scheduled = false;
                     }}, 0);
                 }}
             }}, true);
+
+            // Clearing `data-invalid` again is *not* the mirror image of
+            // setting it: the hidden mirrors this library's controls update
+            // on interaction (`BubbleInput` in checkbox.rs, the hidden
+            // `<input>`/`<select>` in radio_group.rs/select.rs) are all
+            // driven by `document::eval` setting `.checked`/`.value`
+            // directly -- which, unlike a real user interacting with a
+            // native control, never dispatches a `change`/`input` event
+            // (confirmed by execution: a plain `change` listener here never
+            // fired for any library control, only the native reference
+            // ones). So instead of reacting to a specific event, any
+            // plausible interaction (click, key release, or a real
+            // `change`/`input` from a native control) triggers a re-check
+            // of every currently-marked control's *actual* validity --
+            // correct regardless of how that control updates its hidden
+            // mirror, and self-correcting if a marker and reality ever
+            // disagree. Listened for on `document`, not `form`: `Select`'s
+            // option list can render through this repo's top-layer/popover
+            // machinery outside the form's own DOM subtree, where a
+            // listener on `form` itself (even capturing) would never see
+            // the click. Deferred a macrotask out (`setTimeout(_, 0)`): the
+            // click/keyup that toggles a library control fires *before*
+            // that control's own Dioxus effect has re-run and pushed the
+            // new checked/value onto its hidden mirror (confirmed by
+            // execution -- checking synchronously on click always saw the
+            // mirror's *pre*-click validity), so this needs to wait for
+            // that settle first, same as the `reset` listener below.
+            //
+            // Reads `.validity.valid`, never calls `.checkValidity()`:
+            // confirmed by execution, the latter is not the passive read it
+            // looks like -- per spec it *fires `invalid` on the element
+            // when the check fails*, which this file's own capturing
+            // `invalid` listener above would immediately see and re-mark
+            // `data-invalid` from, undoing the very clear this function was
+            // trying to make (a self-reinforcing loop that, before this
+            // fix, made every required library control's marker outlive a
+            // form reset -- the native references were unaffected only
+            // because their reset finishes synchronously, before this
+            // function's deferred re-check ever ran). `.validity` is a
+            // live `ValidityState` read with no such side effect.
+            function reviewInvalidMarkers() {{
+                setTimeout(() => {{
+                    form.querySelectorAll('[data-invalid=\"true\"]').forEach((visible) => {{
+                        let hidden = null;
+                        if (visible.getAttribute('aria-hidden') === 'true') {{
+                            hidden = visible;
+                        }} else {{
+                            const container = fieldContainerOf(visible);
+                            hidden = container ? container.querySelector('[aria-hidden=\"true\"]') : null;
+                        }}
+                        if (!hidden || !hidden.willValidate || hidden.validity.valid) {{
+                            visible.removeAttribute('data-invalid');
+                        }}
+                    }});
+                }}, 0);
+            }}
+            document.addEventListener('click', reviewInvalidMarkers, true);
+            document.addEventListener('keyup', reviewInvalidMarkers, true);
+            form.addEventListener('change', reviewInvalidMarkers, true);
+            form.addEventListener('input', reviewInvalidMarkers, true);
+
+            // Deferred a macrotask out (`setTimeout(_, 0)`, same reasoning as
+            // the `invalid` batching above): each library control's own
+            // `use_form_reset_listener` is *also* a `reset` listener on this
+            // same form, resyncing its Dioxus-side state and re-rendering --
+            // confirmed by execution, clearing synchronously here raced that
+            // re-render and the marker came right back on every library
+            // control (only the native references' cleared for good), so
+            // this waits for that settle first.
+            form.addEventListener('reset', () => {{
+                setTimeout(() => {{
+                    form.querySelectorAll('[data-invalid]').forEach((el) => el.removeAttribute('data-invalid'));
+                }}, 0);
+            }});
         }}
         "#
     )
@@ -114,7 +294,6 @@ pub fn FormFixture() -> Element {
                                 name: "terms-lib",
                                 value: "accepted",
                                 default_checked: CheckboxState::Checked,
-                                CheckboxIndicator { "\u{2713}" }
                             }
                         }
                         div { class: Styles::dx_form_field,
@@ -144,7 +323,6 @@ pub fn FormFixture() -> Element {
                                 value: "yes",
                                 disabled: true,
                                 default_checked: CheckboxState::Checked,
-                                CheckboxIndicator { "\u{2713}" }
                             }
                         }
                         div { class: Styles::dx_form_field,
@@ -252,6 +430,12 @@ pub fn FormFixture() -> Element {
             section { class: Styles::dx_form_section,
                 h2 { "Required blocking" }
                 p { class: Styles::dx_form_hint,
+                    "Demonstrates that "
+                    code { "required" }
+                    " controls block submission: submitting with any required control unsatisfied refuses to submit, "
+                    "outlines the offending control(s) in red and moves focus to the first one, and lists their names below."
+                }
+                p { class: Styles::dx_form_hint,
                     "Every library control below sets "
                     code { "required" }
                     " per its documented API, including "
@@ -272,9 +456,7 @@ pub fn FormFixture() -> Element {
                     div { class: Styles::dx_form_row,
                         div { class: Styles::dx_form_field,
                             label { r#for: "chk-required-lib", "Accept terms, required (library)" }
-                            Checkbox { id: "chk-required-lib", name: "terms-required-lib", value: "accepted", required: true,
-                                CheckboxIndicator { "\u{2713}" }
-                            }
+                            Checkbox { id: "chk-required-lib", name: "terms-required-lib", value: "accepted", required: true }
                         }
                         div { class: Styles::dx_form_field,
                             label { r#for: "chk-required-native", "Accept terms, required (native)" }
