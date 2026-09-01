@@ -1,6 +1,8 @@
 //! SelectTrigger component implementation.
 
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::SelectContext;
 
@@ -68,8 +70,19 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
     let mut ctx = use_context::<SelectContext>();
     let open = ctx.selectable.open;
 
-    rsx! {
-        button {
+    // Merged (caller-wins, deduped) rather than set here and then spread
+    // over by `..props.attributes` below: a caller `id`/`aria_label`/etc.
+    // override (e.g. the top-layer oracle fixture's
+    // `id: "clip-select-trigger"`) used to duplicate the attribute in the
+    // SSR'd HTML instead of replacing it -- WHATWG HTML's duplicate-
+    // attribute parse error keeps the *first* (this component's own
+    // default) while the CSR/hydrated DOM path keeps the *last* (the
+    // caller's), so server and client disagreed
+    // (`docs/conformance-harness.md` hydration-parity Rule 4; see
+    // `toast.rs`'s `ToastRegionRendered` doc for the first component this
+    // was found and fixed in).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
             id: ctx.selectable.trigger_id,
             // See `crate::top_layer::anchor_name_style`: ties this trigger
             // to the web-arm listbox's `position-anchor`
@@ -85,7 +98,23 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
             // Standard HTML attributes
             disabled: (ctx.selectable.disabled)(),
             type: "button",
+            // ARIA attributes
+            aria_haspopup: "listbox",
+            aria_expanded: open(),
+            aria_controls: ctx.selectable.list_id,
+            // NOTE: aria-required is deliberately NOT set here — it is not a
+            // supported property on an (implicit) button role, and axe flags
+            // it. Requiredness is enforced by the hidden native
+            // <select required> mirror; exposing it to AT properly means
+            // adopting the APG select-only-combobox trigger role
+            // (role="combobox"), which is a larger semantic change tracked as
+            // follow-up work.
+        }),
+        props.attributes,
+    ]);
 
+    rsx! {
+        button {
             onclick: move |_| {
                 ctx.set_open(!open());
             },
@@ -111,20 +140,8 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
                 }
             },
 
-            // ARIA attributes
-            aria_haspopup: "listbox",
-            aria_expanded: open(),
-            aria_controls: ctx.selectable.list_id,
-            // NOTE: aria-required is deliberately NOT set here — it is not a
-            // supported property on an (implicit) button role, and axe flags
-            // it. Requiredness is enforced by the hidden native
-            // <select required> mirror; exposing it to AT properly means
-            // adopting the APG select-only-combobox trigger role
-            // (role="combobox"), which is a larger semantic change tracked as
-            // follow-up work.
-
-            // Pass through other attributes
-            ..props.attributes,
+            // Pass through the merged, deduped attributes
+            ..attributes,
 
             // Render children (options)
             {props.children}

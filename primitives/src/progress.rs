@@ -1,6 +1,8 @@
 //! Defines the [`Progress`] component and its sub-components.
 
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The props for the [`Progress`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -65,8 +67,19 @@ pub fn Progress(props: ProgressProps) -> Element {
         None => "indeterminate",
     });
 
-    rsx! {
-        div {
+    // Merged (caller-wins, deduped) rather than set here and then spread
+    // over by `..props.attributes` below: doing that emits the SAME
+    // attribute name (e.g. a caller `style` override, exercised by the
+    // dashboard's own progress bars) twice in the SSR'd HTML, which
+    // WHATWG HTML's duplicate-attribute parse error resolves to the
+    // *first* value while the CSR/hydrated DOM path (sequential attribute
+    // application) resolves to the *last* -- server and client then
+    // disagree about which value is in effect
+    // (`docs/conformance-harness.md` hydration-parity Rule 4; see
+    // `toast.rs`'s `ToastRegionRendered` doc for the first component this
+    // was found and fixed in).
+    let attributes = merge_attributes(vec![
+        attributes!(div {
             role: "progressbar",
             "aria-valuemin": 0,
             "aria-valuemax": props.max,
@@ -75,7 +88,13 @@ pub fn Progress(props: ProgressProps) -> Element {
             "data-value": props.value.cloned().map(|v| v.to_string()),
             "data-max": props.max,
             style: percentage().map(|p| format!("--progress-value: {p}%")),
-            ..props.attributes,
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        div {
+            ..attributes,
 
             {props.children}
         }

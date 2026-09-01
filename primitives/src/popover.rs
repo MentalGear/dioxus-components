@@ -53,10 +53,12 @@ use dioxus::prelude::*;
 // non-modal) -- gated the same way so the web build never carries an
 // unused import.
 use crate::{
-    use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
+    merge_attributes, use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign,
+    ContentSide,
 };
 #[cfg(not(feature = "web"))]
 use crate::{use_global_escape_listener, use_outside_dismiss};
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct PopoverCtx {
@@ -745,9 +747,26 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
         }
     }));
 
-    rsx! {
-        button {
-            id,
+    // `id` is deliberately NOT included in the `merge_attributes` call
+    // below, unlike `type`/`style`: it stays on its own single explicit
+    // binding (above) rather than also being carried, a second time, in
+    // `attributes` -- the two used to disagree in a way that mattered.
+    // `id_attribute`, above, already captures a caller override; dropping
+    // its copy out of the spread here just stops it from ALSO being
+    // serialized as a second, duplicate `id="..."` on this same start tag
+    // in the SSR'd HTML (WHATWG HTML's duplicate-attribute parse error --
+    // `docs/conformance-harness.md` hydration-parity Rule 4; the top-layer
+    // oracle fixture's `id: "clip-popover-trigger"` et al. hit exactly
+    // this). The single `id,` binding above still ends up holding the
+    // caller's value once the `use_effect` above has run, same as before
+    // this fix -- unchanged.
+    let attributes: Vec<Attribute> = props
+        .attributes
+        .into_iter()
+        .filter(|a| a.name != "id")
+        .collect();
+    let merged = merge_attributes(vec![
+        attributes!(button {
             type: "button",
             // See `crate::top_layer::anchor_name_style`: ties this trigger
             // to the content's `position-anchor` so its `[data-side]` CSS
@@ -770,11 +789,18 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
             // content's own id, so this side has to name that same id, not
             // the trigger's.
             style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
+        }),
+        attributes,
+    ]);
+
+    rsx! {
+        button {
+            id,
             onclick: move |e| {
                 e.stop_propagation();
                 ctx.set_open.call(!(ctx.open)());
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }

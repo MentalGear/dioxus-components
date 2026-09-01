@@ -2,11 +2,13 @@
 
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
+    fold_style_attributes, merge_attributes,
     selectable::{pointer_select_cancel, pointer_select_commit, pointer_select_start},
     use_animated_open, use_controlled, use_effect_with_cleanup, use_id_or, use_outside_dismiss,
     use_unique_id,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use dioxus_core::Task;
 use dioxus_sdk_time::sleep;
 use std::time::Duration;
@@ -228,14 +230,35 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
         }
     };
 
-    rsx! {
-        div {
+    // Merged (caller-wins, deduped), not set-then-spread-over: see
+    // `toast.rs`'s "Attribute-override dedup" doc for why an explicit
+    // attribute followed by `..props.attributes` on the same element emits
+    // a duplicate in the SSR'd HTML whenever a caller overrides it (the
+    // top-layer oracle fixture's `id: "clip-context-menu-root"`/
+    // `id: "scroll-context-menu-root"` do exactly that) --
+    // `docs/conformance-harness.md` hydration-parity Rule 4. `id` is
+    // caller-wins here like everything else, matching this element's
+    // existing client behavior exactly (`..props.attributes` already won
+    // there via spread order) rather than protecting it the way `toast.rs`
+    // protects its always-addressed-by-id region: nothing here does its
+    // own `document.getElementById(root_id)` lookup against a *fixed*
+    // expectation of winning -- `use_outside_dismiss`'s lookup already
+    // silently no-ops if a caller's override id makes it miss, on both
+    // lanes, unchanged by this fix.
+    let attributes = merge_attributes(vec![
+        attributes!(div {
             id: root_id,
-            tabindex: 0, // Make the menu container focusable
-            onkeydown: handle_keydown,
+            tabindex: 0,
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
-            ..props.attributes,
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        div {
+            onkeydown: handle_keydown,
+            ..attributes,
             {props.children}
         }
     }
@@ -383,28 +406,54 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
         cancel_long_press(long_press_task, long_press_start);
     };
 
-    rsx! {
-        div {
-            id: ctx.trigger_id,
+    // Merged (caller-wins, deduped) for the same reason as `ContextMenuRoot`
+    // above -- the fixture's `id: "clip-context-menu-trigger"`/
+    // `id: "scroll-context-menu-trigger"` duplicated `id` in the SSR'd
+    // HTML pre-fix. `style` needs the extra `fold_style_attributes` step
+    // first: this element's own fixed touch-suppression CSS is one literal
+    // `style: "..."` string, and the preview app's themed wrapper
+    // (`preview/src/components/context_menu/component.rs`) sets its
+    // background/padding/etc. the *shorthand* way -- those combine into a
+    // SEPARATE served `style="..."` from this one (see that helper's doc),
+    // so plain `merge_attributes` alone still leaves two. Folding first
+    // reduces it to the one case `merge_attributes` already knows how to
+    // dedupe (a plain `style` on both sides).
+    let (caller_style, attributes) = fold_style_attributes(props.attributes);
+    let style = match caller_style {
+        Some(caller) => format!(
+            "-webkit-touch-callout: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none; {caller}"
+        ),
+        None => "-webkit-touch-callout: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none;".to_string(),
+    };
+    let attributes = merge_attributes(vec![
+        attributes!(div {
             // Not otherwise part of the tab order (the context menu opens via
             // right-click/long-press, not Tab) -- but it must be
             // programmatically focusable so Escape/select can return focus
             // here per APG's menu-button-adjacent close-focus rule. See
             // docs/plan.md Phase 3.1.
+            id: ctx.trigger_id,
             tabindex: "-1",
-            oncontextmenu: handle_context_menu,
-            onpointerdown: handle_pointer_down,
-            onpointermove: handle_pointer_move,
-            onpointerup: handle_pointer_end,
-            onpointercancel: handle_pointer_end,
             role: "button",
             aria_haspopup: "menu",
             aria_expanded: (ctx.open)(),
             // Suppress iOS Safari's long-press behaviors (callout sheet, text
             // selection magnifier, gray tap-flash) and the system's own touch
-            // gestures so our timer is the only thing that fires.
-            style: "-webkit-touch-callout: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none;",
-            ..props.attributes,
+            // gestures so our timer is the only thing that fires -- combined
+            // above with any caller style so only one `style` is ever built.
+            style,
+        }),
+        attributes,
+    ]);
+
+    rsx! {
+        div {
+            oncontextmenu: handle_context_menu,
+            onpointerdown: handle_pointer_down,
+            onpointermove: handle_pointer_move,
+            onpointerup: handle_pointer_end,
+            onpointercancel: handle_pointer_end,
+            ..attributes,
             {props.children}
         }
     }
