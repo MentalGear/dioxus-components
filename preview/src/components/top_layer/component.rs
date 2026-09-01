@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_primitives::alert_dialog::{AlertDialogContent, AlertDialogRoot, AlertDialogTitle};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
+use dioxus_primitives::dropdown_menu::{DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger};
 use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
@@ -78,6 +79,27 @@ pub fn TopLayerFixture() -> Element {
                             id: "clip-popover-content",
                             style: "min-height: 100px;",
                             "Popover content for the clipping-escape rule."
+                        }
+                    }
+
+                    // DropdownMenu (docs/backlog.md item 2): web-arm
+                    // `popover="auto"` migration, added alongside the three
+                    // Phase 4.4 exemplars above -- see this rule's addition
+                    // in `top-layer.spec.ts` (RED before the migration:
+                    // `DropdownMenuContent` was a plain, non-`popover` div,
+                    // so it clipped exactly like the pre-4.4 behavior these
+                    // three did).
+                    DropdownMenu { id: "clip-dropdown-menu-root",
+                        DropdownMenuTrigger { id: "clip-dropdown-menu-trigger", "DropdownMenu trigger" }
+                        DropdownMenuContent {
+                            id: "clip-dropdown-menu-content",
+                            style: "min-height: 100px;",
+                            DropdownMenuItem::<String> {
+                                value: "one".to_string(),
+                                index: 0usize,
+                                on_select: move |_: String| {},
+                                "Item one"
+                            }
                         }
                     }
 

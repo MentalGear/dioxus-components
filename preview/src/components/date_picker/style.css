@@ -51,129 +51,23 @@
 }
 
 /*
- * Wiring-gap fix (2026-09-01, live-site report; backlog row 20/item 3):
- * `date_picker/style.css` never carried its own copy of the `[popover]`
- * UA-stylesheet reset or the `@supports (anchor-name: --a)` block that make
- * CSS Anchor Positioning land a non-modal popover next to its trigger (see
- * `../popover/style.css` for the fully-commented original, and
- * `../color_picker/style.css` for the analogous gap fixed the same day) --
- * grepping this file for `dx-anchor-popover` turned up zero matches.
+ * Historical wiring-gap fix (2026-09-01, live-site report; backlog row
+ * 20/item 3): this page used to carry its own hand-copied `[popover]`
+ * UA-stylesheet reset and `@supports (anchor-name: --a)` block (added the
+ * same day as the analogous fix in `../color_picker/style.css`) -- both now
+ * live in a single, engine-injected stylesheet shared by every
+ * `dx-anchor-*`-marked overlay in the app instead, closing the underlying
+ * bug class rather than just this one instance of it. See
+ * `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles` doc
+ * (docs/backlog.md item 1) for the full rationale.
  *
- * That alone was *not* the live-site bug, though, and copying only this
- * block would have been a no-op: this page reuses the preview app's own
- * "Popover" theme components (`PopoverRoot`/`PopoverContent` from
- * `../popover/component.rs`, see `component.rs`'s `use super::super::
- * popover::*`), whose `#[css_module]`-declared stylesheet loads globally
- * the first time any of its classes render (`Styles::dx_popover_content`'s
- * `Deref`, per the css-module codegen) -- confirmed by execution:
- * `document.styleSheets` on `/component/?name=date_picker` already
- * contained popover/style.css's own (pre-existing, working)
- * `dx-anchor-popover` rule even before this file's own copy was added. The
- * *actual* defect was that `date_picker::DatePickerPopover`
- * (`primitives/src/date_picker.rs`) rendered every calendar popup on the
- * *modal* arm (`PopoverModalContent`, a plain non-`[popover]` `div`) no
- * matter what -- its own `is_modal` prop was declared but never forwarded
- * to the `PopoverRoot` it renders, so `dx-anchor-popover` and `[popover]`
- * never applied at all, and the modal arm's own DOM-relative "centering
- * trick" (`.dx-popover-content[data-side="bottom"]`: `position: absolute;
- * left: 50%; transform: translateX(-50%)`, centered under the *positioned
- * ancestor* -- the narrow `.dx-date-picker` input group, not the trigger)
- * has no edge/collision avoidance. Confirmed by execution: the calendar
- * (276px wide) rendered centered under that ~178px-wide ancestor, spilling
- * roughly 138px off the left edge of the viewport on this repo's dev
- * server -- the actual shape of the "doesn't anchor to its trigger" report.
- * Fixed at the primitive (forwarding `is_modal`) and in this page's
- * `component.rs` (`is_modal: false`, matching `ColorPickerPopover`'s own
- * `is_modal: false`) -- see both of those fixes' comments. This file's own
- * copy of the block below is kept anyway, redundant with popover/style.css
- * or not: every other non-modal-arm consumer in this workspace
- * (`tooltip/style.css`, `hover_card/style.css`, `popover/style.css`,
- * `color_picker/style.css`) carries its own, and relying on transitive
- * loading from a *different* page's `#[css_module]` is exactly the kind of
- * implicit coupling that made this gap easy to miss in the first place.
- *
- * `.dx-anchor-popover` is the marker class `dioxus_primitives::popover`'s
- * `PopoverNonModalContent` appends unconditionally to every non-modal
- * `Popover`'s content element (see `primitives/src/popover.rs`), so this
- * page reuses that same selector rather than needing a component-specific
- * marker of its own -- same reasoning as `../color_picker/style.css`.
- * `#[css_module]` does not rewrite selectors nested inside `@supports`
- * (only flat top-level ones), which is why this stays the plain,
- * hand-written class name rather than a `Styles::`-routed one, same as
- * every other `@supports`-scoped block in this workspace.
+ * The other half of that original report -- `date_picker::DatePickerPopover`
+ * (`primitives/src/date_picker.rs`) rendering every calendar popup on the
+ * *modal* arm because its own `is_modal` prop was never forwarded to the
+ * `PopoverRoot` it renders -- was a separate, already-fixed defect at the
+ * primitive and in this page's `component.rs` (`is_modal: false`); unrelated
+ * to the CSS consolidation here.
  */
-.dx-date-picker-popover-content[popover] {
-    margin: 0;
-    inset: auto;
-}
-
-@supports (anchor-name: --a) {
-    .dx-anchor-popover[popover] {
-        position: fixed;
-        margin: 0;
-        inset: auto;
-        position-try-fallbacks: flip-block, flip-inline;
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="top"] {
-        bottom: anchor(top);
-        left: anchor(center);
-        margin-bottom: 8px;
-        transform: translateX(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="right"] {
-        top: anchor(center);
-        left: anchor(right);
-        margin-left: 8px;
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="bottom"] {
-        top: anchor(bottom);
-        left: anchor(center);
-        margin-top: 8px;
-        transform: translateX(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"] {
-        top: anchor(center);
-        right: anchor(left);
-        margin-right: 8px;
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="top"][data-align="start"],
-    .dx-anchor-popover[popover][data-side="bottom"][data-align="start"] {
-        left: anchor(left);
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="top"][data-align="end"],
-    .dx-anchor-popover[popover][data-side="bottom"][data-align="end"] {
-        left: anchor(right);
-        transform: translateX(-100%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="start"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="start"] {
-        top: anchor(top);
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="center"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="center"] {
-        top: anchor(center);
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="end"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="end"] {
-        top: anchor(bottom);
-        transform: translateY(-100%);
-    }
-}
 
 .dx-date-picker-popover-content[data-state="open"] {
     animation: dx-date-picker-popover-fade-in .15s ease-out;

@@ -188,120 +188,19 @@
 }
 
 /*
- * Wiring-gap fix (2026-09-01, live-site report): this popover is composed
- * from `dioxus_primitives::popover` directly (`ColorPickerRoot`/
+ * Historical wiring-gap fix (2026-09-01, live-site report): this popover is
+ * composed from `dioxus_primitives::popover` directly (`ColorPickerRoot`/
  * `ColorPickerPopover` in `component.rs`), not from this workspace's
- * "Popover" preview page -- so the `[popover]` UA-stylesheet reset and the
- * `@supports (anchor-name: --a)` block that make CSS Anchor Positioning
- * actually land the content next to its trigger (see the identical,
- * fully-commented block in `../popover/style.css`, and
- * `primitives/src/top_layer.rs`'s `use_anchor_position_fallback`/
- * `position_anchor_style` docs for why a promoted `[popover]` element needs
- * this at all) were never duplicated onto this page's own stylesheet. Every
- * *other* consumer of the non-modal `Popover`/`Tooltip`/`HoverCard`
- * primitives across this preview app carries its own copy of this exact
- * block already (`tooltip/style.css`, `hover_card/style.css`,
- * `popover/style.css`) -- this page was simply missing it, which is why
- * `primitives/src/top_layer.rs`'s JS-measured fallback took over
- * unconditionally here (the base rule above places the content with
- * `position: absolute; top: 100%`, which resolves against the *viewport*
- * once `popover` promotes it to the top layer, nowhere near the trigger --
- * confirmed by execution against this repo's dev server: with this block
- * absent, `document.styleSheets` on `/component/?name=color_picker` never
- * contained a `dx-anchor-popover` rule at all, and the fallback's own
- * measurement never matched, so it always overrode with inline styles). The
- * one-shot nature of that override, combined with those inline pixel
- * values never being recalculated on scroll, was the second half of the
- * live-site "popup floats away from its trigger while scrolling" report --
- * fixed on the JS side by `use_anchor_position_fallback`'s new scroll/
- * resize tracking, but this half -- getting the CSS-native, natively
- * scroll-tracking `anchor()` path to engage at all on an engine that
- * supports it -- is the actual root cause and takes priority: with this
- * block present, Chromium's own CSS Anchor Positioning places the popover
- * correctly from first paint and the JS fallback never activates.
- *
- * `.dx-anchor-popover` is the marker class `dioxus_primitives::popover`'s
- * `PopoverNonModalContent` appends unconditionally to every non-modal
- * `Popover`'s content element (see `primitives/src/popover.rs`), regardless
- * of which page composes it -- so this page can reuse that same selector
- * rather than needing a component-specific marker of its own.
- * `#[css_module]` does not rewrite selectors nested inside `@supports`
- * (only flat top-level ones), which is why this stays the plain,
- * hand-written class name rather than a `Styles::`-routed one, same as
- * every other `@supports`-scoped block in this workspace.
+ * "Popover" preview page. This page used to carry its own hand-copied
+ * `[popover]` UA-stylesheet reset and `@supports (anchor-name: --a)` block
+ * (the fix landed the same day this comment was first written) -- both now
+ * live in a single, engine-injected stylesheet shared by every
+ * `dx-anchor-*`-marked overlay in the app instead, closing the underlying
+ * bug class rather than just this one instance of it. See
+ * `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles` doc
+ * (docs/backlog.md item 1) for the full rationale, and
+ * `../tooltip/style.css`'s identical comment.
  */
-.dx-color-picker-popover[popover] {
-    margin: 0;
-    inset: auto;
-}
-
-@supports (anchor-name: --a) {
-    .dx-anchor-popover[popover] {
-        position: fixed;
-        margin: 0;
-        inset: auto;
-        position-try-fallbacks: flip-block, flip-inline;
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="top"] {
-        bottom: anchor(top);
-        left: anchor(center);
-        margin-bottom: 8px;
-        transform: translateX(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="right"] {
-        top: anchor(center);
-        left: anchor(right);
-        margin-left: 8px;
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="bottom"] {
-        top: anchor(bottom);
-        left: anchor(center);
-        margin-top: 8px;
-        transform: translateX(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"] {
-        top: anchor(center);
-        right: anchor(left);
-        margin-right: 8px;
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="top"][data-align="start"],
-    .dx-anchor-popover[popover][data-side="bottom"][data-align="start"] {
-        left: anchor(left);
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="top"][data-align="end"],
-    .dx-anchor-popover[popover][data-side="bottom"][data-align="end"] {
-        left: anchor(right);
-        transform: translateX(-100%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="start"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="start"] {
-        top: anchor(top);
-        transform: none;
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="center"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="center"] {
-        top: anchor(center);
-        transform: translateY(-50%);
-    }
-
-    .dx-anchor-popover[popover][data-side="left"][data-align="end"],
-    .dx-anchor-popover[popover][data-side="right"][data-align="end"] {
-        top: anchor(bottom);
-        transform: translateY(-100%);
-    }
-}
 
 .dx-color-picker-popover[data-state="open"] {
     animation: dx-color-picker-popover-fade-in .15s ease-out;

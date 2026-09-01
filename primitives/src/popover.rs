@@ -129,6 +129,15 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
     // `PopoverContentRendered`, which mounts lazily on open).
     use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
 
+    // See `Tooltip`'s identical call (`tooltip.rs`) for why this must be at
+    // the root and installed well before the first open, rather than only
+    // from `use_anchor_position_fallback` (which only runs once
+    // `PopoverNonModalContent` first mounts). Covers every consumer built on
+    // `PopoverRoot` too (`ColorPicker`, `DatePicker`), not just this
+    // workspace's own "Popover" page.
+    #[cfg(target_family = "wasm")]
+    use_effect(crate::top_layer::ensure_anchor_positioning_styles);
+
     let labelledby = use_unique_id();
     let gen_root_id = use_unique_id();
     let root_id = use_id_or(gen_root_id, props.id);

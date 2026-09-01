@@ -26,18 +26,19 @@
   box-shadow: var(--light, 0 2px 10px #0000001a) var(--dark, none);
 
   /*
-   * `inset`, `margin` and `overflow` reset the UA popover stylesheet's
-   * `[popover] { inset: 0; margin: auto; overflow: auto; ... }` (WHATWG
-   * HTML's popover section) -- this content carries the `popover` attribute
-   * on the web arm (Phase 4.4, docs/plan.md). See the identical, fully
-   * worked-out note in `../tooltip/style.css`'s `.dx-tooltip-content` rule:
-   * the same UA rule leaks through any `[data-side]` rule below that
-   * doesn't set all four inset sides, and pairs with `margin: auto` to
-   * invoke CSS's auto-margin centering algorithm by accident. `border` is
-   * unaffected -- already set explicitly, just below, and author styles
-   * always beat the UA stylesheet regardless of specificity.
+   * This content carries the `popover` attribute on the web arm (Phase 4.4,
+   * docs/plan.md), which comes with a UA stylesheet rule
+   * (`[popover] { inset: 0; margin: auto; overflow: auto; border: solid;
+   * ... }`, WHATWG HTML's popover section) that would otherwise leak through
+   * any property this rule leaves unset. `overflow`/`margin`/`border` above
+   * are already set to real values this component wants regardless of
+   * `popover`, so no reset is needed for those (author-origin declarations
+   * always beat the UA stylesheet regardless of specificity). The one
+   * property this rule does *not* otherwise set -- `inset` -- is reset by
+   * the shared, engine-injected stylesheet every `dx-anchor-*`-marked
+   * overlay gets for free; see `primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1).
    */
-  inset: auto;
 }
 
 /* Positioning based on side */
@@ -134,89 +135,15 @@
 }
 
 /*
- * Phase 4.4 (docs/plan.md): see the identical block in
- * ../tooltip/style.css for the full rationale -- HoverCardContent's web arm
- * carries a `popover` attribute (top-layer promotion for clipping escape),
- * which changes its containing block to the viewport, so the `[data-side]`
- * rules above need an `anchor()`-based counterpart to still resolve
- * relative to the trigger. `@supports`-gated the same way. Flip-only
- * collision avoidance (docs/backlog.md row 10): see the fully worked-out
- * `position-try-fallbacks` note in `../tooltip/style.css`'s identical
- * block, including the W3C CSS Anchor Positioning citations
- * (<https://www.w3.org/TR/css-anchor-position-1/#fallback-var>,
- * <https://www.w3.org/TR/css-anchor-position-1/#accepted-existing-tactics>)
- * and why one declaration on the shared `[popover]` rule covers every
- * `[data-side]` rule below.
+ * Phase 4.4 (docs/plan.md): HoverCardContent's web arm carries a `popover`
+ * attribute (top-layer promotion for clipping escape), which changes its
+ * containing block to the viewport, so the `[data-side]` rules above need
+ * CSS Anchor Positioning to still resolve relative to the trigger.
+ *
+ * The `@supports (anchor-name: --a)` block that used to live here (keyed on
+ * the `.dx-anchor-hover-card` marker class) now lives in the single,
+ * engine-injected stylesheet shared by every `dx-anchor-*`-marked overlay in
+ * the app -- see `primitives/src/top_layer.rs`'s
+ * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1) and
+ * `../tooltip/style.css`'s identical comment for the full rationale.
  */
-@supports (anchor-name: --a) {
-  .dx-anchor-hover-card[popover] {
-    position: fixed;
-    margin: 0;
-    inset: auto;
-    position-try-fallbacks: flip-block, flip-inline;
-  }
-
-  .dx-anchor-hover-card[popover][data-side="top"] {
-    bottom: anchor(top);
-    left: anchor(center);
-    margin-bottom: 10px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="right"] {
-    top: anchor(center);
-    left: anchor(right);
-    margin-left: 10px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="bottom"] {
-    top: anchor(bottom);
-    left: anchor(center);
-    margin-top: 10px;
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="left"] {
-    top: anchor(center);
-    right: anchor(left);
-    margin-right: 10px;
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="top"][data-align="start"],
-  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="start"] {
-    left: anchor(left);
-    transform: none;
-  }
-
-  .dx-anchor-hover-card[popover][data-side="top"][data-align="center"],
-  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="center"] {
-    left: anchor(center);
-    transform: translateX(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="top"][data-align="end"],
-  .dx-anchor-hover-card[popover][data-side="bottom"][data-align="end"] {
-    left: anchor(right);
-    transform: translateX(-100%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="left"][data-align="start"],
-  .dx-anchor-hover-card[popover][data-side="right"][data-align="start"] {
-    top: anchor(top);
-    transform: none;
-  }
-
-  .dx-anchor-hover-card[popover][data-side="left"][data-align="center"],
-  .dx-anchor-hover-card[popover][data-side="right"][data-align="center"] {
-    top: anchor(center);
-    transform: translateY(-50%);
-  }
-
-  .dx-anchor-hover-card[popover][data-side="left"][data-align="end"],
-  .dx-anchor-hover-card[popover][data-side="right"][data-align="end"] {
-    top: anchor(bottom);
-    transform: translateY(-100%);
-  }
-}
