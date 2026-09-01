@@ -88,6 +88,15 @@ npm install
 npx playwright test
 ```
 
+To check that the `preview` app's markup composes only themed wrappers
+(`crate::components::*`) rather than raw `dioxus_primitives::` components --
+see [`docs/preview-composition.md`](./docs/preview-composition.md) for why
+this matters -- use:
+
+```sh
+scripts/check-preview-composition.sh
+```
+
 ### Running the preview
 
 To test your changes, you can run the preview application. For a desktop build, use:
