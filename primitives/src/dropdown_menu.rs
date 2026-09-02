@@ -3,7 +3,10 @@
 use std::rc::Rc;
 
 use crate::{
-    collection::{collection_item, use_collection_provider, use_item, CollectionState},
+    collection::{
+        collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
+        CollectionPlacement, CollectionState,
+    },
     merge_attributes, use_animated_open, use_controlled, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
@@ -18,6 +21,14 @@ struct DropdownMenuContext {
 
     // Focus state
     focus: CollectionState,
+
+    // Where focus should land once `DropdownMenuContent` next mounts. Every
+    // key that opens the menu (Enter/Space/ArrowDown/ArrowUp) goes through
+    // `open_with_focus` below, which sets this *before* flipping `open` --
+    // never the reverse -- so opening never depends on the content already
+    // being mounted or on the open<->focus sync effect below. See
+    // docs/recommended-implementations.md's "keyboard open contract" note.
+    initial_focus: Signal<Option<CollectionPlacement>>,
 
     // Unique ID for the trigger button
     trigger_id: Signal<String>,
@@ -41,6 +52,20 @@ struct DropdownMenuContext {
     // not to yank focus back to the trigger for those closes. Reset to
     // `false` whenever the menu opens. See docs/plan.md Phase 3.1.
     interacted_outside: Signal<bool>,
+}
+
+impl DropdownMenuContext {
+    /// The single path every open key (Enter/Space/ArrowDown/ArrowUp) routes
+    /// through: request `target` as the focus placement once the content
+    /// mounts, then open. Never the other order -- setting `open` first
+    /// would let a render happen (or a Playwright poll observe state)
+    /// between the two with no focus request recorded yet. Fix-by-
+    /// construction for the keyboard matrix's DropdownMenu-trigger rows: see
+    /// `oracle/tier1-apg/keyboard-matrix.spec.ts`.
+    fn open_with_focus(&mut self, target: CollectionPlacement) {
+        self.initial_focus.set(Some(target));
+        self.set_open.call(true);
+    }
 }
 
 /// The props for the [`DropdownMenu`] component
@@ -138,11 +163,13 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
     let content_id = use_unique_id();
     let interacted_outside = use_signal(|| false);
     let focus = use_collection_provider(props.roving_loop);
+    let initial_focus = use_signal(|| None);
     let mut ctx = use_context_provider(|| DropdownMenuContext {
         open,
         set_open,
         disabled,
         focus,
+        initial_focus,
         trigger_id,
         content_id,
         modal: props.modal,
@@ -183,8 +210,22 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         }
         match event.key() {
             Key::Enter => {
-                let new_open = !(ctx.open)();
-                ctx.set_open.call(new_open);
+                if open() {
+                    ctx.set_open.call(false);
+                } else {
+                    ctx.open_with_focus(CollectionPlacement::First);
+                }
+            }
+            Key::Character(c) if c == " " => {
+                // APG menu-button (Optional): "Space: Opens the menu and
+                // places focus on the first menu item." Mirrors the Enter
+                // arm above -- both route through the same open-with-focus
+                // path so neither can drift from the other the way this row
+                // used to (opening via the native button click instead,
+                // which refocused the trigger).
+                if !open() {
+                    ctx.open_with_focus(CollectionPlacement::First);
+                }
             }
             Key::Escape => {
                 // Web arm: `DropdownMenuContentRendered`'s `popover="auto"`
@@ -211,11 +252,22 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
                 ctx.set_open.call(false);
             }
             Key::ArrowDown => {
-                ctx.focus.focus_next();
+                // APG (Optional): "Down Arrow: opens the menu and moves
+                // focus to the first menu item" from a closed trigger; once
+                // open, plain roving-focus navigation.
+                if open() {
+                    ctx.focus.focus_next();
+                } else {
+                    ctx.open_with_focus(CollectionPlacement::First);
+                }
             }
             Key::ArrowUp => {
+                // APG (Optional): "Up Arrow: opens the menu and moves focus
+                // to the last menu item" from a closed trigger.
                 if open() {
                     ctx.focus.focus_prev();
+                } else {
+                    ctx.open_with_focus(CollectionPlacement::Last);
                 }
             }
             Key::Home => ctx.focus.focus_first(),
@@ -432,6 +484,13 @@ pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
     use_effect(move || ctx.content_id.set(id()));
 
     let render = use_animated_open(id, ctx.open);
+
+    // Apply the focus placement `open_with_focus` (`DropdownMenuContext`)
+    // recorded when the menu was opened by keyboard, as soon as the
+    // collection has items to focus -- which may be later than `render()`
+    // first turning true, since items register via their own effects.
+    // Mirrors `MenubarContent`'s identical call (`menubar.rs`).
+    use_deferred_collection_focus(ctx.focus, ctx.initial_focus, render);
 
     // Lock page scroll while the menu is open and modal, matching Radix's
     // default. See docs/plan.md Phase 3.2. `DropdownMenuContent` itself
