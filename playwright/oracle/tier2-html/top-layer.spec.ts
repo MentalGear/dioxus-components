@@ -870,3 +870,497 @@ test.describe("Rule 9 — point-positioned vs. anchored scroll behavior", () => 
     expect(after.left, debug).toBeCloseTo(before.left, 0);
   });
 });
+
+
+
+/**
+ * Rule 11 — anchored-overlay self-overlap contract, iOS on-screen keyboard
+ * (2026-09-02, user report: the Combobox options list rendering on top of
+ * its own search input after focusing/typing on iOS Safari).
+ *
+ * Citation: no single WHATWG/W3C section states "an anchored popup must
+ * never cover its own anchor" as a normative MUST -- this rule cites this
+ * repo's own anchored-overlay contract (the `[data-side]`/`[data-align]`
+ * placement formula `use_anchor_position_fallback` implements and
+ * self-checks, `primitives/src/top_layer.rs`) plus the platform surface the
+ * investigation and fix are built on:
+ *   - CSSOM View's `VisualViewport` -- the on-screen-keyboard-aware
+ *     viewport rectangle. `window.innerWidth`/`innerHeight` do NOT shrink
+ *     when iOS Safari's keyboard appears; `window.visualViewport` does:
+ *     <https://www.w3.org/TR/cssom-view-1/#dom-window-visualviewport>
+ *     <https://www.w3.org/TR/cssom-view-1/#the-visualviewport-interface>
+ *   - The WHATWG HTML popover UA stylesheet default this file's Rule 1-10
+ *     already cite -- what an anchored overlay falls back to once CSS
+ *     Anchor Positioning can no longer place it:
+ *     <https://html.spec.whatwg.org/multipage/rendering.html#the-popover-attribute>
+ *
+ * Investigation findings (this session, `<scratchpad>/ios-combobox/repro.js`)
+ * identified two gaps in `use_anchor_position_fallback` pre-fix:
+ *   1. No visual-viewport awareness -- the fallback reads only
+ *      `window.innerWidth/innerHeight` + `getBoundingClientRect()`, both
+ *      blind to a keyboard-driven `visualViewport` change.
+ *   2. Scroll/resize tracking listeners were installed ONLY when the
+ *      *first* measurement already concluded `usingFallback` (see that
+ *      hook's own "Scroll/resize tracking" doc) -- an overlay that looked
+ *      correctly anchored at open time never got a listener at all, so a
+ *      later divergence (the keyboard opening after the overlay is already
+ *      open -- exactly Combobox's shape: focusing its input both opens the
+ *      listbox and summons the keyboard) was never re-measured for the
+ *      rest of that open.
+ *
+ * Scope: every overlay that actually calls `use_anchor_position_fallback`
+ * (grepped `primitives/src/*.rs`, `combobox/components/list.rs`,
+ * `select/components/list.rs`) -- Tooltip, HoverCard, Popover,
+ * DropdownMenu, Menubar, Select, Combobox. `ContextMenu` is deliberately
+ * excluded: per Rule 9's own doc above and `context_menu.rs` (grepped: zero
+ * references to `use_anchor_position_fallback` or `anchor_id`), it opens at
+ * a raw click point with no anchor at all, so it has no "own anchor rect"
+ * to overlap and neither of this fix's two gaps can apply to it.
+ *
+ * Parts (a)-(c) below use the "Clipping escape" section's
+ * `clip-*-trigger`/`clip-*-content` pairs (one per component, already used
+ * by Rule 1 above) -- reused rather than duplicated, since they already
+ * give every one of these seven components its own persistent,
+ * id-addressable trigger and content.
+ *
+ * Simulating an iOS Safari engine in this sandbox's Chromium:
+ *   - No Chromium launch flag disables `anchor-name`/`anchor()` support any
+ *     more (confirmed empirically this session and in the prior
+ *     investigation: the feature has fully shipped and is no longer
+ *     flag-gated) -- so "this engine doesn't do CSS Anchor Positioning" is
+ *     simulated at the CSS-cascade level instead, in
+ *     `stripAnchorSupportsBlock` below: brace-counted removal (a greedy
+ *     regex would over/under-match the many nested `{}` inside it) of the
+ *     `@supports (anchor-name: --a) { ... }` block's body -- the only
+ *     top-level `@supports` in the engine-injected
+ *     `#dx-anchor-positioning-styles` stylesheet
+ *     (`primitives/src/top_layer.rs`'s `anchor_positioning_inject_js`).
+ *     This drops exactly the `anchor()`-based placement rules an engine
+ *     without the feature would never have applied, regardless of whether
+ *     *this* browser actually supports it -- ported from this session's own
+ *     `repro.js` diagnosis harness rather than reinvented, since it was
+ *     already verified working there.
+ *   - A real iOS keyboard shrinks `window.visualViewport` while leaving
+ *     `window.innerWidth/innerHeight` untouched; `page.setViewportSize()`
+ *     cannot reproduce that split -- it resizes the real layout viewport
+ *     (`window.inner*` included). What it, plus a `mouse.wheel` scroll,
+ *     *can* exercise is gap 2 above: does anything re-measure at all once
+ *     an overlay is already open? That is what parts (b) and (c) below
+ *     drive at. (Real `visualViewport`-only divergence needs a genuine iOS
+ *     Safari; see `docs/backlog.md`'s new row for that follow-up.)
+ *
+ * Part (c)'s second sub-case, "conforming at open, diverging later," is the
+ * one gap 2 exists for and needs a component that genuinely lands on the
+ * CSS-anchor path at open, not the JS fallback -- confirmed by execution
+ * (this session): every one of the seven `clip-*` pairs above already runs
+ * the JS fallback at open in this fixture context (the `clip-box`
+ * ancestor's `transform` appears to invalidate `anchor()`'s reference the
+ * same way it does for `use_anchor_position_fallback`'s own pre-existing
+ * cases), and DropdownMenu/Select/Combobox land on the fallback path even
+ * on their own, unclipped gallery pages -- the same broad CSS-Anchor-
+ * Positioning unevenness `docs/backlog.md` item 21 already documents for
+ * ColorPicker/DatePicker in this sandbox. `CONFORMING_CASES` below is the
+ * (smaller, execution-verified) set of contexts on this same fixture, or a
+ * component's own gallery page, that DO land on the CSS-anchor path at
+ * open in this sandbox; the rest are explicitly marked unsupported here
+ * with the reason, rather than asserting something that was never true to
+ * begin with.
+ */
+function rectsIntersect(
+  a: { top: number; left: number; right: number; bottom: number },
+  b: { top: number; left: number; right: number; bottom: number },
+): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+async function rectOfLocator(locator: import("@playwright/test").Locator) {
+  return locator.evaluate((el) => {
+    const r = (el as HTMLElement).getBoundingClientRect();
+    return { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  });
+}
+
+/** Roughly an iPhone viewport -- see this section's header doc. */
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
+/**
+ * Roughly the visible height left on that viewport once an iOS Safari
+ * on-screen keyboard (QWERTY + accessory bar, ~45% of viewport height) is
+ * showing. Only the height changes -- a keyboard narrows nothing.
+ */
+const KEYBOARD_VIEWPORT = { width: 390, height: 460 };
+
+/**
+ * Pins `locator` a fixed 24px from the top of the viewport, rather than
+ * `scrollIntoViewIfNeeded`'s browser-chosen alignment: parts (b)/(c) below
+ * shrink the viewport's *height* after opening (simulating the keyboard),
+ * and a trigger left near the bottom of a tall starting viewport could
+ * scroll out of the shrunk one for a reason that has nothing to do with
+ * this rule (not enough headroom left in the fixture's own layout) --
+ * pinning it near the top guarantees the trigger (and, by the placement
+ * contract, its content) has room to stay on-screen in
+ * `KEYBOARD_VIEWPORT` regardless of where this section falls in page flow.
+ */
+async function pinNearTop(page: Page, locator: import("@playwright/test").Locator): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
+  const rect = await rectOfLocator(locator);
+  await page.evaluate((top) => window.scrollTo(0, window.scrollY + top - 24), rect.top);
+}
+
+/**
+ * See this section's header doc, "Simulating an iOS Safari engine" -- the
+ * `page.setViewportSize` + `mouse.wheel` half of the simulation (gap 2:
+ * does anything re-measure once already open).
+ */
+async function simulateOnScreenKeyboard(page: Page): Promise<void> {
+  await page.setViewportSize(KEYBOARD_VIEWPORT);
+  await page.mouse.wheel(0, 40);
+  // rAF-throttled (`use_anchor_position_fallback`'s `rafScheduled` flag,
+  // plus its settle loop) -- give tracking a few frames to land.
+  await page.waitForTimeout(250);
+}
+
+/**
+ * See this section's header doc, "Simulating an iOS Safari engine" -- the
+ * CSS-cascade half. Ported from `<scratchpad>/ios-combobox/repro.js`'s
+ * `stripAnchorSupportsBlock`.
+ */
+async function stripAnchorSupportsBlock(page: Page): Promise<void> {
+  await page.waitForFunction(() => !!document.getElementById("dx-anchor-positioning-styles"), {
+    timeout: 15000,
+  });
+  const result = await page.evaluate(() => {
+    const tag = document.getElementById("dx-anchor-positioning-styles") as HTMLStyleElement;
+    const src = tag.textContent ?? "";
+    const startMarker = "@supports (anchor-name: --a)";
+    const idx = src.indexOf(startMarker);
+    if (idx === -1) return { ok: false, reason: "marker not found" };
+    let i = src.indexOf("{", idx);
+    let depth = 0;
+    let end = -1;
+    for (; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) return { ok: false, reason: "unbalanced braces" };
+    tag.textContent = src.slice(0, idx) + src.slice(end);
+    return { ok: true };
+  });
+  if (!result.ok) {
+    throw new Error(`stripAnchorSupportsBlock failed: ${JSON.stringify(result)}`);
+  }
+}
+
+interface AnchoredOverlay {
+  name: string;
+  triggerId: string;
+  contentId: string;
+  open: (page: Page) => Promise<void>;
+  /**
+   * Hover-driven overlays (Tooltip/HoverCard) can lose `:hover` when the
+   * viewport shrinks and a `mouse.wheel` scroll moves the trigger out from
+   * under the (stationary) synthetic pointer -- irrelevant to what this
+   * rule checks (placement, not open/close persistence), so those two
+   * re-assert the hover after the keyboard-simulation step. A no-op for
+   * every click/keyboard-driven overlay.
+   */
+  reengage?: (page: Page) => Promise<void>;
+}
+
+const ANCHORED_OVERLAYS: AnchoredOverlay[] = [
+  {
+    name: "Tooltip",
+    triggerId: "clip-tooltip-trigger",
+    contentId: "clip-tooltip-content",
+    open: async (page) => {
+      await page.locator("#clip-tooltip-trigger").hover();
+    },
+    reengage: async (page) => {
+      await page.locator("#clip-tooltip-trigger").hover();
+    },
+  },
+  {
+    name: "HoverCard",
+    triggerId: "clip-hovercard-trigger",
+    contentId: "clip-hovercard-content",
+    open: async (page) => {
+      await page.locator("#clip-hovercard-trigger").hover();
+    },
+    reengage: async (page) => {
+      await page.locator("#clip-hovercard-trigger").hover();
+    },
+  },
+  {
+    name: "Popover",
+    triggerId: "clip-popover-trigger",
+    contentId: "clip-popover-content",
+    open: async (page) => {
+      await page.locator("#clip-popover-trigger").click();
+    },
+  },
+  {
+    name: "DropdownMenu",
+    triggerId: "clip-dropdown-menu-trigger",
+    contentId: "clip-dropdown-menu-content",
+    open: async (page) => {
+      await page.locator("#clip-dropdown-menu-trigger").click();
+    },
+  },
+  {
+    name: "Menubar",
+    triggerId: "clip-menubar-trigger",
+    contentId: "clip-menubar-content",
+    open: async (page) => {
+      await page.locator("#clip-menubar-trigger").click();
+    },
+  },
+  {
+    name: "Select",
+    triggerId: "clip-select-trigger",
+    contentId: "clip-select-content",
+    open: async (page) => {
+      await page.locator("#clip-select-trigger").click();
+    },
+  },
+  {
+    name: "Combobox",
+    triggerId: "clip-combobox-trigger",
+    contentId: "clip-combobox-content",
+    // A click alone does not open this popup (Rule 1's identical case
+    // above) -- ArrowDown does.
+    open: async (page) => {
+      await page.locator("#clip-combobox-trigger").click();
+      await page.keyboard.press("ArrowDown");
+    },
+  },
+];
+
+async function assertNoSelfOverlapWithinViewport(page: Page, overlay: AnchoredOverlay) {
+  const trigger = await rectOf(page, `#${overlay.triggerId}`);
+  const content = await rectOf(page, `#${overlay.contentId}`);
+  const viewport = await viewportSize(page);
+  const debug = JSON.stringify({ overlay: overlay.name, trigger, content, viewport });
+  expect(rectsIntersect(content, trigger), debug).toBe(false);
+  expect(content.top, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+  expect(content.bottom, debug).toBeLessThanOrEqual(viewport.height + EDGE_TOLERANCE);
+}
+
+test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iOS keyboard bug)", () => {
+  test.describe("(a) no self-overlap once open", () => {
+    for (const overlay of ANCHORED_OVERLAYS) {
+      test(`${overlay.name}: content never overlaps its own anchor`, async ({ page }) => {
+        await gotoFixture(page);
+        await pinNearTop(page, page.locator(`#${overlay.triggerId}`));
+        await overlay.open(page);
+        await expect(page.locator(`#${overlay.contentId}`)).toBeVisible();
+        await assertNoSelfOverlapWithinViewport(page, overlay);
+      });
+    }
+  });
+
+  test.describe("(b) simulated iOS on-screen keyboard (viewport shrink + scroll, after open)", () => {
+    for (const overlay of ANCHORED_OVERLAYS) {
+      test(`${overlay.name}: re-measures and stays clear of its anchor once the keyboard opens`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(MOBILE_VIEWPORT);
+        await gotoFixture(page);
+        await pinNearTop(page, page.locator(`#${overlay.triggerId}`));
+        await overlay.open(page);
+        await expect(page.locator(`#${overlay.contentId}`)).toBeVisible();
+
+        await simulateOnScreenKeyboard(page);
+        await overlay.reengage?.(page);
+
+        await assertNoSelfOverlapWithinViewport(page, overlay);
+      });
+    }
+  });
+
+  test.describe("(c) simulated no-anchor engine (CSS Anchor Positioning support stripped)", () => {
+    for (const overlay of ANCHORED_OVERLAYS) {
+      test(`${overlay.name}: no anchor support from the start, then the keyboard opens`, async ({ page }) => {
+        await page.setViewportSize(MOBILE_VIEWPORT);
+        await gotoFixture(page);
+        await stripAnchorSupportsBlock(page);
+        await pinNearTop(page, page.locator(`#${overlay.triggerId}`));
+        await overlay.open(page);
+        await expect(page.locator(`#${overlay.contentId}`)).toBeVisible();
+
+        await simulateOnScreenKeyboard(page);
+        await overlay.reengage?.(page);
+
+        await assertNoSelfOverlapWithinViewport(page, overlay);
+      });
+    }
+
+    /**
+     * The gap this whole rule exists for (gap 2 in this section's header
+     * doc): CSS Anchor Positioning is fully intact and correct at *open*
+     * time -- `usingFallback` stays false, so pre-fix no tracking listener
+     * is ever attached -- and only THEN does anchor-positioning support
+     * disappear, mid-open, the same moment an iOS keyboard would appear
+     * over a focused Combobox input. Must be RED before the fix.
+     *
+     * Needs a context that genuinely lands on the CSS-anchor path at open
+     * (see this section's header doc, last paragraph, for why the `clip-*`
+     * pairs above cannot be reused for this one case) -- `CONFORMING_CASES`
+     * below, execution-verified per entry, most deliberately marked
+     * unsupported with the reason rather than faked:
+     *   - DropdownMenu/Select/Combobox never land on the CSS-anchor path at
+     *     all in this sandbox, on any page checked (their own gallery page
+     *     or this fixture) -- same broad unevenness `docs/backlog.md` item
+     *     21 already documents.
+     *   - Tooltip/HoverCard DO conform at open here (`edge-bottom-*`), but
+     *     confirmed by execution: shrinking the viewport for the keyboard
+     *     simulation moves the trigger out from under Chromium's actual
+     *     (unmoved) cursor, and this browser re-hit-tests `:hover` on
+     *     scroll/resize for real -- so the *real* browser closes the
+     *     overlay via a genuine `pointerleave` before any of this fix's
+     *     logic even runs, and re-hovering to keep it open starts a whole
+     *     new open cycle (a fresh, cold measurement -- not the same-open
+     *     "diverges mid-open" case this test exists for). Not a gap this
+     *     fix closes or should try to: a hover-only surface summoning an
+     *     on-screen keyboard was never the reported shape to begin with
+     *     (Combobox's is a focused, keyboard-persistent text input).
+     *   - Menubar conforms at open on its own gallery page at desktop
+     *     width, but confirmed by execution: not at `MOBILE_VIEWPORT`
+     *     width (390px) -- the one precondition this case needs.
+     *   - Popover is the sole survivor, and is enough: confirmed by
+     *     execution (before this section's assertions were tightened) that
+     *     its content really does stop tracking after the strip (stays at
+     *     `style.top === ""`, i.e. no re-measurement ever happens) --
+     *     `expect(...).not.toBe("")` below is the direct, mechanism-level
+     *     assertion for that (rather than an overlap/viewport check alone,
+     *     which this exact fixture's geometry can pass by coincidence even
+     *     while genuinely stale -- confirmed by execution: the stale,
+     *     UA-default position it fell back to for this specific trigger
+     *     happened to land at the viewport's top-left corner, nowhere near
+     *     -- but also nowhere *correct* relative to -- the trigger).
+     */
+    type ConformingCase =
+      | {
+          name: string;
+          supported: true;
+          goto: (page: Page) => Promise<void>;
+          trigger: (page: Page) => import("@playwright/test").Locator;
+          content: (page: Page) => import("@playwright/test").Locator;
+          open: (page: Page) => Promise<void>;
+        }
+      | { name: string; supported: false; reason: string };
+
+    const CONFORMING_CASES: ConformingCase[] = [
+      {
+        name: "Popover",
+        supported: true,
+        goto: gotoFixture,
+        trigger: (page) => page.locator("#edge-bottom-popover-trigger"),
+        content: (page) => page.locator("#edge-bottom-popover-content"),
+        open: async (page) => {
+          await page.locator("#edge-bottom-popover-trigger").click();
+        },
+      },
+      {
+        name: "Tooltip",
+        supported: false,
+        reason:
+          "conforms at open (edge-bottom-tooltip-*) but is hover-driven: the keyboard-simulation resize " +
+          "moves the trigger out from under the real (unmoved) cursor, and this Chromium genuinely closes " +
+          "the tooltip via a real pointerleave before this fix's logic runs -- not the same-open " +
+          "'diverges mid-open' case this test targets, and not the reported bug's shape (a focused text " +
+          "input, not a hover surface, is what keeps an overlay open while a keyboard appears).",
+      },
+      {
+        name: "HoverCard",
+        supported: false,
+        reason: "same as Tooltip above -- hover-driven, genuinely closed by the keyboard-simulation resize.",
+      },
+      {
+        name: "DropdownMenu",
+        supported: false,
+        reason:
+          "no naturally CSS-anchor-conforming context found for DropdownMenu in this Chromium sandbox " +
+          "(checked its own gallery page's demo instance and every clip-* pair on the top_layer fixture -- " +
+          "all land on the JS fallback path at open already; docs/backlog.md item 21 records this sandbox's " +
+          "broader CSS-Anchor-Positioning unevenness). Verify on a real device instead.",
+      },
+      {
+        name: "Menubar",
+        supported: false,
+        reason:
+          "conforms at open on its own gallery page at desktop width, but confirmed by execution: not at " +
+          "MOBILE_VIEWPORT width (390px) -- the fallback is already active before the strip step even runs, " +
+          "so this specific case ('conforming at open') does not arise for it in this sandbox.",
+      },
+      {
+        name: "Select",
+        supported: false,
+        reason:
+          "no naturally CSS-anchor-conforming context found for Select in this Chromium sandbox (checked " +
+          "its own gallery page's demo instance and every clip-* pair on the top_layer fixture -- all land " +
+          "on the JS fallback path at open already). Verify on a real device instead.",
+      },
+      {
+        name: "Combobox",
+        supported: false,
+        reason:
+          "no naturally CSS-anchor-conforming context found for Combobox in this Chromium sandbox (checked " +
+          "its own gallery page's demo instances and every clip-* pair on the top_layer fixture -- all land " +
+          "on the JS fallback path at open already, which is itself the correctly-handled case, not this " +
+          "gap). This is the reported bug's own component -- see this session's report for why real-device " +
+          "iOS Safari verification is still needed for the exact 'conforming at open' shape.",
+      },
+    ];
+
+    for (const kase of CONFORMING_CASES) {
+      test(`${kase.name}: conforming at open, diverging later (anchor support removed after opening, then the keyboard opens)`, async ({
+        page,
+      }) => {
+        test.skip(!kase.supported, !kase.supported ? kase.reason : "");
+        if (!kase.supported) return;
+
+        await page.setViewportSize(MOBILE_VIEWPORT);
+        await kase.goto(page);
+        await pinNearTop(page, kase.trigger(page));
+        await kase.open(page);
+        await expect(kase.content(page)).toBeVisible();
+
+        // Confirm CSS Anchor Positioning was genuinely doing the work at
+        // open (no inline `top` -- the fallback never engaged; same check
+        // Rule 8 makes for its own CSS-anchor-path case above).
+        const inlineTopAtOpen = await kase.content(page).evaluate((el) => (el as HTMLElement).style.top);
+        expect(inlineTopAtOpen, `expected the CSS-anchor path to be active at open for ${kase.name}`).toBe("");
+
+        await stripAnchorSupportsBlock(page);
+        await simulateOnScreenKeyboard(page);
+
+        // The direct, mechanism-level assertion: did anything re-measure at
+        // all? Pre-fix, gap 2 means the answer is no -- no listener was
+        // ever attached, since this content conformed (via CSS) at open --
+        // so `style.top` stays exactly `""` forever, regardless of whether
+        // this fixture's particular geometry also happens to overlap or
+        // leave the viewport (see this section's header doc for why an
+        // overlap/viewport check alone isn't sufficient here).
+        const inlineTopAfter = await kase.content(page).evaluate((el) => (el as HTMLElement).style.top);
+        expect(
+          inlineTopAfter,
+          `expected the fix's tracking to have re-measured and taken over once CSS Anchor Positioning ` +
+            `stopped resolving mid-open for ${kase.name}, but style.top is still ${JSON.stringify(inlineTopAfter)}`,
+        ).not.toBe("");
+
+        const trigger = await rectOfLocator(kase.trigger(page));
+        const content = await rectOfLocator(kase.content(page));
+        const viewport = await viewportSize(page);
+        const debug = JSON.stringify({ overlay: kase.name, trigger, content, viewport });
+        expect(rectsIntersect(content, trigger), debug).toBe(false);
+        expect(content.top, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+        expect(content.bottom, debug).toBeLessThanOrEqual(viewport.height + EDGE_TOLERANCE);
+      });
+    }
+  });
+});

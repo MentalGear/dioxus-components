@@ -743,7 +743,7 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// addition, with the same deliberately narrow scope: flip only, never
 /// shift or resize (that remainder of Phase 5 is still open).
 ///
-/// ## Scroll/resize tracking (decision 2026-09-01)
+/// ## Scroll/resize tracking (decision 2026-09-01, revised 2026-09-02)
 ///
 /// Originally a one-shot measurement taken when `open` becomes true, not a
 /// live-tracking listener -- reasoned at the time as static positioning
@@ -752,38 +752,99 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// live-site testing, an anchored overlay (`ColorPicker`'s popup) floating
 /// viewport-fixed while the page scrolled underneath it -- detached from its
 /// trigger -- and explicitly decided scroll-following is now in scope,
-/// superseding that deferral for this one narrow case: **only** while an
-/// overlay is open **and** this function's own measurement has judged CSS
-/// Anchor Positioning non-conforming and taken over with inline styles (the
-/// "neither matches" branch below). The function tracks its own outcome in
-/// the `usingFallback` flag closed over by `reposition()`; once a call sets
-/// it, every subsequent call -- including ones driven by the listeners added
-/// below -- skips the `matches()` check and unconditionally recomputes and
-/// re-applies the inline position. When CSS Anchor Positioning already
-/// placed the content correctly, `usingFallback` never flips and no
-/// listener is ever added: the platform's own `anchor()` re-resolution
-/// already tracks scroll for free there, and installing a listener would be
-/// redundant work that also risks fighting a live CSS flip mid-scroll.
+/// superseding that deferral. As first built (2026-09-01), tracking was
+/// installed **only** while an overlay was open **and** this function's own
+/// measurement had judged CSS Anchor Positioning non-conforming at open time
+/// and taken over with inline styles (the "neither matches" branch below);
+/// see "iOS keyboard (2026-09-02)" further down for why that condition was
+/// removed the very next day -- tracking listeners now install
+/// unconditionally for the life of every open overlay, not gated on whether
+/// the very first measurement happened to need the fallback. The function
+/// still tracks its own outcome in the `usingFallback` flag closed over by
+/// `reposition()`; once a call sets it, every subsequent call -- including
+/// ones driven by the listeners added below -- skips the `matches()` check
+/// and unconditionally recomputes and re-applies the inline position. When
+/// CSS Anchor Positioning is (still) placing the content correctly,
+/// `usingFallback` never flips and `reposition()` keeps returning early
+/// after one extra `getBoundingClientRect()` pair per event -- the
+/// platform's own `anchor()` re-resolution does the real work there, this
+/// is just confirming it still is.
 ///
-/// When tracking is active, capture-phase (so scroll inside a nested
-/// scroll container is seen too -- `scroll` does not bubble, only capture
-/// reaches it from `window`), passive `scroll` and a plain `resize`
-/// listener on `window` re-run the same `reposition()` function, rAF-
-/// throttled (a `rafScheduled` flag drops any additional event that fires
-/// before the next paint) so a fast scroll gesture doesn't queue up more
-/// synchronous layout work than one measurement per frame. The flip
-/// decision is re-evaluated on every re-measure (`reposition()` always
-/// recomputes `primary`/`flipped` from the current, live
-/// `getBoundingClientRect()`/viewport size), so a resize that changes which
-/// side fits gets the same flip treatment the initial placement does. Both
-/// listeners are removed -- via the same `dioxus.recv()`-gated teardown
-/// every other eval-channel hook in this crate uses (see
-/// `use_popover_sync` above) -- when `open` goes false or this component
-/// unmounts; nothing is left listening on `window` past the overlay's own
-/// lifetime. Deliberately narrow, matching the flip-only scope above it: no
+/// When tracking is active (now: always, for the reason above), capture-
+/// phase (so scroll inside a nested scroll container is seen too -- `scroll`
+/// does not bubble, only capture reaches it from `window`), passive
+/// `scroll` and a plain `resize` listener on `window` re-run the same
+/// `reposition()` function, rAF-throttled (a `rafScheduled` flag drops any
+/// additional event that fires before the next paint) so a fast scroll
+/// gesture doesn't queue up more synchronous layout work than one
+/// measurement per frame. The flip decision is re-evaluated on every
+/// re-measure (`reposition()` always recomputes `primary`/`flipped` from
+/// the current, live `getBoundingClientRect()`/viewport size), so a resize
+/// that changes which side fits gets the same flip treatment the initial
+/// placement does. All listeners are removed -- via the same
+/// `dioxus.recv()`-gated teardown every other eval-channel hook in this
+/// crate uses (see `use_popover_sync` above) -- when `open` goes false or
+/// this component unmounts; nothing is left listening on `window` (or
+/// `visualViewport`, added 2026-09-02) past the overlay's own lifetime.
+/// Deliberately narrow, matching the flip-only scope above it: no
 /// shift/collision-avoidance beyond the existing flip, and no
 /// `ResizeObserver` on the trigger or content elements -- only `window`
-/// `scroll`/`resize`, which is all a *position* (not size) correction needs.
+/// (and, since 2026-09-02, `visualViewport`) `scroll`/`resize`, which is
+/// all a *position* (not size) correction needs.
+///
+/// ## iOS keyboard (2026-09-02)
+///
+/// User report (main page, iOS Safari): the `Combobox` options list renders
+/// on top of its own search input after focusing/typing. Investigation
+/// (this session) found two gaps in the 2026-09-01 construction above, both
+/// closed together here:
+///
+/// 1. **No visual-viewport awareness.** `reposition()` read only
+///    `window.innerWidth`/`innerHeight` plus `getBoundingClientRect()`. iOS
+///    Safari's on-screen keyboard shrinks and offsets
+///    `window.visualViewport` while leaving `window.inner{Width,Height}`
+///    completely unchanged -- so a keyboard-driven layout change was
+///    invisible to every fit/flip computation in this function, regardless
+///    of whether anything re-ran it. Fixed by `viewportMetrics()` below:
+///    every `vw`/`vh` read, and the trigger/content rects compared against
+///    them, now go through `window.visualViewport` (falling back to
+///    `window.inner*` when absent, i.e. unchanged behavior on an engine
+///    without it) -- see that function's own doc for the coordinate-space
+///    bookkeeping this requires (`position: fixed` stays relative to the
+///    *layout* viewport even once the *visual* one is what the fit
+///    decision needs to reason about).
+/// 2. **Tracking installed only when already conforming-fallback at open.**
+///    The 2026-09-01 construction attached the scroll/resize listeners only
+///    inside the `if (usingFallback)` branch, i.e. only when the very first
+///    `reposition()` call had already judged CSS Anchor Positioning
+///    non-conforming. An overlay that CSS Anchor Positioning placed
+///    correctly at *open* time got no listener at all for the rest of that
+///    open -- reasoned at the time as "an engine that gets here already
+///    re-resolves `anchor()` on scroll for free," true for scroll, but
+///    silently assuming the set of contract-legal positions itself could
+///    never change again for the life of that one open. It can: an iOS
+///    keyboard appearing is exactly such a change, and Combobox is the one
+///    anchored overlay whose opening reliably summons one (a focused text
+///    input) -- consistent with only it being reported. Fixed by moving the
+///    listener installation out of that `if` entirely (see below): tracking
+///    is now unconditional for the life of every open overlay, and
+///    `reposition()`'s own `matches()` check (unchanged) is what keeps a
+///    still-conforming engine's re-checks a no-op.
+///
+/// Falsified along the way, so as not to be re-tried: neither gap is a
+/// "plain no anchor support" problem -- `use_anchor_position_fallback`
+/// already self-corrects fully and immediately for an overlay with no
+/// CSS-anchor support *from open*, byte-identical to native placement (see
+/// "The flip contract" above); and a failed trigger lookup (the
+/// `document.querySelector` returning `null`) lands the content off-screen
+/// entirely, not on top of its own trigger -- neither symptom matches the
+/// report. `playwright/oracle/tier2-html/top-layer.spec.ts` Rule 11 is the
+/// regression oracle for both gaps, including the specific "conforming at
+/// open, CSS Anchor Positioning support removed mid-open" shape gap 2 is
+/// about (that file's own header doc records which of the seven
+/// `use_anchor_position_fallback` consumers this sandbox's Chromium can
+/// actually be driven into that exact shape for, and why the rest are
+/// marked as needing a real device instead).
 ///
 /// `anchor_id` must be the exact same string [`anchor_name_style`] was
 /// built from for this overlay's trigger (every call site threads its
@@ -891,44 +952,89 @@ pub(crate) fn use_anchor_position_fallback(
             // whether CSS anchoring "started working" mid-overlay.
             let usingFallback = false;
 
+            // 2026-09-02 iOS keyboard fix (see this function's doc, "iOS
+            // keyboard (2026-09-02)"): visual-viewport-aware metrics.
+            // `window.innerWidth`/`innerHeight` do NOT shrink when iOS
+            // Safari's on-screen keyboard appears; `window.visualViewport`'s
+            // `width`/`height` do -- so every fit/flip decision below reads
+            // through here instead of `window.inner*` directly, and this is
+            // the one thing that makes the fix keyboard-*aware* rather than
+            // merely keyboard-*re-triggered* (gap 2, fixed separately below,
+            // is what makes it re-run at all). `offsetLeft`/`offsetTop` is
+            // the visual viewport's own origin offset from the *layout*
+            // viewport's (mainly a pinch-zoom-panning concept, included for
+            // completeness): `getBoundingClientRect()` always reports
+            // layout-viewport-relative coordinates regardless of which
+            // viewport is visually showing, and the `position: fixed` this
+            // function's override sets is likewise positioned relative to
+            // the layout viewport, not the visual one -- so trigger/content
+            // rects are shifted into visual-viewport space by this offset
+            // before comparison, and shifted back out of it when writing
+            // the final inline `top`/`left`. Falls back to
+            // `window.inner` width/height and `0` on an engine with no
+            // `visualViewport` at all, i.e. exactly today's behavior there.
+            function viewportMetrics() {{
+                const vv = window.visualViewport;
+                return {{
+                    width: vv ? vv.width : window.innerWidth,
+                    height: vv ? vv.height : window.innerHeight,
+                    offsetLeft: vv ? vv.offsetLeft : 0,
+                    offsetTop: vv ? vv.offsetTop : 0,
+                }};
+            }}
+
             function reposition() {{
                 if (!content || !trigger) return;
                 const t = trigger.getBoundingClientRect();
                 const c = content.getBoundingClientRect();
                 const cw = content.offsetWidth;
                 const ch = content.offsetHeight;
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
+                const vp = viewportMetrics();
+                const vw = vp.width;
+                const vh = vp.height;
+                // See `viewportMetrics()`'s doc just above: re-express the
+                // two rects `getBoundingClientRect()` gave in layout-
+                // viewport coordinates as visual-viewport-relative ones, so
+                // they compare like-for-like against `vw`/`vh` (also
+                // visual-viewport-relative) in every formula below.
+                const tTop = t.top - vp.offsetTop;
+                const tBottom = t.bottom - vp.offsetTop;
+                const tLeft = t.left - vp.offsetLeft;
+                const tRight = t.right - vp.offsetLeft;
+                const cTop = c.top - vp.offsetTop;
+                const cLeft = c.left - vp.offsetLeft;
 
                 // Same trigger-relative formula the `[data-side]`/
                 // `[data-align]` CSS contract promises, parameterised over
                 // *which* side is currently being placed -- called once for
                 // the primary side and once for its flip-axis opposite (see
-                // this function's doc, "The flip contract").
+                // this function's doc, "The flip contract"). Operates
+                // entirely in visual-viewport space (the `t*` locals above),
+                // like everything else in this function.
                 function place(effectiveSide) {{
                     let top;
                     let left;
                     if (effectiveSide === 'top') {{
-                        top = t.top - gap - ch;
+                        top = tTop - gap - ch;
                     }} else if (effectiveSide === 'bottom') {{
-                        top = t.bottom + gap;
+                        top = tBottom + gap;
                     }} else if (align === 'start') {{
-                        top = t.top;
+                        top = tTop;
                     }} else if (align === 'end') {{
-                        top = t.bottom - ch;
+                        top = tBottom - ch;
                     }} else {{
-                        top = t.top + t.height / 2 - ch / 2;
+                        top = tTop + (tBottom - tTop) / 2 - ch / 2;
                     }}
                     if (effectiveSide === 'left') {{
-                        left = t.left - gap - cw;
+                        left = tLeft - gap - cw;
                     }} else if (effectiveSide === 'right') {{
-                        left = t.right + gap;
+                        left = tRight + gap;
                     }} else if (align === 'start') {{
-                        left = t.left;
+                        left = tLeft;
                     }} else if (align === 'end') {{
-                        left = t.right - cw;
+                        left = tRight - cw;
                     }} else {{
-                        left = t.left + t.width / 2 - cw / 2;
+                        left = tLeft + (tRight - tLeft) / 2 - cw / 2;
                     }}
                     return {{ top, left }};
                 }}
@@ -940,7 +1046,7 @@ pub(crate) fn use_anchor_position_fallback(
                 // function's doc for why this checks the *outcome* rather
                 // than trusting a feature-detection flag.
                 function matches(pos) {{
-                    return Math.abs(c.top - pos.top) <= 2 && Math.abs(c.left - pos.left) <= 2;
+                    return Math.abs(cTop - pos.top) <= 2 && Math.abs(cLeft - pos.left) <= 2;
                 }}
 
                 if (!usingFallback && (matches(primary) || matches(flipped))) {{
@@ -949,21 +1055,25 @@ pub(crate) fn use_anchor_position_fallback(
                     // preferred side, or the CSS `position-try-fallbacks`
                     // flip of it. Never override: doing so here would fight
                     // a legitimate flip and stomp it back off-viewport (see
-                    // this function's doc). And never install scroll/resize
-                    // tracking below for this overlay: `anchor()` already
-                    // re-resolves on scroll for free on an engine that gets
-                    // here.
+                    // this function's doc). Tracking listeners are
+                    // installed unconditionally below regardless of this
+                    // branch (2026-09-02 fix, gap 2) -- this only decides
+                    // whether *this one call* overrides, not whether future
+                    // calls get a chance to.
                     return;
                 }}
 
                 // Neither matches (or a previous call already committed to
                 // this branch -- see `usingFallback` above): this engine's
                 // anchor-positioning integration failed outright (the
-                // pre-existing case this function exists for). Make the
-                // same flip decision from plain viewport math, so a
-                // non-anchor engine gets flip parity with the CSS path --
-                // flip only, no shift/size (docs/backlog.md row 10's
-                // remaining Phase 5 scope stays open).
+                // pre-existing case this function exists for), or CSS
+                // Anchor Positioning support disappeared out from under an
+                // already-open overlay (2026-09-02 fix, gap 2 -- see this
+                // function's doc). Make the same flip decision from plain
+                // viewport math, so a non-anchor engine gets flip parity
+                // with the CSS path -- flip only, no shift/size
+                // (docs/backlog.md row 10's remaining Phase 5 scope stays
+                // open).
                 usingFallback = true;
                 let target = primary;
                 if (side === 'top' && primary.top < 0) {{
@@ -979,8 +1089,11 @@ pub(crate) fn use_anchor_position_fallback(
                 content.style.margin = '0';
                 content.style.inset = 'auto';
                 content.style.transform = 'none';
-                content.style.top = target.top + 'px';
-                content.style.left = target.left + 'px';
+                // Shift back out of visual-viewport space (see
+                // `viewportMetrics()`'s doc above): `position: fixed` is
+                // relative to the layout viewport.
+                content.style.top = (target.top + vp.offsetTop) + 'px';
+                content.style.left = (target.left + vp.offsetLeft) + 'px';
             }}
 
             reposition();
@@ -1060,32 +1173,72 @@ pub(crate) fn use_anchor_position_fallback(
                     }}
                 }};
                 requestAnimationFrame(settle);
+            }}
 
-                // Only once this engine's own measurement has judged CSS
-                // Anchor Positioning non-conforming: re-run the same
-                // measurement on scroll/resize so the overlay tracks its
-                // trigger instead of staying pinned at the pixel values
-                // computed at open time. `scroll` is added on `window` with
-                // `capture: true` because the event does not bubble --
-                // capture on `window` is the only way to observe a scroll
-                // on a nested scroll container, not just the document
-                // itself. rAF-throttled: `rafScheduled` collapses any
-                // number of scroll/resize events firing before the next
-                // paint into a single `reposition()` call.
-                let rafScheduled = false;
-                const onTrack = () => {{
-                    if (rafScheduled) return;
-                    rafScheduled = true;
-                    requestAnimationFrame(() => {{
-                        rafScheduled = false;
-                        reposition();
-                    }});
-                }};
-                window.addEventListener('scroll', onTrack, {{ capture: true, passive: true }});
-                window.addEventListener('resize', onTrack, {{ passive: true }});
-                await dioxus.recv();
-                window.removeEventListener('scroll', onTrack, true);
-                window.removeEventListener('resize', onTrack);
+            // 2026-09-02 iOS keyboard fix, gap 2 -- see this function's doc,
+            // "iOS keyboard (2026-09-02)": tracking listeners now install
+            // UNCONDITIONALLY, for the life of every open overlay, not only
+            // once `usingFallback` is already `true` at this point in the
+            // script. Before this fix, an overlay that CSS Anchor
+            // Positioning placed correctly at open time got no listener at
+            // all -- reasoned at the time (see the removed comment this
+            // replaces, preserved in this function's git history) as "an
+            // engine that gets here already re-resolves `anchor()` on
+            // scroll for free" -- which is true for scroll, but silently
+            // assumed the *set of contract-legal positions* itself never
+            // changes for the rest of that open. An iOS Safari on-screen
+            // keyboard breaks exactly that assumption mid-open (shrinking
+            // `visualViewport` out from under an already-placed overlay),
+            // and Combobox is the one anchored overlay whose opening
+            // reliably summons a keyboard (a focused text input) --
+            // consistent with only it being reported. `reposition()` itself
+            // still only overrides when `matches()` fails (or `usingFallback`
+            // is already sticky-true), so a still-conforming CSS-anchor
+            // engine re-running `reposition()` on every scroll/resize costs
+            // one extra `getBoundingClientRect()` pair and returns
+            // immediately -- not a behavior change for the common case,
+            // only for the one this fix exists to close.
+            //
+            // `scroll` is added on `window` with `capture: true` because
+            // the event does not bubble -- capture on `window` is the only
+            // way to observe a scroll on a nested scroll container, not
+            // just the document itself. `visualViewport`'s own `resize`
+            // (fires when the keyboard opens/closes, or on pinch-zoom) and
+            // `scroll` (fires when the visual viewport pans, e.g. while a
+            // focused input is scrolled into view above the keyboard) are
+            // added too, when present, alongside the existing `window`
+            // listeners -- `window`'s own `resize` does not fire for a
+            // visual-viewport-only change, since `window.inner` width/
+            // height do not change when the keyboard appears (this
+            // function's doc, gap 1). rAF-throttled: `rafScheduled`
+            // collapses any number of scroll/resize events firing before
+            // the next paint (from either source) into a single
+            // `reposition()` call. Removed on close/unmount exactly as
+            // every other eval-channel listener in this file -- the
+            // `await dioxus.recv()` tail below is unconditional now for the
+            // same reason: something always needs cleaning up.
+            let rafScheduled = false;
+            const onTrack = () => {{
+                if (rafScheduled) return;
+                rafScheduled = true;
+                requestAnimationFrame(() => {{
+                    rafScheduled = false;
+                    reposition();
+                }});
+            }};
+            window.addEventListener('scroll', onTrack, {{ capture: true, passive: true }});
+            window.addEventListener('resize', onTrack, {{ passive: true }});
+            const vv = window.visualViewport;
+            if (vv) {{
+                vv.addEventListener('resize', onTrack, {{ passive: true }});
+                vv.addEventListener('scroll', onTrack, {{ passive: true }});
+            }}
+            await dioxus.recv();
+            window.removeEventListener('scroll', onTrack, true);
+            window.removeEventListener('resize', onTrack);
+            if (vv) {{
+                vv.removeEventListener('resize', onTrack);
+                vv.removeEventListener('scroll', onTrack);
             }}
             "#
         ));
