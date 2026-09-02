@@ -254,11 +254,7 @@ fn NavigationLayout() -> Element {
     });
 
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
-        document::Link {
-            rel: "stylesheet",
-            href: asset!("/assets/dx-components-theme.css"),
-        }
+        GlobalHead {}
         document::Link { rel: "stylesheet", href: asset!("/assets/hero.css") }
         Navbar {}
         Outlet::<Route> {}
@@ -1095,11 +1091,35 @@ fn BlockComponentVariantHighlight(
     }
 }
 
+/// The head links every route shares, in one place so the three route roots
+/// cannot drift apart (they used to repeat this block by hand).
+///
+/// The Geist web fonts are loaded here as `<link>`s rather than via
+/// `@import` inside `main.css`: a stylesheet whose `@import` is still
+/// loading is not applied by the browser at all (the sheet parses but stays
+/// out of `document.styleSheets`), so with the font CDN slow or blocked the
+/// whole of `main.css` was inert -- found by execution 2026-09-02, see the
+/// comment at the top of `assets/main.css` and
+/// `playwright/oracle/tier2-html/global-stylesheet.spec.ts`. Separate links
+/// let `main.css` apply immediately and the fonts swap in when they arrive.
+#[component]
+fn GlobalHead() -> Element {
+    rsx! {
+        document::Link { rel: "preconnect", href: "https://fonts.googleapis.com" }
+        document::Link { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "anonymous" }
+        document::Link {
+            rel: "stylesheet",
+            href: "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@400;500;700&display=swap",
+        }
+        document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
+        document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }
+    }
+}
+
 #[component]
 fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
-        document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }
+        GlobalHead {}
         dashboard::views::email_client::EmailClient {}
     }
 }
@@ -1130,11 +1150,7 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
     let Comp = variant.component;
 
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
-        document::Link {
-            rel: "stylesheet",
-            href: asset!("/assets/dx-components-theme.css"),
-        }
+        GlobalHead {}
         div { style: "min-height: 100vh;", Comp {} }
     }
 }

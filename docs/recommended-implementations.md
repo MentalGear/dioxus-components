@@ -245,3 +245,8 @@ Best-of here means recognising that upstream already wins one.
 7. Typeahead (8), RTL (9).
 
 Write the failing test before each, per the harness document. Nothing here has been built.
+
+### Global stylesheet rule — never `@import` a remote stylesheet from the app stylesheet (2026-09-02)
+
+A stylesheet is applied only once it is loaded, and it is not loaded until every `@import` it contains has loaded. `preview/assets/main.css` opened with an `@import` of Google Fonts; wherever that request stalled (a slow CDN, a corporate proxy, this repo's own test sandbox) the whole file — layout, navbar, typography, every app-wide backstop — silently never applied, while `link.sheet` still exposed the parsed rules, which is why nothing looked broken from the inside. Construction: web fonts load from `<link rel="preconnect">` + `<link rel="stylesheet">` in one shared head component (`GlobalHead`), the app stylesheet contains no `@import`, and `oracle/tier2-html/global-stylesheet.spec.ts` asserts on every route that `main.css` is in the applied set. Same class as the cfg-axis and attribute-order incidents: a rule that held on the developer's machine and failed silently elsewhere, closed by an oracle that measures the deployed shape rather than the source.
+
