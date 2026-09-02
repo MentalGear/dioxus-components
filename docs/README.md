@@ -4,6 +4,8 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 
 **Baseline:** `bf007c1` — upstream `main`, unchanged since 2026-06-29. This repo tracked it exactly at scan time (2026-08-29).
 
+**Point-in-time research index.** Everything below reflects the state of the codebase at the 2026-08-29 scan date, before any of this research was acted on. As of 2026-09-02, Phases 0–4 of [`plan.md`](./plan.md) have landed on `main` — start there for current status; the documents below remain the record of the research that led to them.
+
 | Document | Answers |
 |---|---|
 | [`plan.md`](./plan.md) | **The single authoritative sequence** — phases, dependencies, open decisions, and the definition of done. Start here. Where another document's ordering differs, the plan wins. |

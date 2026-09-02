@@ -3,6 +3,8 @@
 Date: 2026-08-29
 HEAD commit: `c8b6aeeba43985d8529726b873392251012947a9`
 
+**Point-in-time record — superseded in two places.** The 4 oracle-focus-restore reds recorded below were the expected, documented starting point for Phase 3.1, which has since landed (`plan.md` Phase 3); a re-run today should show 5/5 green, not 1/5. The `toast.spec.ts` failure was root-caused and fixed by `3abc6bc` (hardened close-button locator with exact matching). Kept below unedited as the record of what the baseline actually measured.
+
 ## Environment
 
 - `dx` 0.7.9 (matches `Cargo.lock`'s `dioxus = 0.7.9`; `Cargo.toml` alone would have pointed at the wrong version — see `lifting-from-forks.md` §6).

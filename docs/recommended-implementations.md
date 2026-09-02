@@ -4,7 +4,7 @@ For every gap in [`capability-gaps.md`](./capability-gaps.md), which solution to
 
 Sources compared: this repo (`bf007c1`), `radix-ui/primitives`, `dignifiedquire/dx-components`, `sarendipitee/dioxus-components`, `jcgruenhage/dioxus-components`, and the WHATWG HTML spec.
 
-**Verification:** all source claims below were read from the actual code. None of the *recommendations* have been built or run.
+**Verification:** all source claims below were read from the actual code. **Update (2026-09-02):** most of these recommendations have since been built and verified by execution — form participation (§1), modal dialogs (§2), non-modal overlays (§3), focus restore (§4 and the later §4b/§4c keyboard/role-contract additions), body scroll lock (§5), and the FLIP sub-problem of collision detection (§6) are all landed on `main`; see `plan.md`'s phase tables for what landed and when. Typeahead (§8) and RTL (§9) remain unbuilt, and collision detection's shift/size clamping and `ContextMenu` clamp remain open — see `backlog.md`.
 
 ---
 
@@ -164,6 +164,8 @@ This fixes clipping inside `overflow:hidden` and transformed ancestors — which
 
 Cited rule source throughout: each pattern's own "Keyboard Interaction" section, quoted per-row in the matrix oracle rather than from memory.
 
+**Two sibling findings from the same oracle sweep, different bug shape (not an open-contract drift, so not folded into the pattern above):** `Slider` had `Home`/`End`/`Page Up`/`Page Down` entirely unimplemented (`MoveEvent::from_keyboard` matched only the four arrow keys) — fixed with a `home_end_target` helper and the existing "10x step" convention Shift+Arrow already used, both unit-tested (this module is mutation-tested). `HoverCard` had no `onkeydown` handler at all, unlike `Tooltip`'s `handle_keydown`, so it never dismissed on Escape despite being built to the same show-on-focus/hide-on-blur contract Tooltip's own APG citation requires — fixed by wiring the same handler onto `HoverCardTrigger` and `HoverCardContent`. Together with the pattern above, these closed all 12 reds `oracle/tier1-apg/keyboard-matrix.spec.ts` found.
+
 ### 4c. Pattern-class role contract (menu-family roles)
 
 **Finding from execution (2026-09-02, `docs/backlog.md` row 24):** `DropdownMenu` rendered the APG **listbox** pattern's roles (`aria-haspopup="listbox"` / `role="listbox"` / `role="option"`) while `ContextMenu` and `Menubar` — two other implementations of the same APG **menu-button**/**menu-and-menubar** pattern class, built on the same `use_item`/`collection_item` collection plumbing — correctly used the **menu** pattern's roles (`aria-haspopup="menu"` / `role="menu"` / `role="menuitem"`). `DropdownMenu` has no selection model at all (no `value`/`selected` state, no `aria-selected` on any item; activating an item calls `on_select` and closes the menu — action semantics), so the listbox roles were simply wrong, not a stylistic choice. Root cause: each component hand-wrote its own role/token string literals, so three implementations of one pattern class could — and did — drift independently.
@@ -184,7 +186,9 @@ Known limitation in **both**: no iOS momentum-scroll handling and no scrollbar-g
 
 Prefer it over `dignifiedquire`'s in-repo port (3,262 lines of Rust + a 1,158-line `popper.rs`) for maintenance reasons, but keep that port as the contingency if the external crates stall — it additionally implements `collision_padding`, sticky behaviour, arrow and size middleware.
 
-Keep the CSS clamp already on this repo's `fix/preview-a11y-ux` branch as defence-in-depth: it costs nothing and still helps non-wasm targets. `ContextMenu` needs separate viewport clamping either way, since it is positioned at click coordinates rather than anchored.
+Keep the CSS clamp already on this repo's `fix/preview-a11y-ux` branch as defence-in-depth: it costs nothing and still helps non-wasm targets (still not merged as of 2026-09-02 — verified not an ancestor of `main`). `ContextMenu` needs separate viewport clamping either way, since it is positioned at click coordinates rather than anchored.
+
+> **Update (2026-09-01) — the FLIP sub-problem no longer needs either dependency.** A bits-ui/Radix source comparison found both mature libraries delegate to Floating UI's identical flip/shift/size/arrow/hide pipeline (bits-ui is a line-for-line Svelte port of Radix's Popper) — but by this date CSS Anchor Positioning was already in this repo's stack from Phase 4.4, and `position-try-fallbacks: flip-block, flip-inline` covers FLIP natively, zero JS, additive to the existing `@supports` anchor blocks. Landed the same day: one declaration in each of the three `@supports` blocks, plus making `use_anchor_position_fallback` flip-aware so it defers to a legitimate CSS flip and only overrides when neither the primary nor flipped placement fits. Neither `sr floating.rs` nor `dq`'s vendored port was needed for this. The dependency decision above therefore survives only for what's left: shift/size clamping and `ContextMenu`'s point-anchor clamp (the latter is not solvable by CSS anchors at all — it needs a virtual-anchor JS path regardless of which collision library, if any, gets adopted). See `backlog.md` row 10 and `plan.md` Phase 5.
 
 ### 7. `use_animated_open`
 
@@ -244,7 +248,7 @@ Best-of here means recognising that upstream already wins one.
 6. **Collision detection** (6) — largest, and a dependency decision.
 7. Typeahead (8), RTL (9).
 
-Write the failing test before each, per the harness document. Nothing here has been built.
+Write the failing test before each, per the harness document. This ordering is historical (it predates execution); `plan.md`'s phase tables record what has actually landed, in what order it actually happened.
 
 ### Global stylesheet rule — never `@import` a remote stylesheet from the app stylesheet (2026-09-02)
 

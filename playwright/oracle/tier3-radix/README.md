@@ -26,4 +26,4 @@ Reference subject: a pinned Radix demo. Per conformance-harness.md, avoid runnin
 
 ## Status
 
-Per conformance-harness.md: not implemented.
+Per conformance-harness.md: `scroll-lock.spec.ts` implemented (6 rules, landed 2026-08-30); otherwise not implemented — `onCloseAutoFocus`, `aria-hidden` on background content, and collision-aware repositioning have no standing tier-3 oracle of their own (focus restore ended up calibrated against the vendored APG reference instead, in tier 1, once that upgrade landed).

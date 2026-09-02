@@ -5,6 +5,8 @@
 
 Companion to [`adopt-fork-fixes-results.md`](./adopt-fork-fixes-results.md), which covers *bug fixes*. This document covers *missing capabilities* — behaviour a mature headless component library is expected to have, that upstream does not implement, and that at least one fork does.
 
+**Status update (2026-09-02):** all three TL;DR findings below have since been closed — form participation (Phase 1), collision detection's FLIP sub-problem (Phase 5, `backlog.md` row 10) with shift/size clamping still open, and focus restore for the menu family (Phase 3.1). See `plan.md` for current phase status; this document remains the record of the gap analysis that motivated the work.
+
 ---
 
 ## TL;DR
