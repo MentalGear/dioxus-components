@@ -150,6 +150,18 @@ This fixes clipping inside `overflow:hidden` and transformed ancestors — which
 - Shape: `dignifiedquire@lib.rs:241-255` (`use_refocus_on_close_unless`), ~15 lines, dropping onto the `trigger_id` fields this repo already has. It needs `use_previous`, which does not exist here and must be written.
 - **Correction from execution:** our oracle showed `DropdownMenu` and `Menubar` leave focus *on the item of the closed menu*, not on `<body>`. Restoring to the trigger is therefore necessary but not sufficient — focus must also be moved off the item. Neither reference handles this, because neither has this bug.
 
+### 4b. Keyboard open contract (menu-family triggers)
+
+**Finding from execution (2026-09-02):** `oracle/tier1-apg/keyboard-matrix.spec.ts` found the same shape of bug independently in `DropdownMenu`, `Menubar`, and `Select`: each trigger's open keys (Enter, Space, ArrowDown, ArrowUp) were separate `match` arms, and only some of them also requested initial focus — so e.g. Enter opened `DropdownMenu` but left focus stranded on the trigger, while ArrowDown on the same trigger correctly focused the first item. Patching the under-covered arms one at a time would have left the next component with the same footgun.
+
+**Build:** one "open with focus" path per component, so opening and requesting focus can never drift apart again:
+
+- `DropdownMenu`: `DropdownMenuContext::open_with_focus(CollectionPlacement)` sets `initial_focus` then `open`, in that order, before any render can observe an inconsistent state. `DropdownMenuContent` resolves it via the existing `use_deferred_collection_focus` (already used by `Menubar`), so focus lands correctly regardless of whether the content is already mounted.
+- `Menubar`: extended the existing `initial_focus: Signal<Option<CollectionPlacement>>` (already used by the ArrowDown/Up arms) to Enter and Space too, and wired Space explicitly at `MenubarMenu`'s `onkeydown` — `MenubarTrigger` wires only `onpointerup`, never `onclick`, so a Space keydown's synthesized click previously had no listener at all.
+- `Select`: `SelectContext::open_with_selected_or_first_focus()` is the shared path for Enter and Space, focusing the selected option if one exists (else the first) — APG select-only combobox's "focus the listbox with the current option active." Alt+ArrowDown is the one open key that must *not* move focus at all (APG Optional); a new `keep_trigger_focus` flag on `SelectContext` suppresses `SelectListRendered`'s own "nothing is focused yet, focus the listbox container" fallback for that one path, so the trigger keeps real DOM focus. Plain pointer-click open is deliberately untouched on all three components — it already has its own APG-permitted behavior (focus stays on/near the trigger) with its own green coverage (`dropdown-menu.spec.ts`, `select.spec.ts`).
+
+Cited rule source throughout: each pattern's own "Keyboard Interaction" section, quoted per-row in the matrix oracle rather than from memory.
+
 ### 5. Body scroll lock
 
 **Build:** `dignifiedquire@scroll_lock.rs` (58 lines) as the base — it refcounts for nested modals *and* restores the original `overflow` value, which `sarendipitee`'s does not — plus `sarendipitee`'s guard against the unlock flash when a second modal opens while the first is tearing down.

@@ -298,7 +298,32 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
             onkeydown: move |event: Event<KeyboardData>| {
                 match event.key() {
                     Key::Enter if !disabled() => {
-                        ctx.set_open_menu.call((!is_open()).then(&*props.index));
+                        // APG menubar: "Enter: ... opens the submenu and
+                        // places focus on its first item." Route through the
+                        // same open-with-focus path ArrowDown (below) uses,
+                        // rather than toggling `open_menu` alone -- that used
+                        // to leave `initial_focus` unset, stranding focus on
+                        // this trigger. See
+                        // oracle/tier1-apg/keyboard-matrix.spec.ts.
+                        if !is_open() {
+                            menu_ctx.initial_focus.set(Some(CollectionPlacement::First));
+                            ctx.set_open_menu.call(Some(props.index.cloned()));
+                        } else {
+                            ctx.set_open_menu.call(None);
+                        }
+                    }
+                    Key::Character(c) if !disabled() && c == " " => {
+                        // APG menubar (Optional): "Space: ... opens the
+                        // submenu and places focus on its first item." Wired
+                        // explicitly here (keydown), not left to a
+                        // synthesized native-button click the way it used to
+                        // be -- `MenubarTrigger` wires only `onpointerup`,
+                        // never `onclick`, so that click had no listener to
+                        // act on it at all.
+                        if !is_open() {
+                            menu_ctx.initial_focus.set(Some(CollectionPlacement::First));
+                            ctx.set_open_menu.call(Some(props.index.cloned()));
+                        }
                     }
                     Key::Escape => {
                         ctx.set_open_menu.call(None);
