@@ -41,6 +41,21 @@ fn closest_thumb_for(raw: f64, thumbs: &[f64]) -> usize {
     }
 }
 
+/// APG slider pattern: "Home: Set the slider to the first allowed value in
+/// its range" / "End: Set the slider to the last allowed value in its
+/// range." Both are required (no "(Optional)" qualifier), unlike Page
+/// Up/Down. `vmin`/`vmax` are the *thumb's own* reachable bounds -- for a
+/// [`RangeSlider`] thumb these are already capped by its neighbor (see
+/// `SliderThumb`'s `bounds` memo), so "last allowed value in its range"
+/// is honored for range mode too, not just the global slider min/max.
+fn home_end_target(key: &Key, vmin: f64, vmax: f64) -> Option<f64> {
+    match key {
+        Key::Home => Some(vmin),
+        Key::End => Some(vmax),
+        _ => None,
+    }
+}
+
 fn clamp_to_step_bounds(raw: f64, lo: f64, hi: f64, step: f64) -> f64 {
     let snapped = snap_value(raw.clamp(lo, hi), step);
     if snapped > hi {
@@ -733,6 +748,13 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                     return;
                 }
 
+                let (_, vmin, vmax) = bounds();
+                if let Some(target) = home_end_target(&evt.key(), vmin, vmax) {
+                    evt.prevent_default();
+                    ctx.set_thumb.call((index, ctx.clamp_for(index, target)));
+                    return;
+                }
+
                 let Some(move_event) = MoveEvent::from_keyboard(&evt, (ctx.step)()) else {
                     return;
                 };
@@ -823,6 +845,18 @@ mod tests {
         assert_eq!(closest_thumb_for(79.6, &collided), 0);
         assert_eq!(closest_thumb_for(80.0, &collided), 1);
         assert_eq!(closest_thumb_for(80.4, &collided), 1);
+    }
+
+    #[test]
+    fn home_end_target_picks_thumb_bounds() {
+        assert_eq!(home_end_target(&Key::Home, 0.0, 100.0), Some(0.0));
+        assert_eq!(home_end_target(&Key::End, 0.0, 100.0), Some(100.0));
+        // Range-mode thumbs pass their neighbor-capped bounds, not the
+        // slider's global min/max -- Home/End must honor that per-thumb
+        // range, matching `SliderThumb`'s own `bounds` memo.
+        assert_eq!(home_end_target(&Key::Home, 20.0, 80.0), Some(20.0));
+        assert_eq!(home_end_target(&Key::End, 20.0, 80.0), Some(80.0));
+        assert_eq!(home_end_target(&Key::ArrowUp, 0.0, 100.0), None);
     }
 
     #[test]

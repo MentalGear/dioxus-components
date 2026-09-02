@@ -41,12 +41,22 @@ impl MoveEvent {
         } else {
             step
         };
+        // APG slider pattern (Optional): "Page Up: ... a larger step than
+        // Up Arrow" / "Page Down: ... a larger step than Down Arrow." Reuse
+        // the same "10x step" multiplier Shift+Arrow already establishes as
+        // this crate's "larger step" convention, rather than introducing a
+        // separate `page_step` prop -- unconditional on the Shift modifier,
+        // since Page Up/Down are this pattern's own dedicated "larger step"
+        // keys, not a modified Arrow key.
+        let page_delta = step * 10.0;
 
         let (delta_x, delta_y) = match event.data().key() {
             Key::ArrowUp => (0.0, delta),
             Key::ArrowDown => (0.0, -delta),
             Key::ArrowRight => (delta, 0.0),
             Key::ArrowLeft => (-delta, 0.0),
+            Key::PageUp => (0.0, page_delta),
+            Key::PageDown => (0.0, -page_delta),
             _ => return None,
         };
 
@@ -243,6 +253,22 @@ mod tests {
             MoveEvent::from_keyboard(&keyboard_event(Key::ArrowRight, Modifiers::SHIFT), 2.0)
                 .map(|event| (event.delta_x, event.delta_y, event.modifiers)),
             Some((20.0, 0.0, expected_modifiers))
+        );
+    }
+
+    #[test]
+    fn keyboard_move_page_up_down_use_larger_step() {
+        assert_eq!(
+            MoveEvent::from_keyboard(&keyboard_event(Key::PageUp, Modifiers::empty()), 2.0)
+                .map(|event| (event.delta_x, event.delta_y)),
+            Some((0.0, 20.0)),
+            "Page Up increases by 10x the step, like Shift+ArrowUp"
+        );
+        assert_eq!(
+            MoveEvent::from_keyboard(&keyboard_event(Key::PageDown, Modifiers::empty()), 2.0)
+                .map(|event| (event.delta_x, event.delta_y)),
+            Some((0.0, -20.0)),
+            "Page Down decreases by 10x the step, like Shift+ArrowDown"
         );
     }
 
