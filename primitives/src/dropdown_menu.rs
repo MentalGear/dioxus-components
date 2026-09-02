@@ -107,6 +107,22 @@ pub struct DropdownMenuProps {
 ///
 /// The `DropdownMenu` component is a container for a [`DropdownMenuContent`] component activated by a [`DropdownMenuTrigger`] component.
 ///
+/// It implements the APG **menu button** pattern (`aria-haspopup="menu"` on
+/// the trigger, `role="menu"` on the content, `role="menuitem"` on each
+/// item -- see [`crate::menu_semantics`] for the shared role definitions and
+/// their APG citations). **Deliberate ARIA-contract change:** earlier
+/// versions of this component instead rendered the APG **listbox** pattern's
+/// roles (`aria-haspopup="listbox"` / `role="listbox"` / `role="option"`),
+/// inherited from being built on the same collection/roving-focus plumbing
+/// as [`crate::select`], a genuine listbox. `DropdownMenu` has no selection
+/// model (no `value`/`selected` state, no `aria-selected` on any item --
+/// activating an item is an action, via `on_select`, not a selection), so
+/// those roles were wrong for it; see `docs/backlog.md` row 24 and
+/// `oracle/tier1-apg/menu-roles.spec.ts`. If your code queries
+/// `role="option"` (Playwright's `getByRole('option', ...)` or an
+/// accessibility-tree assertion) against this component's items, update it
+/// to `role="menuitem"`.
+///
 /// ## Example
 /// ```rust
 /// use dioxus::prelude::*;
@@ -364,7 +380,7 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
         "data-disabled": disabled,
         disabled: disabled,
         aria_expanded: open,
-        aria_haspopup: "listbox",
+        aria_haspopup: crate::menu_semantics::MENU_TRIGGER_HASPOPUP,
         // See `crate::top_layer::anchor_name_style`: ties this trigger to
         // the web-arm content's `position-anchor` (`DropdownMenuContentRendered`)
         // so its anchor-positioned placement resolves relative to this
@@ -515,7 +531,7 @@ pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
 }
 
 /// Web arm (docs/backlog.md item 2, non-modal-overlay migration): promote
-/// the listbox to the top layer via `popover="auto"` so it escapes
+/// the menu to the top layer via `popover="auto"` so it escapes
 /// clipping/transformed ancestors, the same fix already shipped for
 /// `Tooltip`/`HoverCard`/non-modal `Popover` (docs/plan.md Phase 4.4). This
 /// also gains native light dismiss (WHATWG HTML's light-dismiss algorithm --
@@ -607,7 +623,7 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "listbox",
+            role: crate::menu_semantics::MENU_ROLE,
             aria_labelledby: "{ctx.trigger_id}",
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             style: crate::top_layer::position_anchor_style(&id),
@@ -646,7 +662,7 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id,
-            role: "listbox",
+            role: crate::menu_semantics::MENU_ROLE,
             aria_labelledby: "{ctx.trigger_id}",
             "data-state": if (ctx.open)() { "open" } else { "closed" },
             onpointerdown: move |event| {
@@ -746,7 +762,7 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
 
     rsx! {
         div {
-            role: "option",
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
 

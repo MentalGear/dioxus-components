@@ -162,6 +162,14 @@ This fixes clipping inside `overflow:hidden` and transformed ancestors — which
 
 Cited rule source throughout: each pattern's own "Keyboard Interaction" section, quoted per-row in the matrix oracle rather than from memory.
 
+### 4c. Pattern-class role contract (menu-family roles)
+
+**Finding from execution (2026-09-02, `docs/backlog.md` row 24):** `DropdownMenu` rendered the APG **listbox** pattern's roles (`aria-haspopup="listbox"` / `role="listbox"` / `role="option"`) while `ContextMenu` and `Menubar` — two other implementations of the same APG **menu-button**/**menu-and-menubar** pattern class, built on the same `use_item`/`collection_item` collection plumbing — correctly used the **menu** pattern's roles (`aria-haspopup="menu"` / `role="menu"` / `role="menuitem"`). `DropdownMenu` has no selection model at all (no `value`/`selected` state, no `aria-selected` on any item; activating an item calls `on_select` and closes the menu — action semantics), so the listbox roles were simply wrong, not a stylistic choice. Root cause: each component hand-wrote its own role/token string literals, so three implementations of one pattern class could — and did — drift independently.
+
+**Build:** a single shared module, `primitives/src/menu_semantics.rs`, holding the pattern class's three literals as `pub(crate)` consts (`MENU_ROLE`, `MENU_ITEM_ROLE`, `MENU_TRIGGER_HASPOPUP`), each doc-commented with its APG citation. `dropdown_menu.rs`, `context_menu.rs`, and `menubar.rs` all read their `role`/`aria-haspopup` attributes from this module instead of hand-written strings, so a role can only drift again if the shared module itself is edited — a fourth menu-pattern component added later inherits the correct roles by construction rather than by remembering to copy them. Verified by `oracle/tier1-apg/menu-roles.spec.ts`, calibrated against the vendored APG menu-button-actions.html reference (see that file's header for the exact citations) rather than against another of this library's own components.
+
+The general lesson generalizes past this one pattern: **when the same conformance rule has already been implemented correctly by sibling components, extract what they agree on into one shared definition** rather than re-deriving or hand-copying it into the next component — the oracle then checks that the shared definition is actually used everywhere, not just that each component's own literals happen to currently agree with each other.
+
 ### 5. Body scroll lock
 
 **Build:** `dignifiedquire@scroll_lock.rs` (58 lines) as the base — it refcounts for nested modals *and* restores the original `overflow` value, which `sarendipitee`'s does not — plus `sarendipitee`'s guard against the unlock flash when a second modal opens while the first is tearing down.

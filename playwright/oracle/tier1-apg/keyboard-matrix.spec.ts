@@ -92,7 +92,7 @@ test.describe("APG Menu Button pattern — DropdownMenu trigger", () => {
       "APG requires focus to move to the first menu item on Enter. " +
         `OBSERVED: focus stays on the trigger button (role=${active.role}, ` +
         `text="${active.text}") instead.`,
-    ).toBe("option");
+    ).toBe("menuitem");
   });
 
   test("DropdownMenu trigger — Space: \"Opens the menu and places focus on the first menu item\"", async ({ page }) => {
@@ -115,7 +115,7 @@ test.describe("APG Menu Button pattern — DropdownMenu trigger", () => {
         `Enter. OBSERVED: focus stays on the trigger (role=${active.role}) -- ` +
         "DropdownMenuTrigger's onclick explicitly refocuses the TRIGGER " +
         "itself (`data.set_focus(true)`), not the first item.",
-    ).toBe("option");
+    ).toBe("menuitem");
   });
 
   test("DropdownMenu trigger — Down Arrow (Optional): \"opens the menu and moves focus to the first menu item\"", async ({ page }) => {
@@ -171,7 +171,7 @@ test.describe("APG Menu (opened from a menu button) pattern — DropdownMenu con
   test("DropdownMenu item — Escape: \"Close the menu ... and return focus to the element ... from which the menu was opened\"", async ({ page }) => {
     const trigger = page.getByRole("button", { name: "Open Menu" });
     await page.keyboard.press("ArrowDown");
-    await expect(page.getByRole("option", { name: "Edit" })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeFocused();
 
     await page.keyboard.press("Escape");
 
@@ -183,13 +183,13 @@ test.describe("APG Menu (opened from a menu button) pattern — DropdownMenu con
     await page.keyboard.press("ArrowDown"); // focus Edit
     await page.keyboard.press("ArrowDown"); // Undo is disabled, skipped -> Duplicate
     await page.keyboard.press("Home");
-    await expect(page.getByRole("option", { name: "Edit" })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeFocused();
   });
 
   test("DropdownMenu item — End: \"moves focus to the last item in the current menu\"", async ({ page }) => {
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("End");
-    await expect(page.getByRole("option", { name: "Delete" })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
   });
 
   test("DropdownMenu item — Down Arrow: \"moves focus to the next item, optionally wrapping from the last to the first\"", async ({ page }) => {
@@ -200,7 +200,7 @@ test.describe("APG Menu (opened from a menu button) pattern — DropdownMenu con
     // behaviour (this component's default `roving_loop: true` does wrap) so
     // the row is a meaningful check rather than a vacuous one.
     await expect(
-      page.getByRole("option", { name: "Edit" }),
+      page.getByRole("menuitem", { name: "Edit" }),
       "roving_loop defaults to true, so ArrowDown from the last item wraps " +
         "to the first (an APG-permitted choice, not a requirement).",
     ).toBeFocused();

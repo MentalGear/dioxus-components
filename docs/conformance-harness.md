@@ -172,7 +172,7 @@ Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` al
 
 ## Status
 
-- **Tier 1:** one rule implemented (focus restore on Escape), executed, 4 fail / 1 control passes. Not yet calibrated against an APG page — the control is internal.
+- **Tier 1:** `oracle-focus-restore.spec.ts` (focus restore on Escape, internal control), `focus-restore-reference.spec.ts` (same rule calibrated against the vendored menu-button/combobox APG reference pages), `keyboard-matrix.spec.ts` (per-component keyboard rows against APG prose), and `menu-roles.spec.ts` (2026-09-02) — the menu/menu-button pattern's role contract (popup `role="menu"`, items `role="menuitem"`, trigger `aria-haspopup`), calibrated against the vendored `menu-button-actions.html` reference and run against `DropdownMenu`, `ContextMenu`, and `Menubar`'s submenus; caught and fixed `DropdownMenu`'s inherited listbox/option roles (`docs/backlog.md` row 24).
 - **Tier 2:** partially implemented — `top-layer.spec.ts`, `native-dialog.spec.ts`, `form-participation.spec.ts` (the last one researched-but-not-yet-fixtured per its own README).
 - **Tier 3:** `tier3-radix/scroll-lock.spec.ts` implemented; otherwise not implemented.
 - **Hydration/deployment parity:** implemented (`oracle/hydration-parity.spec.ts`, 2026-09-01) — 4 rules (Rule 4 added same day, the attribute-override-dedup class), all run against the local SSG lane. Not wired into CI yet (`docs/backlog.md`, "SSG lane in CI").

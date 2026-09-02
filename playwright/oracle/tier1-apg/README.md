@@ -17,4 +17,4 @@ Every rule here runs against **two subjects**: the component under test, and the
 
 ## Status
 
-Per conformance-harness.md: one rule implemented (focus restore on Escape), executed, 4 fail / 1 control passes — not yet calibrated against an APG page.
+Per conformance-harness.md's "Status" section: `oracle-focus-restore.spec.ts` (focus restore on Escape, internal control), `focus-restore-reference.spec.ts` (same rule calibrated against the vendored APG reference), `keyboard-matrix.spec.ts` (per-component keyboard rows), and `menu-roles.spec.ts` (menu pattern-class role contract, calibrated against the vendored menu-button reference).
