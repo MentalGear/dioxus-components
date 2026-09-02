@@ -7,6 +7,26 @@
   --highlight-color-secondary: #eb5160;
   --highlight-color-tertiary: #2b7fff;
   --dx-content-width: 1360px;
+  /* Comfortably >= .dx-preview-navbar's tallest steady-state rendered
+     height (measured ~54px single-row at desktop width) -- a fixed
+     assumption, not a live measurement, matching how `scroll-padding-top`
+     is normally used site-wide (see its own use below). */
+  --dx-navbar-height: 60px;
+}
+
+html {
+  /* Every programmatic/anchor/focus scroll (`scrollIntoView`, a `#hash`
+     link, a focused element scrolled into view) that would otherwise land
+     its target at the very top of the viewport must instead clear the
+     sticky nav below it (`.dx-preview-navbar`, `position: sticky; top: 0`) --
+     otherwise the target ends up rendered (and, worse, hit-tested for
+     pointer input) underneath the nav. Found by execution
+     (`oracle/tier2-html/native-dialog.spec.ts` 6c/6d/6e, SSG lane only):
+     a real user hitting this needs no test harness at all, just a page
+     whose sticky header is tall enough to reach whatever landed at the
+     top. See `docs/conformance-harness.md`'s hydration-parity section for
+     the specific regression this closes. */
+  scroll-padding-top: var(--dx-navbar-height);
 }
 
 html,

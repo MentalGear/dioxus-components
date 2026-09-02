@@ -743,7 +743,29 @@ pub fn TopLayerFixture() -> Element {
                 // and focus-restore cycles, plus the trigger-anchored
                 // placement measurement, all share this one trigger/content
                 // pair).
-                div { style: "position: fixed; top: 40px; left: 40px;",
+                //
+                // `top: calc(var(--dx-navbar-height) + 20px)`, not a plain
+                // `40px` -- found by execution
+                // (`oracle/tier2-html/native-dialog.spec.ts` 6c/6d/6e, SSG
+                // lane only): a plain `40px` sits partly underneath
+                // `.dx-preview-navbar` (`position: sticky; top: 0`, ~54px
+                // tall), which is a real, ordinary `position: fixed`
+                // element (no scrolling involved for
+                // `scrollIntoViewIfNeeded` to correct via the sticky-nav
+                // `scroll-padding-top` added in `main.css` -- that only
+                // helps things that actually scroll into place), so it
+                // needs its own clearance instead. Only reliably visible
+                // pre-JS on a fullstack SSG prerender, where the sticky
+                // nav's CSS is already in effect at first paint; on the
+                // CSR dev server the same collision was masked in this
+                // session's testing by an unrelated, environment-specific
+                // race (`main.css`'s Google Fonts `@import` and this
+                // dev-only page's own `document::Link` head injection both
+                // taking long enough that the nav was still briefly
+                // `position: static` when Playwright clicked) -- not a
+                // structural difference between the two lanes, so this is
+                // still fixed here rather than only in the SSG build.
+                div { style: "position: fixed; top: calc(var(--dx-navbar-height, 60px) + 20px); left: 40px;",
                     PopoverRoot { id: "popover-modal-anchor-root",
                         PopoverTrigger { id: "popover-modal-anchor-trigger", "Modal popover anchor trigger" }
                         PopoverContent { id: "popover-modal-anchor-content",
