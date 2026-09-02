@@ -23,7 +23,7 @@ This complements `adopt-fork-fixes-results.md`, which hunted *fixes*; this table
 | **RecycleList** | mentioned only in `adopt-fork-fixes-results.md` §6, attributed to `haywoodfu` | **Not independently verified** — the fork was unreachable in this session | **P3** | unknown | Treat as unconfirmed until re-checked; do not cite beyond "the fixes doc mentions it." |
 | **Misc shadcn-catalog presentational gaps** (Alert, Breadcrumb, Field, Kbd, Spinner, Empty, Button Group, Input Group, Native Select) | gap-only; all present in `dignifiedquire`'s styled layer, none here | No adoptable primitives-layer code (most need no stateful primitive at all) | **P2** for `Field` + `Alert`; **P3** for the rest | **S** each | The cheapest wins in the table: no accessibility engineering, no oracle needed for most — just a styled `preview/` component + `component.json`. `Field` (label + control + description + error wrapper) pairs naturally with the landed form-participation work. |
 
-## NEXT — shadcn catalog parity round (user decision 2026-09-02: **start in a new session**)
+## NEXT — shadcn catalog parity round (user decision 2026-09-02: **start in a new session, after the design-token round — `backlog.md` option A — so new components are authored against tokens; Tailwind adoption (option B) follows A**)
 
 Point-in-time comparison against the shadcn/ui catalog (the styling reference upstream's README names), ~59 entries: **38 present, 21 missing**, plus 6 components shadcn does not have (Color Picker, Drag-and-Drop List, Navbar, Tag Group, Toolbar, Virtual List). Upstream `DioxusLabs/dioxus-components` is identical on this axis (no component added or removed since the fork point).
 
