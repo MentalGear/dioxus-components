@@ -1,10 +1,12 @@
 //! Defines the [`Toast`] component and its sub-components, which provide a notification system for displaying temporary messages to users.
 
 use crate::{
+    merge_attributes,
     portal::{use_portal, PortalIn, PortalOut},
     use_global_keydown_listener, use_unique_id,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use dioxus_sdk_time::use_timeout;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -362,6 +364,33 @@ pub fn ToastProvider(props: ToastProviderProps) -> Element {
 /// `ensure_anchor_positioning_styles` doc), applied here directly in the
 /// component's own stylesheet instead of that shared engine, since this
 /// region needs the reset without ever wanting anchor positioning itself.
+///
+/// ## Attribute-override dedup (found by execution, 2026-09-01)
+///
+/// `attributes` used to be spread (`..attributes`) directly after this
+/// element's own explicit `id`/`role`/`aria_label`/`tabindex`/`popover`/
+/// `style`. On the client that's harmless -- Dioxus applies attributes to
+/// the DOM sequentially, so a caller's later value in `..attributes` simply
+/// wins -- but the SSR renderer serializes both the explicit attribute and
+/// the caller's override as two separate `attr="..."` occurrences in the
+/// same start tag, and WHATWG HTML's "duplicate attribute" parse error has
+/// browsers keep the *first* one instead. Server and client then disagree
+/// about which value won (`docs/conformance-harness.md`'s hydration-parity
+/// Rule 4) -- concretely, a caller's `aria_label` override (two
+/// `ToastProvider`s on one page needing distinct accessible names, e.g.
+/// `preview/src/components/top_layer/component.rs`) rendered as the
+/// *primitive's* default `"{length} notifications"` in the served HTML
+/// while the live DOM showed the caller's text, failing axe's
+/// `landmark-unique` only on the prerendered/SSG lane. Every attribute
+/// below except `id` is merged with caller-wins semantics via
+/// `merge_attributes` instead, so exactly one value is ever emitted, on
+/// both lanes. `id` is different: per this function's own doc above, it
+/// must never be caller-overridable at all (a caller's `id` would strand
+/// `showPopover()`'s `getElementById` lookup on a dead id), so instead of
+/// relying on spread order to keep the real one live, any `id` a caller's
+/// `attributes` may carry is dropped explicitly before merging -- non-
+/// overridable by construction on both lanes, not just by accident of
+/// spread order.
 #[cfg(feature = "web")]
 #[component]
 fn ToastRegionRendered(
@@ -398,16 +427,26 @@ fn ToastRegionRendered(
         Callback::new(|_: bool| {}),
     );
 
-    rsx! {
-        div {
-            id: id.clone(),
+    // See "Attribute-override dedup" above: drop any caller `id` (never
+    // overridable) and merge everything else with caller-wins semantics so
+    // neither lane ever emits a duplicate attribute.
+    let attributes: Vec<Attribute> = attributes.into_iter().filter(|a| a.name != "id").collect();
+    let merged = merge_attributes(vec![
+        attributes!(div {
             role: "region",
             aria_label: "{length} notifications",
             tabindex: "-1",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
             style: "--toast-count: {length}",
+        }),
+        attributes,
+    ]);
+
+    rsx! {
+        div {
+            id: id.clone(),
             onmounted: move |e| onmounted.call(e),
-            ..attributes,
+            ..merged,
             {children}
         }
     }
@@ -415,7 +454,11 @@ fn ToastRegionRendered(
 
 /// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
 /// popover-API support at all, so this stays the functional floor, a
-/// plain, always-in-flow `div`.
+/// plain, always-in-flow `div`. Blitz has no SSR/hydration lane for the
+/// "duplicate attribute" divergence in the web arm's doc above to ever
+/// bite, but the caller-wins-except-`id` merge is applied here too for the
+/// same reason: keep both arms' semantics identical rather than have one
+/// depend on spread order and the other not.
 #[cfg(not(feature = "web"))]
 #[component]
 fn ToastRegionRendered(
@@ -425,15 +468,22 @@ fn ToastRegionRendered(
     onmounted: EventHandler<MountedEvent>,
     children: Element,
 ) -> Element {
-    rsx! {
-        div {
-            id,
+    let attributes: Vec<Attribute> = attributes.into_iter().filter(|a| a.name != "id").collect();
+    let merged = merge_attributes(vec![
+        attributes!(div {
             role: "region",
             aria_label: "{length} notifications",
             tabindex: "-1",
             style: "--toast-count: {length}",
+        }),
+        attributes,
+    ]);
+
+    rsx! {
+        div {
+            id,
             onmounted: move |e| onmounted.call(e),
-            ..attributes,
+            ..merged,
             {children}
         }
     }

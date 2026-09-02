@@ -823,6 +823,62 @@ pub fn merge_attributes(mut lists: Vec<Vec<Attribute>>) -> Vec<Attribute> {
     merged
 }
 
+/// Pull every attribute that contributes to the rendered `style` out of
+/// `attrs`, combine them into one CSS text string (in the order found), and
+/// return `(combined_style, everything_else)`.
+///
+/// Exists for exactly one situation `merge_attributes` cannot fix on its
+/// own: a component that has its own fixed CSS as one literal
+/// `style: "a: b; c: d;"` attribute (namespace `None`), spread alongside a
+/// caller's `attributes` that may carry CSS set the *shorthand* way
+/// (`padding: "1rem"`, `cursor: "pointer"`, ...; each becomes its own
+/// `Attribute` with namespace `Some("style")`). `dioxus-ssr`'s renderer
+/// (`render_template`'s `Segment::Attr`/`Segment::StyleMarker` handling)
+/// only accumulates and combines attributes with `namespace == Some("style")`
+/// into the single served `style="..."` -- a plain `name == "style"`,
+/// `namespace == None` attribute is a completely separate code path and is
+/// written out as its own, second `style="..."` (confirmed by execution:
+/// `ContextMenuTrigger`'s fixed touch-suppression CSS alongside the preview
+/// app's themed wrapper's shorthand `padding`/`background`/etc. produced
+/// exactly this — two `style` attributes on one tag, WHATWG HTML's
+/// duplicate-attribute parse error, `docs/conformance-harness.md`
+/// hydration-parity Rule 4). `merge_attributes` cannot help either: it
+/// dedupes by `(name, namespace)`, and these two forms use different
+/// `name`s (`"style"` vs `"padding"`/`"background"`/...), so from its
+/// point of view they are simply different attributes, not a collision.
+/// Call this on a component's own incoming `attributes` before deciding
+/// its own literal `style` string, fold the two together in Rust, and pass
+/// the returned `everything_else` on to `merge_attributes`/the `rsx!` call
+/// instead of the original list, so at most one `style` is ever built.
+pub(crate) fn fold_style_attributes(attrs: Vec<Attribute>) -> (Option<String>, Vec<Attribute>) {
+    let mut style = String::new();
+    let mut rest = Vec::with_capacity(attrs.len());
+    for attr in attrs {
+        let is_style_shorthand = attr.namespace == Some("style");
+        let is_plain_style = attr.namespace.is_none() && attr.name == "style";
+        if is_style_shorthand || is_plain_style {
+            if let Text(value) = &attr.value {
+                if !value.is_empty() {
+                    if is_style_shorthand {
+                        style.push_str(attr.name);
+                        style.push(':');
+                        style.push_str(value);
+                        style.push(';');
+                    } else {
+                        style.push_str(value.trim());
+                        if !style.ends_with(';') {
+                            style.push(';');
+                        }
+                    }
+                }
+            }
+        } else {
+            rest.push(attr);
+        }
+    }
+    (if style.is_empty() { None } else { Some(style) }, rest)
+}
+
 fn join_class(a: &str, b: &str) -> String {
     let (a, b) = (a.trim(), b.trim());
     if !a.is_empty() && !b.is_empty() {

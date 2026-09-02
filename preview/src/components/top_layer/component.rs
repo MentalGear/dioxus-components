@@ -317,14 +317,17 @@ pub fn TopLayerFixture() -> Element {
                 // `toast.rs`, since the F6-focus-region wiring needs one
                 // but nothing caller-visible does) -- an `id` passed here
                 // would be absorbed by its `#[props(extends =
-                // GlobalAttributes)]` catch-all and spread onto the region
-                // div *after* its real, internally-known id (`..attributes`
-                // following `id: id.clone()` in `ToastRegionRendered`'s
-                // rsx), silently overriding the one `use_popover_shown_
-                // while_mounted`'s `document.getElementById` actually looks
-                // up -- confirmed by execution: this is exactly why an
-                // earlier version of this fixture's toast never became
-                // `:popover-open` at all.
+                // GlobalAttributes)]` catch-all into `attributes`.
+                // `ToastRegionRendered` now drops any `id` found there
+                // explicitly before merging (see its doc, "Attribute-
+                // override dedup") rather than relying on spread order, but
+                // an earlier version relied on `..attributes` losing to a
+                // preceding `id: id.clone()` on the client only -- which an
+                // id passed here would have silently overridden, stranding
+                // `use_popover_shown_while_mounted`'s `document.
+                // getElementById` -- confirmed by execution: this is
+                // exactly why an earlier version of this fixture's toast
+                // never became `:popover-open` at all.
                 //
                 // `top: auto; left: auto; margin: 0;` alongside `bottom`/
                 // `right` -- also confirmed necessary by execution, and the
@@ -348,8 +351,12 @@ pub fn TopLayerFixture() -> Element {
                     // page; two `role="region"` landmarks sharing the
                     // primitive's default "N notifications" name fail axe's
                     // `landmark-unique` on the all-components page. The
-                    // primitive spreads `..attributes` after its own
-                    // `aria_label`, so this override wins.
+                    // primitive merges this override with its own default
+                    // `aria_label` via `merge_attributes` (caller-wins,
+                    // deduped -- see `ToastRegionRendered`'s doc in
+                    // `toast.rs`, "Attribute-override dedup"), so this
+                    // value wins on both the CSR and SSR/SSG lanes, not
+                    // just in the live DOM.
                     aria_label: "Top-layer fixture notifications",
                     ToastStackTrigger {}
                 }
@@ -736,7 +743,29 @@ pub fn TopLayerFixture() -> Element {
                 // and focus-restore cycles, plus the trigger-anchored
                 // placement measurement, all share this one trigger/content
                 // pair).
-                div { style: "position: fixed; top: 40px; left: 40px;",
+                //
+                // `top: calc(var(--dx-navbar-height) + 20px)`, not a plain
+                // `40px` -- found by execution
+                // (`oracle/tier2-html/native-dialog.spec.ts` 6c/6d/6e, SSG
+                // lane only): a plain `40px` sits partly underneath
+                // `.dx-preview-navbar` (`position: sticky; top: 0`, ~54px
+                // tall), which is a real, ordinary `position: fixed`
+                // element (no scrolling involved for
+                // `scrollIntoViewIfNeeded` to correct via the sticky-nav
+                // `scroll-padding-top` added in `main.css` -- that only
+                // helps things that actually scroll into place), so it
+                // needs its own clearance instead. Only reliably visible
+                // pre-JS on a fullstack SSG prerender, where the sticky
+                // nav's CSS is already in effect at first paint; on the
+                // CSR dev server the same collision was masked in this
+                // session's testing by an unrelated, environment-specific
+                // race (`main.css`'s Google Fonts `@import` and this
+                // dev-only page's own `document::Link` head injection both
+                // taking long enough that the nav was still briefly
+                // `position: static` when Playwright clicked) -- not a
+                // structural difference between the two lanes, so this is
+                // still fixed here rather than only in the SSG build.
+                div { style: "position: fixed; top: calc(var(--dx-navbar-height, 60px) + 20px); left: 40px;",
                     PopoverRoot { id: "popover-modal-anchor-root",
                         PopoverTrigger { id: "popover-modal-anchor-trigger", "Modal popover anchor trigger" }
                         PopoverContent { id: "popover-modal-anchor-content",
