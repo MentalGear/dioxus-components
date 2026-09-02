@@ -120,3 +120,19 @@
     color: var(--primary-color);
     outline: none;
 }
+
+/*
+ * Floor the font-size to 16px on touch devices -- see `../input/style.css`'s
+ * identical comment (iOS Safari auto-zooms a focused text-entry element
+ * below 16px; this `contenteditable` segment is one, per WebKit's documented
+ * threshold). This component's segments already inherit the page's 16px
+ * default today (no ancestor rule sets a smaller size), so this rule is
+ * defence-in-depth pinning that by construction rather than by accident of
+ * the surrounding page's CSS -- scoped to coarse pointers so desktop sizing
+ * is unaffected.
+ */
+@media (pointer: coarse) {
+    .dx-date-segment {
+        font-size: 16px;
+    }
+}

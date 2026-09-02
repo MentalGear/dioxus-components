@@ -1,5 +1,14 @@
-/* Typography */
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@400;500;700&display=swap");
+/* Typography: the Geist / Geist Mono web fonts are loaded from the document
+   head (`GlobalHead` in `preview/src/main.rs`, <link rel="preconnect"> +
+   <link rel="stylesheet">), NOT via `@import` here. Found by execution
+   (2026-09-02): a stylesheet whose `@import` has not finished loading is
+   never applied by the browser at all -- `link.sheet` exists and parses,
+   but the sheet stays out of `document.styleSheets` -- so with the font
+   CDN slow or unreachable this ENTIRE file was inert (body fell back to
+   Times New Roman, every rule below was dead). A separate <link> lets this
+   file apply immediately and the font swap in whenever it arrives
+   (`display=swap`). The oracle for this is
+   `playwright/oracle/tier2-html/global-stylesheet.spec.ts`. */
 
 /* Theme style variables */
 :root {
@@ -45,6 +54,68 @@ body {
   font-optical-sizing: auto;
   font-style: normal;
   font-weight: 400;
+}
+
+/*
+ * App-layer catch-all: floor every RAW text-entry element in the preview
+ * app to 16px on touch devices. This is the second of two layers -- see
+ * `components/input/style.css`'s identical comment for the full rule
+ * (WebKit's documented auto-zoom-below-16px behaviour; WCAG 1.4.4 rules out
+ * `maximum-scale`/`user-scalable=no` as the fix; shadcn's own
+ * `text-base md:text-sm` Input is the construction this follows).
+ *
+ * The themed components (`Input`, `Textarea`, `Combobox`, `DatePicker`, ...)
+ * already carry this floor in their own `style.css`, scoped to their own
+ * class -- but a themed component ships to a consumer's project via
+ * `dx components add`, without this file, so it cannot rely on a rule
+ * living here. This rule instead exists for the opposite case: plain HTML
+ * `input`/`textarea`/`select`/`contenteditable` elements written directly
+ * in *this* app (the "Switch workspace" dashboard/demo fixtures, `form`'s
+ * native-reference controls, `top_layer`'s background-inertness probes) --
+ * those never get a themed wrapper's CSS at all, and a raw `<input>`'s
+ * UA-stylesheet font does not inherit `body`'s font-size the way ordinary
+ * text does, so every one of them is undersized on a touch device unless
+ * something says otherwise. This rule is that "otherwise", app-wide, so a
+ * new raw control added anywhere in `preview/` can never regress this by
+ * omission.
+ */
+@media (pointer: coarse) {
+  /* Written as an explicit allowlist of simple selectors on purpose: the
+     first version used `input:not([type="checkbox"], [type="radio"], …)`
+     (a selector list inside `:not()`), and the Dioxus asset pipeline's CSS
+     processing silently dropped that entire rule from the served
+     stylesheet — the served file had no `pointer: coarse` block at all
+     while the source did (found by execution, 2026-09-02: the
+     touch-focus-zoom oracle stayed red on every route through the navbar's
+     language <select>). Simple selectors survive; see
+     docs/issues/asset-css-not-selector-list.md. */
+  input:not([type]),
+  input[type="text"],
+  input[type="search"],
+  input[type="email"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"],
+  input[type="time"],
+  textarea,
+  select,
+  [contenteditable="true"],
+  [contenteditable=""] {
+    /* `!important` is deliberate and load-bearing: this is the app-wide
+       backstop, and it must beat every component stylesheet's own class
+       rule (e.g. `.dx-language-select { font-size: 0.8rem }`), which any
+       class selector otherwise does against these bare element selectors.
+       Found by execution: the touch-focus-zoom oracle stayed red on every
+       route through the navbar's language <select> until this won the
+       cascade. Scoped to coarse pointers only, so desktop sizes are
+       untouched. */
+    font-size: 16px !important;
+  }
 }
 
 /* Modern browsers with `scrollbar-*` support */

@@ -40,6 +40,17 @@
   color: var(--secondary-color-5);
 }
 
+/*
+ * Floor the font-size to 16px on touch devices -- see `../input/style.css`'s
+ * identical comment (iOS Safari auto-zooms a focused text field below
+ * 16px; scoped to coarse pointers so desktop sizing is unaffected).
+ */
+@media (pointer: coarse) {
+  .dx-combobox-input {
+    font-size: 16px;
+  }
+}
+
 .dx-combobox-expand-icon {
   position: absolute;
   top: 50%;
