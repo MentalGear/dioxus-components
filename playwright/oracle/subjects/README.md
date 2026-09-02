@@ -19,4 +19,4 @@ This directory holds no rule sources of its own — no test here should assert a
 
 ## Status
 
-Not yet implemented — no adapters exist yet. Blocked on Phase 0 item 0.4 (a form fixture in `preview/`) for tier 2 subjects, and on this library exposing stable routes/selectors for each primitive under test.
+Not implemented, and not blocked on anything anymore — Phase 0 item 0.4 (the form fixture) landed 2026-08-29. In practice, every oracle spec written since (`form-participation.spec.ts`, `keyboard-matrix.spec.ts`, `menu-roles.spec.ts`, `top-layer.spec.ts`, and the rest) has handled subject routing and selectors inline in the spec file itself rather than through a shared adapter here — the rule × subject matrix this directory was meant to factor out has so far stayed small enough per spec that the extra indirection hasn't paid for itself. Revisit if a rule needs to run against enough subjects that the inline approach starts duplicating real logic.

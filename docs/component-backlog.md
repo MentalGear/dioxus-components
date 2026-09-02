@@ -58,7 +58,7 @@ Each item's **trigger** is the condition under which it becomes actionable; "rea
 | 4 | Password Toggle Field | **Ready** | S |
 | 5 | Input OTP | Upstream PR #255 unblocks: the Dioxus release with select-event-handler integration ships (watch dioxus releases + #255) | M |
 | 6 | TableOfContents + scroll-spy | A docs-site need materialises here, or the PR #283 split decision is made | S–M |
-| 7 | Nested submenu (`.Sub`) | **After Phase 4.4 lands** — `popover=`/top-layer removes the hardest part (nested stacking + light dismiss); budget as fresh design, molikto's patch for shape only | L |
+| 7 | Nested submenu (`.Sub`) | **Ready** — Phase 4.4 landed 2026-08-31 (`popover=`/top-layer), removing the hardest part (nested stacking + light dismiss); budget as fresh design, molikto's patch for shape only | L |
 | 8 | Table / DataTable | A conformance-oracle design exists (must be invented — no Radix reference) AND demand is confirmed | L |
 | 9 | DateBackend trait | A consumer asks for a non-`time` backend (jiff/custom), or the Dioxus 0.8 migration window opens | M |
 | 10 | DragAndDropBoard | **Blocked**: the board panic documented in `jcgruenhage@cfc7c52` is reproduced and closed | M–L |

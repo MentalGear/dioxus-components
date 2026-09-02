@@ -37,4 +37,4 @@ Rules 1–4 alone would have caught the `RadioGroup` and `Select` defects descri
 
 ## Status
 
-Per conformance-harness.md: researched, not implemented. Needs a form fixture in `preview/` (Phase 0 item 0.4 — none exists yet).
+Per conformance-harness.md: rules 1–4 and 6 implemented in `form-participation.spec.ts` (2026-08-29), calibrated against the form fixture in `preview/src/components/form/component.rs` (Phase 0 item 0.4, landed). Rules 5, 7, and 8 are deliberately not implemented yet — see that spec file's own header for why each is deferred rather than missing by oversight. `top-layer.spec.ts`, `native-dialog.spec.ts`, `touch-focus-zoom.spec.ts`, and `global-stylesheet.spec.ts` also live in this tier; see `conformance-harness.md`'s "Status" section for the full current inventory.

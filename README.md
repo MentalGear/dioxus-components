@@ -88,13 +88,34 @@ npm install
 npx playwright test
 ```
 
-To check that the `preview` app's markup composes only themed wrappers
-(`crate::components::*`) rather than raw `dioxus_primitives::` components --
-see [`docs/preview-composition.md`](./docs/preview-composition.md) for why
-this matters -- use:
+Local-only Playwright configs, for driving the suite against an
+already-running `dx serve`/`dx run` server instead of letting Playwright's
+own `webServer` block manage one: `baseline.local.config.ts` (full-suite
+runs), `xvfb.local.config.ts` (headed Chromium under a virtual X server, for
+tests that need a real, space-reserving scrollbar rather than headless
+Chromium's 0-width one), and `ssg.local.config.ts` (points at a plain static
+file server serving the fullstack-SSG-prerendered build rather than the dev
+server — see [`docs/conformance-harness.md`](./docs/conformance-harness.md),
+"Hydration/deployment parity", for the full build-and-serve recipe this
+covers, including `oracle/hydration-parity.spec.ts`). When running any of
+these under `root` (as in a container), the touch/mobile-emulation oracle
+specs need Chromium launched with `--no-sandbox` — see
+`baseline.local.config.ts`'s `launchOptions` for the pattern.
+
+Two source-level guard scripts run in CI and are cheap enough to run on
+every relevant change locally:
 
 ```sh
+# preview/ markup composes only themed wrappers (crate::components::*),
+# never a raw dioxus_primitives:: component directly -- see
+# docs/preview-composition.md for why this matters.
 scripts/check-preview-composition.sh
+
+# rendered markup/component structure/attribute choice splits on the `web`
+# Cargo feature, never on `target_family = "wasm"` -- see
+# docs/recommended-implementations.md, Caveat 1, for the production
+# incident this guards against.
+scripts/check-cfg-axis.sh
 ```
 
 ### Running the preview

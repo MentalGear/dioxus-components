@@ -21,6 +21,8 @@ Beyond those, **11 candidates are conditional** (§6) and **~45 are rejected** (
 
 One decision has to be made before adopting #2: two forks patch the same function in **incompatible** ways, and the one with an open upstream PR is the weaker of the two. See §5.
 
+**Status update (2026-09-02):** this document is a point-in-time mining report from the scan date above; its `TAKE`/`FLAG`/`SKIP` calls are unchanged, but most `TAKE`s have since landed. All four items in this TL;DR (Phase 2) are done, as is form participation (Batch 4 → Phase 1), scroll lock and focus restore (Batch 5 → Phase 3), and native `<dialog>`/`popover=` (the `FLAG`ged native-dialog and top-layer rows in Batch 5 → Phase 4, both caveats resolved by execution). See `plan.md`'s phase tables and `lifting-from-forks.md` §8 for what actually landed and when; do not treat this report's tables as current status.
+
 ---
 
 ## 0. Results table — the brief's requested output
