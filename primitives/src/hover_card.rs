@@ -192,6 +192,17 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
         }
     };
 
+    // Tooltip pattern: "Escape: Dismisses the Tooltip." HoverCard shares
+    // Tooltip's role and show-on-focus/hide-on-blur contract (see
+    // `tooltip.rs`'s identical `handle_keydown`) but previously had no
+    // `onkeydown` at all, so this same-class control didn't match it.
+    let handle_keydown = move |event: Event<KeyboardData>| {
+        if event.key() == Key::Escape && (ctx.open)() {
+            event.prevent_default();
+            ctx.set_open.call(false);
+        }
+    };
+
     rsx! {
         div {
             id,
@@ -204,6 +215,7 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
             // Focus events
             onfocus: move |_| open_event(),
             onblur: move |_| close_event(),
+            onkeydown: handle_keydown,
 
             // ARIA attributes
             role: "button",
@@ -391,6 +403,15 @@ fn HoverCardContentRendered(
             "data-align": align.as_str(),
             onmouseenter: handle_mouse_enter,
             onmouseleave: handle_mouse_leave,
+            // Escape dismisses from inside the card too, in case it holds
+            // focusable content -- same Tooltip-pattern contract as the
+            // trigger's own `handle_keydown` (`HoverCardTrigger`, above).
+            onkeydown: move |event: Event<KeyboardData>| {
+                if event.key() == Key::Escape {
+                    event.prevent_default();
+                    set_open.call(false);
+                }
+            },
             ..attributes,
             {children}
         }
@@ -436,6 +457,12 @@ fn HoverCardContentRendered(
             "data-align": align.as_str(),
             onmouseenter: handle_mouse_enter,
             onmouseleave: handle_mouse_leave,
+            onkeydown: move |event: Event<KeyboardData>| {
+                if event.key() == Key::Escape {
+                    event.prevent_default();
+                    set_open.call(false);
+                }
+            },
             ..attributes,
             {children}
         }
