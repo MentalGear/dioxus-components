@@ -114,6 +114,8 @@ The three tiers above all ask "does this component *behave* correctly?" against 
 
 **Why this exists:** the 2026-09-01 production incident (`docs/recommended-implementations.md` Caveat 1) — primitives split rendered markup on `target_family = "wasm"`, which is false on the SSG server's host binary, so the deployed site's server prerender and wasm client hydration disagreed on markup structurally, breaking events page-wide on every hard-loaded page.
 
+**Rule 4 (added 2026-09-01):** the served HTML of `/` contains no start tag with a duplicated attribute name (WHATWG HTML's duplicate-attribute parse error keeps the first occurrence; the CSR/hydrated DOM path keeps the last). This is a *second*, narrower divergence class than the structural one above — same tree shape on both lanes, but a single element's attribute *value* still disagrees. The house construction rule it enforces: an explicit attribute followed by a caller-`attributes` spread on the same element must be merged (`merge_attributes`, caller-wins), never left as two sequential, same-named attributes for the two lanes' opposite tie-break to disagree over — see `docs/recommended-implementations.md` Caveat 1's 2026-09-01 addendum for the finding, and `primitives/src/toast.rs`'s `ToastRegionRendered` doc for the fix pattern.
+
 **The SSG lane — how to build and run it locally:**
 
 ```bash
@@ -173,7 +175,7 @@ Each rule file names its source at the top, as `oracle-focus-restore.spec.ts` al
 - **Tier 1:** one rule implemented (focus restore on Escape), executed, 4 fail / 1 control passes. Not yet calibrated against an APG page — the control is internal.
 - **Tier 2:** partially implemented — `top-layer.spec.ts`, `native-dialog.spec.ts`, `form-participation.spec.ts` (the last one researched-but-not-yet-fixtured per its own README).
 - **Tier 3:** `tier3-radix/scroll-lock.spec.ts` implemented; otherwise not implemented.
-- **Hydration/deployment parity:** implemented (`oracle/hydration-parity.spec.ts`, 2026-09-01) — 3 rules, all run against the local SSG lane. Not wired into CI yet (`docs/backlog.md`, "SSG lane in CI").
+- **Hydration/deployment parity:** implemented (`oracle/hydration-parity.spec.ts`, 2026-09-01) — 4 rules (Rule 4 added same day, the attribute-override-dedup class), all run against the local SSG lane. Not wired into CI yet (`docs/backlog.md`, "SSG lane in CI").
 - **Preview composition (source-level guard, not an oracle):** `scripts/check-preview-composition.sh` + `docs/preview-composition.md` (2026-09-01) — preview markup composes only themed wrappers from `crate::components::*`; a raw `dioxus_primitives::` component in a fixture or dashboard renders classless (the "collapsed library switch" incident). Its browser-visible half is covered by the existing form-participation oracle plus an SSR render test in `preview/src/components/form/component.rs`.
 - **Accordion close-animation regression:** `playwright/accordion-animation.spec.ts` (2026-09-01) — samples the content height per frame during close and asserts it reaches ~0 before unmount with no mid-curve plateau (the padding-floor jank `accordion.spec.ts`'s smoothness check could not see); runs against the app route by default and against a standalone reproduction page with `ACCORDION_MODE=repro`.
 
