@@ -130,9 +130,27 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
                     }
                     Key::ArrowDown => {
                         ctx.set_open(true);
-                        ctx.selectable
-                            .initial_focus
-                            .set(ctx.selectable.collection.first_available_index());
+                        // APG select-only combobox (Optional): "Alt + Down
+                        // Arrow: ... displays the popup without moving
+                        // focus." Plain ArrowDown (no Alt) still moves focus
+                        // to the first option, same as Up Arrow above.
+                        if event.modifiers().alt() {
+                            ctx.keep_trigger_focus.set(true);
+                        } else {
+                            ctx.selectable
+                                .initial_focus
+                                .set(ctx.selectable.collection.first_available_index());
+                        }
+                        event.prevent_default();
+                        event.stop_propagation();
+                    }
+                    Key::Enter => {
+                        ctx.open_with_selected_or_first_focus();
+                        event.prevent_default();
+                        event.stop_propagation();
+                    }
+                    Key::Character(c) if c == " " => {
+                        ctx.open_with_selected_or_first_focus();
                         event.prevent_default();
                         event.stop_propagation();
                     }

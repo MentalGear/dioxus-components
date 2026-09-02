@@ -227,7 +227,11 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     let mut ctx: SelectContext = use_context();
     let open = ctx.selectable.open;
     let mut listbox_ref: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
-    let focused = move || open() && !ctx.selectable.collection.any_focused();
+    // See `SelectContext::keep_trigger_focus`'s doc: an Alt+ArrowDown open
+    // must leave DOM focus on the trigger, so this "nothing focused yet --
+    // focus the listbox container" fallback must not fire for that open.
+    let focused =
+        move || open() && !ctx.selectable.collection.any_focused() && !(ctx.keep_trigger_focus)();
 
     use_effect(move || {
         let Some(listbox_ref) = listbox_ref() else {
@@ -329,7 +333,11 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     let mut ctx: SelectContext = use_context();
     let open = ctx.selectable.open;
     let mut listbox_ref: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
-    let focused = move || open() && !ctx.selectable.collection.any_focused();
+    // See `SelectContext::keep_trigger_focus`'s doc: an Alt+ArrowDown open
+    // must leave DOM focus on the trigger, so this "nothing focused yet --
+    // focus the listbox container" fallback must not fire for that open.
+    let focused =
+        move || open() && !ctx.selectable.collection.any_focused() && !(ctx.keep_trigger_focus)();
 
     use_effect(move || {
         let Some(listbox_ref) = listbox_ref() else {

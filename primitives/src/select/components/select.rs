@@ -155,6 +155,7 @@ fn use_select_root(
     let mut typeahead_buffer = use_signal(String::new);
     let adaptive_keyboard = use_signal(super::super::text_search::AdaptiveKeyboard::new);
     let mut typeahead_clear_task: Signal<Option<Task>> = use_signal(|| None);
+    let mut keep_trigger_focus = use_signal(|| false);
     let open = selectable.open;
 
     // Clear the typeahead buffer when the select is closed
@@ -164,6 +165,9 @@ fn use_select_root(
                 task.cancel();
             }
             typeahead_buffer.take();
+            // See `SelectContext::keep_trigger_focus`'s doc: a fresh open
+            // shouldn't inherit the flag from a previous Alt+ArrowDown open.
+            keep_trigger_focus.set(false);
         }
     });
     let ctx = use_context_provider(|| SelectContext {
@@ -172,6 +176,7 @@ fn use_select_root(
         typeahead_buffer,
         typeahead_clear_task,
         typeahead_timeout,
+        keep_trigger_focus,
     });
 
     (ctx, open)

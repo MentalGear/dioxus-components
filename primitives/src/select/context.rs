@@ -22,11 +22,39 @@ pub(super) struct SelectContext {
     pub typeahead_clear_task: Signal<Option<Task>>,
     /// Timeout before clearing typeahead buffer
     pub typeahead_timeout: ReadSignal<Duration>,
+
+    /// Set for the duration of an Alt+ArrowDown-opened popup (APG select-
+    /// only combobox, Optional: "Alt + Down Arrow: ... displays the popup
+    /// without moving focus"), so `SelectListRendered`'s own "nothing is
+    /// focused yet -- focus the listbox container" fallback (`list.rs`)
+    /// does not steal DOM focus off the trigger for this one open path.
+    /// Reset to `false` whenever the popup closes (`select.rs`), so it can
+    /// never leak into the next, differently-triggered open.
+    pub keep_trigger_focus: Signal<bool>,
 }
 
 impl SelectContext {
     pub fn set_open(&mut self, open: bool) {
         self.selectable.set_open(open);
+    }
+
+    /// The path Enter and Space on `SelectTrigger` both route through: open
+    /// the popup and request focus on the currently-selected option, or the
+    /// first available one if nothing is selected yet. APG select-only
+    /// combobox: "focus the listbox with the current option active" --
+    /// unlike a plain click open (unchanged; leaves DOM focus on the
+    /// listbox container itself, matching this component's pre-existing,
+    /// still-green `select.spec.ts` expectation), keyboard activation must
+    /// land real DOM focus on an option, same as ArrowDown/ArrowUp already
+    /// do just below this in `trigger.rs`.
+    pub fn open_with_selected_or_first_focus(&mut self) {
+        self.set_open(true);
+        let target = self
+            .selectable
+            .collection
+            .selected_available_index()
+            .or_else(|| self.selectable.collection.first_available_index());
+        self.selectable.initial_focus.set(target);
     }
 
     pub fn multi(&self) -> bool {
