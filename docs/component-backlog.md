@@ -23,6 +23,20 @@ This complements `adopt-fork-fixes-results.md`, which hunted *fixes*; this table
 | **RecycleList** | mentioned only in `adopt-fork-fixes-results.md` §6, attributed to `haywoodfu` | **Not independently verified** — the fork was unreachable in this session | **P3** | unknown | Treat as unconfirmed until re-checked; do not cite beyond "the fixes doc mentions it." |
 | **Misc shadcn-catalog presentational gaps** (Alert, Breadcrumb, Field, Kbd, Spinner, Empty, Button Group, Input Group, Native Select) | gap-only; all present in `dignifiedquire`'s styled layer, none here | No adoptable primitives-layer code (most need no stateful primitive at all) | **P2** for `Field` + `Alert`; **P3** for the rest | **S** each | The cheapest wins in the table: no accessibility engineering, no oracle needed for most — just a styled `preview/` component + `component.json`. `Field` (label + control + description + error wrapper) pairs naturally with the landed form-participation work. |
 
+## NEXT — shadcn catalog parity round (user decision 2026-09-02: **start in a new session**)
+
+Point-in-time comparison against the shadcn/ui catalog (the styling reference upstream's README names), ~59 entries: **38 present, 21 missing**, plus 6 components shadcn does not have (Color Picker, Drag-and-Drop List, Navbar, Tag Group, Toolbar, Virtual List). Upstream `DioxusLabs/dioxus-components` is identical on this axis (no component added or removed since the fork point).
+
+Present (38): Accordion, Alert Dialog, Aspect Ratio, Avatar, Badge, Button, Calendar, Card, Checkbox, Collapsible, Combobox, Context Menu, Date Picker, Dialog, Dropdown Menu, Hover Card, Input, Item, Label, Menubar, Pagination, Popover, Progress, Radio Group, Scroll Area, Select, Separator, Sheet, Sidebar, Skeleton, Slider, Switch, Tabs, Textarea, Toast, Toggle, Toggle Group, Tooltip.
+
+| Group | Components | Cost / notes |
+|---|---|---|
+| **Styled-only** — no primitive, no conformance oracle needed; a themed `preview/` component + `component.json` each | Alert, Breadcrumb, Button Group, Empty, Field, Input Group, Kbd, Spinner, Native Select, Typography | S each — do these first, as one round; Field pairs with the landed form-participation work (the composition rule `docs/preview-composition.md` and `scripts/check-preview-composition.sh` apply) |
+| **Needs a real primitive + red-first oracle** | Resizable (extract the single commit from upstream PR #283, never the branch), Command (composition of combobox/listbox/typeahead — after Phase 6 typeahead), Navigation Menu (Navbar is a partial), Drawer (Sheet + drag-to-dismiss), Table / DataTable (no Radix reference — oracle must be invented), Input OTP (blocked on the Dioxus release upstream PR #255 waits for) | M–L each; take in that order |
+| **Out of scope / not applicable** | Carousel (wraps embla, no a11y reference), Chart (wraps recharts), Sonner (a toast library — Toast fills the role), Form (a react-hook-form wrapper — native form participation covers it) | rejected / N/A |
+
+Rules for the round: definition-of-done loop from `plan.md` per item (styled-only items still get a Playwright smoke + axe pass and the composition lint), provenance per `lifting-from-forks.md` for anything extracted from PR #283, update the ranked queue below as items land.
+
 ## Recommendations
 
 1. **Take first: `ComboboxMulti`** — small, additive, reuses house infrastructure, no competing implementation, invisible to anyone only watching the upstream PR queue.
