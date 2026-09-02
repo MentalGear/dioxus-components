@@ -291,7 +291,7 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
 
     rsx! {
         div {
-            role: "menu",
+            role: crate::menu_semantics::MENU_ROLE,
             "data-state": if is_open() { "open" } else { "closed" },
             "data-disabled": (ctx.disabled)() || (props.disabled)(),
 
@@ -488,7 +488,7 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
                     ctx.set_open_menu.call(None);
                 }
             },
-            role: "menuitem",
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             type: "button",
             tabindex: if is_focused() { "0" } else { "-1" },
             ..props.attributes,
@@ -707,7 +707,7 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     rsx! {
         div {
             id: id.clone(),
-            role: "menu",
+            role: crate::menu_semantics::MENU_ROLE,
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             style: crate::top_layer::position_anchor_style(&id),
             "data-state": if open() { "open" } else { "closed" },
@@ -728,7 +728,7 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     rsx! {
         div {
             id,
-            role: "menu",
+            role: crate::menu_semantics::MENU_ROLE,
             "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
             ..attributes,
             {children}
@@ -843,7 +843,7 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
 
     rsx! {
         div {
-            role: "menuitem",
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
 

@@ -32,6 +32,7 @@ pub mod dropdown_menu;
 pub mod hover_card;
 pub mod label;
 mod listbox;
+mod menu_semantics;
 pub mod menubar;
 mod move_interaction;
 #[cfg(feature = "router")]

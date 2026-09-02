@@ -435,7 +435,7 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
             id: ctx.trigger_id,
             tabindex: "-1",
             role: "button",
-            aria_haspopup: "menu",
+            aria_haspopup: crate::menu_semantics::MENU_TRIGGER_HASPOPUP,
             aria_expanded: (ctx.open)(),
             // Suppress iOS Safari's long-press behaviors (callout sheet, text
             // selection magnifier, gray tap-flash) and the system's own touch
@@ -696,7 +696,7 @@ fn ContextMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "menu",
+            role: crate::menu_semantics::MENU_ROLE,
             aria_orientation: "vertical",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
             position: "fixed",
@@ -804,7 +804,7 @@ fn ContextMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "menu",
+            role: crate::menu_semantics::MENU_ROLE,
             aria_orientation: "vertical",
             position: "fixed",
             left: "{x}px",
@@ -939,7 +939,7 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
 
     rsx! {
         div {
-            role: "menuitem",
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             tabindex: tab_index,
             onpointerdown: move |event| {
                 pointer_select_start(&event, disabled(), down_pos);
