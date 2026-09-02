@@ -32,4 +32,6 @@ Everything outstanding across the plan, the harness, and follow-ups discovered d
 
 | 23 | `preview`'s `desktop` feature lacks `dioxus-primitives/web` — a webview-backed desktop build would render the native (Blitz) markup arm even though `<dialog>`/`popover` work in a webview | A real desktop build being exercised (none is today) | S | Same wiring gap the 2026-09-01 incident exposed for `server`; one-line fix, but untested here, so left for whoever first builds desktop |
 
+| 24 | DropdownMenu renders `role="listbox"` / `role="option"` (upstream's original markup) where the APG menu-button pattern it is keyboard-tested against (`oracle/tier1-apg/keyboard-matrix.spec.ts`) expects `role="menu"` / `role="menuitem"` — Menubar and ContextMenu already use the menu roles | Ready — a decision to change the component's ARIA contract (spec selectors in `dropdown_menu.spec.ts` + the matrix rows follow) | S | Found 2026-09-02 verifying the keyboard fixes on the deployed site: focus correctly lands on the first item, but AT announces it as a listbox option. Same class as row 8 (Select trigger role) — role/pattern drift, not behaviour |
+
 Standing rule for every item: the definition-of-done loop from [`plan.md`](./plan.md) — rule-cited oracle red first, provenance per `lifting-from-forks.md` §1, checks green, ledger updated.
