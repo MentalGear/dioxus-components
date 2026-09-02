@@ -1001,9 +1001,28 @@ const KEYBOARD_VIEWPORT = { width: 390, height: 460 };
  * `KEYBOARD_VIEWPORT` regardless of where this section falls in page flow.
  */
 async function pinNearTop(page: Page, locator: import("@playwright/test").Locator): Promise<void> {
-  await locator.scrollIntoViewIfNeeded();
+  // Centre the trigger horizontally inside its own scroll container first:
+  // on the 390px mobile viewport the fixture's clip box is wider than the
+  // page, and a trigger hanging past the right edge collides with the
+  // fixture's fixed right-edge triggers, which then intercept the click and
+  // send Playwright into its scroll-and-retry loop.
+  await locator.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "center" }));
   const rect = await rectOfLocator(locator);
-  await page.evaluate((top) => window.scrollTo(0, window.scrollY + top - 24), rect.top);
+  // "Near the top" means just below the sticky navbar, not 24px from the
+  // viewport edge: the preview's `.dx-preview-navbar` is `position: sticky;
+  // top: 0` (main.css), so anything pinned above its bottom edge is covered
+  // and hit-tested by the nav -- Playwright then retries `hover()` until the
+  // test times out. Found by execution 2026-09-02, the first run in this
+  // sandbox with main.css actually applied (see
+  // `oracle/tier2-html/global-stylesheet.spec.ts`).
+  const navBottom = await page.evaluate(() => {
+    const nav = document.querySelector(".dx-preview-navbar, nav[aria-label='Primary']");
+    return nav ? nav.getBoundingClientRect().bottom : 0;
+  });
+  await page.evaluate(
+    ([top, offset]) => window.scrollTo(0, window.scrollY + top - offset),
+    [rect.top, navBottom + 24] as const,
+  );
 }
 
 /**
