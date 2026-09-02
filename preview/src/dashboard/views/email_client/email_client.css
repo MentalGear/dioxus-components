@@ -596,6 +596,21 @@
     resize: vertical;
 }
 
+/*
+ * Floor the font-size to 16px on touch devices -- see
+ * `../../../components/input/style.css`'s identical comment. This
+ * selector's higher specificity than the themed `Textarea`'s own
+ * `.dx-textarea` (`../../../components/textarea/style.css`) means that
+ * component-layer floor alone does not win the cascade here (15px,
+ * confirmed by execution) -- this app-specific override needs its own
+ * matching floor.
+ */
+@media (pointer: coarse) {
+    .ec-thread-compose-row [data-slot="textarea"] {
+        font-size: 16px;
+    }
+}
+
 .ec-thread-compose-actions {
     display: flex;
     flex-direction: column;

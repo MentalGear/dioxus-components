@@ -47,6 +47,38 @@ body {
   font-weight: 400;
 }
 
+/*
+ * App-layer catch-all: floor every RAW text-entry element in the preview
+ * app to 16px on touch devices. This is the second of two layers -- see
+ * `components/input/style.css`'s identical comment for the full rule
+ * (WebKit's documented auto-zoom-below-16px behaviour; WCAG 1.4.4 rules out
+ * `maximum-scale`/`user-scalable=no` as the fix; shadcn's own
+ * `text-base md:text-sm` Input is the construction this follows).
+ *
+ * The themed components (`Input`, `Textarea`, `Combobox`, `DatePicker`, ...)
+ * already carry this floor in their own `style.css`, scoped to their own
+ * class -- but a themed component ships to a consumer's project via
+ * `dx components add`, without this file, so it cannot rely on a rule
+ * living here. This rule instead exists for the opposite case: plain HTML
+ * `input`/`textarea`/`select`/`contenteditable` elements written directly
+ * in *this* app (the "Switch workspace" dashboard/demo fixtures, `form`'s
+ * native-reference controls, `top_layer`'s background-inertness probes) --
+ * those never get a themed wrapper's CSS at all, and a raw `<input>`'s
+ * UA-stylesheet font does not inherit `body`'s font-size the way ordinary
+ * text does, so every one of them is undersized on a touch device unless
+ * something says otherwise. This rule is that "otherwise", app-wide, so a
+ * new raw control added anywhere in `preview/` can never regress this by
+ * omission.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="color"], [type="file"], [type="hidden"]),
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable="false"]) {
+    font-size: 16px;
+  }
+}
+
 /* Modern browsers with `scrollbar-*` support */
 @supports (scrollbar-width: auto) {
   :not(:hover) {
