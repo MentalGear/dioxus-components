@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' }); // Increase timeout to 20 minutes
@@ -17,4 +18,17 @@ test('test', async ({ page }) => {
   // await toggleElement.press('Space');
   await page.keyboard.press('Space');
   await expect(toggleElement).toHaveAttribute('data-state', 'off');
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (off) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await expectNoAxeViolations(page, 'toggle: off', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test('on has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'B', exact: true }).click();
+    await expectNoAxeViolations(page, 'toggle: on', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });

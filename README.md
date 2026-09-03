@@ -88,6 +88,8 @@ npm install
 npx playwright test
 ```
 
+Most specs also run an [axe-core](https://github.com/dequelabs/axe-core) static accessibility scan (valid ARIA, accessible names, unique landmarks, contrast, heading order, …) via the shared `playwright/axe.ts` helper — see [`docs/conformance-harness.md`](./docs/conformance-harness.md), "axe (static rules)", for what it covers versus the behaviour oracles and its exclusion policy.
+
 Local-only Playwright configs, for driving the suite against an
 already-running `dx serve`/`dx run` server instead of letting Playwright's
 own `webServer` block manage one: `baseline.local.config.ts` (full-suite

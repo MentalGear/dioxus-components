@@ -31,6 +31,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 const PAGE_URL = "http://127.0.0.1:8080/component/?name=date_picker&";
@@ -177,4 +178,18 @@ test("Escape closes the popup", async ({ page }) => {
   await page.keyboard.press("Escape");
 
   await expect(content(page)).toBeHidden();
+});
+
+test.describe("Axe automated scan", () => {
+  test("loaded (popover closed) has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoDatePicker(page);
+    await expectNoAxeViolations(page, "date-picker: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("calendar popover open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoDatePicker(page);
+    await trigger(page).click();
+    await expect(content(page)).toBeVisible();
+    await expectNoAxeViolations(page, "date-picker: calendar popover open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });

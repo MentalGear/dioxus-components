@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 const URL = "http://127.0.0.1:8080/component/?name=accordion&";
 const LOAD_TIMEOUT = 20 * 60 * 1000;
@@ -148,4 +149,18 @@ test("open and close animate the content height smoothly, without snapping", asy
 
   const closeFrames = await sampleHeightFrames(page, contentId!, () => firstButton.click());
   assertSmoothTransition(closeFrames);
+});
+
+test.describe("Axe automated scan", () => {
+  test("loaded (all items closed) has no automatically detectable a11y issues", async ({ page }) => {
+    await loadAccordion(page);
+    await expectNoAxeViolations(page, "accordion: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("first item expanded has no automatically detectable a11y issues", async ({ page }) => {
+    const accordionItems = await loadAccordion(page);
+    const buttons = accordionItems.getByRole("button");
+    await clickOpen(buttons.first(), accordionItems.first());
+    await expectNoAxeViolations(page, "accordion: first item expanded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });

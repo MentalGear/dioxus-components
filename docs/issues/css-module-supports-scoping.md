@@ -1,6 +1,6 @@
 # css_module silently drops class scoping inside @supports blocks
 
-Status: workaround shipped (PR #16); upstream Dioxus report drafted, not yet filed. GitHub Issues is disabled on this repo — this file is the tracking record.
+Status: workaround shipped (PR #16); upstream Dioxus report drafted, not yet filed. GitHub Issues is disabled on this repo — this file is the tracking record. Drafted 2026-09-03, not filed — user decision: [`docs/issues/drafts/dioxus-css-module-supports-scoping.md`](./drafts/dioxus-css-module-supports-scoping.md) (ready-to-paste version of this report, upgraded with reproduction steps and a "before filing" checklist).
 
 ## What happens
 Any CSS rule wrapped in `@supports { … }` inside a `#[css_module(...)]` stylesheet silently never applies. No error, no warning — dead styles.

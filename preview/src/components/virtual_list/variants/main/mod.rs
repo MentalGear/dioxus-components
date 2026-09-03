@@ -34,10 +34,11 @@ pub fn Demo() -> Element {
   background: var(--primary-color-2);
 }}
 
-.dx-virtual-list-card h3 {{
+.dx-virtual-list-card-title {{
   margin: 0 0 0.3rem;
   color: var(--primary-color-12);
   font-size: 0.95rem;
+  font-weight: 660;
 }}
 
 .dx-virtual-list-card p {{
@@ -62,7 +63,16 @@ pub fn Demo() -> Element {
                     let extra_text = "Extra content to vary row height. ".repeat(idx % 6);
                     rsx! {
                         article { class: "dx-virtual-list-card",
-                            h3 { "#{idx + 1} - Item {idx + 1}" }
+                            // axe `heading-order` (docs/backlog.md row 34's
+                            // own round): a repeated per-row card title in a
+                            // 2000-item virtualized list is not part of the
+                            // page's document outline (jumping straight
+                            // from this page's own h1 to an h3 here, with
+                            // no intervening h2, is exactly the skip the
+                            // rule flags) -- a styled `p`, not a heading,
+                            // same visual weight via
+                            // `.dx-virtual-list-card-title`.
+                            p { class: "dx-virtual-list-card-title", "#{idx + 1} - Item {idx + 1}" }
                             p { "Virtualized row preview. Index = {idx}" }
                             p { "{extra_text}" }
                         }

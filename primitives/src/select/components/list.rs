@@ -1,13 +1,12 @@
 //! SelectList component implementation.
 
-use crate::{listbox::use_listbox_container, use_effect};
+use crate::{
+    has_own_accessible_name, listbox::use_listbox_container, merge_attributes, use_effect,
+};
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 use super::super::context::SelectContext;
-#[cfg(feature = "web")]
-use crate::merge_attributes;
 
 /// The props for the [`SelectList`] component
 #[derive(Props, Clone, PartialEq)]
@@ -226,6 +225,14 @@ fn select_list_onkeydown(mut ctx: SelectContext) -> impl FnMut(KeyboardEvent) {
 fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let mut ctx: SelectContext = use_context();
     let open = ctx.selectable.open;
+    // axe `aria-input-field-name` (docs/backlog.md row 34's own round): an
+    // ARIA `listbox` is an input field and needs an accessible name.
+    // Default it from the trigger (whose own visible text is the
+    // placeholder/selected value) -- but ONLY if the caller hasn't already
+    // supplied one, since this component's own doc example demonstrates
+    // `SelectList { aria_label: "Select Demo", ... }` as the intended
+    // override, and `aria-labelledby` would otherwise take ARIA precedence
+    // over that caller-supplied `aria-label` and silently shadow it.
     let mut listbox_ref: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
     // See `SelectContext::keep_trigger_focus`'s doc: an Alt+ArrowDown open
     // must leave DOM focus on the trigger, so this "nothing focused yet --
@@ -289,11 +296,41 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     // (`top_layer::ensure_anchor_positioning_styles`) selects on,
     // sidestepping `manganis-core`'s `css_module_parser` not scoping
     // classes inside `@supports` bodies.
+    //
+    // axe `aria-input-field-name` (docs/backlog.md row 34's own round): an
+    // ARIA `listbox` is an input field and needs an accessible name.
+    // Default it from the trigger (whose own visible text is the
+    // placeholder/selected value) -- but ONLY if the caller hasn't already
+    // supplied one, since this component's own doc example demonstrates
+    // `SelectList { aria_label: "Select Demo", ... }` as the intended
+    // override, and `aria-labelledby` would otherwise take ARIA precedence
+    // over that caller-supplied `aria-label` and silently shadow it.
+    // Contributed as its own merge input -- present only when applicable --
+    // rather than a bare `aria_labelledby: ...` literal alongside the
+    // `..attributes` spread below: a caller attribute list can carry a
+    // same-named `aria-labelledby`/`aria-label` with an
+    // empty/`AttributeValue::None` value (`has_own_accessible_name`'s own
+    // doc explains why), and two entries for one attribute name is exactly
+    // the duplicate-attribute hazard `merge_attributes` exists to prevent
+    // (`docs/conformance-harness.md` hydration-parity Rule 4) -- a literal
+    // plus a raw spread cannot dedupe that; only routing every contributor
+    // through one `merge_attributes` call can. Ordered after `attributes`
+    // so it wins over exactly that spurious caller-side empty value, while
+    // a caller's own *real* name (which makes `has_own_accessible_name`
+    // true) leaves this contributing nothing at all to collide with.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.selectable.trigger_id}"
+        })
+    };
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
             class: "dx-anchor-select"
         }),
+        labelledby,
     ]);
 
     rsx! {
@@ -351,6 +388,17 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     });
 
     let onkeydown = select_list_onkeydown(ctx);
+    // See the web arm's identical construction (docs/backlog.md row 34) for
+    // why this is conditional and routed through `merge_attributes` rather
+    // than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.selectable.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
         div {

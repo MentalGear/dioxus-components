@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -40,4 +41,18 @@ test('test', async ({ page }) => {
   await confirmButton.click();
   // Assert the dialog is closed after confirming
   await expect(dialog).toHaveCount(0);
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (dialog closed) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 });
+    await expectNoAxeViolations(page, 'alert-dialog: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test('open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Show Alert Dialog' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expectNoAxeViolations(page, 'alert-dialog: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });

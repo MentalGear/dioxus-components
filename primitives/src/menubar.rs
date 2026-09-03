@@ -1,11 +1,8 @@
 //! Defines the [`Menubar`] component and its sub-components.
 
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
-#[cfg(feature = "web")]
-use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
@@ -13,6 +10,7 @@ use crate::{
     },
     use_animated_open, use_id_or, use_unique_id,
 };
+use crate::{has_own_accessible_name, merge_attributes};
 
 #[derive(Clone, Copy)]
 struct MenubarContext {
@@ -162,6 +160,14 @@ struct MenubarMenuContext {
     // `DropdownMenuContext::content_id`'s doc for the exact bug this guards
     // against if trigger and content ever named different ids.
     content_id: Signal<String>,
+
+    // This menu's own `MenubarTrigger` element id, so `MenubarContent` can
+    // label itself `aria_labelledby` from it -- docs/backlog.md row 25 (an
+    // APG menu requires an accessible name from either aria-labelledby or
+    // aria-label; this crate's `DropdownMenu`/`ContextMenu` already do the
+    // same, keyed off their own `trigger_id`). Set once by `MenubarTrigger`
+    // via `use_unique_id`, read by `MenubarContentRendered`.
+    trigger_id: Signal<String>,
 }
 
 impl MenubarMenuContext {
@@ -272,6 +278,8 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
     // Placeholder value until `MenubarContent` mounts and syncs its own id
     // in -- see `MenubarMenuContext::content_id`'s doc.
     let content_id = use_unique_id();
+    // This menu's own trigger id -- see `MenubarMenuContext::trigger_id`'s doc.
+    let trigger_id = use_unique_id();
 
     let mut menu_ctx = use_context_provider(|| MenubarMenuContext {
         index: props.index,
@@ -280,6 +288,7 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
         disabled: props.disabled,
         initial_focus,
         content_id,
+        trigger_id,
     });
 
     use_effect(move || {
@@ -458,6 +467,20 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     let index = menu_ctx.index;
     let is_focused = move || item.focused() && !menu_ctx.focus.any_focused();
 
+    // Merged (caller-wins, deduped) rather than a plain explicit-attribute +
+    // `..props.attributes` spread: `id` below and a caller-supplied `id` in
+    // `props.attributes` would otherwise both render, the same
+    // duplicate-attribute hydration hazard `merge_attributes`'s own doc
+    // warns about (docs/conformance-harness.md Rule 4).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            // This menu's own trigger id, so `MenubarContent` can label
+            // itself `aria_labelledby` from it -- docs/backlog.md row 25.
+            id: menu_ctx.trigger_id,
+        }),
+        props.attributes,
+    ]);
+
     rsx! {
         button {
             onmounted,
@@ -491,7 +514,7 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             type: "button",
             tabindex: if is_focused() { "0" } else { "-1" },
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -697,11 +720,33 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     // (`top_layer::ensure_anchor_positioning_styles`) selects on,
     // sidestepping `manganis-core`'s `css_module_parser` not scoping
     // classes inside `@supports` bodies.
+    //
+    // docs/backlog.md row 25: an APG menu requires an accessible name from
+    // either aria-labelledby or aria-label -- labelled by this menu's own
+    // trigger, mirroring `DropdownMenuContent`'s identical pattern
+    // (`dropdown_menu.rs`). Only contributed when the caller hasn't already
+    // named this content some other way (`has_own_accessible_name`'s own
+    // doc), and as its own `merge_attributes` input -- present only when
+    // applicable -- rather than a bare `aria_labelledby: ...` literal
+    // alongside `..attributes`: a caller attribute list can carry a
+    // same-named `aria-labelledby`/`aria-label` with an
+    // empty/`AttributeValue::None` value, and two entries for one
+    // attribute name is exactly the duplicate-attribute hazard
+    // `merge_attributes` exists to prevent (`docs/conformance-harness.md`
+    // hydration-parity Rule 4).
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{menu_ctx.trigger_id}"
+        })
+    };
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
             class: "dx-anchor-menubar"
         }),
+        labelledby,
     ]);
 
     rsx! {
@@ -724,6 +769,18 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
 #[component]
 fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let menu_ctx: MenubarMenuContext = use_context();
+
+    // See the web arm's identical construction above (docs/backlog.md row
+    // 25) for why this is conditional and routed through `merge_attributes`
+    // rather than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{menu_ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
         div {
@@ -844,6 +901,13 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
     rsx! {
         div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
+            // Found via an axe `color-contrast` finding on this pattern
+            // class's disabled state (docs/backlog.md row 39): see
+            // `dropdown_menu.rs`'s identical `DropdownMenuItem` fix for the
+            // full account -- `data-disabled` alone never told assistive
+            // tech this item was disabled at all; `ContextMenuItem`
+            // (`context_menu.rs`) already set this.
+            aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
 

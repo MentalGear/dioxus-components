@@ -151,6 +151,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -355,6 +356,85 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     await expect(page.locator("#clip-combobox-content")).toBeVisible();
     const result = await escapesClip(page, "#clip-combobox-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
+});
+
+/**
+ * axe (static rules) — every anchored-overlay component on this fixture,
+ * scanned with its content open. No component spec reaches this fixture
+ * (each has its own, real-demo page instead); this is the state no other
+ * spec covers, per docs/backlog.md row 34's own remit. Reuses exactly the
+ * open steps Rule 1 above already established for each component.
+ */
+test.describe("axe: every overlay open (top-layer fixture)", () => {
+  test("Tooltip content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-tooltip-trigger").hover();
+    await expect(page.locator("#clip-tooltip-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Tooltip open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("HoverCard content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-hovercard-trigger").hover();
+    await expect(page.locator("#clip-hovercard-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: HoverCard open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("Popover (non-modal) content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-popover-trigger").click();
+    await expect(page.locator("#clip-popover-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Popover open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("DropdownMenu content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-dropdown-menu-trigger").click();
+    await expect(page.locator("#clip-dropdown-menu-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: DropdownMenu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("ContextMenu content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-context-menu-trigger").click({ button: "right" });
+    await expect(page.locator("#clip-context-menu-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: ContextMenu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("Menubar content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-menubar-trigger").click();
+    await expect(page.locator("#clip-menubar-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Menubar open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // KNOWN RED, filed rather than fixed (docs/backlog.md): `SelectList`'s
+  // default `aria-labelledby` (added this round) points at
+  // `ctx.selectable.trigger_id`'s internally-generated value, which this
+  // fixture's `SelectTrigger { id: "clip-select-trigger", ... }` diverges
+  // from -- `merge_attributes`'s caller-wins rule overrides the *rendered*
+  // DOM id with the fixture's own, but the id the listbox labels itself by
+  // is a separate signal that is never resynced to match, so the reference
+  // dangles. Only manifests when a caller overrides `SelectTrigger`'s own
+  // `id` (as this fixture and, presumably, some real consumers do); every
+  // component spec's own (un-overridden) Select stays green. Fixing this
+  // generally needs the same id-sync plumbing `content_id` already has,
+  // added to `SelectTrigger`'s otherwise-untyped `id` -- out of this
+  // round's "small and clearly correct" scope.
+  test("Select listbox open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-select-trigger").click();
+    await expect(page.locator("#clip-select-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Select open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("Combobox listbox open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-combobox-trigger").click();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#clip-combobox-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Combobox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { test } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test.describe("homepage", () => {
   test("should not have any automatically detectable accessibility issues", async ({
@@ -11,11 +11,10 @@ test.describe("homepage", () => {
     let heroSection = page.locator("#hero");
     await heroSection.waitFor({ state: "visible" });
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
-      .disableRules("color-contrast")
-      .analyze();
-
-    expect(accessibilityScanResults.violations).toEqual([]);
+    // No color-contrast exclusion needed here: this round's theme-token fix
+    // (docs/backlog.md row 39) resolved it, and this route has no
+    // `.dx-code-block` to need the one remaining, narrower exclusion for.
+    await expectNoAxeViolations(page, "homepage");
   });
 });
 
@@ -30,10 +29,8 @@ test.describe("details", () => {
     let componentSection = page.getByRole("heading", { name: "calendar" });
     await componentSection.waitFor({ state: "visible" });
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
-      .disableRules("color-contrast")
-      .analyze();
-
-    expect(accessibilityScanResults.violations).toEqual([]);
+    await expectNoAxeViolations(page, "component/calendar", {
+      excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
+    });
   });
 });

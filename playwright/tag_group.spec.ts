@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { expectNoAxeViolations } from "./axe";
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
 const URL = `${BASE}/component/?name=tag_group&`;
@@ -226,11 +226,13 @@ test.describe("Tag group", () => {
     test("has no automatically detectable a11y violations on the tag list", async ({
       page,
     }) => {
-      const results = await new AxeBuilder({ page })
-        .include('.dx-component-variant [role="grid"]')
-        .disableRules(["color-contrast"])
-        .analyze();
-      expect(results.violations).toEqual([]);
+      // No color-contrast exclusion needed: this round's theme-token fix
+      // (docs/backlog.md row 39) resolved the pre-existing finding here,
+      // and this scan is scoped to the tag grid itself, which has no code
+      // block to need the one remaining, narrower exclusion for.
+      await expectNoAxeViolations(page, "tag_group: tag list", {
+        include: '.dx-component-variant [role="grid"]',
+      });
     });
   });
 });

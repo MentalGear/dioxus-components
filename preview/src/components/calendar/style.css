@@ -155,7 +155,12 @@
 }
 
 .dx-calendar-grid-cell[data-month="current"][data-unavailable="true"] {
-    color: var(--secondary-color-6);
+    /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03):
+     * `--secondary-color-6`'s light value (#d0d0d0) is meant for
+     * dark-surface use, not light-mode text -- measured 1.54:1 on white.
+     * `--secondary-color-5` is this theme's actual muted-text-on-light
+     * token, already used two rules up for other-month/disabled days. */
+    color: var(--secondary-color-5);
     cursor: not-allowed;
     text-decoration: line-through;
 }

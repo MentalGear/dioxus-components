@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
@@ -268,6 +269,32 @@ test("right arrow key navigates through all days of the month", async ({
   page,
 }) => {
   await testArrowKeyNavigation(page, "ArrowRight", "first", "ascending");
+});
+
+test.describe("Axe automated scan", () => {
+  // Calendar renders inline (no overlay); a day is focused/"selected" by
+  // keyboard, so that state, plus the plain loaded state, are scanned.
+  test("loaded has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=calendar&", { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState("networkidle");
+    await expectNoAxeViolations(page, "calendar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("a day focused via keyboard has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=calendar&", { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState("networkidle");
+    const calendar = page.locator("#component-preview-frame").first();
+    // Click the prev/next nav buttons first, exactly as the file's own main
+    // test does, so Tab lands inside the calendar grid rather than on the
+    // first tabbable element on the whole page (e.g. the docs sidebar).
+    const prevButton = calendar.getByRole("button").first();
+    const nextButton = calendar.getByRole("button").nth(1);
+    await prevButton.click();
+    await nextButton.click();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('[data-month="current"]:focus').first()).toBeVisible();
+    await expectNoAxeViolations(page, "calendar: a day focused", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });
 
 test("left arrow key navigates through all days of the month in reverse", async ({

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 const PAGE_URL = 'http://127.0.0.1:8080/component/?name=color_picker&';
 const PAGE_TIMEOUT = 20 * 60 * 1000;
@@ -178,4 +179,17 @@ test('dragging the color area updates saturation and value', async ({ page }) =>
 
   await expect.poll(async () => Number(await sInput.inputValue())).toBeGreaterThan(sBefore);
   await expect.poll(async () => Number(await vInput.inputValue())).toBeLessThan(vBefore);
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (popover closed) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto(PAGE_URL, { timeout: PAGE_TIMEOUT });
+    await page.waitForLoadState('networkidle');
+    await expectNoAxeViolations(page, 'color-picker: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test('popover open has no automatically detectable a11y issues', async ({ page }) => {
+    await openPicker(page);
+    await expectNoAxeViolations(page, 'color-picker: popover open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });

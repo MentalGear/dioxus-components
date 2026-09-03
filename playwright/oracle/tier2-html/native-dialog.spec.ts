@@ -77,6 +77,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -277,6 +278,25 @@ test.describe("Rule 5 — nested dialogs: close order and focus return", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(pageTrigger, "focus must return to the page trigger once every dialog is closed").toBeFocused();
+  });
+});
+
+/**
+ * axe (static rules) — two nested native <dialog>s open at once. No
+ * component spec reaches this state (dialog.spec.ts opens only the outer
+ * dialog); two simultaneously-open modal dialogs is exactly the shape most
+ * likely to surface a duplicate-landmark/duplicate-accessible-name class of
+ * defect axe catches and behaviour oracles do not.
+ */
+test.describe("axe: nested dialogs open", () => {
+  test("outer + nested dialog both open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoDialog(page);
+    await page.getByRole("button", { name: "Show Dialog" }).click();
+    const outer = page.getByRole("dialog").first();
+    await expect(outer).toBeVisible();
+    await outer.getByRole("button", { name: "Open Nested Dialog" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(2);
+    await expectNoAxeViolations(page, "native-dialog: outer + nested dialog open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

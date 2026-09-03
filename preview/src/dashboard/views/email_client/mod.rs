@@ -59,7 +59,15 @@ pub fn EmailClient() -> Element {
                         DarkModeToggle {}
                     }
 
-                    main { class: if read_open { "ec-main ec-reading" } else { "ec-main" },
+                    // axe `landmark-main-is-top-level`/`landmark-no-
+                    // duplicate-main` (docs/backlog.md row 34's own round):
+                    // `SidebarInset` (above, `sidebar/component.rs`) already
+                    // renders the page's one `<main>` landmark
+                    // (`data-slot="sidebar-inset"`) -- this was a second,
+                    // nested `<main>`, which both dupes the landmark and
+                    // nests it inside another. `SidebarInset` is the
+                    // semantic main region; this is plain layout inside it.
+                    div { class: if read_open { "ec-main ec-reading" } else { "ec-main" },
                         ListPane { state, visible_ids, selected_uid }
 
                         ReadPane {

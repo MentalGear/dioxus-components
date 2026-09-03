@@ -76,7 +76,14 @@ const INLINE_STYLE: &str = r#".dx-tasks-demo {
 }
 
 .dx-task-code {
-  color: var(--secondary-color-6);
+  /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03):
+   * `--secondary-color-6`'s light value (#d0d0d0) is meant for
+   * dark-surface use (its own dark-mode value, #5d5d5d, is the
+   * light-surface-appropriate one) -- used here as light-mode text, it
+   * measured 1.54:1 on white. `--secondary-color-5` (this theme's actual
+   * "muted text on light surfaces" token, used the same way in ~28 other
+   * component stylesheets) is the correct token for this role. */
+  color: var(--secondary-color-5);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 10.5px;
   font-weight: 500;

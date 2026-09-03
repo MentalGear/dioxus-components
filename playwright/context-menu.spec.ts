@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('pointer navigation', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -332,4 +333,25 @@ test('keyboard navigation', async ({ page }) => {
   await expect(contextMenu).toHaveCount(0);
   // Assert the selected item is displayed
   await expect(page.getByText('Selected: Duplicate')).toBeVisible();
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+    // Wait for render before scanning -- see input.spec.ts's identical
+    // comment for why (avoids a false pre-hydration "no main"/"no h1").
+    await expect(page.getByRole('button', { name: 'right click here' })).toBeVisible();
+    await expectNoAxeViolations(page, 'context-menu: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // docs/backlog.md row 25: ContextMenu's role="menu" popup carries no
+  // aria-labelledby/aria-label at all, so an open menu has no accessible
+  // name (APG menu-and-menubar pattern requires one) -- this is exactly the
+  // class of defect this round's axe coverage is meant to surface.
+  test('menu open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'right click here' }).click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expectNoAxeViolations(page, 'context-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
 });
