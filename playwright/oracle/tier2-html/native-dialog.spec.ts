@@ -587,3 +587,160 @@ test.describe("Rule 7d — a keyboard activation of a control inside the dialog 
     await expect(outer, "the outer dialog must still be open").toBeVisible();
   });
 });
+
+/**
+ * Rule 8 — the opening-gesture false positive (user device report,
+ * 2026-09-03, iOS Safari touch): "Show Popover" (the home page's default,
+ * modal `Popover`) shows only its `::backdrop`; the popover itself flashes
+ * and disappears. See `use_dialog_backdrop_dismiss`'s doc
+ * (primitives/src/lib.rs) for the full mechanism this rule guards.
+ *
+ * Root cause: `use_dialog_backdrop_dismiss`'s discriminator for "is this a
+ * real backdrop click" is `event.target === dialog` plus a bounding-rect
+ * test (Rule 7's own territory above) -- it says nothing about *when* the
+ * click happened relative to the dialog opening. `event.target` for the
+ * *opening* tap's own native `click` is fixed to the trigger button for
+ * that event's entire dispatch (the trigger is a DOM sibling of the
+ * dialog, never its ancestor, so that one event can never reach a listener
+ * bound on the dialog on any engine that dispatches exactly one `click` per
+ * tap) -- but iOS Safari's touch-to-click synthesis computes a synthesized
+ * click's target lazily, and a DOM mutation between `touchend` and that
+ * synthesis (`showModal()` itself, moving this exact screen coordinate
+ * under the freshly shown `::backdrop`) can retarget the synthesized click
+ * at the dialog, landing at the *trigger's* on-screen position -- outside a
+ * trigger-anchored (not viewport-centered) modal `Popover`'s own rendered
+ * box, which the rect test then (correctly, by its own logic) reads as
+ * "outside" and dismisses.
+ *
+ * Reproduction attempted (this session): touch-emulated (`hasTouch`,
+ * `locator.tap()`) opens of "Show Popover" and of every `Auto`-kind
+ * `popover` this crate has (`DropdownMenu`, `Menubar`, `Select`, non-modal
+ * `Popover` -- see `PopoverKind`'s doc, `primitives/src/top_layer.rs`, for
+ * which components are `Auto` vs. `Manual`; `Tooltip`/`HoverCard` are
+ * `Manual` and never light-dismiss at all, so they are not exposed to
+ * either variant of this bug class) -- confirmed by execution, none
+ * self-dismiss in this sandbox's Chromium. Expected, not evidence there is
+ * nothing to fix: this Chromium build dispatches exactly one `click` per
+ * tap with a stable `target`, so the opening tap structurally cannot reach
+ * this hook's listener (the sibling-DOM argument above), and this sandbox
+ * has no engine that reproduces WebKit's lazy click-retarget-on-DOM-mutation
+ * quirk to exercise instead. This stays device-only, per this session's own
+ * instruction not to claim a reproduction that was not actually achieved --
+ * the test below instead exercises the *construction* directly (does this
+ * hook's listener exist yet, immediately after open, before any risk
+ * window has closed), which is checkable in this sandbox regardless of
+ * which engine's click-timing quirk (if any) would go on to exploit it.
+ *
+ * `Auto`-kind popovers are audited, not fixed, in this round: they have no
+ * hook of ours to defer at all (their light dismiss is a browser-native
+ * algorithm with no JS listener of this crate's own in the loop), so this
+ * construction fix does not apply to them. A declarative `popovertarget`
+ * invoker (WHATWG's own answer to "this click opened me, don't also count
+ * it as light dismiss") was evaluated for them and rejected for this round:
+ * every one of these triggers is a *toggle* button (`onclick` computing
+ * `!open`), and `popovertarget`'s default action is `"toggle"` too --
+ * layering a second, browser-native toggle onto the same click as this
+ * crate's own Rust-driven one risks a double-toggle race with no clean way
+ * to verify the outcome without a real device. Tracked as a documented
+ * residual risk (`docs/backlog.md`), not silently dropped.
+ */
+test.describe("Rule 8 — the opening-gesture false positive: a modal Popover's backdrop-dismiss listener is not attached until the frame after it opens", () => {
+  test("black-box: a touch-emulated open of the default (modal) Popover stays open for at least 1s and until a real outside tap", async ({
+    browser,
+  }) => {
+    // A fresh, touch-capable context (`hasTouch`), not the shared `page`
+    // fixture -- `locator.tap()` requires it. Kept in this one test, not
+    // this whole file's project config, since every other rule here wants
+    // ordinary mouse semantics (`page.mouse.click`'s `detail === 1` etc.).
+    const context = await browser.newContext({ hasTouch: true });
+    const page = await context.newPage();
+    try {
+      await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+      const trigger = page.getByRole("button", { name: "Show Popover" });
+      await trigger.scrollIntoViewIfNeeded();
+      await trigger.tap();
+      const content = page.getByRole("dialog");
+      await expect(content, "the popover must open on the opening tap").toBeVisible();
+
+      // "for at least 1s" -- long enough that any same-gesture false
+      // dismiss (this sandbox's Chromium included, were it to regress) has
+      // long since had its chance to fire.
+      await page.waitForTimeout(1000);
+      await expect(content, "the popover must still be open 1s after the opening tap").toBeVisible();
+
+      // "until a real outside tap": a separate, later tap at the viewport
+      // corner -- far outside the trigger-anchored content -- still
+      // dismisses it. Not a confound with the fix: that fix only defers
+      // listener *attachment* by one frame, which has long since elapsed a
+      // full second later.
+      await page.touchscreen.tap(2, 2);
+      await expect(content, "a real outside tap must still dismiss the popover").toBeHidden();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("construction-level: the backdrop-dismiss click listener is attached from inside a requestAnimationFrame callback, not synchronously at open", async ({
+    page,
+  }) => {
+    // Instruments `EventTarget.prototype.addEventListener`/
+    // `window.requestAnimationFrame` before any app code runs, so the
+    // check is unaffected by exactly when Dioxus happens to flush its
+    // effects -- this observes the *construction*
+    // (`use_dialog_backdrop_dismiss`'s own deferral, primitives/src/lib.rs)
+    // directly, sidestepping the timing-race problem the black-box test
+    // above cannot fully close in a sandbox with no engine that actually
+    // exhibits the reported click-retarget quirk.
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __dxBackdropListenerAttachedInsideRaf?: boolean;
+      };
+      let insideRaf = false;
+      const originalRaf = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (cb: FrameRequestCallback) =>
+        originalRaf((t) => {
+          insideRaf = true;
+          try {
+            cb(t);
+          } finally {
+            insideRaf = false;
+          }
+        });
+      const originalAddEventListener = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function (
+        this: EventTarget,
+        type: string,
+        listener: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions,
+      ) {
+        const el = this as unknown as HTMLElement;
+        if (
+          type === "click" &&
+          el &&
+          el.tagName === "DIALOG" &&
+          w.__dxBackdropListenerAttachedInsideRaf === undefined
+        ) {
+          w.__dxBackdropListenerAttachedInsideRaf = insideRaf;
+        }
+        return originalAddEventListener.call(this, type, listener, options);
+      };
+    });
+
+    await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    const trigger = page.getByRole("button", { name: "Show Popover" });
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    // One frame is enough for the deferred attachment to have happened;
+    // give it a couple to be safe against a slow CI frame.
+    await page.waitForTimeout(100);
+
+    const attachedInsideRaf = await page.evaluate(
+      () => (window as unknown as { __dxBackdropListenerAttachedInsideRaf?: boolean }).__dxBackdropListenerAttachedInsideRaf,
+    );
+    expect(
+      attachedInsideRaf,
+      "the dialog's own backdrop-dismiss click listener must be attached from inside a requestAnimationFrame callback, not synchronously at open -- otherwise the opening gesture's own click (or an engine's same-gesture retargeted follow-up) can reach it",
+    ).toBe(true);
+  });
+});
