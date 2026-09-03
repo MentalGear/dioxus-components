@@ -1911,7 +1911,28 @@ fn BlockComposer() -> Element {
 fn ComponentGallery() -> Element {
     rsx! {
         div { class: "dx-component-gallery",
-            for component in components::DEMOS.iter().cloned() {
+            // `top_layer` is excluded here, deliberately: it is not a real,
+            // installable component (there is no `dx components add
+            // top_layer`) but an oracle fixture --
+            // `preview/src/components/top_layer/component.rs`'s
+            // `TopLayerFixture`, a large probe surface for
+            // `playwright/oracle/tier2-html/top-layer.spec.ts` and
+            // `native-dialog.spec.ts` (clipping-escape triggers, background-
+            // inertness probes, native `<dialog>`/`<div popover>` references,
+            // ...). Embedding it inline on `/` put dozens of raw
+            // `dioxus_primitives::` elements and duplicate landmark-shaped
+            // markup into the one page every visitor and every gallery-wide
+            // oracle (`preview.spec.ts`, hydration-parity Rule 4b) scans,
+            // for a fixture no one browsing the catalog is here to see. It
+            // stays fully reachable at its own page,
+            // `/component/?name=top_layer&` (still listed under Overlays in
+            // `DocsSidebar`, since `components::DEMOS` itself is unchanged
+            // and this filter only narrows the *gallery grid's* iteration)
+            // -- see docs/backlog.md for the landed row and
+            // docs/conformance-harness.md's hydration-parity section for
+            // Rule 4b's replacement subject, now that its old one
+            // (the fixture's toast region) no longer renders on `/`.
+            for component in components::DEMOS.iter().filter(|c| c.name != "top_layer").cloned() {
                 ComponentGalleryPreview { component }
             }
         }

@@ -25,6 +25,13 @@ struct Styles;
 /// use -- placed in the same fixture, tier-2 style (see
 /// `docs/conformance-harness.md` and `preview/src/components/form` for the
 /// established pattern).
+///
+/// Reachable only at its own page, `/component/?name=top_layer&` --
+/// `preview/src/main.rs`'s `ComponentGallery` deliberately excludes
+/// `top_layer` from the `/` home-page catalog grid (it is not an
+/// installable component, just this large oracle probe surface), while
+/// `components::DEMOS`/`DocsSidebar` still list it under "Overlays" so it
+/// stays navigable. See `docs/backlog.md` for the landed row.
 #[component]
 pub fn TopLayerFixture() -> Element {
     // Additive fixture for the Phase 4.2 oracle
