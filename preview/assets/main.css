@@ -14,7 +14,12 @@
 :root {
   --highlight-color-main: #dd7230;
   --highlight-color-secondary: #eb5160;
-  --highlight-color-tertiary: #2b7fff;
+  /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03): the
+   * previous #2b7fff, used as `color` (not a border/background) in 11
+   * rules across this file, measured 3.76:1 on white -- below WCAG's
+   * 4.5:1 for normal text. #0065ff keeps the same hue/saturation, darker
+   * lightness only, and clears 4.5:1 (measured 4.88:1 on white). */
+  --highlight-color-tertiary: #0065ff;
   --dx-content-width: 1360px;
   /* Comfortably >= .dx-preview-navbar's tallest steady-state rendered
      height (measured ~54px single-row at desktop width) -- a fixed

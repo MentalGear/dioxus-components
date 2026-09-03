@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=toolbar&");
@@ -29,6 +29,6 @@ test.describe("Axe automated scan", () => {
   // Toolbar has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=toolbar&");
-    await expectNoAxeViolations(page, "toolbar: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "toolbar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

@@ -115,7 +115,7 @@
  */
 
 import { test, expect, devices, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 // Playwright's iPhone descriptors default to WebKit (`defaultBrowserType:
 // "webkit"`), which this repo's local lanes do not ship; the rule under test
@@ -249,18 +249,20 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   // that this round's "small, clearly correct" fix bar does not cover.
   test("dashboard email client: default state has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3000);
-    await expectNoAxeViolations(page, "dashboard/email-client: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    // Wait for the inbox list to actually render before scanning, rather
+    // than a fixed timeout -- see input.spec.ts's identical convention.
+    await expect(page.getByRole("button", { name: /Compose/ }).first()).toBeVisible();
+    await expectNoAxeViolations(page, "dashboard/email-client: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("dashboard email client: compose open has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3000);
     const compose = page.getByRole("button", { name: /Compose/ }).first();
+    await expect(compose).toBeVisible();
     await compose.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expectNoAxeViolations(page, "dashboard/email-client: compose open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "dashboard/email-client: compose open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('overlay: combobox listbox open ("Switch workspace" input stays >= 16px)', async ({ page }) => {

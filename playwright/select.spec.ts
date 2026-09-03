@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 const singleSelectTrigger = (page: Page) =>
     page.getByRole("button").filter({ hasText: /Select an option|Apple|Banana/ });
@@ -299,13 +299,13 @@ test("typeahead skips disabled options", async ({ page }) => {
 test.describe("Axe automated scan", () => {
     test("loaded (listbox closed) has no automatically detectable a11y issues", async ({ page }) => {
         await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
-        await expectNoAxeViolations(page, "select: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+        await expectNoAxeViolations(page, "select: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
 
     test("listbox open has no automatically detectable a11y issues", async ({ page }) => {
         await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
         await singleSelectTrigger(page).click();
         await expect(page.getByRole("listbox")).toHaveAttribute("data-state", "open");
-        await expectNoAxeViolations(page, "select: listbox open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+        await expectNoAxeViolations(page, "select: listbox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
 });

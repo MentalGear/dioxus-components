@@ -105,7 +105,7 @@
  */
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -494,7 +494,7 @@ test.describe("axe: invalid state after a blocked submit", () => {
     await gotoForm(page);
     await submitRequiredAndRead(page);
     await expect(page.locator('[data-invalid="true"]').first()).toBeVisible();
-    await expectNoAxeViolations(page, "form: invalid state after blocked submit", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "form: invalid state after blocked submit", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

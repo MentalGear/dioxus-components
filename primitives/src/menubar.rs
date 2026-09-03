@@ -3,7 +3,6 @@
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
 
-use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
@@ -11,6 +10,7 @@ use crate::{
     },
     use_animated_open, use_id_or, use_unique_id,
 };
+use crate::{has_own_accessible_name, merge_attributes};
 
 #[derive(Clone, Copy)]
 struct MenubarContext {
@@ -720,22 +720,39 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     // (`top_layer::ensure_anchor_positioning_styles`) selects on,
     // sidestepping `manganis-core`'s `css_module_parser` not scoping
     // classes inside `@supports` bodies.
+    //
+    // docs/backlog.md row 25: an APG menu requires an accessible name from
+    // either aria-labelledby or aria-label -- labelled by this menu's own
+    // trigger, mirroring `DropdownMenuContent`'s identical pattern
+    // (`dropdown_menu.rs`). Only contributed when the caller hasn't already
+    // named this content some other way (`has_own_accessible_name`'s own
+    // doc), and as its own `merge_attributes` input -- present only when
+    // applicable -- rather than a bare `aria_labelledby: ...` literal
+    // alongside `..attributes`: a caller attribute list can carry a
+    // same-named `aria-labelledby`/`aria-label` with an
+    // empty/`AttributeValue::None` value, and two entries for one
+    // attribute name is exactly the duplicate-attribute hazard
+    // `merge_attributes` exists to prevent (`docs/conformance-harness.md`
+    // hydration-parity Rule 4).
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{menu_ctx.trigger_id}"
+        })
+    };
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
             class: "dx-anchor-menubar"
         }),
+        labelledby,
     ]);
 
     rsx! {
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
-            // docs/backlog.md row 25: an APG menu requires an accessible
-            // name from either aria-labelledby or aria-label -- labelled by
-            // this menu's own trigger, mirroring `DropdownMenuContent`'s
-            // identical `aria_labelledby` (`dropdown_menu.rs`).
-            aria_labelledby: "{menu_ctx.trigger_id}",
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             style: crate::top_layer::position_anchor_style(&id),
             "data-state": if open() { "open" } else { "closed" },
@@ -753,13 +770,22 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
 fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let menu_ctx: MenubarMenuContext = use_context();
 
+    // See the web arm's identical construction above (docs/backlog.md row
+    // 25) for why this is conditional and routed through `merge_attributes`
+    // rather than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{menu_ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
+
     rsx! {
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
-            // See the web arm's identical attribute above (docs/backlog.md
-            // row 25) for why.
-            aria_labelledby: "{menu_ctx.trigger_id}",
             "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
             ..attributes,
             {children}
@@ -875,6 +901,13 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
     rsx! {
         div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
+            // Found via an axe `color-contrast` finding on this pattern
+            // class's disabled state (docs/backlog.md row 39): see
+            // `dropdown_menu.rs`'s identical `DropdownMenuItem` fix for the
+            // full account -- `data-disabled` alone never told assistive
+            // tech this item was disabled at all; `ContextMenuItem`
+            // (`context_menu.rs`) already set this.
+            aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
 

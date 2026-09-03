@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 // Helper to run scrollHeight stability test with configurable tolerance
 async function testScrollHeightStability(
@@ -256,6 +256,6 @@ test.describe("Axe automated scan", () => {
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=virtual_list&", { timeout: 20 * 60 * 1000 });
     await expect(page.getByRole("list").first()).toBeVisible({ timeout: 30000 });
-    await expectNoAxeViolations(page, "virtual_list: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "virtual_list: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

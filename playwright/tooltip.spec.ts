@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
@@ -24,13 +24,13 @@ test("test", async ({ page }) => {
 test.describe("Axe automated scan", () => {
   test("loaded (tooltip closed) has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
-    await expectNoAxeViolations(page, "tooltip: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "tooltip: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("tooltip open has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
     await page.locator("#component-preview-frame").first().getByText("Rich content").hover();
     await expect(page.getByRole("tooltip")).toBeVisible();
-    await expectNoAxeViolations(page, "tooltip: open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "tooltip: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

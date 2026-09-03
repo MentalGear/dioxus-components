@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 const BASE_URL = "http://127.0.0.1:8080";
 const SIDEBAR_RENDER_TIMEOUT = 30 * 1000;
@@ -126,7 +126,7 @@ test.describe("sidebar: block route", () => {
 test.describe("Axe automated scan", () => {
   test("loaded (expanded) has no automatically detectable a11y issues", async ({ page }) => {
     await gotoSidebarBlock(page);
-    await expectNoAxeViolations(page, "sidebar: expanded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "sidebar: expanded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("collapsed has no automatically detectable a11y issues", async ({ page }) => {
@@ -135,6 +135,6 @@ test.describe("Axe automated scan", () => {
     const trigger = page.locator('[data-slot="sidebar-trigger"]');
     await trigger.click();
     await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-    await expectNoAxeViolations(page, "sidebar: collapsed", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "sidebar: collapsed", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

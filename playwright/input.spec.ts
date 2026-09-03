@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=input&", {
@@ -19,6 +19,6 @@ test.describe("Axe automated scan", () => {
     // h1 yet) and report a false "page has no main landmark"/"no h1" that
     // has nothing to do with Input.
     await expect(page.getByRole('textbox', { name: 'Enter your name' })).toBeVisible();
-    await expectNoAxeViolations(page, "input: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "input: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

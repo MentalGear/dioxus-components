@@ -39,38 +39,52 @@
  * to every future run. A rule may be excluded ONLY for a documented false
  * positive at that specific scan site (axe misjudging something that is
  * not actually a defect there); a real, larger issue this round chose not
- * to fix (contrast, a structural markup change) must stay enabled and RED,
- * recorded in `docs/backlog.md` instead. The three pre-existing
- * `color-contrast` exclusions (`preview.spec.ts`,
+ * to fix (a structural markup change, a vendored third-party asset) must
+ * stay enabled and RED, recorded in `docs/backlog.md` instead. The three
+ * pre-existing `color-contrast` exclusions (`preview.spec.ts`,
  * `drag_and_drop_list.spec.ts`, `tag_group.spec.ts`) predate this rule and
  * are grandfathered by this round's own instruction to refactor their
- * *coverage* unchanged; they are not false positives (the theme's contrast
- * ratios are a real, open, tracked gap -- `docs/backlog.md` row 31/32) and
- * their reason strings say so rather than pretending otherwise.
+ * *coverage* unchanged.
  *
- * ## `CONTRAST_TRACKED_ELSEWHERE` — the one sitewide exclusion
+ * ## `color-contrast`: fixed by construction, not excluded
  *
- * Running the full coverage this round adds (below) with no exclusion at
- * all surfaces `color-contrast` on very nearly every scan, at every state,
- * on every route -- not because each component under test has its own
- * contrast defect, but because the shared chrome present on every page
- * (the docs sidebar's nav links/section headings, the site footer's links
- * and "Built with Dioxus." line) already fails the same 4.5:1 threshold
- * everywhere it appears. That is a real, already-diagnosed, already-filed
- * gap (`docs/backlog.md` rows 31/32 -- the design-token and styling-engine
- * work, not yet landed, that both name contrast as in-scope), not a
- * per-scan false positive, and not something this round can fix by
- * construction (a theme-wide token/value change, explicitly out of this
- * round's remit per its own instructions on contrast failures). Leaving it
- * enabled would not surface anything new after the first finding -- every
- * one of dozens of new scan sites would independently rediscover the exact
- * same footer/sidebar nodes, drowning any real, component-specific finding
- * in repetition. `CONTRAST_TRACKED_ELSEWHERE` is exported so every call
- * site excludes it the same, explicit, auditable way (per this file's own
- * exclusion-with-reason rule) rather than 60-odd copies of the same reason
- * string -- pass it in `exclude` wherever a scan would otherwise be pure
- * chrome-contrast noise. It must never be reached for on a *component's
- * own* contrast defect discovered independently of the shared chrome.
+ * Running the full coverage this round adds with no exclusion at all
+ * initially surfaced `color-contrast` on very nearly every scan, at every
+ * state, on every route. Measured across 49 routes (every component page,
+ * the homepage, `/docs`, `/demos`, the dashboard), the overwhelming
+ * majority of that noise -- every distinct color/background/ratio
+ * combination but one -- traced back to a single CSS custom property,
+ * `--secondary-color-5` (`preview/assets/dx-components-theme.css`), this
+ * theme's "muted secondary text" token, used across ~28 component
+ * stylesheets plus the docs sidebar and site footer: its light value,
+ * `#848484`, measured 3.74:1 against white (WCAG requires 4.5:1 for
+ * normal text). One token-value change (`#848484` -> `#707070`, same
+ * hue, clears 4.5:1 against every background it's actually paired with in
+ * this app) fixed effectively the entire surface at once -- not a
+ * per-scan exclusion, a real construction fix, landed in this round (see
+ * `docs/backlog.md` row 39 for the full remediation list, including a
+ * same-class site-CSS accent color, a component's own literal inline
+ * color, and two components misusing a token meant for dark surfaces as
+ * light-mode text).
+ *
+ * `EXCLUDE_VENDORED_CODE_HIGHLIGHT` — the one remaining exclusion, and it
+ * is a genuine false positive at every site it's used: after the fix
+ * above, re-measuring the same 49 routes found exactly one remaining
+ * combination, inside `.dx-preview-code-theme` -- every syntax-highlighted
+ * code span this app renders, both the "Manual installation"/component-
+ * source code viewer (`preview/src/main.rs`'s `CodeBlock`, which wraps a
+ * `PreviewCode`) and the same highlighter's output embedded directly in a
+ * component's markdown-rendered "Usage notes" prose (no `CodeBlock`
+ * wrapper there, so `.dx-preview-code-theme` itself, not `.dx-code-block`,
+ * is the one selector both sites actually share) -- a comment token at
+ * 4.39:1, from the vendored, build-time-generated `github-light`
+ * syntax-highlighting theme (`preview/assets/github-light*.css`, not a
+ * file this repo authors or owns the palette of; regenerating it from a
+ * different highlighter theme is a real fix, but out of this round's
+ * scope, filed as part of row 39). Scoped with axe's own `.exclude()` --
+ * a *region* exclusion, skipping that one already-known, already-narrow
+ * subtree entirely, not a page-wide `disableRules` -- so a component's own
+ * contrast defect anywhere else on the same page still fails the scan.
  */
 
 import { expect, type Page } from "@playwright/test";
@@ -93,21 +107,40 @@ export interface AxeExclusion {
 }
 
 /**
- * Shared exclusion for the sitewide `color-contrast` chrome finding -- see
- * this file's header doc ("`CONTRAST_TRACKED_ELSEWHERE`") for why this
- * exists and when it's safe to use. Pass it in `exclude`, e.g.
- * `{ exclude: [CONTRAST_TRACKED_ELSEWHERE] }`.
+ * One excluded *region*: a CSS selector axe should skip scanning entirely
+ * (axe's `.exclude()`, a scan-context change -- every rule is skipped for
+ * that subtree, not just one), with the mandatory reason it is safe to
+ * exclude here. Scoped, unlike `AxeExclusion`/`disableRules`, which turns
+ * a rule off for the *whole* page: prefer a region exclusion whenever the
+ * false positive is isolated to a specific, identifiable subtree, so the
+ * rest of the page (a component's own markup included) stays checked by
+ * every rule.
  */
-export const CONTRAST_TRACKED_ELSEWHERE: AxeExclusion = {
-  ids: "color-contrast",
+export interface AxeRegionExclusion {
+  /** CSS selector (or a frame-traversal chain) to exclude from the scan. */
+  selector: string | string[];
+  /** Why this specific region is a false positive. Must be non-empty. */
+  reason: string;
+}
+
+/**
+ * The one remaining `color-contrast` exclusion after this round's
+ * construction fix -- see this file's header doc ("`color-contrast`:
+ * fixed by construction, not excluded") for the measurement and the fix.
+ * Scoped to `.dx-preview-code-theme` (every syntax-highlighted code span
+ * this app renders -- see this file's header doc for the two distinct
+ * sites that share this one class), where the vendored, build-time-
+ * generated `github-light` theme's comment-token color still measures
+ * 4.39:1. Harmless to pass on a scan whose page has no highlighted code at
+ * all -- an `.exclude()` selector matching nothing excludes nothing.
+ */
+export const EXCLUDE_VENDORED_CODE_HIGHLIGHT: AxeRegionExclusion = {
+  selector: ".dx-preview-code-theme",
   reason:
-    "sitewide chrome (docs sidebar nav links/headings, site footer) fails " +
-    "the same 4.5:1 threshold on every route -- a real, already-tracked " +
-    "gap (docs/backlog.md rows 31/32, design tokens + styling engine, not " +
-    "yet landed), not a per-scan false positive and not fixable here (a " +
-    "theme-wide value change, explicitly out of this round's remit); " +
-    "excluded so it doesn't drown a component's own findings in the same " +
-    "repeated footer/sidebar nodes on every one of dozens of scan sites",
+    "vendored, build-time-generated github-light syntax-highlighting theme " +
+    "(preview/assets/github-light*.css) measures 4.39:1 for comment tokens " +
+    "(#6e7781 on #fbfbfb) -- a third-party theme this repo does not author " +
+    "or own the palette of; filed docs/backlog.md row 39",
 };
 
 export interface AxeScanOptions {
@@ -115,6 +148,8 @@ export interface AxeScanOptions {
   include?: string | string[];
   /** Rule exclusions, each requiring a written `reason` (see `AxeExclusion`). */
   exclude?: AxeExclusion[];
+  /** Region exclusions, each requiring a written `reason` (see `AxeRegionExclusion`). */
+  excludeRegions?: AxeRegionExclusion[];
 }
 
 function formatViolations(
@@ -165,6 +200,17 @@ export async function expectNoAxeViolations(
   }
   if (disabledIds.length > 0) {
     builder = builder.disableRules(disabledIds);
+  }
+
+  for (const region of opts.excludeRegions ?? []) {
+    if (!region.reason || region.reason.trim().length === 0) {
+      throw new Error(
+        `expectNoAxeViolations("${label}"): region exclusion of ` +
+          `${JSON.stringify(region.selector)} requires a non-empty "reason" ` +
+          `(axe.ts's exclusion-with-reason rule — see this file's header doc)`,
+      );
+    }
+    builder = builder.exclude(region.selector);
   }
 
   const results = await builder.analyze();

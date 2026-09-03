@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -80,13 +80,13 @@ test.describe('Axe automated scan', () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Show Dialog' })).toBeVisible();
-    await expectNoAxeViolations(page, 'dialog: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'dialog: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('open has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'Show Dialog' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expectNoAxeViolations(page, 'dialog: open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'dialog: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

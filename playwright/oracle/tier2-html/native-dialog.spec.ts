@@ -77,7 +77,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -296,7 +296,7 @@ test.describe("axe: nested dialogs open", () => {
     await expect(outer).toBeVisible();
     await outer.getByRole("button", { name: "Open Nested Dialog" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(2);
-    await expectNoAxeViolations(page, "native-dialog: outer + nested dialog open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "native-dialog: outer + nested dialog open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

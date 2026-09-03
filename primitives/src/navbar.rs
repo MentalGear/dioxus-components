@@ -789,6 +789,14 @@ pub fn NavbarItem(mut props: NavbarItemProps) -> Element {
             rel: props.rel,
             to: props.to,
             role: "menuitem",
+            // Found via an axe `color-contrast` finding on this pattern
+            // class's disabled state (docs/backlog.md row 39): see
+            // `dropdown_menu.rs`'s identical `DropdownMenuItem` fix for the
+            // full account -- this renders as an `<a>`, which (unlike a
+            // `<button disabled>`) has no native disabled semantics at
+            // all, so `data-disabled` alone left this item looking, to
+            // assistive tech, like a perfectly normal active link.
+            aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex,
 

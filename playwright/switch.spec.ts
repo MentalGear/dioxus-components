@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=switch&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -21,12 +21,12 @@ test('test', async ({ page }) => {
 test.describe('Axe automated scan', () => {
   test('loaded (unchecked) has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto('http://127.0.0.1:8080/component/?name=switch&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
-    await expectNoAxeViolations(page, 'switch: unchecked', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'switch: unchecked', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('checked has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto('http://127.0.0.1:8080/component/?name=switch&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
     await page.getByRole('switch', { name: 'Switch Demo' }).click();
-    await expectNoAxeViolations(page, 'switch: checked', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'switch: checked', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

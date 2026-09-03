@@ -2,7 +2,7 @@
 
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
-    fold_style_attributes, merge_attributes,
+    fold_style_attributes, has_own_accessible_name, merge_attributes,
     selectable::{pointer_select_cancel, pointer_select_commit, pointer_select_start},
     use_animated_open, use_controlled, use_effect_with_cleanup, use_id_or, use_outside_dismiss,
     use_unique_id,
@@ -693,20 +693,35 @@ fn ContextMenuContentRendered(
         })
     });
 
+    // docs/backlog.md row 25: an APG menu requires an accessible name from
+    // either aria-labelledby or aria-label (menu-and-menubar-pattern.html,
+    // "WAI-ARIA Roles, States, and Properties") -- labelled by the trigger,
+    // mirroring `DropdownMenuContent`'s identical pattern
+    // (`dropdown_menu.rs`). The trigger's own accessible name comes from
+    // its children (arbitrary caller content -- see `ContextMenuTrigger`'s
+    // doc), the same source `DropdownMenuTrigger` uses. Only contributed
+    // when the caller hasn't already named this content some other way
+    // (`has_own_accessible_name`'s own doc), and as its own
+    // `merge_attributes` input -- present only when applicable -- rather
+    // than a bare `aria_labelledby: ...` literal alongside `..attributes`:
+    // a caller attribute list can carry a same-named `aria-labelledby`/
+    // `aria-label` with an empty/`AttributeValue::None` value, and two
+    // entries for one attribute name is exactly the duplicate-attribute
+    // hazard `merge_attributes` exists to prevent
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
+
     rsx! {
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
-            // docs/backlog.md row 25: an APG menu requires an accessible name
-            // from either aria-labelledby or aria-label
-            // (menu-and-menubar-pattern.html, "WAI-ARIA Roles, States, and
-            // Properties") -- labelled by the trigger, mirroring
-            // `DropdownMenuContent`'s identical `aria_labelledby:
-            // "{ctx.trigger_id}"` (`dropdown_menu.rs`). The trigger's own
-            // accessible name comes from its children (arbitrary caller
-            // content -- see `ContextMenuTrigger`'s doc), the same source
-            // `DropdownMenuTrigger` uses.
-            aria_labelledby: "{ctx.trigger_id}",
             aria_orientation: "vertical",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
             position: "fixed",
@@ -811,13 +826,22 @@ fn ContextMenuContentRendered(
         })
     });
 
+    // See the web arm's identical construction above (docs/backlog.md row
+    // 25) for why this is conditional and routed through `merge_attributes`
+    // rather than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
+
     rsx! {
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
-            // See the web arm's identical attribute above (docs/backlog.md
-            // row 25) for why.
-            aria_labelledby: "{ctx.trigger_id}",
             aria_orientation: "vertical",
             position: "fixed",
             left: "{x}px",

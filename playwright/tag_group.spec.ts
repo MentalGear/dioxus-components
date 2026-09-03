@@ -4,11 +4,6 @@ import { expectNoAxeViolations } from "./axe";
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
 const URL = `${BASE}/component/?name=tag_group&`;
 const LOAD_TIMEOUT = 20 * 60 * 1000;
-const COLOR_CONTRAST_REASON =
-  "grandfathered pre-existing exclusion (see playwright/axe.ts header doc): " +
-  "not a false positive -- theme contrast is a real, open, tracked gap " +
-  "(docs/backlog.md rows 31/32), coverage preserved unchanged per the " +
-  "axe-coverage round's own instruction";
 
 function multiVariant(page: Page) {
   return page
@@ -231,9 +226,12 @@ test.describe("Tag group", () => {
     test("has no automatically detectable a11y violations on the tag list", async ({
       page,
     }) => {
+      // No color-contrast exclusion needed: this round's theme-token fix
+      // (docs/backlog.md row 39) resolved the pre-existing finding here,
+      // and this scan is scoped to the tag grid itself, which has no code
+      // block to need the one remaining, narrower exclusion for.
       await expectNoAxeViolations(page, "tag_group: tag list", {
         include: '.dx-component-variant [role="grid"]',
-        exclude: [{ ids: "color-contrast", reason: COLOR_CONTRAST_REASON }],
       });
     });
   });

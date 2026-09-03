@@ -195,11 +195,16 @@ pub fn ImageAvatar(props: ImageAvatarProps) -> Element {
     // setting `aria_label` (every dashboard email-client avatar; the
     // sidebar's user avatar) rendered an unnamed `role="img"`. Default the
     // root's `aria_label` from `alt` -- merged caller-wins, so an explicit
-    // `aria_label` in `props.attributes` still overrides it.
-    let attributes = merge_attributes(vec![
-        attributes!(span { aria_label: props.alt.clone() }),
-        props.attributes,
-    ]);
+    // `aria_label` in `props.attributes` still overrides it. Contributed
+    // only when `alt` is non-empty: an `aria-label=""` is still an empty
+    // accessible name (no better than omitting it), and would additionally
+    // shadow any real name the caller supplies some other way.
+    let base: Vec<Attribute> = if props.alt.is_empty() {
+        Vec::new()
+    } else {
+        attributes!(span { aria_label: "{props.alt}" })
+    };
+    let attributes = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
         Avatar {

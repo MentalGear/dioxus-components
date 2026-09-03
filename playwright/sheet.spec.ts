@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('sheet basic interactions', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
@@ -95,13 +95,13 @@ test.describe('Axe automated scan', () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Right' })).toBeVisible();
-    await expectNoAxeViolations(page, 'sheet: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'sheet: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('open has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'Right' }).click();
     await expect(page.locator('[data-slot="sheet-root"]')).toHaveAttribute('data-state', 'open');
-    await expectNoAxeViolations(page, 'sheet: open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'sheet: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

@@ -1,12 +1,5 @@
 import { test } from "@playwright/test";
-import { expectNoAxeViolations } from "./axe";
-
-const COLOR_CONTRAST_REASON =
-  "grandfathered pre-existing exclusion (see playwright/axe.ts header doc): " +
-  "not a false positive -- the theme's contrast ratios are a real, open, " +
-  "tracked gap (docs/backlog.md rows 31/32, design tokens + styling engine, " +
-  "not yet landed); this call's coverage is preserved unchanged per the " +
-  "axe-coverage round's own instruction, not newly claimed as a false positive";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test.describe("homepage", () => {
   test("should not have any automatically detectable accessibility issues", async ({
@@ -18,9 +11,10 @@ test.describe("homepage", () => {
     let heroSection = page.locator("#hero");
     await heroSection.waitFor({ state: "visible" });
 
-    await expectNoAxeViolations(page, "homepage", {
-      exclude: [{ ids: "color-contrast", reason: COLOR_CONTRAST_REASON }],
-    });
+    // No color-contrast exclusion needed here: this round's theme-token fix
+    // (docs/backlog.md row 39) resolved it, and this route has no
+    // `.dx-code-block` to need the one remaining, narrower exclusion for.
+    await expectNoAxeViolations(page, "homepage");
   });
 });
 
@@ -36,7 +30,7 @@ test.describe("details", () => {
     await componentSection.waitFor({ state: "visible" });
 
     await expectNoAxeViolations(page, "component/calendar", {
-      exclude: [{ ids: "color-contrast", reason: COLOR_CONTRAST_REASON }],
+      excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
   });
 });

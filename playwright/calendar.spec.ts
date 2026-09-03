@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
@@ -277,7 +277,7 @@ test.describe("Axe automated scan", () => {
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=calendar&", { timeout: 20 * 60 * 1000 });
     await page.waitForLoadState("networkidle");
-    await expectNoAxeViolations(page, "calendar: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "calendar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("a day focused via keyboard has no automatically detectable a11y issues", async ({ page }) => {
@@ -293,7 +293,7 @@ test.describe("Axe automated scan", () => {
     await nextButton.click();
     await page.keyboard.press("Tab");
     await expect(page.locator('[data-month="current"]:focus').first()).toBeVisible();
-    await expectNoAxeViolations(page, "calendar: a day focused", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "calendar: a day focused", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

@@ -7,7 +7,8 @@ use crate::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
-    merge_attributes, use_animated_open, use_controlled, use_id_or, use_unique_id,
+    has_own_accessible_name, merge_attributes, use_animated_open, use_controlled, use_id_or,
+    use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
@@ -613,18 +614,34 @@ fn DropdownMenuContentRendered(
     // ensure_anchor_positioning_styles`) selects on, sidestepping
     // `manganis-core`'s `css_module_parser` not scoping classes inside
     // `@supports` bodies (`docs/issues/css-module-supports-scoping.md`).
+    // docs/backlog.md row 25's own construction, applied here too (this
+    // component already carried `aria-labelledby`, but as a bare literal
+    // alongside `..attributes` -- the duplicate-attribute hazard
+    // `merge_attributes` exists to prevent, `docs/conformance-harness.md`
+    // hydration-parity Rule 4, if a caller's own attribute list ever
+    // carried a same-named, empty-valued `aria-label`/`aria-labelledby`;
+    // see `has_own_accessible_name`'s own doc). Only contributed when the
+    // caller hasn't already named this content some other way, and as its
+    // own `merge_attributes` input rather than a literal.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.trigger_id}"
+        })
+    };
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
             class: "dx-anchor-dropdown-menu"
         }),
+        labelledby,
     ]);
 
     rsx! {
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
-            aria_labelledby: "{ctx.trigger_id}",
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             style: crate::top_layer::position_anchor_style(&id),
             "data-state": if open() { "open" } else { "closed" },
@@ -659,11 +676,22 @@ fn DropdownMenuContentRendered(
 ) -> Element {
     let ctx: DropdownMenuContext = use_context();
 
+    // See the web arm's identical construction above (docs/backlog.md row
+    // 25) for why this is conditional and routed through `merge_attributes`
+    // rather than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
+
     rsx! {
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
-            aria_labelledby: "{ctx.trigger_id}",
             "data-state": if (ctx.open)() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 // The user is starting a click inside the dropdown menu.
@@ -763,6 +791,18 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
     rsx! {
         div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
+            // Found investigating an axe `color-contrast` finding on this
+            // pattern class's disabled state (docs/backlog.md row 39): the
+            // `data-disabled` styling hook alone leaves this `role=
+            // "menuitem"` exposed to assistive tech as a perfectly normal,
+            // active item -- no `aria-disabled`, so nothing here signals
+            // "not currently interactive," which is exactly the missing
+            // piece a screen reader user needs, and exactly why axe read
+            // this item's low-opacity muted text as a real, active-item
+            // contrast defect rather than an exempt disabled one.
+            // `ContextMenuItem` already sets this (`context_menu.rs`);
+            // this was the same gap here and in `MenubarItem`.
+            aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
 

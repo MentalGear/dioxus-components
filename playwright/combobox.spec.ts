@@ -1,5 +1,5 @@
 import { test, expect, devices, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 const URL = "http://127.0.0.1:8080/component/?name=combobox&";
 const variantUrl = (variant: string) =>
@@ -292,7 +292,7 @@ test.describe("Axe automated scan", () => {
     test("loaded (listbox closed) has no automatically detectable a11y issues", async ({ page }) => {
         await page.goto(URL, { timeout: 20 * 60 * 1000 });
         await page.waitForLoadState('networkidle');
-        await expectNoAxeViolations(page, "combobox: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+        await expectNoAxeViolations(page, "combobox: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
 
     test("listbox open has no automatically detectable a11y issues", async ({ page }) => {
@@ -302,6 +302,6 @@ test.describe("Axe automated scan", () => {
         await trigger.focus();
         await page.keyboard.press("ArrowDown");
         await expect(content(page)).toBeVisible();
-        await expectNoAxeViolations(page, "combobox: listbox open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+        await expectNoAxeViolations(page, "combobox: listbox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
 });

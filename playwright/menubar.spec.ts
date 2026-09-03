@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test("pointer navigation", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=menubar&", { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -62,7 +62,7 @@ test.describe("Axe automated scan", () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole("menuitem", { name: "File" })).toBeVisible();
-    await expectNoAxeViolations(page, "menubar: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "menubar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   // docs/backlog.md row 25: Menubar's role="menu" popups carry no
@@ -73,6 +73,6 @@ test.describe("Axe automated scan", () => {
     await page.getByRole("menuitem", { name: "File" }).click();
     const fileMenuContent = page.getByRole("menu").filter({ has: page.getByRole("menuitem", { name: "New" }) }).last();
     await expect(fileMenuContent).toHaveAttribute("data-state", "open");
-    await expectNoAxeViolations(page, "menubar: File menu open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "menubar: File menu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

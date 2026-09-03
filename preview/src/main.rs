@@ -1375,7 +1375,14 @@ fn BlockStats() -> Element {
                 }
                 Badge {
                     variant: BadgeVariant::Secondary,
-                    style: "background-color: rgba(34, 197, 94, 0.18); color: rgb(21, 128, 61);",
+                    // axe `color-contrast` (docs/backlog.md row 39, filed
+                    // 2026-09-03): the previous text color, rgb(21, 128,
+                    // 61), measured 4.17:1 against this badge's rendered
+                    // background (#d4f1df, the flattened
+                    // rgba(34,197,94,0.18) over the page) -- below WCAG's
+                    // 4.5:1. rgb(19, 115, 55) is the same green, ~10%
+                    // darker, and clears 4.5:1 (measured 4.94:1).
+                    style: "background-color: rgba(34, 197, 94, 0.18); color: rgb(19, 115, 55);",
                     "+12.4%"
                 }
             }

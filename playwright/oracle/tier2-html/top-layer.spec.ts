@@ -151,7 +151,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -371,42 +371,42 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await gotoFixture(page);
     await page.locator("#clip-tooltip-trigger").hover();
     await expect(page.locator("#clip-tooltip-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: Tooltip open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: Tooltip open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("HoverCard content open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-hovercard-trigger").hover();
     await expect(page.locator("#clip-hovercard-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: HoverCard open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: HoverCard open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("Popover (non-modal) content open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-popover-trigger").click();
     await expect(page.locator("#clip-popover-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: Popover open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: Popover open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("DropdownMenu content open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-dropdown-menu-trigger").click();
     await expect(page.locator("#clip-dropdown-menu-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: DropdownMenu open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: DropdownMenu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("ContextMenu content open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-context-menu-trigger").click({ button: "right" });
     await expect(page.locator("#clip-context-menu-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: ContextMenu open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: ContextMenu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("Menubar content open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-menubar-trigger").click();
     await expect(page.locator("#clip-menubar-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: Menubar open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: Menubar open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   // KNOWN RED, filed rather than fixed (docs/backlog.md): `SelectList`'s
@@ -426,7 +426,7 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await gotoFixture(page);
     await page.locator("#clip-select-trigger").click();
     await expect(page.locator("#clip-select-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: Select open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: Select open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("Combobox listbox open has no automatically detectable a11y issues", async ({ page }) => {
@@ -434,7 +434,7 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await page.locator("#clip-combobox-trigger").click();
     await page.keyboard.press("ArrowDown");
     await expect(page.locator("#clip-combobox-content")).toBeVisible();
-    await expectNoAxeViolations(page, "top-layer fixture: Combobox open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, "top-layer fixture: Combobox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 

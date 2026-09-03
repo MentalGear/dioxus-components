@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('pointer navigation', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -341,7 +341,7 @@ test.describe('Axe automated scan', () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'right click here' })).toBeVisible();
-    await expectNoAxeViolations(page, 'context-menu: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'context-menu: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   // docs/backlog.md row 25: ContextMenu's role="menu" popup carries no
@@ -352,6 +352,6 @@ test.describe('Axe automated scan', () => {
     await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'right click here' }).click({ button: 'right' });
     await expect(page.getByRole('menu')).toBeVisible();
-    await expectNoAxeViolations(page, 'context-menu: menu open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'context-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

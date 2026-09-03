@@ -880,6 +880,39 @@ pub(crate) fn fold_style_attributes(attrs: Vec<Attribute>) -> (Option<String>, V
     (if style.is_empty() { None } else { Some(style) }, rest)
 }
 
+/// Whether `attributes` already gives its element its own accessible name
+/// (a non-empty `aria-label` or `aria-labelledby`).
+///
+/// Shared by every popup-content component that defaults its own
+/// `aria-labelledby` from its trigger's id (`DropdownMenuContent`,
+/// `ContextMenuContent`, `MenubarContent`, `SelectList`) so that default
+/// never fights a caller-supplied name -- `SelectList`'s own doc example
+/// demonstrates `SelectList { aria_label: "...", ... }` as a supported
+/// override, and ARIA's own precedence rules mean an unconditional
+/// `aria-labelledby` would otherwise take priority over that `aria-label`
+/// and silently shadow it.
+///
+/// Deliberately more than a name-presence check: `#[props(extends =
+/// GlobalAttributes)]` lets a themed wrapper thread an `aria_label` prop
+/// through unconditionally (`Some("")`/absent or not), so an attribute
+/// named `aria-label` can be *present* in `attributes` with an
+/// empty/`AttributeValue::None` value even when no real caller ever
+/// supplied one (confirmed by execution: this crate's own themed `Select`
+/// wrapper, `preview/src/components/select/component.rs`, does exactly
+/// this). Only a genuinely non-empty text value counts as caller-supplied.
+pub(crate) fn has_own_accessible_name(attributes: &[Attribute]) -> bool {
+    attributes.iter().any(|a| {
+        (a.name == "aria-label" || a.name == "aria-labelledby")
+            && match &a.value {
+                Text(s) => !s.is_empty(),
+                dioxus_core::AttributeValue::None => false,
+                // Any other concrete (non-text, non-empty) value counts as
+                // caller-supplied.
+                _ => true,
+            }
+    })
+}
+
 fn join_class(a: &str, b: &str) -> String {
     let (a, b) = (a.trim(), b.trim());
     if !a.is_empty() && !b.is_empty() {

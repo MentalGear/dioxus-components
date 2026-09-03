@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 async function sliderTrackPoint(track: Locator, frac: number) {
   const box = await track.boundingBox();
@@ -368,7 +368,7 @@ test.describe('Axe automated scan', () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('slider', { name: 'Demo Slider' })).toBeVisible();
-    await expectNoAxeViolations(page, 'slider: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'slider: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('value changed has no automatically detectable a11y issues', async ({ page }) => {
@@ -377,6 +377,6 @@ test.describe('Axe automated scan', () => {
     await thumb.focus();
     await page.keyboard.press('ArrowRight');
     await expect(thumb).toHaveAttribute('aria-valuenow', '51');
-    await expectNoAxeViolations(page, 'slider: value changed', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'slider: value changed', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
+import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 
 test('hover navigation', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=navbar&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -55,7 +55,7 @@ test.describe('Axe automated scan', () => {
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('menuitem', { name: 'Inputs' })).toBeVisible();
-    await expectNoAxeViolations(page, 'navbar: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'navbar: loaded', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('Inputs dropdown open has no automatically detectable a11y issues', async ({ page }) => {
@@ -63,6 +63,6 @@ test.describe('Axe automated scan', () => {
     const inputsNav = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: 'Inputs' }) }).first();
     await inputsNav.hover();
     await expect(inputsNav).toHaveAttribute('data-state', 'open');
-    await expectNoAxeViolations(page, 'navbar: Inputs dropdown open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+    await expectNoAxeViolations(page, 'navbar: Inputs dropdown open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
