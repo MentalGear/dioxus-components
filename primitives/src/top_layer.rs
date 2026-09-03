@@ -740,8 +740,59 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// if the primary placement would overflow the relevant viewport edge, it
 /// uses the flipped placement instead. This closes the "legacy engines get
 /// no flip at all" gap docs/backlog.md row 10 notes alongside the CSS
-/// addition, with the same deliberately narrow scope: flip only, never
-/// shift or resize (that remainder of Phase 5 is still open).
+/// addition. Resizing to fit stays out of scope (that remainder of Phase 5
+/// is still open) -- but see "Inline-axis shift (2026-09-03)" below for the
+/// one piece of shift this function *does* now do.
+///
+/// ## Inline-axis shift (2026-09-03, user device report)
+///
+/// User report (iOS 18 Safari, no CSS Anchor Positioning there at all --
+/// confirmed by the report itself, and the exact engine this whole function
+/// exists for): the `ColorPicker` popup on the home page's widget masonry
+/// clips against the viewport's edge on a small screen, with no attempt to
+/// reposition it. Reproduced in this sandbox's Chromium via the same
+/// no-anchor-engine simulation `top-layer.spec.ts` Rule 11 already uses
+/// (`stripAnchorSupportsBlock`, `MOBILE_VIEWPORT`) -- confirmed by
+/// execution: the masonry `ColorPicker`'s content landed at
+/// `left: -2.97px` (a few pixels past the *left* edge in this sandbox's
+/// exact layout -- the reported direction depends only on which side of a
+/// narrow viewport the trigger happens to sit on, not on anything specific
+/// to "right"), and two of this file's own `edge-bottom-*` fixture cases
+/// (`Tooltip`, non-modal `Popover`) landed at `left: -192px`/`-194px` --
+/// far enough that `flip-block` (the only fallback this contract declared
+/// before this fix) could never have been the cause: `side="bottom"` only
+/// ever flips to `side="top"`, which changes `top`, never `left`.
+///
+/// Root cause: flip (both the CSS `position-try-fallbacks` primitive this
+/// function mirrors, and its own pre-existing viewport-math equivalent just
+/// above) only ever swaps `side` to its axis opposite -- block for
+/// top/bottom, inline for left/right (the `opposite` map above). For a
+/// `side="top"`/`side="bottom"` placement, the horizontal position comes
+/// entirely from `align` (start/center/end, computed once against the
+/// trigger's own rect in `place()` above) and was never once checked
+/// against the viewport at all -- not by CSS (this crate's `@supports`
+/// block declares no shift primitive), and not by this function. A
+/// center-aligned overlay wider than the room its trigger happens to have
+/// on one side had no correction of any kind, on either engine.
+///
+/// Fixed *only* on this JS-fallback path (below, in the "neither matches"
+/// branch): after the existing flip decision, `target.left` is clamped into
+/// `[EDGE_MARGIN, vw - EDGE_MARGIN - cw]` (falling back to flush against the
+/// left edge if the content is wider than the viewport has room for at
+/// all -- resizing to fit stays out of scope, matching the flip-only note
+/// above). Deliberately not mirrored into the CSS `@supports` contract in
+/// this round: no `position-try-fallbacks` keyword shifts along an axis the
+/// way this function's clamp does (CSS's own analogous primitive,
+/// `position-area`/`margin: auto`-driven "shift", is a materially larger
+/// change this fix does not need to make in order to close the reported
+/// device's gap) -- so a genuinely CSS-Anchor-Positioning-conforming engine
+/// (this sandbox's Chromium among them) is untouched by this fix, exactly
+/// as the existing `matches()` early-return above already keeps it for
+/// flip. That is not a gap for the *reported* device, though: iOS Safari
+/// (per the report) has no CSS Anchor Positioning support at all, so it
+/// always takes this exact fallback path regardless. `top-layer.spec.ts`
+/// Rule 12 is the regression oracle, reusing Rule 11's own no-anchor-engine
+/// simulation.
 ///
 /// ## Scroll/resize tracking (decision 2026-09-01, revised 2026-09-02)
 ///
@@ -786,11 +837,14 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// crate uses (see `use_popover_sync` above) -- when `open` goes false or
 /// this component unmounts; nothing is left listening on `window` (or
 /// `visualViewport`, added 2026-09-02) past the overlay's own lifetime.
-/// Deliberately narrow, matching the flip-only scope above it: no
-/// shift/collision-avoidance beyond the existing flip, and no
-/// `ResizeObserver` on the trigger or content elements -- only `window`
-/// (and, since 2026-09-02, `visualViewport`) `scroll`/`resize`, which is
-/// all a *position* (not size) correction needs.
+/// Deliberately narrow: no `ResizeObserver` on the trigger or content
+/// elements -- only `window` (and, since 2026-09-02, `visualViewport`)
+/// `scroll`/`resize`, which is all a *position* (not size) correction
+/// needs. Re-running `reposition()` on every tracked event re-applies the
+/// inline-axis shift (2026-09-03, see that section below) exactly as it
+/// re-applies flip -- both live inside the same function, so a scroll or
+/// resize that changes how much room the trigger has re-clamps the same way
+/// the initial placement does, with no separate wiring needed.
 ///
 /// ## iOS keyboard (2026-09-02)
 ///
@@ -1071,9 +1125,7 @@ pub(crate) fn use_anchor_position_fallback(
                 // already-open overlay (2026-09-02 fix, gap 2 -- see this
                 // function's doc). Make the same flip decision from plain
                 // viewport math, so a non-anchor engine gets flip parity
-                // with the CSS path -- flip only, no shift/size
-                // (docs/backlog.md row 10's remaining Phase 5 scope stays
-                // open).
+                // with the CSS path.
                 usingFallback = true;
                 let target = primary;
                 if (side === 'top' && primary.top < 0) {{
@@ -1085,6 +1137,48 @@ pub(crate) fn use_anchor_position_fallback(
                 }} else if (side === 'right' && primary.left + cw > vw) {{
                     target = flipped;
                 }}
+
+                // 2026-09-03 inline shift/clamp (user device report, iOS 18
+                // Safari, no CSS Anchor Positioning there at all -- see this
+                // function's doc, "Inline-axis shift (2026-09-03)"): flip
+                // alone only ever swaps `side` to its opposite on the *same*
+                // axis (block for top/bottom, inline for left/right -- the
+                // `opposite` map above). It does nothing for the *other*
+                // axis's placement -- concretely, a `side="bottom"`/
+                // `side="top"` placement's horizontal position comes only
+                // from `align` (start/center/end, computed once against the
+                // trigger in `place()` above) and never once considers the
+                // viewport at all, flip or otherwise. A center-aligned
+                // overlay wider than the room its trigger happens to have on
+                // one side (a trigger near a viewport edge, exactly the
+                // reported ColorPicker case on a narrow screen) always
+                // overflowed that edge with no correction of any kind.
+                // Clamping `target.left` into the viewport, with a small
+                // edge margin, closes that gap the same way a `position-
+                // try-fallbacks: ..., shift-inline` CSS primitive would for
+                // a conforming engine (not declared in this crate's CSS
+                // contract today -- see that doc section for why this stays
+                // JS-fallback-only for now, matching the reported engine
+                // exactly: iOS Safari has no CSS Anchor Positioning at all,
+                // so it always runs this exact path). Applied after the
+                // flip decision above, on whichever `target` that decision
+                // already picked -- shift is a final safety net on top of
+                // flip, never a replacement for it.
+                const EDGE_MARGIN = 4;
+                if (target.left < EDGE_MARGIN) {{
+                    target = {{ top: target.top, left: EDGE_MARGIN }};
+                }} else if (target.left + cw > vw - EDGE_MARGIN) {{
+                    // `Math.max`, not a bare subtraction: on a viewport too
+                    // narrow for the content at all (`cw` alone exceeds
+                    // `vw - 2 * EDGE_MARGIN`), the two clamp branches
+                    // disagree about which edge to honor -- resizing to fit
+                    // is out of scope (shift only, not size, matching the
+                    // existing flip-only scope note this replaces), so the
+                    // left edge wins and the content simply runs past the
+                    // right edge rather than past both.
+                    target = {{ top: target.top, left: Math.max(EDGE_MARGIN, vw - EDGE_MARGIN - cw) }};
+                }}
+
                 content.style.position = 'fixed';
                 content.style.margin = '0';
                 content.style.inset = 'auto';

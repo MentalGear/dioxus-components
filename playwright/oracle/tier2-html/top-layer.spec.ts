@@ -1463,3 +1463,121 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
     }
   });
 });
+
+/**
+ * Rule 12 — inline-axis shift (2026-09-03, user device report: the
+ * `ColorPicker` popup on the home page's widget masonry clips against the
+ * viewport's edge on a small screen).
+ *
+ * Citation: same as Rule 11 above -- this repo's own anchored-overlay
+ * placement contract (`[data-side]`/`[data-align]`, `use_anchor_position_
+ * fallback`), not a normative WHATWG/W3C MUST. The platform primitive this
+ * mirrors is W3C CSS Anchor Positioning's own collision-avoidance family
+ * (`position-try-fallbacks`, <https://www.w3.org/TR/css-anchor-position-1/#fallback-var>),
+ * of which this crate's `@supports` block declares only the flip members
+ * (`flip-block`, `flip-inline`, Rules 5/6 above) -- no shift primitive, on
+ * either engine, before this fix.
+ *
+ * Root cause (see `use_anchor_position_fallback`'s doc, "Inline-axis shift
+ * (2026-09-03)", `primitives/src/top_layer.rs`): flip only ever swaps `side`
+ * to its own axis's opposite (block for top/bottom, inline for left/right).
+ * A `side="top"`/`side="bottom"` placement's horizontal position comes
+ * entirely from `align`, computed once against the trigger and never
+ * checked against the viewport at all -- so a center-aligned overlay wider
+ * than the room its trigger has on one side simply ran past that edge, on
+ * an engine with no CSS Anchor Positioning (the reported device, iOS 18
+ * Safari; simulated here exactly as Rule 11 does).
+ *
+ * Two fixture halves, both confirmed by execution to reproduce (RED before
+ * the fix):
+ *   - The reported component itself: the widget-masonry `ColorPicker` on
+ *     the home page (`/`), which sits near the *left* edge of a narrow
+ *     viewport -- its `side="bottom"`/`align="center"` (defaults) content
+ *     is wide enough to run a few pixels past the left edge there. Only the
+ *     horizontal bounds are asserted for this case, deliberately: opening
+ *     this specific component's popover independently grabs focus onto an
+ *     internal drag-thumb (`ColorArea`'s `AreaThumb`, `color_picker.rs`),
+ *     which this session found (by execution) drives a large, pre-existing,
+ *     unrelated vertical scroll on this fixture regardless of this fix --
+ *     not something this rule is about, and not new here (confirmed by
+ *     execution against the pre-fix build too) -- tracked separately,
+ *     `docs/backlog.md`.
+ *   - Two of this file's own `edge-bottom-*` fixture cases (`Tooltip`,
+ *     non-modal `Popover`) -- confirmed by execution to land at
+ *     `left: -192px`/`-194px` under the same simulation, a much larger
+ *     margin than the ColorPicker case and free of that component's own
+ *     scroll confound, so both axes are asserted here. `HoverCard` is
+ *     included too for the same reason Rule 5 includes all three: it
+ *     already stays within bounds here (confirmed by execution), so this
+ *     is a passing regression guard for it, not a second red case.
+ */
+test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider than the room its trigger has on one side stays within the viewport horizontally (no CSS Anchor Positioning engine)", () => {
+  test("ColorPicker popover (home page widget masonry) stays within the viewport horizontally", async ({ page }) => {
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    await stripAnchorSupportsBlock(page);
+
+    const trigger = page.getByRole("button", { name: /Color picker/i }).first();
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    const content = page.getByRole("dialog");
+    await expect(content).toBeVisible();
+    // Let the settle loop (`use_anchor_position_fallback`'s own
+    // content-size-growth correction, see that function's doc) finish
+    // before reading a final rect.
+    await page.waitForTimeout(300);
+
+    // Horizontal bounds only -- see this rule's header doc for why the
+    // vertical axis is deliberately not asserted for this specific case.
+    const rect = await content.evaluate((el) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      return { left: r.left, right: r.right, width: r.width };
+    });
+    const debug = JSON.stringify({ rect, viewportWidth: MOBILE_VIEWPORT.width });
+    expect(rect.left, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+    expect(rect.right, debug).toBeLessThanOrEqual(MOBILE_VIEWPORT.width + EDGE_TOLERANCE);
+  });
+
+  const EDGE_BOTTOM_CASES: { name: string; triggerId: string; contentId: string; open: (page: Page) => Promise<void> }[] = [
+    {
+      name: "Tooltip",
+      triggerId: "edge-bottom-tooltip-trigger",
+      contentId: "edge-bottom-tooltip-content",
+      open: async (page) => {
+        await page.locator("#edge-bottom-tooltip-trigger").hover();
+      },
+    },
+    {
+      name: "HoverCard",
+      triggerId: "edge-bottom-hovercard-trigger",
+      contentId: "edge-bottom-hovercard-content",
+      open: async (page) => {
+        await page.locator("#edge-bottom-hovercard-trigger").hover();
+      },
+    },
+    {
+      name: "Popover (non-modal)",
+      triggerId: "edge-bottom-popover-trigger",
+      contentId: "edge-bottom-popover-content",
+      open: async (page) => {
+        await page.locator("#edge-bottom-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+      },
+    },
+  ];
+
+  for (const kase of EDGE_BOTTOM_CASES) {
+    test(`${kase.name} (near-left-edge, center-aligned) stays within the viewport horizontally`, async ({ page }) => {
+      await page.setViewportSize(MOBILE_VIEWPORT);
+      await gotoFixture(page);
+      await stripAnchorSupportsBlock(page);
+      await kase.open(page);
+      await expect(page.locator(`#${kase.contentId}`)).toBeVisible();
+
+      const content = await rectOf(page, `#${kase.contentId}`);
+      const viewport = await viewportSize(page);
+      const debug = JSON.stringify({ overlay: kase.name, content, viewport });
+      expect(content.left, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+      expect(content.right, debug).toBeLessThanOrEqual(viewport.width + EDGE_TOLERANCE);
+    });
+  }
+});
