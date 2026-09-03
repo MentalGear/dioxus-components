@@ -5,6 +5,8 @@
 }
 
 .dx-dropdown-menu-trigger {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   padding: 8px 18px;
   border: none;
   border-radius: 0.5rem;
@@ -107,6 +109,8 @@
 }
 
 .dx-dropdown-menu-item {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   padding: 8px 12px;

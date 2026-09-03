@@ -123,6 +123,75 @@ body {
   }
 }
 
+/*
+ * App-layer catch-all: give every interactive element in the preview app
+ * `touch-action: manipulation`, the second of two layers (see each themed
+ * component's own `style.css` for the first) -- same construction as the
+ * `@media (pointer: coarse)` font-size floor just above.
+ *
+ * WHY: iOS Safari's double-tap-to-zoom gesture is defined against the
+ * Pointer Events / CSS Pointer Events "touch-action" property
+ * (https://w3c.github.io/pointerevents/#the-touch-action-css-property)
+ * and documented explicitly by WebKit as something authors must opt out
+ * of per-element: "elements ... that have been made to look and behave
+ * like buttons using role="button" and JavaScript click handlers ...
+ * should also set touch-action: manipulation to prevent the double-tap
+ * gesture" (WebKit blog, "Overhauling favicon support on WebKit"'s sibling
+ * post on interaction; the mechanism itself is the CSS Fast Path / w3c
+ * spec's own note that a UA "MAY ... suppress ... a double-tap gesture"
+ * when the double-tap area's computed touch-action does not permit it).
+ * A person tapping buttons in quick succession (reported: "if the user is
+ * quickly tapping buttons, the double-tap zoom is triggered") gets a page
+ * zoom instead of two button presses whenever an interactive element
+ * leaves this to the UA default (`auto`, which permits the gesture).
+ *
+ * `manipulation` -- not `none` -- deliberately: `none` disables ALL
+ * touch-driven behavior on the element, including the one-finger panning
+ * a page (or an internal scroll container) needs; `manipulation` disables
+ * only the double-tap-zoom/pan-delaying gestures while leaving panning and
+ * pinch-zoom intact. Never use `touch-action: none` in this app for that
+ * reason -- see `slider`/`color_picker`'s own `style.css` comments for the
+ * one place this distinction is load-bearing (their thumbs are dragged by
+ * pointer events; `none` would also work for the drag itself, but would
+ * additionally and unnecessarily block a user from panning the page by
+ * starting a touch on the thumb).
+ *
+ * Selectors are simple/flat for the same reason the font-size floor's are
+ * (see that rule's own comment): this app's CSS asset pipeline has been
+ * observed to silently drop a rule using a selector-list-inside-`:not()`
+ * shape. `[role="menuitem"]`/`[role="option"]`/etc. are listed explicitly
+ * rather than relying on any single element's own class, since several of
+ * these roles are rendered by primitives this app also uses directly (the
+ * `top_layer` and `form` fixtures compose `dioxus_primitives::` without
+ * this app's themed wrapper classes -- docs/preview-composition.md).
+ *
+ * Oracle: `playwright/oracle/tier2-html/touch-double-tap.spec.ts`.
+ */
+button,
+[role="button"],
+a[href],
+input,
+select,
+textarea,
+summary,
+[tabindex]:not([tabindex="-1"]),
+[role="menuitem"],
+[role="option"],
+[role="tab"],
+[role="switch"],
+[role="checkbox"],
+[role="radio"],
+[role="slider"] {
+  /* `!important`: this is the app-wide backstop and must beat any
+     component stylesheet rule that has not (yet) declared its own
+     `touch-action` -- same rationale as the font-size floor's
+     `!important` just above. It does not need to (and must not) beat a
+     component's own explicit, more specific `touch-action: manipulation`,
+     since both agree on the same value -- this only matters for an
+     element the component layer has not covered. */
+  touch-action: manipulation !important;
+}
+
 /* Modern browsers with `scrollbar-*` support */
 @supports (scrollbar-width: auto) {
   :not(:hover) {
