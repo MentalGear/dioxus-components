@@ -357,6 +357,29 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     const result = await escapesClip(page, "#clip-combobox-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
   });
+
+  // 2026-09-03, finding C: `NavbarNav`'s web arm -> `popover="auto"`
+  // (`NavbarContentRendered`, `navbar.rs`) -- `Navbar` never migrated onto
+  // the top-layer engine during Migration A (it has no `top_layer`/
+  // `use_anchor_position_fallback`/`popover` reference at all before this
+  // fix). Written RED first against the pre-migration plain,
+  // `position: absolute`-only div (confirmed by execution: it clipped at
+  // the 60px ancestor exactly like `Menubar`'s identical pre-migration
+  // shape did).
+  test("Navbar content escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    // `.hover()`, not `.click()` -- `navbar.spec.ts`'s own suite opens this
+    // exact way (`NavbarNav`'s `onmouseenter`); a plain `.click()` also
+    // synthesizes the hover Playwright performs to reach the element first,
+    // which opens it, immediately followed by the click's own `pointerdown`
+    // toggling it back closed (`NavbarTrigger`'s own toggle-on-pointerdown)
+    // -- a pre-existing interaction, confirmed by execution against
+    // unmodified `main`, not something this migration changed.
+    await page.locator("#clip-navbar-trigger").hover();
+    await expect(page.locator("#clip-navbar-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-navbar-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
 });
 
 /**
@@ -435,6 +458,14 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await page.keyboard.press("ArrowDown");
     await expect(page.locator("#clip-combobox-content")).toBeVisible();
     await expectNoAxeViolations(page, "top-layer fixture: Combobox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // 2026-09-03, finding C: added alongside the Navbar migration.
+  test("Navbar content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-navbar-trigger").hover();
+    await expect(page.locator("#clip-navbar-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: Navbar open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 
@@ -656,6 +687,25 @@ test.describe("Rule 5 — block-axis flip: a bottom-edge trigger with side=\"bot
     await page.locator("#edge-bottom-popover-trigger").evaluate((el) => (el as HTMLElement).click());
     await expect(page.locator("#edge-bottom-popover-content")).toBeVisible();
     await assertFlippedAbove(page, "#edge-bottom-popover-trigger", "#edge-bottom-popover-content");
+  });
+
+  // 2026-09-03, finding C (user report: "why does the Navbar menu not
+  // auto-flip when it gets cut off at the bottom/top like the other
+  // menus?"). Unlike the three cases above, `NavbarContent` has no `side`
+  // prop (always below/start-aligned, the same fixed convention
+  // `MenubarContent`/`DropdownMenuContent` use) -- so this pins the
+  // *trigger* at the bottom edge instead, the shape a real page footer or
+  // bottom nav bar puts a `Navbar` in. Written RED first against the
+  // pre-migration plain, `position: absolute; top: 100%`-only div
+  // (confirmed by execution: no flip at all -- content rendered straight
+  // off the bottom of the viewport, uncorrected).
+  test("Navbar content flips above its bottom-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    // `.hover()`, not `.click()` -- see the identical comment on this
+    // fixture's Rule 1 "Navbar content escapes the clip" case above.
+    await page.locator("#edge-bottom-navbar-trigger").hover();
+    await expect(page.locator("#edge-bottom-navbar-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-navbar-trigger", "#edge-bottom-navbar-content");
   });
 });
 
@@ -1235,6 +1285,26 @@ const ANCHORED_OVERLAYS: AnchoredOverlay[] = [
     open: async (page) => {
       await page.locator("#clip-combobox-trigger").click();
       await page.keyboard.press("ArrowDown");
+    },
+  },
+  {
+    // 2026-09-03, finding C: added alongside the Navbar migration --
+    // `use_anchor_position_fallback` is a shared function, so the same iOS
+    // keyboard/self-overlap contract Rule 11 already checks for every other
+    // `dx-anchor-*` consumer must hold for this one too, not just the
+    // flip/clip rules finding C's own construction primarily targets.
+    // `.hover()`, not `.click()` -- see the identical comment on this
+    // fixture's Rule 1 "Navbar content escapes the clip" case; `reengage`
+    // is needed for the same reason Tooltip/HoverCard above need it (a
+    // real, hover-driven overlay, not click/keyboard-driven).
+    name: "Navbar",
+    triggerId: "clip-navbar-trigger",
+    contentId: "clip-navbar-content",
+    open: async (page) => {
+      await page.locator("#clip-navbar-trigger").hover();
+    },
+    reengage: async (page) => {
+      await page.locator("#clip-navbar-trigger").hover();
     },
   },
 ];

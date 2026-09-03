@@ -71,16 +71,17 @@ thread_local! {
 /// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
 /// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
 /// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`/
-/// `dx-anchor-select`/`dx-anchor-combobox` (Migration A slice 3/3,
-/// `select/components/list.rs`'s `SelectListRendered` and
-/// `combobox/components/list.rs`'s `ComboboxListRendered`) content
-/// everywhere in the app, with no per-page CSS to remember.
+/// `dx-anchor-navbar`/`dx-anchor-select`/`dx-anchor-combobox` (Migration A
+/// slice 3/3, `select/components/list.rs`'s `SelectListRendered` and
+/// `combobox/components/list.rs`'s `ComboboxListRendered`; `dx-anchor-navbar`
+/// added 2026-09-03, finding C -- `navbar.rs`'s `NavbarContentRendered`)
+/// content everywhere in the app, with no per-page CSS to remember.
 ///
 /// Call this once per overlay content mount -- [`use_anchor_position_fallback`]
 /// does, since every current `dx-anchor-*` consumer (`tooltip.rs`,
 /// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, `menubar.rs`,
-/// `select/components/list.rs`, `combobox/components/list.rs`, and
-/// anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
+/// `navbar.rs`, `select/components/list.rs`, `combobox/components/list.rs`,
+/// and anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
 /// already calls that hook. A future
 /// `dx-anchor-*` consumer that doesn't call that hook for some reason should
 /// call this directly instead.
@@ -177,7 +178,7 @@ fn anchor_positioning_inject_js() -> String {
 #[cfg(feature = "web")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 :where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-popover:modal, .dx-anchor-dropdown-menu[popover],
-  .dx-anchor-menubar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
+  .dx-anchor-menubar[popover], .dx-anchor-navbar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
   margin: 0;
   inset: auto;
 }
@@ -188,6 +189,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal,
   .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover],
+  .dx-anchor-navbar[popover],
   .dx-anchor-select[popover],
   .dx-anchor-combobox[popover] {
     position: fixed;
@@ -202,6 +204,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"],
   .dx-anchor-dropdown-menu[popover][data-side="top"],
   .dx-anchor-menubar[popover][data-side="top"],
+  .dx-anchor-navbar[popover][data-side="top"],
   .dx-anchor-select[popover][data-side="top"],
   .dx-anchor-combobox[popover][data-side="top"] {
     bottom: anchor(top);
@@ -215,6 +218,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"],
   .dx-anchor-dropdown-menu[popover][data-side="right"],
   .dx-anchor-menubar[popover][data-side="right"],
+  .dx-anchor-navbar[popover][data-side="right"],
   .dx-anchor-select[popover][data-side="right"],
   .dx-anchor-combobox[popover][data-side="right"] {
     top: anchor(center);
@@ -228,6 +232,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"],
   .dx-anchor-menubar[popover][data-side="bottom"],
+  .dx-anchor-navbar[popover][data-side="bottom"],
   .dx-anchor-select[popover][data-side="bottom"],
   .dx-anchor-combobox[popover][data-side="bottom"] {
     top: anchor(bottom);
@@ -241,6 +246,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"],
   .dx-anchor-dropdown-menu[popover][data-side="left"],
   .dx-anchor-menubar[popover][data-side="left"],
+  .dx-anchor-navbar[popover][data-side="left"],
   .dx-anchor-select[popover][data-side="left"],
   .dx-anchor-combobox[popover][data-side="left"] {
     top: anchor(center);
@@ -290,6 +296,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="start"],
   .dx-anchor-select[popover][data-side="top"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
@@ -298,6 +305,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
@@ -310,6 +318,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="center"],
   .dx-anchor-select[popover][data-side="top"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
@@ -318,6 +327,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="center"] {
     left: anchor(center);
@@ -330,6 +340,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="end"],
   .dx-anchor-select[popover][data-side="top"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
@@ -338,6 +349,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
@@ -350,6 +362,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="start"],
   .dx-anchor-select[popover][data-side="left"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
@@ -358,6 +371,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="start"],
   .dx-anchor-select[popover][data-side="right"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
@@ -370,6 +384,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="center"],
   .dx-anchor-select[popover][data-side="left"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
@@ -378,6 +393,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="center"],
   .dx-anchor-select[popover][data-side="right"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
@@ -390,6 +406,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="end"],
   .dx-anchor-select[popover][data-side="left"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
@@ -398,6 +415,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="end"],
   .dx-anchor-select[popover][data-side="right"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);

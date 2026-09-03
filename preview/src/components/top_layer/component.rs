@@ -5,6 +5,7 @@ use dioxus_primitives::context_menu::{ContextMenu, ContextMenuContent, ContextMe
 use dioxus_primitives::dropdown_menu::{DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger};
 use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigger};
 use dioxus_primitives::menubar::{Menubar, MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger};
+use dioxus_primitives::navbar::{Navbar, NavbarContent, NavbarItem, NavbarNav, NavbarTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
 use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger, SelectValue};
@@ -191,6 +192,33 @@ pub fn TopLayerFixture() -> Element {
                                 index: 0usize,
                                 value: "one",
                                 "Option one"
+                            }
+                        }
+                    }
+
+                    // 2026-09-03, finding C: `NavbarNav`'s web arm ->
+                    // `popover="auto"` (`NavbarContentRendered`,
+                    // `navbar.rs`) -- `Navbar` never migrated onto the
+                    // top-layer engine during Migration A, so it never got
+                    // clipping escape, top-layer stacking, or (Rule 5-style
+                    // below) viewport-edge flip the way `DropdownMenu`/
+                    // `Menubar`/`Select` did. Written RED first against the
+                    // pre-migration plain, `position: absolute`-only div
+                    // (confirmed by execution: it clipped at the 60px
+                    // ancestor exactly like `Menubar`'s identical
+                    // pre-migration shape did).
+                    Navbar { id: "clip-navbar-root", aria_label: "Clip navbar test",
+                        NavbarNav { index: 0usize,
+                            NavbarTrigger { id: "clip-navbar-trigger", "Navbar trigger" }
+                            NavbarContent {
+                                id: "clip-navbar-content",
+                                style: "min-height: 100px;",
+                                NavbarItem {
+                                    index: 0usize,
+                                    value: "one".to_string(),
+                                    to: crate::Route::home(),
+                                    "Item one"
+                                }
                             }
                         }
                     }
@@ -467,6 +495,34 @@ pub fn TopLayerFixture() -> Element {
                             id: "edge-bottom-popover-content",
                             side: ContentSide::Bottom,
                             "Flips above its trigger when the preferred side runs off-viewport."
+                        }
+                    }
+
+                    // 2026-09-03, finding C: unlike `Tooltip`/`HoverCard`/
+                    // `PopoverContent` above, `NavbarContent` has no `side`
+                    // prop -- its placement is always below/start-aligned,
+                    // the same fixed convention `MenubarContent`/
+                    // `DropdownMenuContent` use (see `NavbarContentRendered`'s
+                    // doc, `navbar.rs`). So the flip case here is driven by
+                    // pinning the *trigger* at the bottom edge instead of by
+                    // an explicit `side` prop -- the same shape a real page
+                    // footer or bottom nav bar would put a `Navbar` in.
+                    // Written RED first against the pre-migration plain,
+                    // `position: absolute; top: 100%`-only div (confirmed by
+                    // execution: no flip of any kind, content rendered
+                    // straight off the bottom of the viewport).
+                    Navbar { id: "edge-bottom-navbar-root", aria_label: "Edge bottom navbar test",
+                        NavbarNav { index: 0usize,
+                            NavbarTrigger { id: "edge-bottom-navbar-trigger", "Bottom navbar" }
+                            NavbarContent {
+                                id: "edge-bottom-navbar-content",
+                                NavbarItem {
+                                    index: 0usize,
+                                    value: "one".to_string(),
+                                    to: crate::Route::home(),
+                                    "Flips above its trigger when the preferred side runs off-viewport."
+                                }
+                            }
                         }
                     }
 
