@@ -528,6 +528,12 @@ fn PopoverModalContent(
         "{} dx-anchor-popover",
         class.unwrap_or_else(|| "dx-popover-content".to_string())
     );
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
 
     rsx! {
         dialog {
@@ -536,7 +542,6 @@ fn PopoverModalContent(
             aria_modal: "true",
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
-            style: crate::top_layer::position_anchor_style(&id),
             class,
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
@@ -616,12 +621,17 @@ fn PopoverNonModalContent(
         "{} dx-anchor-popover",
         class.unwrap_or_else(|| "dx-popover-content".to_string())
     );
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
 
     rsx! {
         dialog {
             id: id.clone(),
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            style: crate::top_layer::position_anchor_style(&id),
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
             class,

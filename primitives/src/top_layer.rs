@@ -1419,6 +1419,62 @@ pub(crate) fn position_anchor_style(id: &str) -> String {
     format!("position-anchor: --dxa-{id};")
 }
 
+/// Fold [`position_anchor_style`] and a caller's own `style` into exactly
+/// one `style` attribute, then merge the rest of `attributes` on top.
+///
+/// Every anchored-content leaf (`TooltipContentRendered`,
+/// `HoverCardContentRendered`, `DropdownMenuContentRendered`,
+/// `MenubarContentRendered`, `PopoverModalContent`/`PopoverNonModalContent`,
+/// `SelectListRendered`, `ComboboxListRendered`) used to set
+/// `style: position_anchor_style(&id)` as a bare literal on the element
+/// while *also* spreading `..attributes` -- and a caller passing its own
+/// `style` (shorthand or plain, e.g. the `top_layer` preview fixture's
+/// `MenubarContent { style: "min-height: 100px;", .. }`) then produced two
+/// `style` attributes on one tag: the exact duplicate-attribute hazard
+/// `docs/conformance-harness.md` hydration-parity Rule 4 documents.
+/// `dioxus-ssr` keeps the *first* `style` it renders (`position-anchor` for
+/// these components), while the WASM client's `set_attribute` overwrites
+/// with the *last* one it applies (the caller's) -- so SSR and CSR silently
+/// disagree about which `style` wins, and on the client the anchor binding
+/// this whole module exists to set up is lost, breaking CSS Anchor
+/// Positioning without any error. `merge_attributes` alone cannot fix this:
+/// it dedupes by `(name, namespace)`, and a bare `style: "..."` literal (as
+/// written here) is a different attribute from the `attributes` list's own
+/// `style`/style-shorthand entries from its point of view, so plain
+/// `merge_attributes` never sees them as the same key to begin with.
+///
+/// So instead: run `attributes` through [`crate::fold_style_attributes`]
+/// first (same construction as `ContextMenuTrigger`'s touch-suppression
+/// style, `context_menu.rs`) to pull out whatever `style` the caller
+/// supplied -- shorthand props, a plain `style` literal, or both -- as one
+/// string, prepend `position_anchor_style(id)` to it (anchor binding first
+/// so the caller's own declarations, listed after, can still override any
+/// property they want without ever being able to drop the anchor binding
+/// itself), and merge that single resulting `style` attribute back in with
+/// everything else `fold_style_attributes` left untouched. Exactly one
+/// `style` attribute reaches the `rsx!` call either way, so SSR and CSR
+/// agree by construction and there is nothing left for Rule 4 to catch.
+///
+/// Call this as the last step before an anchored leaf's `rsx!` block, on
+/// whatever `attributes` variable would otherwise be spread with
+/// `..attributes` -- including one a call site already ran through its own
+/// `merge_attributes` for a marker class or a default `aria-labelledby`, so
+/// this never needs a second, separate merge pass for those. Drop the
+/// call site's own `style: position_anchor_style(&id)` literal once this is
+/// wired in; the returned list already carries that `style`.
+#[cfg(feature = "web")]
+pub(crate) fn anchored_content_attributes(id: &str, attributes: Vec<Attribute>) -> Vec<Attribute> {
+    let (caller_style, rest) = crate::fold_style_attributes(attributes);
+    let style = match caller_style {
+        Some(caller_style) => format!("{} {caller_style}", position_anchor_style(id)),
+        None => position_anchor_style(id),
+    };
+    crate::merge_attributes(vec![
+        dioxus_attributes::attributes!(div { style: "{style}" }),
+        rest,
+    ])
+}
+
 /// No-op whenever this crate's `web` feature is off -- see
 /// [`anchor_name_style`]'s doc. Unlike [`position_anchor_style`], this one
 /// *is* called unconditionally (every trigger sets it, regardless of
@@ -1427,4 +1483,127 @@ pub(crate) fn position_anchor_style(id: &str) -> String {
 #[cfg(not(feature = "web"))]
 pub(crate) fn anchor_name_style(_id: &str) -> String {
     String::new()
+}
+
+#[cfg(all(test, feature = "web"))]
+mod tests {
+    use super::*;
+    use dioxus_core::AttributeValue::Text;
+
+    fn plain_style(value: &str) -> Attribute {
+        Attribute {
+            name: "style",
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    fn shorthand_style(prop: &'static str, value: &str) -> Attribute {
+        Attribute {
+            name: prop,
+            namespace: Some("style"),
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    fn other(name: &'static str, value: &str) -> Attribute {
+        Attribute {
+            name,
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    /// Every style attribute in the returned list, as `(name, value)`
+    /// pairs -- lets the assertions below check there is exactly one no
+    /// matter which merge order `merge_attributes` happens to produce.
+    fn style_attrs(attrs: &[Attribute]) -> Vec<(&'static str, String)> {
+        attrs
+            .iter()
+            .filter(|a| a.name == "style")
+            .map(|a| match &a.value {
+                Text(s) => (a.name, s.clone()),
+                _ => (a.name, String::new()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn no_caller_style_yields_just_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![other("role", "tooltip")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        assert_eq!(styles[0].1, "position-anchor: --dxa-x;");
+        // Non-style attributes pass through untouched.
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    #[test]
+    fn plain_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![plain_style("min-height: 100px;")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("min-height: 100px;"));
+        // Anchor binding first, so the caller's own declaration -- listed
+        // after -- can override any property it names without ever being
+        // able to drop the anchor binding itself.
+        assert!(style.find("position-anchor").unwrap() < style.find("min-height").unwrap());
+    }
+
+    #[test]
+    fn shorthand_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![shorthand_style("padding", "1rem")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("padding:1rem;"));
+        assert!(style.find("position-anchor").unwrap() < style.find("padding").unwrap());
+    }
+
+    #[test]
+    fn shorthand_and_plain_caller_style_both_fold_into_the_one_attribute() {
+        // The exact shape that used to break: a caller mixing a plain
+        // `style` literal with shorthand style props (or a themed wrapper
+        // contributing one of each), on top of this component's own
+        // `position-anchor` literal -- three style-contributing values that
+        // must all end up in the one served `style="..."`.
+        let result = anchored_content_attributes(
+            "x",
+            vec![
+                plain_style("min-height: 100px;"),
+                shorthand_style("padding", "1rem"),
+                other("role", "tooltip"),
+            ],
+        );
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("min-height: 100px;"));
+        assert!(style.contains("padding:1rem;"));
+        assert!(style.find("position-anchor").unwrap() < style.find("min-height").unwrap());
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
 }
