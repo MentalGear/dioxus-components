@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
 
 // Helper to run scrollHeight stability test with configurable tolerance
 async function testScrollHeightStability(
@@ -248,4 +249,13 @@ test("resize churn while scrolling does not panic (holds no borrow across resize
     (m) => /panicked/i.test(m) || /already borrowed/i.test(m) || /BorrowMutError/i.test(m)
   );
   expect(suspicious, `Suspicious console output during resize churn:\n${suspicious.join("\n")}`).toEqual([]);
+});
+
+test.describe("Axe automated scan", () => {
+  // Virtual list has no overlay/expand/select interaction -- one state to scan.
+  test("loaded has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=virtual_list&", { timeout: 20 * 60 * 1000 });
+    await expect(page.getByRole("list").first()).toBeVisible({ timeout: 30000 });
+    await expectNoAxeViolations(page, "virtual_list: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });

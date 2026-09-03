@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=popover&");
@@ -146,4 +147,21 @@ test("an animation cancelled with no successor cycle still unmounts", async ({ p
   // No further open/close cycle follows. The element must still eventually
   // unmount rather than leak in the DOM in its closed-but-mounted form.
   await expect(domNode).toHaveCount(0, { timeout: 2000 });
+});
+
+test.describe("Axe automated scan", () => {
+  test("loaded (popover closed) has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+    // Wait for render before scanning -- see input.spec.ts's identical
+    // comment for why (avoids a false pre-hydration "no main"/"no h1").
+    await expect(page.getByRole("button", { name: "Show Popover" })).toBeVisible();
+    await expectNoAxeViolations(page, "popover: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test("open has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+    await page.getByRole("button", { name: "Show Popover" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expectNoAxeViolations(page, "popover: open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });

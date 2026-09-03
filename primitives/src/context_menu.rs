@@ -697,6 +697,16 @@ fn ContextMenuContentRendered(
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
+            // docs/backlog.md row 25: an APG menu requires an accessible name
+            // from either aria-labelledby or aria-label
+            // (menu-and-menubar-pattern.html, "WAI-ARIA Roles, States, and
+            // Properties") -- labelled by the trigger, mirroring
+            // `DropdownMenuContent`'s identical `aria_labelledby:
+            // "{ctx.trigger_id}"` (`dropdown_menu.rs`). The trigger's own
+            // accessible name comes from its children (arbitrary caller
+            // content -- see `ContextMenuTrigger`'s doc), the same source
+            // `DropdownMenuTrigger` uses.
+            aria_labelledby: "{ctx.trigger_id}",
             aria_orientation: "vertical",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
             position: "fixed",
@@ -805,6 +815,9 @@ fn ContextMenuContentRendered(
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
+            // See the web arm's identical attribute above (docs/backlog.md
+            // row 25) for why.
+            aria_labelledby: "{ctx.trigger_id}",
             aria_orientation: "vertical",
             position: "fixed",
             left: "{x}px",

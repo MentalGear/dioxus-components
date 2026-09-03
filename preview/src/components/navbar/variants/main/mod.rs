@@ -6,7 +6,16 @@ use dioxus::prelude::*;
 pub fn Demo() -> Element {
     rsx! {
         div {
-            Navbar { aria_label: "Components",
+            // axe `landmark-unique` (docs/backlog.md row 34's own round):
+            // this demo's `nav` and the site's own top-level chrome
+            // (`preview/src/main.rs`) were both `aria-label="Components"`,
+            // a duplicate-landmark collision on this component's own demo
+            // page -- a distinct instance of the same defect class row 26
+            // named for `role="menuitem"` (a demo's content colliding with
+            // the site's own chrome, both visible in the same accessibility
+            // tree). Renamed rather than the site chrome, which is correct
+            // on every route.
+            Navbar { aria_label: "Example navigation",
                 NavbarNav { index: 0usize,
                     NavbarTrigger { "Inputs" }
                     NavbarContent {

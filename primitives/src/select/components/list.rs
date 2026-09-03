@@ -1,6 +1,6 @@
 //! SelectList component implementation.
 
-use crate::{listbox::use_listbox_container, use_effect};
+use crate::{dioxus_core::AttributeValue, listbox::use_listbox_container, use_effect};
 use dioxus::prelude::*;
 #[cfg(feature = "web")]
 use dioxus_attributes::attributes;
@@ -8,6 +8,28 @@ use dioxus_attributes::attributes;
 use super::super::context::SelectContext;
 #[cfg(feature = "web")]
 use crate::merge_attributes;
+
+/// Whether `attributes` already gives the element its own accessible name.
+///
+/// Deliberately more than a name-presence check: this crate's own themed
+/// preview wrapper (`preview/src/components/select/component.rs`) always
+/// threads an `aria_label` prop through to `SelectList`, `Some("")`/absent
+/// or not -- `#[props(extends = GlobalAttributes)]` packs it into
+/// `attributes` either way, so an attribute named `aria-label` can be
+/// *present* with an empty/`AttributeValue::None` value even when no real
+/// caller ever supplied one. Only a genuinely non-empty text value counts.
+fn has_own_accessible_name(attributes: &[Attribute]) -> bool {
+    attributes.iter().any(|a| {
+        (a.name == "aria-label" || a.name == "aria-labelledby")
+            && match &a.value {
+                AttributeValue::Text(s) => !s.is_empty(),
+                AttributeValue::None => false,
+                // Any other concrete (non-text, non-empty) value counts as
+                // caller-supplied.
+                _ => true,
+            }
+    })
+}
 
 /// The props for the [`SelectList`] component
 #[derive(Props, Clone, PartialEq)]
@@ -226,6 +248,16 @@ fn select_list_onkeydown(mut ctx: SelectContext) -> impl FnMut(KeyboardEvent) {
 fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
     let mut ctx: SelectContext = use_context();
     let open = ctx.selectable.open;
+    // axe `aria-input-field-name` (docs/backlog.md row 34's own round): an
+    // ARIA `listbox` is an input field and needs an accessible name.
+    // Default it from the trigger (whose own visible text is the
+    // placeholder/selected value) -- but ONLY if the caller hasn't already
+    // supplied one, since this component's own doc example demonstrates
+    // `SelectList { aria_label: "Select Demo", ... }` as the intended
+    // override, and `aria-labelledby` would otherwise take ARIA precedence
+    // over that caller-supplied `aria-label` and silently shadow it.
+    let labelledby =
+        (!has_own_accessible_name(&attributes)).then(|| ctx.selectable.trigger_id.cloned());
     let mut listbox_ref: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
     // See `SelectContext::keep_trigger_focus`'s doc: an Alt+ArrowDown open
     // must leave DOM focus on the trigger, so this "nothing focused yet --
@@ -300,6 +332,7 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
         div {
             id: id.clone(),
             role: "listbox",
+            aria_labelledby: labelledby,
             tabindex: if focused() { "0" } else { "-1" },
             aria_multiselectable: ctx.multi(),
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
@@ -351,11 +384,16 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     });
 
     let onkeydown = select_list_onkeydown(ctx);
+    // See the web arm's identical attribute (docs/backlog.md row 34) for why
+    // this is conditional on the caller not already naming the list itself.
+    let labelledby =
+        (!has_own_accessible_name(&attributes)).then(|| ctx.selectable.trigger_id.cloned());
 
     rsx! {
         div {
             id,
             role: "listbox",
+            aria_labelledby: labelledby,
             tabindex: if focused() { "0" } else { "-1" },
             aria_multiselectable: ctx.multi(),
 

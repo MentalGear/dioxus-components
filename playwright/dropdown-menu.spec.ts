@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
@@ -61,4 +62,21 @@ test('test', async ({ page }) => {
     .getByRole('menuitem', { name: 'Edit' })
     .click();
   await expect(menuElement).toHaveAttribute('data-state', 'closed');
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+    // Wait for render before scanning -- see input.spec.ts's identical
+    // comment for why (avoids a false pre-hydration "no main"/"no h1").
+    await expect(page.getByRole('button', { name: 'Open Menu' })).toBeVisible();
+    await expectNoAxeViolations(page, 'dropdown-menu: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test('menu open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+    await page.getByRole('button', { name: 'Open Menu' }).click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expectNoAxeViolations(page, 'dropdown-menu: menu open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });

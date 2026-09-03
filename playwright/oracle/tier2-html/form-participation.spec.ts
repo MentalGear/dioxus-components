@@ -105,6 +105,7 @@
  */
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
@@ -475,6 +476,25 @@ test.describe("Rule 4 extension — a blocked submit gives visible feedback on t
     await page.locator("#required-reset").click();
 
     await expect(page.locator('[data-invalid="true"]')).toHaveCount(0);
+  });
+});
+
+/**
+ * axe (static rules) — the required-fields form in its invalid state after
+ * a blocked submit (every required control marked `data-invalid`, focus
+ * moved to the first one). No component spec reaches this state; it is
+ * exactly the state WCAG 3.3.1 (Error Identification) cares about, and
+ * axe's `aria-valid-attr-value`/`aria-required-children`-class rules can
+ * catch a wrong ARIA error-state pattern here that this file's own
+ * behaviour assertions (which check `data-invalid`/focus, not ARIA
+ * validity) do not.
+ */
+test.describe("axe: invalid state after a blocked submit", () => {
+  test("blocked required-fields submit has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoForm(page);
+    await submitRequiredAndRead(page);
+    await expect(page.locator('[data-invalid="true"]').first()).toBeVisible();
+    await expectNoAxeViolations(page, "form: invalid state after blocked submit", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
   });
 });
 

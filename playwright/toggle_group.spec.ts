@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=toggle_group&");
@@ -27,4 +28,17 @@ test("test", async ({ page }) => {
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await expect(b_button).toBeFocused();
+});
+
+test.describe("Axe automated scan", () => {
+  test("loaded (none selected) has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=toggle_group&");
+    await expectNoAxeViolations(page, "toggle_group: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test("an item selected has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=toggle_group&");
+    await page.getByRole("button", { name: "B", exact: true }).click();
+    await expectNoAxeViolations(page, "toggle_group: B selected", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });

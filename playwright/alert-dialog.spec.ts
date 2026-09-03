@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
 
 test('test', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -40,4 +41,18 @@ test('test', async ({ page }) => {
   await confirmButton.click();
   // Assert the dialog is closed after confirming
   await expect(dialog).toHaveCount(0);
+});
+
+test.describe('Axe automated scan', () => {
+  test('loaded (dialog closed) has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 });
+    await expectNoAxeViolations(page, 'alert-dialog: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test('open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=alert_dialog&', { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Show Alert Dialog' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expectNoAxeViolations(page, 'alert-dialog: open', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });

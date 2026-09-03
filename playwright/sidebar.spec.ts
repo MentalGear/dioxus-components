@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "./axe";
 
 const BASE_URL = "http://127.0.0.1:8080";
 const SIDEBAR_RENDER_TIMEOUT = 30 * 1000;
@@ -109,5 +110,31 @@ test.describe("sidebar: block route", () => {
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
     await expect(trigger).toBeFocused();
+  });
+});
+
+// KNOWN RED, filed rather than fixed (docs/backlog.md): the `/component/
+// block/?name=sidebar&variant=main&` route (this file's `gotoSidebarBlock`)
+// is a bare block fixture with no page-level `<h1>`/`<main>` wrapper of its
+// own -- by design, it is normally embedded in an `<iframe>` from the main
+// preview page (see the "preview page renders block" test above), where
+// that absence is a non-issue (the iframe's own document is a separate
+// accessibility-tree root). Visiting it directly, as both tests below do,
+// surfaces `page-has-heading-one`/`region` for exactly that reason -- a
+// product decision on whether block routes should carry a lightweight
+// semantic wrapper for direct-visit accessibility, not a Sidebar defect.
+test.describe("Axe automated scan", () => {
+  test("loaded (expanded) has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoSidebarBlock(page);
+    await expectNoAxeViolations(page, "sidebar: expanded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test("collapsed has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoSidebarBlock(page);
+    const sidebar = page.locator('[data-slot="sidebar"]:not([data-mobile="true"])');
+    const trigger = page.locator('[data-slot="sidebar-trigger"]');
+    await trigger.click();
+    await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    await expectNoAxeViolations(page, "sidebar: collapsed", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
   });
 });

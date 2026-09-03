@@ -115,6 +115,7 @@
  */
 
 import { test, expect, devices, type Page } from "@playwright/test";
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from "../../axe";
 
 // Playwright's iPhone descriptors default to WebKit (`defaultBrowserType:
 // "webkit"`), which this repo's local lanes do not ship; the rule under test
@@ -234,6 +235,32 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toBeVisible();
     assertAllAtLeast16(await scan(page), "/dashboard/email-client (compose open)");
+  });
+
+  // axe (static rules) -- no component spec reaches /dashboard/email-client
+  // at all (it's a full dashboard demo, not a component gallery page), so
+  // both its default and compose-open states are new coverage here, per
+  // docs/backlog.md row 34.
+  // KNOWN RED, filed rather than fixed (docs/backlog.md): each message row
+  // (`ListPane`) renders `role="button"` on a `div` that also contains its
+  // own further-interactive controls (star/flag toggles), which axe's
+  // `nested-interactive` rule flags -- a real structural markup question
+  // (how the row's own click-to-open should coexist with per-row controls)
+  // that this round's "small, clearly correct" fix bar does not cover.
+  test("dashboard email client: default state has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    await expectNoAxeViolations(page, "dashboard/email-client: loaded", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test("dashboard email client: compose open has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    const compose = page.getByRole("button", { name: /Compose/ }).first();
+    await compose.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expectNoAxeViolations(page, "dashboard/email-client: compose open", { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
   });
 
   test('overlay: combobox listbox open ("Switch workspace" input stays >= 16px)', async ({ page }) => {

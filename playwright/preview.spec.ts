@@ -1,5 +1,12 @@
-import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { test } from "@playwright/test";
+import { expectNoAxeViolations } from "./axe";
+
+const COLOR_CONTRAST_REASON =
+  "grandfathered pre-existing exclusion (see playwright/axe.ts header doc): " +
+  "not a false positive -- the theme's contrast ratios are a real, open, " +
+  "tracked gap (docs/backlog.md rows 31/32, design tokens + styling engine, " +
+  "not yet landed); this call's coverage is preserved unchanged per the " +
+  "axe-coverage round's own instruction, not newly claimed as a false positive";
 
 test.describe("homepage", () => {
   test("should not have any automatically detectable accessibility issues", async ({
@@ -11,11 +18,9 @@ test.describe("homepage", () => {
     let heroSection = page.locator("#hero");
     await heroSection.waitFor({ state: "visible" });
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
-      .disableRules("color-contrast")
-      .analyze();
-
-    expect(accessibilityScanResults.violations).toEqual([]);
+    await expectNoAxeViolations(page, "homepage", {
+      exclude: [{ ids: "color-contrast", reason: COLOR_CONTRAST_REASON }],
+    });
   });
 });
 
@@ -30,10 +35,8 @@ test.describe("details", () => {
     let componentSection = page.getByRole("heading", { name: "calendar" });
     await componentSection.waitFor({ state: "visible" });
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
-      .disableRules("color-contrast")
-      .analyze();
-
-    expect(accessibilityScanResults.violations).toEqual([]);
+    await expectNoAxeViolations(page, "component/calendar", {
+      exclude: [{ ids: "color-contrast", reason: COLOR_CONTRAST_REASON }],
+    });
   });
 });

@@ -1,10 +1,8 @@
 //! Defines the [`Menubar`] component and its sub-components.
 
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
-#[cfg(feature = "web")]
 use crate::merge_attributes;
 use crate::{
     collection::{
@@ -162,6 +160,14 @@ struct MenubarMenuContext {
     // `DropdownMenuContext::content_id`'s doc for the exact bug this guards
     // against if trigger and content ever named different ids.
     content_id: Signal<String>,
+
+    // This menu's own `MenubarTrigger` element id, so `MenubarContent` can
+    // label itself `aria_labelledby` from it -- docs/backlog.md row 25 (an
+    // APG menu requires an accessible name from either aria-labelledby or
+    // aria-label; this crate's `DropdownMenu`/`ContextMenu` already do the
+    // same, keyed off their own `trigger_id`). Set once by `MenubarTrigger`
+    // via `use_unique_id`, read by `MenubarContentRendered`.
+    trigger_id: Signal<String>,
 }
 
 impl MenubarMenuContext {
@@ -272,6 +278,8 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
     // Placeholder value until `MenubarContent` mounts and syncs its own id
     // in -- see `MenubarMenuContext::content_id`'s doc.
     let content_id = use_unique_id();
+    // This menu's own trigger id -- see `MenubarMenuContext::trigger_id`'s doc.
+    let trigger_id = use_unique_id();
 
     let mut menu_ctx = use_context_provider(|| MenubarMenuContext {
         index: props.index,
@@ -280,6 +288,7 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
         disabled: props.disabled,
         initial_focus,
         content_id,
+        trigger_id,
     });
 
     use_effect(move || {
@@ -458,6 +467,20 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     let index = menu_ctx.index;
     let is_focused = move || item.focused() && !menu_ctx.focus.any_focused();
 
+    // Merged (caller-wins, deduped) rather than a plain explicit-attribute +
+    // `..props.attributes` spread: `id` below and a caller-supplied `id` in
+    // `props.attributes` would otherwise both render, the same
+    // duplicate-attribute hydration hazard `merge_attributes`'s own doc
+    // warns about (docs/conformance-harness.md Rule 4).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            // This menu's own trigger id, so `MenubarContent` can label
+            // itself `aria_labelledby` from it -- docs/backlog.md row 25.
+            id: menu_ctx.trigger_id,
+        }),
+        props.attributes,
+    ]);
+
     rsx! {
         button {
             onmounted,
@@ -491,7 +514,7 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             type: "button",
             tabindex: if is_focused() { "0" } else { "-1" },
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -708,6 +731,11 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
         div {
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
+            // docs/backlog.md row 25: an APG menu requires an accessible
+            // name from either aria-labelledby or aria-label -- labelled by
+            // this menu's own trigger, mirroring `DropdownMenuContent`'s
+            // identical `aria_labelledby` (`dropdown_menu.rs`).
+            aria_labelledby: "{menu_ctx.trigger_id}",
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             style: crate::top_layer::position_anchor_style(&id),
             "data-state": if open() { "open" } else { "closed" },
@@ -729,6 +757,9 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
+            // See the web arm's identical attribute above (docs/backlog.md
+            // row 25) for why.
+            aria_labelledby: "{menu_ctx.trigger_id}",
             "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
             ..attributes,
             {children}

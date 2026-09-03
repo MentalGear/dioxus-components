@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { expectNoAxeViolations, CONTRAST_TRACKED_ELSEWHERE } from './axe';
 
 async function sliderTrackPoint(track: Locator, frac: number) {
   const box = await track.boundingBox();
@@ -357,4 +358,25 @@ test('range dragged thumb keeps its identity past the other thumb', async ({ pag
   // keep going past it. Thumb 1, never touched, must stay exactly at 80.
   await expect(t0).toHaveAttribute('aria-valuenow', '80');
   await expect(t1).toHaveAttribute('aria-valuenow', '80');
+});
+
+test.describe('Axe automated scan', () => {
+  // Slider has no overlay/expand interaction -- loaded (default value) and
+  // a value changed via keyboard are the two meaningful states.
+  test('loaded has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=slider&', { timeout: 20 * 60 * 1000 });
+    // Wait for render before scanning -- see input.spec.ts's identical
+    // comment for why (avoids a false pre-hydration "no main"/"no h1").
+    await expect(page.getByRole('slider', { name: 'Demo Slider' })).toBeVisible();
+    await expectNoAxeViolations(page, 'slider: loaded', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
+
+  test('value changed has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto('http://127.0.0.1:8080/component/?name=slider&', { timeout: 20 * 60 * 1000 });
+    const thumb = page.getByRole('slider', { name: 'Demo Slider' });
+    await thumb.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(thumb).toHaveAttribute('aria-valuenow', '51');
+    await expectNoAxeViolations(page, 'slider: value changed', { exclude: [CONTRAST_TRACKED_ELSEWHERE] });
+  });
 });
