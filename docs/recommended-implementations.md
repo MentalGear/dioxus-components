@@ -232,6 +232,33 @@ Best-of here means recognising that upstream already wins one.
 
 ---
 
+### 11. Main-thread responsiveness (interaction latency) — reference and how it maps here (2026-09-03)
+
+**Reference:** kciter, *"The Browser's Main Thread Is Expensive"* — <https://kciter.so/posts/the-expensive-main-thread/en/>. Worth reading whole; the short version, with the numbers it cites: everything except compositing (JavaScript, event dispatch, style, layout, paint) shares one thread; a 60 Hz frame is ~16.6 ms of which ~10 ms is realistically yours (halved on 120 Hz devices); any single task over 50 ms is a "long task" and shows up in INP (Interaction to Next Paint) and TBT (Total Blocking Time). Its two families of remedy: *use the thread wisely* (split long work and yield — by count or by elapsed time, ~5 ms per slice; batch bursty events such as `scroll`/`resize`/`input` with throttle/debounce; prioritise and defer) and *don't use it at all* (compositor-only animation via `transform`/`opacity`, which keeps running while the thread is blocked; Web Workers for atomic work such as a large `JSON.parse`; or delete the work). Yield primitives it names, weakest to best: `setTimeout`, `MessageChannel`, `requestAnimationFrame`, `scheduler.yield()`.
+
+**Why it matters for a component library specifically:** the library never owns the page's budget — the consumer's app does — so a component's obligation is to be *cheap per interaction* and *never to hold the thread across a gesture*. The user-visible symptom of getting this wrong on a phone is exactly the class of report this repo has been fixing by device review: a tap that lands late, a popover that flashes, an animation that stalls.
+
+**How the current code already applies each rule (so a future change does not regress it silently):**
+
+| Rule from the article | Where this repo does it | Evidence / oracle |
+|---|---|---|
+| Batch bursty events; never do layout work per `scroll` event | `use_anchor_position_fallback` (`primitives/src/top_layer.rs`): the lifetime `scroll`/`resize`/`visualViewport` listeners are `passive: true` and coalesce into **one** `requestAnimationFrame` re-measure per frame, not one per event | `top-layer.spec.ts` Rules 11–12 (position stays correct under scroll/resize); the listener block's own comment |
+| Split and yield instead of a blocking loop | The fallback's *settle loop* re-measures across successive `requestAnimationFrame`s until the box stops moving, rather than spinning synchronously until stable | same spec; settle-loop comment in `top_layer.rs` |
+| Don't attach work the gesture must wait for | `use_dialog_backdrop_dismiss` (`primitives/src/lib.rs`) attaches its listener one `requestAnimationFrame` **after** open, so the opening tap's own click is neither processed by it nor blocks on it | `native-dialog.spec.ts` Rule 8 |
+| Passive listeners on scroll/touch paths | the anchor fallback's tracking listeners are `passive: true`. The **deliberate exceptions** are the body scroll lock (`primitives/src/scroll_lock.rs`) and `ContextMenu`'s scroll suppression (`primitives/src/context_menu.rs`): their `wheel`/`touchmove` listeners are `passive: false` because they must call `preventDefault()` — that is rule 2 below, applied. `touch-action: manipulation` ([backlog row 42](./backlog.md)) additionally removes the UA's double-tap wait from every interactive element | `touch-double-tap.spec.ts`; scroll-lock spec |
+| Compositor-only animation | The themed overlay stylesheets (`popover`, `dialog` backdrop, `dropdown_menu`, `select`, … `style.css`) animate `opacity` (and `transform`) only; `use_animated_open` (`primitives/src/lib.rs`) merely holds the mount until that animation ends. **Known exception:** `Accordion` animates `grid-template-rows` (a layout property, by design — height animation cannot be done on the compositor without measuring), so it is bounded to 300 ms and verified frame-by-frame for stalls | `accordion-animation.spec.ts` (plateau/final-height sampler, `assert-close-animation.ts`) |
+| Don't do the work at all | Anchor positioning goes through the injected `@supports (anchor-name: --a)` CSS block where the browser has it; the JS fallback (`use_anchor_position_fallback`) runs only where the runtime check says it is needed | `top_layer.rs`, the `@supports` block and the fallback's gating comment |
+
+**Rules for new work (derived, not yet all oracle-backed):**
+
+1. A component's event handler must not perform synchronous layout reads *and* writes in the same handler (layout thrash); measure once, then write, or defer the write to the next `requestAnimationFrame`.
+2. Any listener on `scroll`, `wheel`, `touchstart`, `touchmove` is `passive: true` unless it genuinely calls `preventDefault()` — and then the comment says why.
+3. Animations added to a themed `style.css` use `opacity`/`transform` unless the effect is impossible without a layout property; a layout-property animation is bounded (≤ 300 ms) and gets a frame sampler like the accordion's.
+4. Nothing in a primitive ever busy-waits (`while (…) {}` polling `getBoundingClientRect`) — use the settle-loop shape.
+5. Work that cannot be split (large parse/format) is not the library's business: expose it to the consumer as an async hook rather than doing it inside a render.
+
+**Not yet built:** an INP/long-task oracle. Playwright can install a `PerformanceObserver({ type: 'longtask' })` (and `event` timing, `durationThreshold`) before an interaction and assert no task over 50 ms and no interaction over 200 ms fired during open/close of each overlay — filed as [backlog row 45](./backlog.md) with the article as its rule source. Until it exists, rules 1–5 are enforced by review only.
+
 ## Testing — best of all three suites
 
 | Take | From | Why |
