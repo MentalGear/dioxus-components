@@ -129,17 +129,16 @@ body {
  * component's own `style.css` for the first) -- same construction as the
  * `@media (pointer: coarse)` font-size floor just above.
  *
- * WHY: iOS Safari's double-tap-to-zoom gesture is defined against the
- * Pointer Events / CSS Pointer Events "touch-action" property
- * (https://w3c.github.io/pointerevents/#the-touch-action-css-property)
- * and documented explicitly by WebKit as something authors must opt out
- * of per-element: "elements ... that have been made to look and behave
- * like buttons using role="button" and JavaScript click handlers ...
- * should also set touch-action: manipulation to prevent the double-tap
- * gesture" (WebKit blog, "Overhauling favicon support on WebKit"'s sibling
- * post on interaction; the mechanism itself is the CSS Fast Path / w3c
- * spec's own note that a UA "MAY ... suppress ... a double-tap gesture"
- * when the double-tap area's computed touch-action does not permit it).
+ * WHY: the Pointer Events spec defines `touch-action: manipulation` as
+ * permitting panning and pinch-zoom but NOT the UA's double-tap-to-zoom
+ * gesture (https://w3c.github.io/pointerevents/#the-touch-action-css-property),
+ * and WebKit's own post "More Responsive Tapping on iOS" (webkit.org/blog,
+ * 2016, https://webkit.org/blog/5610/more-responsive-tapping-on-ios/)
+ * documents that iOS Safari otherwise waits on every tap to see whether a
+ * second one follows, zooming when it does -- and names
+ * `touch-action: manipulation` as the per-element opt-out authors should
+ * set on tappable controls. Same references as
+ * `playwright/oracle/tier2-html/touch-double-tap.spec.ts`'s header.
  * A person tapping buttons in quick succession (reported: "if the user is
  * quickly tapping buttons, the double-tap zoom is triggered") gets a page
  * zoom instead of two button presses whenever an interactive element
