@@ -144,13 +144,19 @@ fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Elemen
             class: "dx-anchor-combobox"
         }),
     ]);
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let attributes =
+        crate::top_layer::anchored_content_attributes(&ctx.input_id.cloned(), attributes);
 
     rsx! {
         div {
             id: id.clone(),
             role: "listbox",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            style: crate::top_layer::position_anchor_style(&ctx.input_id.cloned()),
             "data-state": if open() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 event.prevent_default();

@@ -395,13 +395,18 @@ fn TooltipContentRendered(
             class: "dx-anchor-tooltip"
         }),
     ]);
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
 
     rsx! {
         div {
             id: id.clone(),
             role: "tooltip",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            style: crate::top_layer::position_anchor_style(&id),
             "data-state": if open.cloned() { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
@@ -441,5 +446,68 @@ fn TooltipContentRendered(
             ..attributes,
             {children}
         }
+    }
+}
+
+// SSR regression test for the duplicate-`style` hazard this file used to
+// carry: `TooltipContentRendered` set `style: position_anchor_style(&id)` as
+// a bare literal alongside `..attributes`, so a caller-supplied `style` (as
+// `TooltipContent`'s own doc example demonstrates, and as the `top_layer`
+// preview fixture's anchored components do) rendered as a *second*, later
+// `style="..."` on the SSR'd element -- `docs/conformance-harness.md`
+// hydration-parity Rule 4 (`dioxus-ssr`'s renderer keeps only the first
+// `style` it accumulates per element; the WASM client's `set_attribute`
+// keeps the last, so SSR and CSR silently disagree about which one wins,
+// and the anchor binding this whole module exists to set up is lost on the
+// client). Reverting `top_layer::anchored_content_attributes`'s use below
+// (confirmed by temporarily doing exactly that) reproduces this: the SSR'd
+// HTML gets two `style="..."` attributes on the content element instead of
+// one folded string, and the assertion below goes red.
+#[cfg(all(test, feature = "web"))]
+mod anchor_style_hydration_parity {
+    use super::*;
+    use dioxus_core::NoOpMutations;
+
+    #[component]
+    fn OpenTooltipWithCallerStyle() -> Element {
+        rsx! {
+            Tooltip {
+                default_open: true,
+                TooltipTrigger { "Trigger" }
+                TooltipContent {
+                    id: "anchor-style-tooltip-content",
+                    style: "min-height: 100px;",
+                    "content"
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ssr_renders_open_anchored_content_with_one_folded_style_attribute() {
+        // `rebuild_in_place` alone never runs `use_animated_open`'s
+        // `use_effect` (its own doc: "tasks will not be polled"), so
+        // `TooltipContentRendered` would never mount and there would be
+        // nothing to assert on. `render_immediate` additionally drains the
+        // effect queue and re-diffs the now-dirty `TooltipContent` scope
+        // synchronously (no async executor needed, since `default_open:
+        // true` means the effect's `show_in_dom.set(open)` branch never
+        // spawns a task), which is enough to get the open content into the
+        // tree for `dioxus_ssr::render` to serialize.
+        let mut dom = VirtualDom::new(OpenTooltipWithCallerStyle);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
+
+        let tag_start = html.find(r#"id="anchor-style-tooltip-content""#).unwrap();
+        let tag_end = html[tag_start..].find('>').unwrap() + tag_start;
+        let opening_tag = &html[tag_start..tag_end];
+        assert_eq!(
+            opening_tag.matches("style=\"").count(),
+            1,
+            "expected exactly one style attribute on the content element, got: {opening_tag}"
+        );
+        assert!(opening_tag.contains("position-anchor"));
+        assert!(opening_tag.contains("min-height"));
     }
 }

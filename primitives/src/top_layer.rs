@@ -71,16 +71,17 @@ thread_local! {
 /// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
 /// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
 /// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`/
-/// `dx-anchor-select`/`dx-anchor-combobox` (Migration A slice 3/3,
-/// `select/components/list.rs`'s `SelectListRendered` and
-/// `combobox/components/list.rs`'s `ComboboxListRendered`) content
-/// everywhere in the app, with no per-page CSS to remember.
+/// `dx-anchor-navbar`/`dx-anchor-select`/`dx-anchor-combobox` (Migration A
+/// slice 3/3, `select/components/list.rs`'s `SelectListRendered` and
+/// `combobox/components/list.rs`'s `ComboboxListRendered`; `dx-anchor-navbar`
+/// added 2026-09-03, finding C -- `navbar.rs`'s `NavbarContentRendered`)
+/// content everywhere in the app, with no per-page CSS to remember.
 ///
 /// Call this once per overlay content mount -- [`use_anchor_position_fallback`]
 /// does, since every current `dx-anchor-*` consumer (`tooltip.rs`,
 /// `hover_card.rs`, `popover.rs`, `dropdown_menu.rs`, `menubar.rs`,
-/// `select/components/list.rs`, `combobox/components/list.rs`, and
-/// anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
+/// `navbar.rs`, `select/components/list.rs`, `combobox/components/list.rs`,
+/// and anything built on `crate::popover` like `ColorPicker`/`DatePicker`)
 /// already calls that hook. A future
 /// `dx-anchor-*` consumer that doesn't call that hook for some reason should
 /// call this directly instead.
@@ -177,7 +178,7 @@ fn anchor_positioning_inject_js() -> String {
 #[cfg(feature = "web")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 :where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-popover:modal, .dx-anchor-dropdown-menu[popover],
-  .dx-anchor-menubar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
+  .dx-anchor-menubar[popover], .dx-anchor-navbar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
   margin: 0;
   inset: auto;
 }
@@ -188,6 +189,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal,
   .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover],
+  .dx-anchor-navbar[popover],
   .dx-anchor-select[popover],
   .dx-anchor-combobox[popover] {
     position: fixed;
@@ -202,6 +204,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"],
   .dx-anchor-dropdown-menu[popover][data-side="top"],
   .dx-anchor-menubar[popover][data-side="top"],
+  .dx-anchor-navbar[popover][data-side="top"],
   .dx-anchor-select[popover][data-side="top"],
   .dx-anchor-combobox[popover][data-side="top"] {
     bottom: anchor(top);
@@ -215,6 +218,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"],
   .dx-anchor-dropdown-menu[popover][data-side="right"],
   .dx-anchor-menubar[popover][data-side="right"],
+  .dx-anchor-navbar[popover][data-side="right"],
   .dx-anchor-select[popover][data-side="right"],
   .dx-anchor-combobox[popover][data-side="right"] {
     top: anchor(center);
@@ -228,6 +232,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"],
   .dx-anchor-menubar[popover][data-side="bottom"],
+  .dx-anchor-navbar[popover][data-side="bottom"],
   .dx-anchor-select[popover][data-side="bottom"],
   .dx-anchor-combobox[popover][data-side="bottom"] {
     top: anchor(bottom);
@@ -241,6 +246,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"],
   .dx-anchor-dropdown-menu[popover][data-side="left"],
   .dx-anchor-menubar[popover][data-side="left"],
+  .dx-anchor-navbar[popover][data-side="left"],
   .dx-anchor-select[popover][data-side="left"],
   .dx-anchor-combobox[popover][data-side="left"] {
     top: anchor(center);
@@ -290,6 +296,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="start"],
   .dx-anchor-select[popover][data-side="top"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
@@ -298,6 +305,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
@@ -310,6 +318,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="center"],
   .dx-anchor-select[popover][data-side="top"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
@@ -318,6 +327,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="center"] {
     left: anchor(center);
@@ -330,6 +340,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="top"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="top"][data-align="end"],
   .dx-anchor-select[popover][data-side="top"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
@@ -338,6 +349,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="bottom"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
@@ -350,6 +362,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="start"],
   .dx-anchor-select[popover][data-side="left"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
@@ -358,6 +371,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="start"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="start"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="start"],
   .dx-anchor-select[popover][data-side="right"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
@@ -370,6 +384,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="center"],
   .dx-anchor-select[popover][data-side="left"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
@@ -378,6 +393,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="center"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="center"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="center"],
   .dx-anchor-select[popover][data-side="right"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
@@ -390,6 +406,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="left"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="left"][data-align="end"],
   .dx-anchor-select[popover][data-side="left"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
@@ -398,6 +415,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-popover:modal[data-side="right"][data-align="end"],
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="end"],
+  .dx-anchor-navbar[popover][data-side="right"][data-align="end"],
   .dx-anchor-select[popover][data-side="right"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
@@ -740,8 +758,59 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// if the primary placement would overflow the relevant viewport edge, it
 /// uses the flipped placement instead. This closes the "legacy engines get
 /// no flip at all" gap docs/backlog.md row 10 notes alongside the CSS
-/// addition, with the same deliberately narrow scope: flip only, never
-/// shift or resize (that remainder of Phase 5 is still open).
+/// addition. Resizing to fit stays out of scope (that remainder of Phase 5
+/// is still open) -- but see "Inline-axis shift (2026-09-03)" below for the
+/// one piece of shift this function *does* now do.
+///
+/// ## Inline-axis shift (2026-09-03, user device report)
+///
+/// User report (iOS 18 Safari, no CSS Anchor Positioning there at all --
+/// confirmed by the report itself, and the exact engine this whole function
+/// exists for): the `ColorPicker` popup on the home page's widget masonry
+/// clips against the viewport's edge on a small screen, with no attempt to
+/// reposition it. Reproduced in this sandbox's Chromium via the same
+/// no-anchor-engine simulation `top-layer.spec.ts` Rule 11 already uses
+/// (`stripAnchorSupportsBlock`, `MOBILE_VIEWPORT`) -- confirmed by
+/// execution: the masonry `ColorPicker`'s content landed at
+/// `left: -2.97px` (a few pixels past the *left* edge in this sandbox's
+/// exact layout -- the reported direction depends only on which side of a
+/// narrow viewport the trigger happens to sit on, not on anything specific
+/// to "right"), and two of this file's own `edge-bottom-*` fixture cases
+/// (`Tooltip`, non-modal `Popover`) landed at `left: -192px`/`-194px` --
+/// far enough that `flip-block` (the only fallback this contract declared
+/// before this fix) could never have been the cause: `side="bottom"` only
+/// ever flips to `side="top"`, which changes `top`, never `left`.
+///
+/// Root cause: flip (both the CSS `position-try-fallbacks` primitive this
+/// function mirrors, and its own pre-existing viewport-math equivalent just
+/// above) only ever swaps `side` to its axis opposite -- block for
+/// top/bottom, inline for left/right (the `opposite` map above). For a
+/// `side="top"`/`side="bottom"` placement, the horizontal position comes
+/// entirely from `align` (start/center/end, computed once against the
+/// trigger's own rect in `place()` above) and was never once checked
+/// against the viewport at all -- not by CSS (this crate's `@supports`
+/// block declares no shift primitive), and not by this function. A
+/// center-aligned overlay wider than the room its trigger happens to have
+/// on one side had no correction of any kind, on either engine.
+///
+/// Fixed *only* on this JS-fallback path (below, in the "neither matches"
+/// branch): after the existing flip decision, `target.left` is clamped into
+/// `[EDGE_MARGIN, vw - EDGE_MARGIN - cw]` (falling back to flush against the
+/// left edge if the content is wider than the viewport has room for at
+/// all -- resizing to fit stays out of scope, matching the flip-only note
+/// above). Deliberately not mirrored into the CSS `@supports` contract in
+/// this round: no `position-try-fallbacks` keyword shifts along an axis the
+/// way this function's clamp does (CSS's own analogous primitive,
+/// `position-area`/`margin: auto`-driven "shift", is a materially larger
+/// change this fix does not need to make in order to close the reported
+/// device's gap) -- so a genuinely CSS-Anchor-Positioning-conforming engine
+/// (this sandbox's Chromium among them) is untouched by this fix, exactly
+/// as the existing `matches()` early-return above already keeps it for
+/// flip. That is not a gap for the *reported* device, though: iOS Safari
+/// (per the report) has no CSS Anchor Positioning support at all, so it
+/// always takes this exact fallback path regardless. `top-layer.spec.ts`
+/// Rule 12 is the regression oracle, reusing Rule 11's own no-anchor-engine
+/// simulation.
 ///
 /// ## Scroll/resize tracking (decision 2026-09-01, revised 2026-09-02)
 ///
@@ -786,11 +855,14 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// crate uses (see `use_popover_sync` above) -- when `open` goes false or
 /// this component unmounts; nothing is left listening on `window` (or
 /// `visualViewport`, added 2026-09-02) past the overlay's own lifetime.
-/// Deliberately narrow, matching the flip-only scope above it: no
-/// shift/collision-avoidance beyond the existing flip, and no
-/// `ResizeObserver` on the trigger or content elements -- only `window`
-/// (and, since 2026-09-02, `visualViewport`) `scroll`/`resize`, which is
-/// all a *position* (not size) correction needs.
+/// Deliberately narrow: no `ResizeObserver` on the trigger or content
+/// elements -- only `window` (and, since 2026-09-02, `visualViewport`)
+/// `scroll`/`resize`, which is all a *position* (not size) correction
+/// needs. Re-running `reposition()` on every tracked event re-applies the
+/// inline-axis shift (2026-09-03, see that section below) exactly as it
+/// re-applies flip -- both live inside the same function, so a scroll or
+/// resize that changes how much room the trigger has re-clamps the same way
+/// the initial placement does, with no separate wiring needed.
 ///
 /// ## iOS keyboard (2026-09-02)
 ///
@@ -1071,9 +1143,7 @@ pub(crate) fn use_anchor_position_fallback(
                 // already-open overlay (2026-09-02 fix, gap 2 -- see this
                 // function's doc). Make the same flip decision from plain
                 // viewport math, so a non-anchor engine gets flip parity
-                // with the CSS path -- flip only, no shift/size
-                // (docs/backlog.md row 10's remaining Phase 5 scope stays
-                // open).
+                // with the CSS path.
                 usingFallback = true;
                 let target = primary;
                 if (side === 'top' && primary.top < 0) {{
@@ -1085,6 +1155,48 @@ pub(crate) fn use_anchor_position_fallback(
                 }} else if (side === 'right' && primary.left + cw > vw) {{
                     target = flipped;
                 }}
+
+                // 2026-09-03 inline shift/clamp (user device report, iOS 18
+                // Safari, no CSS Anchor Positioning there at all -- see this
+                // function's doc, "Inline-axis shift (2026-09-03)"): flip
+                // alone only ever swaps `side` to its opposite on the *same*
+                // axis (block for top/bottom, inline for left/right -- the
+                // `opposite` map above). It does nothing for the *other*
+                // axis's placement -- concretely, a `side="bottom"`/
+                // `side="top"` placement's horizontal position comes only
+                // from `align` (start/center/end, computed once against the
+                // trigger in `place()` above) and never once considers the
+                // viewport at all, flip or otherwise. A center-aligned
+                // overlay wider than the room its trigger happens to have on
+                // one side (a trigger near a viewport edge, exactly the
+                // reported ColorPicker case on a narrow screen) always
+                // overflowed that edge with no correction of any kind.
+                // Clamping `target.left` into the viewport, with a small
+                // edge margin, closes that gap the same way a `position-
+                // try-fallbacks: ..., shift-inline` CSS primitive would for
+                // a conforming engine (not declared in this crate's CSS
+                // contract today -- see that doc section for why this stays
+                // JS-fallback-only for now, matching the reported engine
+                // exactly: iOS Safari has no CSS Anchor Positioning at all,
+                // so it always runs this exact path). Applied after the
+                // flip decision above, on whichever `target` that decision
+                // already picked -- shift is a final safety net on top of
+                // flip, never a replacement for it.
+                const EDGE_MARGIN = 4;
+                if (target.left < EDGE_MARGIN) {{
+                    target = {{ top: target.top, left: EDGE_MARGIN }};
+                }} else if (target.left + cw > vw - EDGE_MARGIN) {{
+                    // `Math.max`, not a bare subtraction: on a viewport too
+                    // narrow for the content at all (`cw` alone exceeds
+                    // `vw - 2 * EDGE_MARGIN`), the two clamp branches
+                    // disagree about which edge to honor -- resizing to fit
+                    // is out of scope (shift only, not size, matching the
+                    // existing flip-only scope note this replaces), so the
+                    // left edge wins and the content simply runs past the
+                    // right edge rather than past both.
+                    target = {{ top: target.top, left: Math.max(EDGE_MARGIN, vw - EDGE_MARGIN - cw) }};
+                }}
+
                 content.style.position = 'fixed';
                 content.style.margin = '0';
                 content.style.inset = 'auto';
@@ -1307,6 +1419,62 @@ pub(crate) fn position_anchor_style(id: &str) -> String {
     format!("position-anchor: --dxa-{id};")
 }
 
+/// Fold [`position_anchor_style`] and a caller's own `style` into exactly
+/// one `style` attribute, then merge the rest of `attributes` on top.
+///
+/// Every anchored-content leaf (`TooltipContentRendered`,
+/// `HoverCardContentRendered`, `DropdownMenuContentRendered`,
+/// `MenubarContentRendered`, `PopoverModalContent`/`PopoverNonModalContent`,
+/// `SelectListRendered`, `ComboboxListRendered`) used to set
+/// `style: position_anchor_style(&id)` as a bare literal on the element
+/// while *also* spreading `..attributes` -- and a caller passing its own
+/// `style` (shorthand or plain, e.g. the `top_layer` preview fixture's
+/// `MenubarContent { style: "min-height: 100px;", .. }`) then produced two
+/// `style` attributes on one tag: the exact duplicate-attribute hazard
+/// `docs/conformance-harness.md` hydration-parity Rule 4 documents.
+/// `dioxus-ssr` keeps the *first* `style` it renders (`position-anchor` for
+/// these components), while the WASM client's `set_attribute` overwrites
+/// with the *last* one it applies (the caller's) -- so SSR and CSR silently
+/// disagree about which `style` wins, and on the client the anchor binding
+/// this whole module exists to set up is lost, breaking CSS Anchor
+/// Positioning without any error. `merge_attributes` alone cannot fix this:
+/// it dedupes by `(name, namespace)`, and a bare `style: "..."` literal (as
+/// written here) is a different attribute from the `attributes` list's own
+/// `style`/style-shorthand entries from its point of view, so plain
+/// `merge_attributes` never sees them as the same key to begin with.
+///
+/// So instead: run `attributes` through [`crate::fold_style_attributes`]
+/// first (same construction as `ContextMenuTrigger`'s touch-suppression
+/// style, `context_menu.rs`) to pull out whatever `style` the caller
+/// supplied -- shorthand props, a plain `style` literal, or both -- as one
+/// string, prepend `position_anchor_style(id)` to it (anchor binding first
+/// so the caller's own declarations, listed after, can still override any
+/// property they want without ever being able to drop the anchor binding
+/// itself), and merge that single resulting `style` attribute back in with
+/// everything else `fold_style_attributes` left untouched. Exactly one
+/// `style` attribute reaches the `rsx!` call either way, so SSR and CSR
+/// agree by construction and there is nothing left for Rule 4 to catch.
+///
+/// Call this as the last step before an anchored leaf's `rsx!` block, on
+/// whatever `attributes` variable would otherwise be spread with
+/// `..attributes` -- including one a call site already ran through its own
+/// `merge_attributes` for a marker class or a default `aria-labelledby`, so
+/// this never needs a second, separate merge pass for those. Drop the
+/// call site's own `style: position_anchor_style(&id)` literal once this is
+/// wired in; the returned list already carries that `style`.
+#[cfg(feature = "web")]
+pub(crate) fn anchored_content_attributes(id: &str, attributes: Vec<Attribute>) -> Vec<Attribute> {
+    let (caller_style, rest) = crate::fold_style_attributes(attributes);
+    let style = match caller_style {
+        Some(caller_style) => format!("{} {caller_style}", position_anchor_style(id)),
+        None => position_anchor_style(id),
+    };
+    crate::merge_attributes(vec![
+        dioxus_attributes::attributes!(div { style: "{style}" }),
+        rest,
+    ])
+}
+
 /// No-op whenever this crate's `web` feature is off -- see
 /// [`anchor_name_style`]'s doc. Unlike [`position_anchor_style`], this one
 /// *is* called unconditionally (every trigger sets it, regardless of
@@ -1315,4 +1483,127 @@ pub(crate) fn position_anchor_style(id: &str) -> String {
 #[cfg(not(feature = "web"))]
 pub(crate) fn anchor_name_style(_id: &str) -> String {
     String::new()
+}
+
+#[cfg(all(test, feature = "web"))]
+mod tests {
+    use super::*;
+    use dioxus_core::AttributeValue::Text;
+
+    fn plain_style(value: &str) -> Attribute {
+        Attribute {
+            name: "style",
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    fn shorthand_style(prop: &'static str, value: &str) -> Attribute {
+        Attribute {
+            name: prop,
+            namespace: Some("style"),
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    fn other(name: &'static str, value: &str) -> Attribute {
+        Attribute {
+            name,
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    /// Every style attribute in the returned list, as `(name, value)`
+    /// pairs -- lets the assertions below check there is exactly one no
+    /// matter which merge order `merge_attributes` happens to produce.
+    fn style_attrs(attrs: &[Attribute]) -> Vec<(&'static str, String)> {
+        attrs
+            .iter()
+            .filter(|a| a.name == "style")
+            .map(|a| match &a.value {
+                Text(s) => (a.name, s.clone()),
+                _ => (a.name, String::new()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn no_caller_style_yields_just_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![other("role", "tooltip")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        assert_eq!(styles[0].1, "position-anchor: --dxa-x;");
+        // Non-style attributes pass through untouched.
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    #[test]
+    fn plain_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![plain_style("min-height: 100px;")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("min-height: 100px;"));
+        // Anchor binding first, so the caller's own declaration -- listed
+        // after -- can override any property it names without ever being
+        // able to drop the anchor binding itself.
+        assert!(style.find("position-anchor").unwrap() < style.find("min-height").unwrap());
+    }
+
+    #[test]
+    fn shorthand_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_content_attributes("x", vec![shorthand_style("padding", "1rem")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("padding:1rem;"));
+        assert!(style.find("position-anchor").unwrap() < style.find("padding").unwrap());
+    }
+
+    #[test]
+    fn shorthand_and_plain_caller_style_both_fold_into_the_one_attribute() {
+        // The exact shape that used to break: a caller mixing a plain
+        // `style` literal with shorthand style props (or a themed wrapper
+        // contributing one of each), on top of this component's own
+        // `position-anchor` literal -- three style-contributing values that
+        // must all end up in the one served `style="..."`.
+        let result = anchored_content_attributes(
+            "x",
+            vec![
+                plain_style("min-height: 100px;"),
+                shorthand_style("padding", "1rem"),
+                other("role", "tooltip"),
+            ],
+        );
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("position-anchor: --dxa-x;"));
+        assert!(style.contains("min-height: 100px;"));
+        assert!(style.contains("padding:1rem;"));
+        assert!(style.find("position-anchor").unwrap() < style.find("min-height").unwrap());
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
 }

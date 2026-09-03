@@ -1,5 +1,7 @@
 //! Defines the [`Navbar`] component and its sub-components.
 
+#[cfg(feature = "web")]
+use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
@@ -8,6 +10,8 @@ use crate::{
     use_animated_open, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
+#[cfg(feature = "web")]
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct NavbarContext {
@@ -170,6 +174,15 @@ struct NavbarNavContext {
     is_open: Memo<bool>,
     disabled: ReadSignal<bool>,
     initial_focus: Signal<Option<CollectionPlacement>>,
+
+    // The current `NavbarContent`'s own element id for *this* nav, kept in
+    // sync by that component -- mirrors `MenubarMenuContext::content_id`
+    // (`menubar.rs`). `NavbarTrigger`'s `anchor-name` must key off this
+    // signal (not some navbar-wide id) so each nav's content anchors to
+    // *its own* trigger, not another nav's -- see that doc for the exact
+    // bug this guards against if trigger and content ever named different
+    // ids.
+    content_id: Signal<String>,
 }
 
 impl NavbarNavContext {
@@ -279,12 +292,17 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 
     let disabled = move || (ctx.disabled)() || (props.disabled)();
 
+    // Placeholder value until `NavbarContent` mounts and syncs its own id in
+    // -- see `NavbarNavContext::content_id`'s doc.
+    let content_id = use_unique_id();
+
     let mut nav_ctx = use_context_provider(|| NavbarNavContext {
         index: props.index,
         focus,
         is_open,
         disabled: props.disabled,
         initial_focus,
+        content_id,
     });
 
     use_effect(move || {
@@ -437,6 +455,15 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     rsx! {
         button {
             onmounted,
+            // See `crate::top_layer::anchor_name_style`: ties this trigger
+            // to the web-arm content's `position-anchor`
+            // (`NavbarContentRendered`) so its anchor-positioned placement
+            // resolves relative to *this* trigger once promoted to the top
+            // layer. Inert (empty) off the web arm, and keyed on
+            // `nav_ctx.content_id` -- not this nav's own index -- for the
+            // same reason `MenubarTrigger` keys off `menu_ctx.content_id`
+            // (see that doc).
+            style: crate::top_layer::anchor_name_style(&nav_ctx.content_id.cloned()),
             onpointerdown: move |event| {
                 if !disabled() {
                     // Suppress the synthesized focus shift so that tapping a child
@@ -550,7 +577,7 @@ pub struct NavbarContentProps {
 #[component]
 pub fn NavbarContent(props: NavbarContentProps) -> Element {
     let ctx: NavbarContext = use_context();
-    let nav_ctx: NavbarNavContext = use_context();
+    let mut nav_ctx: NavbarNavContext = use_context();
     let index = nav_ctx.index.cloned();
     let open_direction = match (ctx.open_nav)() {
         Some(open_index) if open_index > index => "start",
@@ -562,19 +589,162 @@ pub fn NavbarContent(props: NavbarContentProps) -> Element {
     let unique_id = use_unique_id();
     let id = use_id_or(unique_id, props.id);
 
+    // Keep `nav_ctx.content_id` in sync with this content's actual id --
+    // see `NavbarNavContext::content_id`'s doc. Mirrors `MenubarContent`'s
+    // identical `menu_ctx.content_id.set(id())` (`menubar.rs`).
+    use_effect(move || nav_ctx.content_id.set(id()));
+
     let render = use_animated_open(id, nav_ctx.is_open);
     use_deferred_collection_focus(nav_ctx.focus, nav_ctx.initial_focus, render);
 
     rsx! {
         if render() {
-            div {
-                id,
-                role: "menu",
-                "data-state": if (nav_ctx.is_open)() { "open" } else { "closed" },
-                "data-open-menu-direction": "{open_direction}",
-                ..props.attributes,
-                {props.children}
+            NavbarContentRendered {
+                id: id.cloned(),
+                open_direction,
+                attributes: props.attributes,
+                children: props.children,
             }
+        }
+    }
+}
+
+/// Web arm (2026-09-03, finding C): promote each nav's content to the top
+/// layer via `popover="auto"`, anchored to its own trigger -- the same
+/// mechanism `MenubarContentRendered`/`DropdownMenuContentRendered` use
+/// (`menubar.rs`/`dropdown_menu.rs`), which see for the general
+/// `popover`/CSS-anchor wiring this mirrors. Before this fix, `NavbarNav`
+/// never migrated onto the top-layer engine at all (docs/plan.md Phase
+/// 4.4/Migration A never reached it) -- its content stayed a plain `div`,
+/// positioned by ordinary CSS (`position: absolute; top: 100%; left: 0`
+/// inside `.dx-navbar-nav`'s `position: relative` wrapper,
+/// `preview/src/components/navbar/style.css`), with no viewport-edge
+/// collision handling of any kind -- unlike `DropdownMenu`/`Menubar`/
+/// `Select`, whose menus all flip when they would run off-viewport. User
+/// report: "why does the Navbar menu not auto-flip when it gets cut off at
+/// the bottom/top like the other menus?" -- this migration is the fix:
+/// once anchored the same way, the same shared, engine-injected
+/// anchor-positioning stylesheet (`top_layer::ensure_anchor_positioning_
+/// styles`) and `use_anchor_position_fallback`'s JS fallback both apply
+/// `position-try-fallbacks: flip-block, flip-inline` (or its JS-measured
+/// equivalent) to this content exactly as they already do for those three.
+///
+/// `auto`, not `manual`: same shape and reasoning as `MenubarContentRendered`
+/// -- a persistent trigger per nav, plus this component's own existing
+/// blur-driven close (`NavbarTrigger`/`NavbarItem`'s `onblur`) as a backstop
+/// that native light dismiss only ever supplements, never competes with.
+///
+/// `open_direction` (Radix-style cosmetic slide transition between sibling
+/// navs, unrelated to viewport-edge collision) is threaded straight through
+/// from `NavbarContent` above -- unlike `side`/`align`, it depends on
+/// `NavbarContext`/the nav's own index, not anything this component or its
+/// fallback needs to compute itself.
+#[cfg(feature = "web")]
+#[component]
+fn NavbarContentRendered(
+    id: String,
+    open_direction: &'static str,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let ctx: NavbarContext = use_context();
+    let nav_ctx: NavbarNavContext = use_context();
+    let open = nav_ctx.is_open;
+    let index = nav_ctx.index;
+
+    // Drive `showPopover()`/`hidePopover()` from `open`, and sync a native
+    // close back into `ctx.open_nav` -- but *only* when this nav is still
+    // the one recorded as open. Same guard, and the same reason, as
+    // `MenubarContentRendered`'s identical callback (`menubar.rs`, see its
+    // doc): `Navbar`'s own effect reacting to focus changes can move
+    // `ctx.open_nav` straight from `Some(this index)` to
+    // `Some(another index)` in one step, and per WHATWG HTML, showing the
+    // *new* nav's `auto` popover natively closes this (now-unrelated)
+    // sibling `auto` popover for us, firing this same `toggle` callback
+    // with `is_open: false` *after* `ctx.open_nav` already points at the
+    // other nav.
+    crate::top_layer::use_popover_sync(
+        id.clone(),
+        open,
+        Callback::new(move |is_open: bool| {
+            if !is_open && (ctx.open_nav)() == Some(index.cloned()) {
+                ctx.set_open_nav.call(None);
+            }
+        }),
+    );
+    // JS-measured static positioning fallback for engines without CSS
+    // Anchor Positioning -- see `top_layer::use_anchor_position_fallback`'s
+    // doc. `side`/`align`/gap match this component's pre-migration CSS
+    // (`../../preview/src/components/navbar/style.css`'s `top: 100%; left:
+    // 0; margin-top: 0.5rem` -- 0.5rem == 8px at the default root font
+    // size): anchored below the trigger, left-aligned with it, the same
+    // bottom/start convention `MenubarContentRendered`/
+    // `DropdownMenuContentRendered` use for the identical visual shape.
+    crate::top_layer::use_anchor_position_fallback(
+        id.clone(),
+        id.clone(),
+        open,
+        crate::ContentSide::Bottom,
+        crate::ContentAlign::Start,
+        8,
+    );
+
+    // See `menubar.rs`'s `MenubarContentRendered` for why this
+    // hand-written, never-`Styles::`-routed marker class exists: it is what
+    // the shared, engine-injected anchor-positioning stylesheet
+    // (`top_layer::ensure_anchor_positioning_styles`) selects on,
+    // sidestepping `manganis-core`'s `css_module_parser` not scoping
+    // classes inside `@supports` bodies.
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            class: "dx-anchor-navbar"
+        }),
+    ]);
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4). The
+    // `top_layer` fixture's `NavbarContent { style: "min-height: 100px;" }`
+    // is the exerciser: pre-fix it emitted two `style` attributes (SSR kept
+    // the anchor binding, the client kept the caller's).
+    let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
+
+    rsx! {
+        div {
+            id: id.clone(),
+            role: "menu",
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+            "data-open-menu-direction": "{open_direction}",
+            ..attributes,
+            {children}
+        }
+    }
+}
+
+/// Native (Blitz) arm: byte-for-byte the pre-migration `div` -- Blitz has no
+/// popover-API support at all, so this stays the functional floor, matching
+/// `MenubarContentRendered`'s identical native arm.
+#[cfg(not(feature = "web"))]
+#[component]
+fn NavbarContentRendered(
+    id: String,
+    open_direction: &'static str,
+    attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let nav_ctx: NavbarNavContext = use_context();
+
+    rsx! {
+        div {
+            id,
+            role: "menu",
+            "data-state": if (nav_ctx.is_open)() { "open" } else { "closed" },
+            "data-open-menu-direction": "{open_direction}",
+            ..attributes,
+            {children}
         }
     }
 }

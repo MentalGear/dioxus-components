@@ -332,6 +332,15 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
         }),
         labelledby,
     ]);
+    // Folds the caller's own `style` together with the anchor binding into
+    // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
+    // doc for why a bare `style: position_anchor_style(&id)` literal
+    // alongside `..attributes` is the duplicate-`style` hazard
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let attributes = crate::top_layer::anchored_content_attributes(
+        &ctx.selectable.trigger_id.cloned(),
+        attributes,
+    );
 
     rsx! {
         div {
@@ -340,7 +349,6 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             tabindex: if focused() { "0" } else { "-1" },
             aria_multiselectable: ctx.multi(),
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            style: crate::top_layer::position_anchor_style(&ctx.selectable.trigger_id.cloned()),
 
             // Data attributes
             "data-state": if open() { "open" } else { "closed" },

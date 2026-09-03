@@ -556,6 +556,56 @@ fn use_dialog_close_sync(
 /// visibly opens and then immediately closes, with focus never durably
 /// landing on anything inside it. See `docs/plan.md`/this crate's
 /// `native-dialog.spec.ts` Rule 7 for the oracle rules this fixes.
+///
+/// ## The opening-gesture false positive (user device report, 2026-09-03)
+///
+/// User report (iOS Safari, touch): opening the home page's default
+/// (modal, `is_modal` defaults to `true`) `Popover` -- "Show Popover" --
+/// shows only its `::backdrop`; the popover itself flashes and disappears.
+/// This hook is a modal `Popover`/`Dialog`'s only dismissal path -- the web
+/// arm calls neither `use_global_escape_listener` nor `use_outside_dismiss`
+/// (the browser's own `showModal()` already supplies focus trap/restore and
+/// inertness; this hook is what supplies backdrop-click dismiss) -- so a
+/// dismiss firing on the *opening* tap itself matches the report exactly.
+///
+/// Reproduction attempted (this session): touch-emulated (`hasTouch`,
+/// `locator.tap()`) opens of this exact popover, in this sandbox's
+/// Chromium, keep it open -- confirmed by execution, no self-dismiss. That
+/// is expected, not a sign there is nothing to fix: this listener is bound
+/// directly on the `<dialog>` element, and the button that opens it is a
+/// *sibling* of that dialog, not an ancestor -- the one native `click`
+/// event dispatched for the opening tap has `event.target` fixed to the
+/// button for its entire dispatch (per DOM event dispatch, a event's
+/// `target` is set once and does not change mid-dispatch even if the
+/// listener that runs partway through synchronously shows the dialog), and
+/// it never reaches this handler at all, on any engine that dispatches
+/// exactly one `click` per tap. iOS Safari's touch-to-click synthesis is
+/// the documented exception: WebKit computes a synthesized click's hit-test
+/// target lazily, and a DOM mutation between `touchend` and that synthesis
+/// (exactly `showModal()`, moving this same coordinate under the freshly
+/// shown `::backdrop`) can retarget the synthesized click at whatever now
+/// sits there -- the dialog itself, i.e. `event.target === dialog`, passing
+/// this hook's own discriminator and landing at the *trigger's* screen
+/// position, which sits outside a trigger-anchored (not viewport-centered;
+/// see `popover.rs`'s module doc) modal `Popover`'s own rendered box. This
+/// is engine behavior this sandbox cannot exercise (no such click-retarget
+/// quirk exists in this Chromium build to reproduce against), so this
+/// remains device-only, per this session's own instruction not to claim a
+/// reproduction that was not actually achieved.
+///
+/// Fixed by construction regardless: `dialog.addEventListener('click', ...)`
+/// is deferred by one `requestAnimationFrame`, so the very click that opened
+/// this dialog -- and any same-gesture follow-up event an engine might
+/// synthesize immediately after it -- can never reach this listener at all,
+/// on any engine, by construction rather than by guessing at Safari's exact
+/// timing. A *separate*, later dismiss click still works exactly as before:
+/// one frame (~16ms) is far shorter than the time a real second tap, or a
+/// Playwright `.click()`'s own actionability/round-trip overhead, ever
+/// takes to reach the browser. `cancelAnimationFrame` on cleanup covers the
+/// case where the dialog closes (unmounts, see `popover.rs`'s "Two
+/// execution-confirmed bugs" -- though this specific content has no exit
+/// animation) before the deferred frame ever fires, so the listener is
+/// never attached to an element already gone from the DOM.
 #[cfg(feature = "web")]
 fn use_dialog_backdrop_dismiss(
     id: impl Readable<Target = String> + Copy + 'static,
@@ -576,8 +626,16 @@ fn use_dialog_backdrop_dismiss(
                     && e.clientY >= rect.top && e.clientY <= rect.bottom;
                 if (!inside) dioxus.send(true);
             };
-            dialog.addEventListener('click', onClick);
+            // Deferred by one frame -- see this hook's doc, 'The
+            // opening-gesture false positive' -- so the tap that opened
+            // this dialog (still finishing its own dispatch, or a
+            // same-gesture synthetic follow-up some engines emit) can never
+            // reach this listener.
+            const raf = requestAnimationFrame(() => {
+                dialog.addEventListener('click', onClick);
+            });
             await dioxus.recv();
+            cancelAnimationFrame(raf);
             dialog.removeEventListener('click', onClick);",
         );
         let _ = eval.send(id.cloned());

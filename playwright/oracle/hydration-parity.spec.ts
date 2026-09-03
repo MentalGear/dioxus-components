@@ -94,10 +94,21 @@
  *      a bare `python3 -m http.server`. There is no locally-servable URL
  *      under this app's SSG build where `/component/?name=X&`'s *own*
  *      markup differs by `X`. `/` does not have this problem and is where
- *      the fixtures actually live pre-JS: the whole component gallery,
- *      `top_layer` fixture included, is embedded directly on the home page
- *      (Rule 3's Dropdown Menu is the same pattern) -- it is also, not
- *      coincidentally, the exact page Finding 1's own evidence came from.)
+ *      the fixtures actually live pre-JS: the whole component gallery is
+ *      embedded directly on the home page (Rule 3's Dropdown Menu is the
+ *      same pattern) -- it is also, not coincidentally, the exact page
+ *      Finding 1's own evidence came from. NOTE (2026-09-03): `top_layer`
+ *      itself was subsequently excluded from the `/` gallery grid
+ *      (`preview/src/main.rs`'s `ComponentGallery` -- it is an oracle
+ *      fixture, not an installable component; still reachable at its own
+ *      `/component/?name=top_layer&` page) -- this does not weaken Rule 4's
+ *      own coverage, since every duplicate-attribute defect it found above
+ *      lived in a *primitive* (`toast.rs`, `progress.rs`, `context_menu.rs`,
+ *      `popover.rs`, `select/components/trigger.rs`) that other components
+ *      still embedded on `/` continue to exercise (the `progress` demo, the
+ *      `context_menu`/`popover`/`select` component cards themselves); it did
+ *      remove Rule 4b's only caller-override instance of the pattern from
+ *      `/`, which is why Rule 4b's subject changed (see its own doc below).
  *      Rule source: the WHATWG HTML parsing
  *      spec's tokenizer step for start tags --
  *      https://html.spec.whatwg.org/multipage/parsing.html#attribute-name-state
@@ -223,6 +234,10 @@ const BASE = "http://127.0.0.1:8090";
 type StartTag = {
   raw: string;
   name: string;
+  /** Index of this tag's leading `<` in the source HTML -- lets a caller correlate a start
+   * tag with a nearby sibling/descendant tag found elsewhere in the same document (Rule 4b
+   * below uses this to find the `<span role="img">` ancestor of a specific `<img alt="...">`). */
+  start: number;
   /** Attribute names in document order, lower-cased, one entry per occurrence. */
   attrNames: string[];
   /** name -> value of the FIRST occurrence only (WHATWG duplicate-attribute rule: later ones are dropped). */
@@ -290,7 +305,7 @@ function extractStartTags(html: string): StartTag[] {
           effectiveValues.set(attrName, value); // first occurrence wins, per WHATWG
         }
       }
-      tags.push({ raw, name, attrNames, effectiveValues });
+      tags.push({ raw, name, start: i, attrNames, effectiveValues });
     }
     i = j + 1;
   }
@@ -379,7 +394,10 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   // `/component/?name=top_layer&`/`/component/?name=dialog&` are not
   // included: `name` is a query param this app's SSG build does not
   // prerender per-value (see Rule 4's doc above) -- `/` already embeds
-  // every fixture, `top_layer` included, directly.
+  // every component gallery card directly (`top_layer` itself no longer
+  // among them, 2026-09-03 -- see Rule 4's own doc note above -- but every
+  // duplicate-attribute defect Rule 4 found still lives in a primitive
+  // exercised by another gallery card).
   const RULE4_URLS = [`${BASE}/`];
 
   test("Rule 4: no start tag in served HTML has a duplicated attribute name (WHATWG HTML duplicate-attribute parse error)", async ({
@@ -403,36 +421,84 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     }
   });
 
-  test("Rule 4b: the top-layer fixture's toast region served accessible name is the caller's override, not the primitive's default", async ({
+  // Rule 4b's ORIGINAL (2026-09-01) subject was the top-layer oracle
+  // fixture's `ToastProvider` region -- its caller `aria_label:
+  // "Top-layer fixture notifications"` override of `ToastRegionRendered`'s
+  // own default (`toast.rs`). That subject left `/` on 2026-09-03 when
+  // `preview/src/main.rs`'s `ComponentGallery` stopped embedding the
+  // `top_layer` fixture on the home page (it is an oracle probe surface,
+  // not an installable component -- see docs/backlog.md's landed row and
+  // this file's own Rule 4 doc note above); `/component/?name=X&` cannot
+  // serve as a replacement fixture for the reason Rule 4's doc already
+  // gives (this app's SSG build does not prerender per query-string value).
+  //
+  // REPLACEMENT SUBJECT: the `avatar` component's own gallery card, always
+  // mounted on `/` (avatar was never excluded). Its "Error State" example
+  // (`preview/src/components/avatar/variants/main/mod.rs`) renders
+  // `ImageAvatar { alt: "Invalid image", aria_label: "Error avatar", ... }`.
+  // `ImageAvatar` (`preview/src/components/avatar/component.rs`) computes
+  // its OWN default accessible name from `alt` (`aria_label: "{alt}"` --
+  // the row-34 axe fix, `role-img-alt`) and merges it with the caller's
+  // `attributes` via `merge_attributes` (caller-wins, deduped) before
+  // rendering `Avatar`'s `role="img"` root -- structurally the same
+  // "explicit default + caller override of the same attribute name" shape
+  // Rule 4b was written to guard, just one layer up (a preview-level
+  // themed-wrapper default, not a primitive's own): if that merge order
+  // were ever reversed (`merge_attributes(vec![props.attributes, base])`
+  // instead of `vec![base, props.attributes]`), the alt-derived default
+  // ("Invalid image") would win over the caller's real, more specific
+  // override ("Error avatar") in the served markup -- a real accessible-
+  // name regression this rule catches directly, on the one page every
+  // visitor and every gallery-wide oracle already loads.
+  //
+  // Correlating the two: `ImageAvatarProps`/`AvatarImage` put `alt` on the
+  // inner `<img>`, not on the outer `role="img"` `<span>` this test cares
+  // about, so the span is found by proximity to its own descendant `<img
+  // alt="Invalid image">` (`start` index, both from `extractStartTags`)
+  // rather than by a marker on the span's own tag -- the alt text and the
+  // aria-label override text are deliberately DIFFERENT strings (unlike
+  // e.g. the "Large avatar" example, whose `alt` and `aria_label` happen to
+  // be identical text and so could never distinguish "default won" from
+  // "override won").
+  test("Rule 4b: the avatar demo's caller-overridden accessible name is served, not the alt-derived default", async ({
     request,
   }) => {
     const response = await request.get(`${BASE}/`, { timeout: NAV_TIMEOUT });
     expect(response.ok()).toBeTruthy();
     const html = await response.text();
 
-    // Both the app shell's own ToastProvider and this fixture's own
-    // ToastProvider render a `popover="manual"` region (same component);
-    // find the one carrying the fixture's `aria_label` override text so
-    // this assertion is unambiguous about which region it is checking.
-    const regionTags = extractStartTags(html).filter(
-      (t) => t.name === "div" && t.effectiveValues.get("popover") === "manual",
-    );
-    const fixtureRegion = regionTags.find((t) =>
-      t.raw.includes("Top-layer fixture notifications"),
+    const tags = extractStartTags(html);
+    const markerImg = tags.find(
+      (t) => t.name === "img" && t.effectiveValues.get("alt") === "Invalid image",
     );
     expect(
-      fixtureRegion,
-      `expected a popover="manual" toast region in served HTML whose markup mentions the ` +
-        `fixture's aria_label override ("Top-layer fixture notifications"); found ${regionTags.length} ` +
-        `popover="manual" region(s): ${regionTags.map((t) => t.raw).join("\n")}`,
+      markerImg,
+      `expected the avatar demo's "Error State" example -- an <img alt="Invalid image"> -- ` +
+        `in served HTML; the avatar component's main-variant demo may have changed ` +
+        `(preview/src/components/avatar/variants/main/mod.rs)`,
     ).toBeDefined();
 
-    const effective = fixtureRegion!.effectiveValues.get("aria-label");
+    // The nearest preceding `<span role="img">` is this `<img>`'s own
+    // `Avatar` root -- `ImageAvatar` always renders its `AvatarImage` as a
+    // direct-ish descendant of that span, and no OTHER `role="img"` span in
+    // this demo sits between them (each avatar item is a fully separate
+    // `ImageAvatar`/`Avatar` subtree).
+    const roleImgSpans = tags.filter(
+      (t) => t.name === "span" && t.effectiveValues.get("role") === "img" && t.start < markerImg!.start,
+    );
+    const avatarSpan = roleImgSpans.at(-1);
+    expect(
+      avatarSpan,
+      `expected a preceding <span role="img"> ancestor for the "Invalid image" <img> in served HTML`,
+    ).toBeDefined();
+
+    const effective = avatarSpan!.effectiveValues.get("aria-label");
     expect(
       effective,
-      `the fixture's toast region's EFFECTIVE served aria-label (WHATWG first-wins on a ` +
-        `duplicate) should be the caller's override, not the primitive's own default -- raw ` +
-        `tag: ${fixtureRegion!.raw}`,
-    ).toBe("Top-layer fixture notifications");
+      `the avatar demo's "Error State" example's EFFECTIVE served aria-label should be the ` +
+        `caller's override ("Error avatar", from preview/src/components/avatar/variants/main/` +
+        `mod.rs), not ImageAvatar's own alt-derived default ("Invalid image") -- raw tag: ` +
+        `${avatarSpan!.raw}`,
+    ).toBe("Error avatar");
   });
 });

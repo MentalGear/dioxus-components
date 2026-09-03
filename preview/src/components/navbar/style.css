@@ -61,6 +61,33 @@
   z-index: 1000;
   top: 100%;
   left: 0;
+
+  /*
+   * `overflow`/`border` undo the UA popover stylesheet's `[popover] {
+   * border: solid; overflow: auto; ... }` (WHATWG HTML's popover section) --
+   * this content carries the `popover` attribute on the web arm (2026-09-03,
+   * finding C migration). This content has no border of its own (its edge
+   * is drawn by the `box-shadow` below) and never needs to scroll, so both
+   * are reset to nothing -- same fix as `../menubar/style.css`'s
+   * `.dx-menubar-content`/`../dropdown_menu/style.css`'s identical rule.
+   * The matching `margin`/`inset` reset, and the `@supports
+   * (anchor-name: --a)` anchor-positioning rules that keep each nav
+   * anchored to its own trigger once promoted to the top layer, live in the
+   * shared, engine-injected stylesheet every `dx-anchor-*`-marked overlay
+   * gets for free -- see `primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles` doc. On an engine without CSS Anchor
+   * Positioning, this rule's own `position: absolute; top: 100%; left: 0`
+   * stays the fallback placement -- irrelevant to whichever anchored path
+   * is actually active, since `use_anchor_position_fallback`'s JS-measured
+   * correction always overrides with inline styles, which win regardless.
+   */
+  overflow: visible;
+  border: none;
+
+  /* Clamp to the viewport so a nav's content never induces horizontal page
+     scroll on narrow screens -- same reasoning as ../menubar/style.css's
+     identical rule. */
+  max-width: calc(100vw - 2rem);
   min-width: 200px;
   padding: 0.25rem;
   border-radius: 0.5rem;
@@ -104,6 +131,8 @@
 }
 
 .dx-navbar-item {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: block;
   padding: 8px 12px;
   border-radius: calc(0.5rem - 0.25rem);

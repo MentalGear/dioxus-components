@@ -164,6 +164,8 @@
 }
 
 .dx-sidebar-sheet-close {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: none;
 }
 
@@ -175,6 +177,8 @@
 }
 
 .dx-sidebar-trigger {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: inline-flex;
   width: 1.75rem;
   height: 1.75rem;
@@ -494,6 +498,8 @@
 }
 
 .dx-sidebar-menu-button[data-sidebar="menu-button"] {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: flex;
   overflow: hidden;
   width: 100%;
@@ -782,6 +788,8 @@
 }
 
 .dx-sidebar-menu-sub-button {
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   display: flex;
   overflow: hidden;
   width: 100%;
