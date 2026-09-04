@@ -10,13 +10,13 @@
   font-weight: 500;
 }
 
-.dx-tag-list {
+.dx-tag-group-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
 }
 
-.dx-tag {
+.dx-tag-group-tag {
   display: flex;
   max-width: fit-content;
   align-items: center;
@@ -29,12 +29,12 @@
   padding-inline: 0.75rem;
 }
 
-.dx-tag[data-selected="true"] {
+.dx-tag-group-tag[data-selected="true"] {
   border-color: var(--focused-border-color);
   background-color: var(--focused-border-color);
 }
 
-.dx-tag[data-disabled="true"] {
+.dx-tag-group-tag[data-disabled="true"] {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -47,11 +47,11 @@
    element -- confirmed against the built artifact, where the wasm carries the
    hashed name. Once row 32 drops css_module hashing, this can collapse into
    the shared layer for real. */
-.dx-tag:focus-visible {
+.dx-tag-group-tag:focus-visible {
   box-shadow: var(--dx-ring);
 }
 
-.dx-remove-button {
+.dx-tag-group-remove-button {
   display: flex;
   overflow: visible;
   flex-shrink: 0;
@@ -73,16 +73,16 @@
     transform 80ms ease;
 }
 
-.dx-remove-button:hover {
+.dx-tag-group-remove-button:hover {
   background-color: var(--light, var(--primary-color-5)) var(--dark, var(--primary-color-6));
   color: var(--secondary-color-2);
 }
 
-.dx-remove-button:active {
+.dx-tag-group-remove-button:active {
   transform: scale(0.92);
 }
 
-.dx-remove-button:focus-visible {
+.dx-tag-group-remove-button:focus-visible {
   outline: 2px solid var(--focused-border-color);
   outline-offset: 2px;
 }

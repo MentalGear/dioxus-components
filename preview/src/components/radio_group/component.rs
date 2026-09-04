@@ -1,14 +1,24 @@
 use dioxus::prelude::*;
 use dioxus_primitives::radio_group::{self, RadioGroupProps, RadioItemProps};
 
-#[css_module("/src/components/radio_group/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in both exported entry points so a
+// `dx components add radio_group`-copied component needs no extra wiring).
+//
+// This component is also on the row-32 "not already namespaced" lane: its
+// item class used to be the bare `dx-radio-item`, not `dx-radio-group-item`.
+// `#[css_module]`'s hash kept it collision-safe regardless, but a plain
+// `dx-radio-item` isn't provably this component's own once the hash is
+// gone. Renamed to `dx-radio-group-item` in the same change that drops the
+// macro, in both this file and `style.css` -- see
+// `scripts/check-dx-class-prefix.sh`.
 #[component]
 pub fn RadioGroup(props: RadioGroupProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/radio_group/style.css") }
         radio_group::RadioGroup {
-            class: Styles::dx_radio_group,
+            class: "dx-radio-group",
             value: props.value,
             default_value: props.default_value,
             on_value_change: props.on_value_change,
@@ -37,12 +47,13 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
     // `PopoverContent` does, for the same reason: a caller's own class
     // should extend, not replace, this theme's.
     let class = if let Some(class) = props.class {
-        format!("{} {}", Styles::dx_radio_item, class)
+        format!("{} {}", "dx-radio-group-item", class)
     } else {
-        Styles::dx_radio_item.to_string()
+        "dx-radio-group-item".to_string()
     };
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/radio_group/style.css") }
         radio_group::RadioItem {
             id: props.id,
             class,

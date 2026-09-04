@@ -4,14 +4,12 @@ use dioxus_primitives::accordion::{
     self, AccordionContentProps, AccordionItemProps, AccordionProps, AccordionTriggerProps,
 };
 
-#[css_module("/src/components/accordion/style.css")]
-struct Styles;
-
 #[component]
 pub fn Accordion(props: AccordionProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/accordion/style.css") }
         accordion::Accordion {
-            class: Styles::dx_accordion,
+            class: "dx-accordion",
             width: "15rem",
             id: props.id,
             allow_multiple_open: props.allow_multiple_open,
@@ -27,8 +25,9 @@ pub fn Accordion(props: AccordionProps) -> Element {
 #[component]
 pub fn AccordionItem(props: AccordionItemProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/accordion/style.css") }
         accordion::AccordionItem {
-            class: Styles::dx_accordion_item,
+            class: "dx-accordion-item",
             disabled: props.disabled,
             default_open: props.default_open,
             on_change: props.on_change,
@@ -43,13 +42,14 @@ pub fn AccordionItem(props: AccordionItemProps) -> Element {
 #[component]
 pub fn AccordionTrigger(props: AccordionTriggerProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/accordion/style.css") }
         accordion::AccordionTrigger {
-            class: Styles::dx_accordion_trigger,
+            class: "dx-accordion-trigger",
             id: props.id,
             attributes: props.attributes,
             {props.children}
             ChevronDown {
-                class: Styles::dx_accordion_expand_icon,
+                class: "dx-accordion-expand-icon",
                 size: "20px",
                 stroke: "var(--secondary-color-4)",
             }
@@ -60,8 +60,9 @@ pub fn AccordionTrigger(props: AccordionTriggerProps) -> Element {
 #[component]
 pub fn AccordionContent(props: AccordionContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/accordion/style.css") }
         accordion::AccordionContent {
-            class: Styles::dx_accordion_content,
+            class: "dx-accordion-content",
             style: "--collapsible-content-width: 140px",
             id: props.id,
             attributes: props.attributes,
@@ -78,7 +79,7 @@ pub fn AccordionContent(props: AccordionContentProps) -> Element {
             // one that `overflow: hidden` on this wrapper clips away
             // entirely once the wrapper itself reaches 0. See the
             // close-animation root-cause comment in style.css.
-            div { class: Styles::dx_accordion_content_inner, {props.children} }
+            div { class: "dx-accordion-content-inner", {props.children} }
         }
     }
 }

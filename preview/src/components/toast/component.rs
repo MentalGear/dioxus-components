@@ -5,9 +5,6 @@ use dioxus_primitives::toast::{
 };
 use std::time::Duration;
 
-#[css_module("/src/components/toast/style.css")]
-struct Styles;
-
 #[component]
 fn StyledToast(props: ToastProps) -> Element {
     rsx! {
@@ -20,7 +17,7 @@ fn StyledToast(props: ToastProps) -> Element {
             on_close: props.on_close,
             permanent: props.permanent,
             duration: props.duration,
-            class: Styles::dx_toast,
+            class: "dx-toast",
             attributes: props.attributes,
             ToastContent {
                 ToastTitle {}
@@ -35,7 +32,7 @@ fn StyledToast(props: ToastProps) -> Element {
 fn ToastContent(props: ToastContentProps) -> Element {
     rsx! {
         toast::ToastContent {
-            class: Styles::dx_toast_content,
+            class: "dx-toast-content",
             attributes: props.attributes,
             {props.children}
         }
@@ -46,7 +43,7 @@ fn ToastContent(props: ToastContentProps) -> Element {
 fn ToastTitle(props: ToastTitleProps) -> Element {
     rsx! {
         toast::ToastTitle {
-            class: Styles::dx_toast_title,
+            class: "dx-toast-title",
             attributes: props.attributes,
             children: props.children,
         }
@@ -57,7 +54,7 @@ fn ToastTitle(props: ToastTitleProps) -> Element {
 fn ToastDescription(props: ToastDescriptionProps) -> Element {
     rsx! {
         toast::ToastDescription {
-            class: Styles::dx_toast_description,
+            class: "dx-toast-description",
             attributes: props.attributes,
             children: props.children,
         }
@@ -68,7 +65,7 @@ fn ToastDescription(props: ToastDescriptionProps) -> Element {
 fn ToastCloseButton(props: ToastCloseButtonProps) -> Element {
     rsx! {
         toast::ToastCloseButton {
-            class: Styles::dx_toast_close,
+            class: "dx-toast-close",
             attributes: props.attributes,
             children: props.children,
         }
@@ -89,8 +86,22 @@ pub fn ToastProvider(
     });
 
     rsx! {
+        // docs/backlog.md row 32: unlike `#[css_module]`'s bundling, this
+        // `document::Link` merely appends a `<link rel="stylesheet">` to
+        // the document head -- it does not reorder anything already there.
+        // `primitives/src/toast.rs`'s own baseline stylesheet
+        // (`ensure_toast_base_styles`) is injected by a `use_effect` in
+        // `ToastProvider`'s *rendered* primitive, which only runs after
+        // this wrapper's initial render commits its elements (including
+        // this `Link`) to the DOM. So this themed sheet's `<link>` still
+        // lands in the head before the primitive's `<style>` tag arrives,
+        // same relative order `#[css_module]`'s own head injection kept --
+        // `.dx-toast-container[popover]`/`.dx-toast` keep winning the
+        // cascade over the baseline's zero-specificity rules. CSS values
+        // themselves are untouched; only this delivery mechanism changed.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toast/style.css") }
         toast::ToastProvider {
-            class: Styles::dx_toast_container,
+            class: "dx-toast-container",
             default_duration,
             max_toasts,
             render_toast,

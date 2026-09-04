@@ -1,5 +1,16 @@
-/* TODO: abstract as Utilitiy class */
-.dx-sr-only {
+/* docs/backlog.md row 32: renamed from the bare `.dx-sr-only` to
+ * `.dx-sidebar-sr-only` -- `pagination/style.css` defines a byte-identical
+ * rule under the same short name, and `#[css_module]`'s hash was the only
+ * thing keeping the two apart. Now that this component's hashing is gone,
+ * this copy is namespaced like everything else here.
+ * TODO(row 31a): still the better long-term home is one shared
+ * `dx-sr-only` utility class in `preview/assets/dx-utilities.css` (a
+ * GENERATED file, not hand-edited -- see
+ * `scripts/generate-dx-utilities.js`) so this exact duplication with
+ * `pagination/style.css` collapses into a single definition; out of scope
+ * for this migration, so both components keep their own namespaced copy
+ * for now. */
+.dx-sidebar-sr-only {
   position: absolute;
   overflow: hidden;
   width: 1px;

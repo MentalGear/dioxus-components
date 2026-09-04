@@ -4,7 +4,7 @@
   gap: .75rem;
 }
 
-.dx-radio-item {
+.dx-radio-group-item {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -19,7 +19,7 @@
   touch-action: manipulation;
 }
 
-.dx-radio-item::before {
+.dx-radio-group-item::before {
   display: block;
   width: 1rem;
   height: 1rem;
@@ -32,25 +32,25 @@
   cursor: pointer;
 }
 
-.dx-radio-item:focus-visible {
+.dx-radio-group-item:focus-visible {
   outline: none;
 }
 
-.dx-radio-item:focus-visible::before {
+.dx-radio-group-item:focus-visible::before {
   box-shadow: 0 0 0 2px var(--focused-border-color);
 }
 
-.dx-radio-item[data-state="checked"]::before {
+.dx-radio-group-item[data-state="checked"]::before {
   border: 0.25rem solid var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
   background: var(--secondary-color-4);
 }
 
-.dx-radio-item:disabled {
+.dx-radio-group-item:disabled {
   color: var(--secondary-color-5);
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.dx-radio-item:disabled::before {
+.dx-radio-group-item:disabled::before {
   cursor: not-allowed;
 }

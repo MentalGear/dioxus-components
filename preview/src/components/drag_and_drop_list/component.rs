@@ -5,9 +5,23 @@ use dioxus_primitives::drag_and_drop_list::{
     DragAndDropListItemProps, DragAndDropListItemsProps,
 };
 
-#[css_module("/src/components/drag_and_drop_list/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in the wrapper so a `dx components add
+// drag_and_drop_list`-copied component needs no extra wiring).
+//
+// This component is also on the row-32 "not already namespaced" lane, and
+// its `.dx-remove-button` is one of the two genuine cross-component
+// collisions row 32 found: `tag_group` defines its own, differently-sized
+// `.dx-remove-button` (unsized vs this one's 26x26px + `margin-left: 10px`),
+// and unhashing both under the same short name would silently restyle
+// whichever sheet lost the CSS load order. Every out-of-namespace class here
+// (`dx-dnd-list*`, `dx-item-icon`, `dx-item-body-div`, `dx-remove-button`,
+// `dx-drop-indicator`) was renamed under the full `dx-drag-and-drop-list-`
+// namespace in the same change that drops the macro, in this file,
+// `style.css`, and the `variants/main` demo's own inline stylesheet (which
+// hovers `.dx-dnd-list-item` to restyle a demo-only class) -- see
+// `scripts/check-dx-class-prefix.sh`.
 #[derive(Props, Clone, PartialEq)]
 pub struct DragAndDropListProps {
     /// Items (labels) to be rendered.
@@ -50,7 +64,7 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
                 .unwrap_or_else(|| idx.to_string());
             rsx! {
                 DragIcon { key: "{key}" }
-                div { class: Styles::dx_item_body_div, {item} }
+                div { class: "dx-drag-and-drop-list-item-body-div", {item} }
                 if is_removable {
                     RemoveButton {}
                 }
@@ -59,8 +73,9 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
         .collect();
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropList {
-            class: Styles::dx_dnd_list,
+            class: "dx-drag-and-drop-list",
             items,
             aria_label: props.aria_label,
             attributes: props.attributes,
@@ -77,8 +92,9 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
 #[component]
 pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropListItem {
-            class: Styles::dx_dnd_list_item,
+            class: "dx-drag-and-drop-list-item",
             index: props.index,
             // Forward the stable item key so the primitive tracks focus by
             // identity across reorders and removals instead of losing it.
@@ -92,8 +108,9 @@ pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
 #[component]
 pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropListItems {
-            class: Styles::dx_dnd_list_ul,
+            class: "dx-drag-and-drop-list-ul",
             aria_label: props.aria_label,
             attributes: props.attributes,
             for item in drag_and_drop_list::use_drag_and_drop_list_items() {
@@ -121,8 +138,9 @@ pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
 #[component]
 pub fn DragAndDropDropIndicator(props: DragAndDropDropIndicatorProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropDropIndicator {
-            class: Styles::dx_drop_indicator,
+            class: "dx-drag-and-drop-list-drop-indicator",
             index: props.index,
             position: props.position,
             attributes: props.attributes,
@@ -134,7 +152,7 @@ pub fn DragAndDropDropIndicator(props: DragAndDropDropIndicatorProps) -> Element
 fn DragIcon() -> Element {
     rsx! {
         GripVertical {
-            class: Styles::dx_item_icon,
+            class: "dx-drag-and-drop-list-item-icon",
             "aria-hidden": "true",
             size: "16px",
         }
@@ -151,8 +169,9 @@ pub fn RemoveButton(
     let index = item_ctx.index();
     let label = format!("Remove item {}", index + 1);
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         button {
-            class: Styles::dx_remove_button,
+            class: "dx-drag-and-drop-list-remove-button",
             r#type: "button",
             aria_label: "{label}",
             draggable: "false",

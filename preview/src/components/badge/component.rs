@@ -1,9 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::BadgeCheck;
 
-#[css_module("/src/components/badge/style.css")]
-struct Styles;
-
 #[derive(Copy, Clone, PartialEq, Default)]
 #[non_exhaustive]
 pub enum BadgeVariant {
@@ -42,6 +39,7 @@ pub struct BadgeProps {
 #[component]
 pub fn Badge(props: BadgeProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/badge/style.css") }
         BadgeElement {
             "padding": true,
             variant: props.variant,
@@ -55,7 +53,7 @@ pub fn Badge(props: BadgeProps) -> Element {
 fn BadgeElement(props: BadgeProps) -> Element {
     rsx! {
         span {
-            class: Styles::dx_badge,
+            class: "dx-badge",
             "data-style": props.variant.class(),
             ..props.attributes,
             {props.children}
@@ -66,6 +64,7 @@ fn BadgeElement(props: BadgeProps) -> Element {
 #[component]
 pub fn VerifiedIcon() -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/badge/style.css") }
         BadgeCheck {
             size: "12px",
             stroke: "var(--secondary-color-4)",

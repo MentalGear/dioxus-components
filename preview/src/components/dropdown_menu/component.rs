@@ -6,17 +6,15 @@ use dioxus_primitives::dropdown_menu::{
 };
 use dioxus_primitives::merge_attributes;
 
-#[css_module("/src/components/dropdown_menu/style.css")]
-struct Styles;
-
 #[component]
 pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_dropdown_menu,
+        class: "dx-dropdown-menu",
     });
     let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dropdown_menu/style.css") }
         dropdown_menu::DropdownMenu {
             open: props.open,
             default_open: props.default_open,
@@ -32,11 +30,12 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
 #[component]
 pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_dropdown_menu_trigger,
+        class: "dx-dropdown-menu-trigger",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dropdown_menu/style.css") }
         dropdown_menu::DropdownMenuTrigger { as: props.r#as, attributes: merged, {props.children} }
     }
 }
@@ -44,11 +43,12 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
 #[component]
 pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_dropdown_menu_content,
+        class: "dx-dropdown-menu-content",
     });
     let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dropdown_menu/style.css") }
         dropdown_menu::DropdownMenuContent { id: props.id, attributes: merged, {props.children} }
     }
 }
@@ -58,11 +58,12 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
     props: DropdownMenuItemProps<T>,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_dropdown_menu_item,
+        class: "dx-dropdown-menu-item",
     });
     let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dropdown_menu/style.css") }
         dropdown_menu::DropdownMenuItem {
             disabled: props.disabled,
             value: props.value,

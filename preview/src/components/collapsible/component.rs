@@ -6,12 +6,10 @@ use dioxus_primitives::collapsible::{
 use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
-#[css_module("/src/components/collapsible/style.css")]
-struct Styles;
-
 #[component]
 pub fn Collapsible(props: CollapsibleProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         collapsible::Collapsible {
             keep_mounted: props.keep_mounted,
             default_open: props.default_open,
@@ -28,13 +26,14 @@ pub fn Collapsible(props: CollapsibleProps) -> Element {
 #[component]
 pub fn CollapsibleTrigger(props: CollapsibleTriggerProps) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_collapsible_trigger,
+        class: "dx-collapsible-trigger",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     let show_icon = props.r#as.is_none();
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         collapsible::CollapsibleTrigger { as: props.r#as, attributes: merged,
             {props.children}
             if show_icon {
@@ -50,8 +49,9 @@ pub fn CollapsibleTrigger(props: CollapsibleTriggerProps) -> Element {
 #[component]
 pub fn CollapsibleContent(props: CollapsibleContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         collapsible::CollapsibleContent {
-            class: Styles::dx_collapsible_content,
+            class: "dx-collapsible-content",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -65,6 +65,7 @@ pub fn CollapsibleItem(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         div {
             border: "1px solid var(--primary-color-6)",
             border_radius: "0.5rem",
@@ -81,6 +82,7 @@ pub fn CollapsibleList(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         div {
             display: "flex",
             flex_direction: "column",

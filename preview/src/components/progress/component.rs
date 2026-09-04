@@ -1,18 +1,16 @@
 use dioxus::prelude::*;
 use dioxus_primitives::progress::{self, ProgressProps};
 
-#[css_module("/src/components/progress/style.css")]
-struct Styles;
-
 #[component]
 pub fn Progress(props: ProgressProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/progress/style.css") }
         progress::Progress {
-            class: Styles::dx_progress,
+            class: "dx-progress",
             value: props.value,
             max: props.max,
             attributes: props.attributes,
-            progress::ProgressIndicator { class: Styles::dx_progress_indicator }
+            progress::ProgressIndicator { class: "dx-progress-indicator" }
         }
     }
 }

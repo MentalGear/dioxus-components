@@ -2,9 +2,6 @@ use dioxus::prelude::*;
 use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
-#[css_module("/src/components/button/style.css")]
-struct Styles;
-
 #[derive(Copy, Clone, PartialEq, Default)]
 #[non_exhaustive]
 pub enum ButtonVariant {
@@ -73,13 +70,14 @@ pub fn Button(
     children: Element,
 ) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_button,
+        class: "dx-button",
         "data-style": variant.class(),
         "data-size": size.class(),
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/button/style.css") }
         button {
             onclick: move |event| {
                 if let Some(f) = &onclick {

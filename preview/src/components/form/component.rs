@@ -63,9 +63,6 @@ use crate::components::switch::Switch;
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::CheckboxState;
 
-#[css_module("/src/components/form/style.css")]
-struct Styles;
-
 /// Builds JS that reads `new FormData(form)` and writes one `name=value` line
 /// per entry, in insertion order, into the result element -- this is the
 /// tier 2 (HTML) entry-list rule from `docs/conformance-harness.md`, read
@@ -147,11 +144,12 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
         if (form && report && !form.dataset.dxInvalidWired) {{
             form.dataset.dxInvalidWired = '1';
 
-            // `[class*="dx-form-field"]`, not `.dx-form-field`: `#[css_module]`
-            // hash-suffixes every class it generates (confirmed by execution --
-            // the rendered class here is `dx-form-field-<8 hex chars>`, not the
-            // literal name `Styles::dx_form_field` reads in Rust source), so an
-            // exact class selector never matches any real element.
+            // `[class*="dx-form-field"]` rather than `.dx-form-field`: this is
+            // deliberately loose (docs/backlog.md row 32 dropped `#[css_module]`'s
+            // hashing, so the rendered class is now the plain `dx-form-field`
+            // literal and an exact selector would work too), kept this way so it
+            // keeps matching regardless of any extra classes a future edit appends
+            // alongside it.
             function fieldContainerOf(el) {{
                 return el.closest('[class*="dx-form-field"]');
             }}
@@ -289,11 +287,12 @@ pub fn FormFixture() -> Element {
     });
 
     rsx! {
-        div { class: Styles::dx_form_fixture,
+        document::Link { rel: "stylesheet", href: asset!("/src/components/form/style.css") }
+        div { class: "dx-form-fixture",
 
-            section { class: Styles::dx_form_section,
+            section { class: "dx-form-section",
                 h2 { "Entry list" }
-                p { class: Styles::dx_form_hint,
+                p { class: "dx-form-hint",
                     "Every row pairs this library's control with a native reference control sharing a parallel "
                     code { "name" }
                     ". Submitting prevents navigation, builds "
@@ -304,14 +303,14 @@ pub fn FormFixture() -> Element {
                 }
                 form {
                     id: "entries-form",
-                    class: Styles::dx_form,
+                    class: "dx-form",
                     onsubmit: move |evt: FormEvent| {
                         evt.prevent_default();
                         let _ = document::eval(&read_form_data_js("entries-form", "form-result"));
                     },
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             label { r#for: "chk-lib", "Accept terms (library)" }
                             Checkbox {
                                 id: "chk-lib",
@@ -320,7 +319,7 @@ pub fn FormFixture() -> Element {
                                 default_checked: CheckboxState::Checked,
                             }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "chk-native", "Accept terms (native)" }
                             input {
                                 id: "chk-native",
@@ -338,8 +337,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             label { r#for: "chk-disabled-lib", "Promo opt-in, disabled (library)" }
                             Checkbox {
                                 id: "chk-disabled-lib",
@@ -349,7 +348,7 @@ pub fn FormFixture() -> Element {
                                 default_checked: CheckboxState::Checked,
                             }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "chk-disabled-native", "Promo opt-in, disabled (native)" }
                             input {
                                 id: "chk-disabled-native",
@@ -364,12 +363,12 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             label { r#for: "switch-lib", "Notifications (library switch)" }
                             Switch { id: "switch-lib", name: "notify-lib", value: "subscribed" }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "switch-native", "Notifications (native reference)" }
                             input {
                                 id: "switch-native",
@@ -380,8 +379,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        fieldset { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        fieldset { class: "dx-form-field",
                             legend { "Plan (library radio group)" }
                             RadioGroup { name: "plan-lib", aria_label: "Plan (library)",
                                 label { r#for: "plan-lib-starter",
@@ -398,7 +397,7 @@ pub fn FormFixture() -> Element {
                                 }
                             }
                         }
-                        fieldset { class: Styles::dx_form_field,
+                        fieldset { class: "dx-form-field",
                             legend { "Plan (native reference)" }
                             label { r#for: "plan-native-starter",
                                 input { id: "plan-native-starter", r#type: "radio", name: "plan-native", value: "starter" }
@@ -415,8 +414,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             span { "Fruit (library select)" }
                             Select::<String> {
                                 name: "fruit-lib",
@@ -429,7 +428,7 @@ pub fn FormFixture() -> Element {
                                 SelectOption::<String> { index: 3usize, value: "date", "Date" }
                             }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "fruit-native", "Fruit (native reference)" }
                             select { id: "fruit-native", name: "fruit-native",
                                 option { value: "apple", "Apple" }
@@ -440,23 +439,23 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_actions,
+                    div { class: "dx-form-actions",
                         button { id: "entries-submit", r#type: "submit", "Submit" }
                         button { id: "entries-reset", r#type: "reset", "Reset" }
                     }
                 }
-                pre { id: "form-result", class: Styles::dx_form_result, "data-submit-count": "0" }
+                pre { id: "form-result", class: "dx-form-result", "data-submit-count": "0" }
             }
 
-            section { class: Styles::dx_form_section,
+            section { class: "dx-form-section",
                 h2 { "Required blocking" }
-                p { class: Styles::dx_form_hint,
+                p { class: "dx-form-hint",
                     "Demonstrates that "
                     code { "required" }
                     " controls block submission: submitting with any required control unsatisfied refuses to submit, "
                     "outlines the offending control(s) in red and moves focus to the first one, and lists their names below."
                 }
-                p { class: Styles::dx_form_hint,
+                p { class: "dx-form-hint",
                     "Every library control below sets "
                     code { "required" }
                     " per its documented API, including "
@@ -468,18 +467,18 @@ pub fn FormFixture() -> Element {
                 }
                 form {
                     id: "form-required",
-                    class: Styles::dx_form,
+                    class: "dx-form",
                     onsubmit: move |evt: FormEvent| {
                         evt.prevent_default();
                         let _ = document::eval(&read_form_data_js("form-required", "required-result"));
                     },
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             label { r#for: "chk-required-lib", "Accept terms, required (library)" }
                             Checkbox { id: "chk-required-lib", name: "terms-required-lib", value: "accepted", required: true }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "chk-required-native", "Accept terms, required (native)" }
                             input {
                                 id: "chk-required-native",
@@ -491,8 +490,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             label { r#for: "switch-required-lib", "Opt-in, required (library switch)" }
                             Switch {
                                 id: "switch-required-lib",
@@ -501,7 +500,7 @@ pub fn FormFixture() -> Element {
                                 required: true,
                             }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "switch-required-native", "Opt-in, required (native reference)" }
                             input {
                                 id: "switch-required-native",
@@ -513,8 +512,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        fieldset { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        fieldset { class: "dx-form-field",
                             legend { "Tier, required (library radio group)" }
                             RadioGroup { name: "tier-required-lib", required: true, aria_label: "Tier, required (library)",
                                 label { r#for: "tier-lib-small",
@@ -531,7 +530,7 @@ pub fn FormFixture() -> Element {
                                 }
                             }
                         }
-                        fieldset { class: Styles::dx_form_field,
+                        fieldset { class: "dx-form-field",
                             legend { "Tier, required (native reference)" }
                             label { r#for: "tier-native-small",
                                 input { id: "tier-native-small", r#type: "radio", name: "tier-required-native", value: "small", required: true }
@@ -548,8 +547,8 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_row,
-                        div { class: Styles::dx_form_field,
+                    div { class: "dx-form-row",
+                        div { class: "dx-form-field",
                             span { "Fruit, required (library select)" }
                             Select::<String> {
                                 name: "fruit-required-lib",
@@ -562,7 +561,7 @@ pub fn FormFixture() -> Element {
                                 SelectOption::<String> { index: 2usize, value: "cherry", "Cherry" }
                             }
                         }
-                        div { class: Styles::dx_form_field,
+                        div { class: "dx-form-field",
                             label { r#for: "fruit-required-native", "Fruit, required (native reference)" }
                             select { id: "fruit-required-native", name: "fruit-required-native", required: true,
                                 option { value: "", selected: true, "Choose a fruit" }
@@ -573,13 +572,13 @@ pub fn FormFixture() -> Element {
                         }
                     }
 
-                    div { class: Styles::dx_form_actions,
+                    div { class: "dx-form-actions",
                         button { id: "required-submit", r#type: "submit", "Submit" }
                         button { id: "required-reset", r#type: "reset", "Reset" }
                     }
                 }
-                pre { id: "invalid-report", class: Styles::dx_form_result, "data-invalid-count": "0" }
-                pre { id: "required-result", class: Styles::dx_form_result, "data-submit-count": "0" }
+                pre { id: "invalid-report", class: "dx-form-result", "data-invalid-count": "0" }
+                pre { id: "required-result", class: "dx-form-result", "data-submit-count": "0" }
             }
         }
     }
@@ -628,11 +627,16 @@ mod tests {
 
         let tag = tag_containing(&html, "id=\"switch-lib\"");
         let class = attr_value(tag, "class");
+        // docs/backlog.md row 32: this used to look for a `dx-switch-<hash>`
+        // token, because `#[css_module]` appended a scope hash to every class.
+        // With the hashing dropped the themed class is the plain `dx-switch`,
+        // so the old prefix match (`starts_with("dx-switch-")`, note the
+        // trailing hyphen) no longer matches anything. Asserting the exact
+        // token is a stricter check than the prefix ever was: it would now
+        // also catch a stray re-hashed class coming back.
         assert!(
-            class
-                .split_whitespace()
-                .any(|token| token.starts_with("dx-switch-")),
-            "expected a dx-switch-<hash>-prefixed class on #switch-lib (see \
+            class.split_whitespace().any(|token| token == "dx-switch"),
+            "expected the unhashed `dx-switch` class on #switch-lib (see \
              crate::components::switch::Switch), got class=\"{class}\" from tag: {tag}"
         );
     }

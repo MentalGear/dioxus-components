@@ -102,22 +102,22 @@
     }
 }
 
-.dx-date-segment {
+.dx-date-picker-segment {
     caret-color: transparent;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
 }
 
-.dx-date-segment[no-date="true"] {
+.dx-date-picker-segment[no-date="true"] {
     color: var(--secondary-color-5);
 }
 
-.dx-date-segment[is-separator="true"] {
+.dx-date-picker-segment[is-separator="true"] {
     padding: 0;
 }
 
-.dx-date-segment:focus-visible {
+.dx-date-picker-segment:focus-visible {
     border-radius: 0.25rem;
     background: var(--secondary-color-3);
     color: var(--primary-color);
@@ -135,7 +135,7 @@
  * is unaffected.
  */
 @media (pointer: coarse) {
-    .dx-date-segment {
+    .dx-date-picker-segment {
         font-size: var(--dx-text-base);
     }
 }

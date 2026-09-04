@@ -1,8 +1,17 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight, Ellipsis};
-#[css_module("/src/components/pagination/style.css")]
-struct Styles;
 
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in every exported entry point of this file so a
+// `dx components add pagination`-copied component needs no extra wiring).
+//
+// This component is also on the row-32 "not already namespaced" lane: its
+// screen-reader-only helper used to be the bare `dx-sr-only`, which
+// `sidebar/style.css` also defines (byte-identical). `#[css_module]`'s hash
+// kept the two apart; renamed to `dx-pagination-sr-only` in the same change
+// that drops the macro (`sidebar` gets its own `dx-sidebar-sr-only` copy) --
+// see `style.css`'s comment on that rule and `scripts/check-dx-class-prefix.sh`.
 #[derive(Copy, Clone, PartialEq, Default)]
 #[non_exhaustive]
 pub enum PaginationLinkSize {
@@ -42,8 +51,9 @@ pub fn Pagination(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         nav {
-            class: Styles::dx_pagination,
+            class: "dx-pagination",
             "data-slot": "pagination",
             role: "navigation",
             aria_label: "pagination",
@@ -59,8 +69,9 @@ pub fn PaginationContent(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         ul {
-            class: Styles::dx_pagination_content,
+            class: "dx-pagination-content",
             "data-slot": "pagination-content",
             ..attributes,
             {children}
@@ -74,6 +85,7 @@ pub fn PaginationItem(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         li {
             "data-slot": "pagination-item",
             ..attributes,
@@ -104,8 +116,9 @@ pub fn PaginationLink(props: PaginationLinkProps) -> Element {
     let aria_current = if props.is_active { Some("page") } else { None };
     let data_kind = props.data_kind.map(|kind| kind.attr());
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         a {
-            class: Styles::dx_pagination_link,
+            class: "dx-pagination-link",
             "data-slot": "pagination-link",
             "data-active": props.is_active,
             "data-size": props.size.class(),
@@ -142,6 +155,7 @@ pub fn PaginationPrevious(
     attributes: Vec<Attribute>,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         PaginationLink {
             size: PaginationLinkSize::Default,
             aria_label: "Go to previous page",
@@ -151,7 +165,7 @@ pub fn PaginationPrevious(
             onmouseup,
             attributes,
             ChevronLeft { size: "1rem" }
-            span { class: Styles::dx_pagination_label, "Previous" }
+            span { class: "dx-pagination-label", "Previous" }
         }
     }
 }
@@ -166,6 +180,7 @@ pub fn PaginationNext(
     attributes: Vec<Attribute>,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         PaginationLink {
             size: PaginationLinkSize::Default,
             aria_label: "Go to next page",
@@ -174,7 +189,7 @@ pub fn PaginationNext(
             onmousedown,
             onmouseup,
             attributes,
-            span { class: Styles::dx_pagination_label, "Next" }
+            span { class: "dx-pagination-label", "Next" }
             ChevronRight { size: "1rem" }
         }
     }
@@ -185,13 +200,14 @@ pub fn PaginationEllipsis(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/pagination/style.css") }
         span {
-            class: Styles::dx_pagination_ellipsis,
+            class: "dx-pagination-ellipsis",
             "data-slot": "pagination-ellipsis",
             aria_hidden: "true",
             ..attributes,
             Ellipsis { size: "1rem" }
-            span { class: Styles::dx_sr_only, "More pages" }
+            span { class: "dx-pagination-sr-only", "More pages" }
         }
     }
 }

@@ -2,14 +2,13 @@ use dioxus::prelude::*;
 use dioxus_primitives::hover_card::{
     self, HoverCardContentProps, HoverCardProps, HoverCardTriggerProps,
 };
-#[css_module("/src/components/hover_card/style.css")]
-struct Styles;
 
 #[component]
 pub fn HoverCard(props: HoverCardProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
         hover_card::HoverCard {
-            class: Styles::dx_hover_card,
+            class: "dx-hover-card",
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,
@@ -23,8 +22,9 @@ pub fn HoverCard(props: HoverCardProps) -> Element {
 #[component]
 pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
         hover_card::HoverCardTrigger {
-            class: Styles::dx_hover_card_trigger,
+            class: "dx-hover-card-trigger",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -35,8 +35,9 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
 #[component]
 pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
         hover_card::HoverCardContent {
-            class: Styles::dx_hover_card_content,
+            class: "dx-hover-card-content",
             side: props.side,
             align: props.align,
             id: props.id,

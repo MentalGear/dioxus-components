@@ -3,17 +3,15 @@ use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 use dioxus_primitives::tooltip::{self, TooltipContentProps, TooltipProps, TooltipTriggerProps};
 
-#[css_module("/src/components/tooltip/style.css")]
-struct Styles;
-
 #[component]
 pub fn Tooltip(props: TooltipProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_tooltip,
+        class: "dx-tooltip",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tooltip/style.css") }
         tooltip::Tooltip {
             disabled: props.disabled,
             open: props.open,
@@ -28,11 +26,12 @@ pub fn Tooltip(props: TooltipProps) -> Element {
 #[component]
 pub fn TooltipTrigger(props: TooltipTriggerProps) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_tooltip_trigger,
+        class: "dx-tooltip-trigger",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tooltip/style.css") }
         tooltip::TooltipTrigger {
             id: props.id,
             as: props.r#as,
@@ -45,11 +44,12 @@ pub fn TooltipTrigger(props: TooltipTriggerProps) -> Element {
 #[component]
 pub fn TooltipContent(props: TooltipContentProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_tooltip_content,
+        class: "dx-tooltip-content",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tooltip/style.css") }
         tooltip::TooltipContent {
             id: props.id,
             side: props.side,

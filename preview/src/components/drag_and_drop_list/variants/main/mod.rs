@@ -103,7 +103,7 @@ const INLINE_STYLE: &str = r#".dx-tasks-demo {
   font-weight: 500;
 }
 
-.dx-tasks-demo .dx-dnd-list-item:hover .dx-task-code {
+.dx-tasks-demo .dx-drag-and-drop-list-item:hover .dx-task-code {
   color: var(--secondary-color-4);
 }"#;
 

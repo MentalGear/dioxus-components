@@ -1,16 +1,14 @@
 use dioxus::prelude::*;
 
-#[css_module("/src/components/card/style.css")]
-struct Styles;
-
 #[component]
 pub fn Card(
     #[props(extends=GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card,
+            class: "dx-card",
             "data-slot": "card",
             ..attributes,
             {children}
@@ -24,8 +22,9 @@ pub fn CardHeader(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_header,
+            class: "dx-card-header",
             "data-slot": "card-header",
             ..attributes,
             {children}
@@ -39,8 +38,9 @@ pub fn CardTitle(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_title,
+            class: "dx-card-title",
             "data-slot": "card-title",
             ..attributes,
             {children}
@@ -54,8 +54,9 @@ pub fn CardDescription(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_description,
+            class: "dx-card-description",
             "data-slot": "card-description",
             ..attributes,
             {children}
@@ -69,8 +70,9 @@ pub fn CardAction(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_action,
+            class: "dx-card-action",
             "data-slot": "card-action",
             ..attributes,
             {children}
@@ -84,8 +86,9 @@ pub fn CardContent(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_content,
+            class: "dx-card-content",
             "data-slot": "card-content",
             ..attributes,
             {children}
@@ -99,8 +102,9 @@ pub fn CardFooter(
     children: Element,
 ) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/card/style.css") }
         div {
-            class: Styles::dx_card_footer,
+            class: "dx-card-footer",
             "data-slot": "card-footer",
             ..attributes,
             {children}

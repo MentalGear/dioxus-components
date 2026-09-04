@@ -4,17 +4,15 @@ use dioxus_primitives::popover::{
 };
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
-#[css_module("/src/components/popover/style.css")]
-struct Styles;
-
 #[component]
 pub fn PopoverRoot(props: PopoverRootProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_popover
+        class: "dx-popover"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
         popover::PopoverRoot {
             is_modal: props.is_modal,
             open: props.open,
@@ -29,11 +27,12 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
 #[component]
 pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_popover_trigger
+        class: "dx-popover-trigger"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
         popover::PopoverTrigger { attributes: merged, {props.children} }
     }
 }
@@ -41,12 +40,13 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
 #[component]
 pub fn PopoverContent(props: PopoverContentProps) -> Element {
     let class = if let Some(class) = props.class {
-        format!("{} {}", Styles::dx_popover_content, class)
+        format!("{} {}", "dx-popover-content", class)
     } else {
-        Styles::dx_popover_content.to_string()
+        "dx-popover-content".to_string()
     };
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
         popover::PopoverContent {
             class,
             id: props.id,

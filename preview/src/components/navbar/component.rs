@@ -3,14 +3,13 @@ use dioxus_icons::lucide::ChevronDown;
 use dioxus_primitives::navbar::{
     self, NavbarContentProps, NavbarItemProps, NavbarNavProps, NavbarProps, NavbarTriggerProps,
 };
-#[css_module("/src/components/navbar/style.css")]
-struct Styles;
 
 #[component]
 pub fn Navbar(props: NavbarProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::Navbar {
-            class: Styles::dx_navbar,
+            class: "dx-navbar",
             disabled: props.disabled,
             roving_loop: props.roving_loop,
             attributes: props.attributes,
@@ -22,8 +21,9 @@ pub fn Navbar(props: NavbarProps) -> Element {
 #[component]
 pub fn NavbarNav(props: NavbarNavProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::NavbarNav {
-            class: Styles::dx_navbar_nav,
+            class: "dx-navbar-nav",
             index: props.index,
             disabled: props.disabled,
             attributes: props.attributes,
@@ -35,10 +35,11 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 #[component]
 pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     rsx! {
-        navbar::NavbarTrigger { class: Styles::dx_navbar_trigger, attributes: props.attributes,
+        document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
+        navbar::NavbarTrigger { class: "dx-navbar-trigger", attributes: props.attributes,
             {props.children}
             ChevronDown {
-                class: Styles::dx_navbar_expand_icon,
+                class: "dx-navbar-expand-icon",
                 size: "20px",
                 stroke: "var(--secondary-color-4)",
             }
@@ -49,8 +50,9 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
 #[component]
 pub fn NavbarContent(props: NavbarContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::NavbarContent {
-            class: Styles::dx_navbar_content,
+            class: "dx-navbar-content",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -61,8 +63,9 @@ pub fn NavbarContent(props: NavbarContentProps) -> Element {
 #[component]
 pub fn NavbarItem(props: NavbarItemProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::NavbarItem {
-            class: Styles::dx_navbar_item.to_string(),
+            class: "dx-navbar-item".to_string(),
             index: props.index,
             value: props.value,
             disabled: props.disabled,
