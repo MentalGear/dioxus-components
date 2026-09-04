@@ -82,14 +82,14 @@
    * correction always overrides with inline styles, which win regardless.
    */
   overflow: visible;
-  border: none;
+  min-width: 200px;
 
   /* Clamp to the viewport so a nav's content never induces horizontal page
      scroll on narrow screens -- same reasoning as ../menubar/style.css's
      identical rule. */
   max-width: calc(100vw - 2rem);
-  min-width: 200px;
   padding: 0.25rem;
+  border: none;
   border-radius: 0.5rem;
   margin-top: 0.5rem;
   background: var(--light, var(--primary-color))
@@ -131,8 +131,6 @@
 }
 
 .dx-navbar-item {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   display: block;
   padding: 8px 12px;
   border-radius: calc(0.5rem - 0.25rem);
@@ -140,6 +138,9 @@
   cursor: pointer;
   font-size: 14px;
   text-decoration: none;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
 }
 
 .dx-navbar-item[data-disabled="true"] {

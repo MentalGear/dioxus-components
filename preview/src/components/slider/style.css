@@ -39,8 +39,6 @@
 }
 
 .dx-slider-thumb {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
     all: unset;
     position: absolute;
     top: 50%;
@@ -53,6 +51,9 @@
     background-color: var(--primary-color-1);
     box-shadow: inset 0 0 0 1px var(--secondary-color-2);
     cursor: pointer;
+
+    /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+    touch-action: manipulation;
     transform: translate3d(-50%, -50%, 0);
     transition: box-shadow 150ms;
     will-change: left, bottom, transform;

@@ -6,8 +6,6 @@
 }
 
 .dx-switch {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   all: unset;
   position: relative;
   width: 2rem;
@@ -15,6 +13,9 @@
   border-radius: 9999px;
   background-color: var(--primary-color-6);
   cursor: pointer;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   transition: background-color 150ms, box-shadow 150ms;
 }
 

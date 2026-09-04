@@ -1,6 +1,4 @@
 .dx-toggle {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   display: inline-flex;
   width: fit-content;
   min-width: 2rem;
@@ -15,6 +13,9 @@
   color: var(--secondary-color-4);
   font-size: 14px;
   outline: none;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   transition: background-color 150ms, color 150ms, outline-color 150ms;
 }
 
