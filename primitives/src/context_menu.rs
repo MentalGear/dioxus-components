@@ -267,6 +267,12 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
 /// The props for the [`ContextMenuTrigger`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct ContextMenuTriggerProps {
+    /// The ID of the trigger element. If not provided, an internally
+    /// generated ID is used -- see `ContextMenuTrigger`'s use of
+    /// `use_id_or` for why this is a typed field rather than left to
+    /// `GlobalAttributes` alone (docs/backlog.md row 36).
+    pub id: ReadSignal<Option<String>>,
+
     /// Additional attributes for the context menu trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -321,6 +327,16 @@ pub struct ContextMenuTriggerProps {
 #[component]
 pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
     let ctx: ContextMenuCtx = use_context();
+    // docs/backlog.md row 36: `ctx.trigger_id` is the same signal
+    // `ContextMenuContent`'s `aria-labelledby` (below) and
+    // `use_refocus_on_close_unless` both read back -- a caller-supplied
+    // `id` here must resolve into it, not just win the render. Feeding it
+    // straight into `use_id_or` as the generated-id signal does that:
+    // `use_id_or`'s own effect writes a caller override back into its
+    // `gen_id` argument, which *is* `ctx.trigger_id` here -- mirrors
+    // `DialogTitle`'s identical `use_id_or(ctx.dialog_labelledby,
+    // props.id)` (`dialog.rs`).
+    let id = use_id_or(ctx.trigger_id, props.id);
     // iOS Safari does not deliver `contextmenu` from a long-press on touch, so
     // we run a manual timer keyed on the initial touch position and fire it
     // ourselves once the finger has held still long enough.
@@ -432,7 +448,7 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
             // programmatically focusable so Escape/select can return focus
             // here per APG's menu-button-adjacent close-focus rule. See
             // docs/plan.md Phase 3.1.
-            id: ctx.trigger_id,
+            id: id.cloned(),
             tabindex: "-1",
             role: "button",
             aria_haspopup: crate::menu_semantics::MENU_TRIGGER_HASPOPUP,

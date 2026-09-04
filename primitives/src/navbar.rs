@@ -1,16 +1,13 @@
 //! Defines the [`Navbar`] component and its sub-components.
 
-#[cfg(feature = "web")]
-use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
-    use_animated_open, use_id_or, use_unique_id,
+    has_own_accessible_name, merge_attributes, use_animated_open, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
@@ -183,6 +180,21 @@ struct NavbarNavContext {
     // bug this guards against if trigger and content ever named different
     // ids.
     content_id: Signal<String>,
+
+    // This nav's own `NavbarTrigger` element id, so `NavbarContent` can
+    // label itself `aria_labelledby` from it -- docs/backlog.md row 41,
+    // mirroring `MenubarMenuContext::trigger_id`'s identical role
+    // (`menubar.rs`, docs/backlog.md row 25: an APG menu requires an
+    // accessible name from either aria-labelledby or aria-label; this
+    // crate's `DropdownMenu`/`ContextMenu`/`Menubar` already do the same,
+    // keyed off their own `trigger_id`). Read by `NavbarContentRendered`;
+    // kept in sync with `NavbarTrigger`'s own (possibly caller-overridden)
+    // `id` via `use_id_or` there -- see that component's doc
+    // (docs/backlog.md row 36) -- rather than set once via `use_unique_id`
+    // the way `MenubarMenuContext::trigger_id` still is, since `Navbar` is
+    // new enough to build the row-36 fix in from the start instead of
+    // planting the same id-desync defect a fifth time.
+    trigger_id: Signal<String>,
 }
 
 impl NavbarNavContext {
@@ -295,6 +307,8 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
     // Placeholder value until `NavbarContent` mounts and syncs its own id in
     // -- see `NavbarNavContext::content_id`'s doc.
     let content_id = use_unique_id();
+    // This nav's own trigger id -- see `NavbarNavContext::trigger_id`'s doc.
+    let trigger_id = use_unique_id();
 
     let mut nav_ctx = use_context_provider(|| NavbarNavContext {
         index: props.index,
@@ -303,6 +317,7 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
         disabled: props.disabled,
         initial_focus,
         content_id,
+        trigger_id,
     });
 
     use_effect(move || {
@@ -368,6 +383,12 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 /// The props for the [`NavbarTrigger`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct NavbarTriggerProps {
+    /// The ID of the trigger button. If not provided, an internally
+    /// generated ID is used -- see `NavbarTrigger`'s use of `use_id_or`
+    /// for why this is a typed field (docs/backlog.md row 36, applied here
+    /// from the start alongside row 41 rather than shipped without it).
+    pub id: ReadSignal<Option<String>>,
+
     /// Additional attributes to apply to the trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -452,6 +473,31 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     let onmounted = item.onmounted();
     let is_open = nav_ctx.is_open;
 
+    // docs/backlog.md row 36: `nav_ctx.trigger_id` is the same signal
+    // `NavbarContent`'s `aria-labelledby` reads back (row 41, below) -- a
+    // caller-supplied `id` here must resolve into it, not just win the
+    // render. Feeding it straight into `use_id_or` as the generated-id
+    // signal does that: `use_id_or`'s own effect writes a caller override
+    // back into its `gen_id` argument, which *is* `nav_ctx.trigger_id`
+    // here -- mirrors `DialogTitle`'s identical
+    // `use_id_or(ctx.dialog_labelledby, props.id)` (`dialog.rs`).
+    let id = use_id_or(nav_ctx.trigger_id, props.id);
+
+    // Merged (caller-wins, deduped) rather than a plain explicit-attribute +
+    // `..props.attributes` spread: `id` below and a caller-supplied `id` in
+    // `props.attributes` would otherwise both render, the same
+    // duplicate-attribute hydration hazard `merge_attributes`'s own doc
+    // warns about (docs/conformance-harness.md Rule 4) -- see
+    // `MenubarTrigger`'s identical construction (`menubar.rs`).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            // This nav's own trigger id, so `NavbarContent` can label
+            // itself `aria_labelledby` from it -- docs/backlog.md row 41.
+            id: id.cloned(),
+        }),
+        props.attributes,
+    ]);
+
     rsx! {
         button {
             onmounted,
@@ -484,7 +530,7 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
             role: "menuitem",
             type: "button",
             tabindex: if is_focused() { "0" } else { "-1" },
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -695,11 +741,34 @@ fn NavbarContentRendered(
     // (`top_layer::ensure_anchor_positioning_styles`) selects on,
     // sidestepping `manganis-core`'s `css_module_parser` not scoping
     // classes inside `@supports` bodies.
+    //
+    // docs/backlog.md row 41: an APG menu requires an accessible name from
+    // either aria-labelledby or aria-label -- labelled by this nav's own
+    // trigger, mirroring `MenubarContent`'s identical row-25 pattern
+    // (`menubar.rs`), which `NavbarContent` never picked up when it
+    // migrated onto the top-layer engine. Only contributed when the caller
+    // hasn't already named this content some other way
+    // (`has_own_accessible_name`'s own doc), and as its own
+    // `merge_attributes` input -- present only when applicable -- rather
+    // than a bare `aria_labelledby: ...` literal alongside `..attributes`:
+    // a caller attribute list can carry a same-named
+    // `aria-labelledby`/`aria-label` with an empty/`AttributeValue::None`
+    // value, and two entries for one attribute name is exactly the
+    // duplicate-attribute hazard `merge_attributes` exists to prevent
+    // (`docs/conformance-harness.md` hydration-parity Rule 4).
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{nav_ctx.trigger_id}"
+        })
+    };
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
             class: "dx-anchor-navbar"
         }),
+        labelledby,
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -724,9 +793,12 @@ fn NavbarContentRendered(
     }
 }
 
-/// Native (Blitz) arm: byte-for-byte the pre-migration `div` -- Blitz has no
-/// popover-API support at all, so this stays the functional floor, matching
-/// `MenubarContentRendered`'s identical native arm.
+/// Native (Blitz) arm: the pre-migration `div` -- Blitz has no popover-API
+/// support at all, so this stays the functional floor, matching
+/// `MenubarContentRendered`'s identical native arm. Now also carries the
+/// row-41 `aria-labelledby` below, the one piece of the web arm's
+/// migration that applies here too (unlike `popover`/anchor positioning,
+/// which are web-only).
 #[cfg(not(feature = "web"))]
 #[component]
 fn NavbarContentRendered(
@@ -736,6 +808,18 @@ fn NavbarContentRendered(
     children: Element,
 ) -> Element {
     let nav_ctx: NavbarNavContext = use_context();
+
+    // See the web arm's identical construction above (docs/backlog.md row
+    // 41) for why this is conditional and routed through `merge_attributes`
+    // rather than a bare literal alongside `..attributes`.
+    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
+        Vec::new()
+    } else {
+        attributes!(div {
+            aria_labelledby: "{nav_ctx.trigger_id}"
+        })
+    };
+    let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
         div {
