@@ -173,10 +173,49 @@
     transform: none;
 }
 
-.ec-row > [data-slot="item-content"] {
+/* docs/backlog.md row 37: the message's subject/sender/snippet/tags used
+ * to live directly inside `[data-slot="item-content"]`, itself a direct
+ * grid child of `.ec-row` (grid-column 2). It's now wrapped one level
+ * deeper in `.ec-row-open`, the real `<button>` that replaced the row's
+ * old `role="button"` div (list_pane.rs's `MessageRow` has the full
+ * rationale) -- so `.ec-row-open` takes over the grid-column-2 slot, and
+ * `[data-slot="item-content"]` just fills the button's own content box.
+ *
+ * A `<button>` is not a `<div>`: browsers default it to `inline-block`,
+ * center-aligned text, its own font/line-height, and a visible chrome
+ * (background/border/padding) -- every one of those has to be reset by
+ * hand here or the row's layout and the row's *look* (it must still read
+ * as plain row content, not as a button) both break.
+ */
+.ec-row > .ec-row-open {
+    display: block;
     width: 100%;
     min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
     grid-column: 2;
+    grid-row: 1;
+    line-height: inherit;
+    text-align: left;
+}
+
+/* Matches this repo's per-component focus-ring convention (see
+ * `dx-components-theme.css`'s `[data-dx-interactive]` comment): css_module
+ * hashing means a shared selector can't reach this class, so each
+ * interactive root keeps its own `:focus-visible` rule, written against
+ * the shared `--dx-ring` token. */
+.ec-row > .ec-row-open:focus-visible {
+    border-radius: 0.375rem;
+    box-shadow: var(--dx-ring);
+}
+
+.ec-row-open [data-slot="item-content"] {
+    width: 100%;
+    min-width: 0;
 }
 
 .ec-row [data-slot="item-content"] > [data-slot="item-title"] {

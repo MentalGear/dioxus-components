@@ -253,13 +253,21 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   // now renders a `complementary` landmark (`preview/src/components/
   // sidebar/component.rs`) -- rather than duplicated per call site.
   //
-  // KNOWN RED, filed rather than fixed (docs/backlog.md): each message row
-  // (`ListPane`) renders `role="button"` on a `div` that also contains its
-  // own further-interactive controls (star/flag toggles), which axe's
-  // `nested-interactive` rule flags -- a real structural markup question
-  // (how the row's own click-to-open should coexist with per-row controls)
-  // that this round's "small, clearly correct" fix bar does not cover.
-  // Both scans below are still expected to fail on this one finding.
+  // Fixed 2026-09-04 (docs/backlog.md row 37): each message row
+  // (`ListPane`'s `MessageRow`, `dashboard/views/email_client/list_pane.rs`)
+  // used to render `role="button"` on a `div` that also contained its own
+  // further-interactive controls (star/trash toggles) -- a button
+  // containing buttons, which axe's `nested-interactive` rule flagged (6
+  // nodes: 3 rows x their star/trash toggles). Restructured so the
+  // accessibility tree sees one primary action plus sibling toggles
+  // instead: the row container (`Item`) is a plain div again (no `role`,
+  // no `tabindex`), the row's "open thread" action is now a real
+  // `<button>` (`.ec-row-open`) wrapping the subject/sender/snippet/tags
+  // with an explicit `aria-label` (sender + subject -- the implicit name
+  // from its content, which includes the full message-preview snippet,
+  // would be unusably long), and the star/trash toggle buttons stay
+  // direct siblings of that button rather than descendants. Both scans
+  // below now expect a fully clean axe run.
   test("dashboard email client: default state has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
     // Wait for the inbox list to actually render before scanning, rather
