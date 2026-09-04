@@ -444,8 +444,22 @@ fn use_dialog_open_driver(
     use_effect(move || {
         let want_open = open.cloned();
         let id = id.cloned();
+        // `inject` is prepended into this exact script, not left to the
+        // separate `use_effect(ensure_top_layer_ink_styles)` above -- see
+        // that function's own doc (`top_layer.rs`), "First-paint window,"
+        // for why relying on that other effect's `document::eval()` having
+        // already run by the time *this* one calls `showModal()` is not
+        // safe to assume (two separate `document::eval()` calls have no
+        // guaranteed relative ordering against each other), and why
+        // prepending -- one synchronous script, not two separately-ordered
+        // ones -- is what actually closes the gap. Same construction as
+        // `top_layer.rs`'s `use_popover_sync`/
+        // `use_popover_shown_while_mounted`, this hook's two siblings in
+        // the fix's three exhaustive call sites.
+        let inject = crate::top_layer::TOP_LAYER_INK_STYLES_INJECT_JS;
         document::eval(&format!(
-            "const dialog = document.getElementById('{id}');
+            "{inject}
+            const dialog = document.getElementById('{id}');
             if (!dialog) return;
             if ({want_open} && !dialog.open) dialog.showModal();
             if (!{want_open} && dialog.open) dialog.close();"

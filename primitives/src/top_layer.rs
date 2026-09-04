@@ -540,6 +540,39 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 /// `Dialog`/`AlertDialog`/`Sheet` never takes the anchored-overlay path at
 /// all, so it never calls [`use_anchor_position_fallback`] -- putting this
 /// rule only there would leave every native-`<dialog>` consumer unfixed.
+///
+/// ## First-paint window (docs/backlog.md row 50 residue, closed)
+///
+/// Calling this from a `use_effect` at each hook above is a **best-effort
+/// early install** only -- exactly the same relationship
+/// [`ensure_anchor_positioning_styles`] has to
+/// [`use_anchor_position_fallback`]'s own measurement eval (see that
+/// function's own "Best-effort early install for repeat opens" comment). It
+/// is not, by itself, what makes the very first cold-load open correct: two
+/// *separate* `document::eval()` calls -- one dispatched from this
+/// function's own `use_effect`, another from a *different* effect's
+/// `document::eval()` that flips `showPopover()`/`showModal()` -- have no
+/// guaranteed relative ordering against each other from Rust's point of
+/// view, even when both effects are declared, in that order, in the same
+/// function. [`anchor_positioning_inject_js`]'s own doc found and fixed the
+/// identical defect class by execution (a fresh page load ran the
+/// *dependent* eval before the *injecting* one, despite matching
+/// declaration order) by prepending the injection statement directly into
+/// the dependent eval's own script, so both run as one synchronous JS
+/// program with no cross-eval ordering assumption left to make. This
+/// function's own three call sites had the same shape and, per
+/// docs/backlog.md row 50, the same residue in execution (a surface
+/// measured mid-window, twice across repeated runs of
+/// `top-layer-ink.spec.ts`) -- so [`TOP_LAYER_INK_STYLES_INJECT_JS`] is
+/// prepended the identical way, into the "signal -> browser" show scripts
+/// in [`use_popover_sync`], [`use_popover_shown_while_mounted`], and
+/// `lib.rs`'s `use_dialog_open_driver` (the same three exhaustive call
+/// sites listed above) -- see each one's own comment. This function and its
+/// `use_effect` call sites stay in place regardless: once genuinely
+/// installed (the common case -- most pages open more than one top-layer
+/// surface), every later prepend is a same-tick, JS-side
+/// `getElementById` no-op, cheaper than re-deriving whether it is needed
+/// from Rust.
 #[cfg(feature = "web")]
 pub(crate) fn ensure_top_layer_ink_styles() {
     if TOP_LAYER_INK_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
@@ -551,10 +584,19 @@ pub(crate) fn ensure_top_layer_ink_styles() {
 
 /// The idempotent (JS-side `getElementById` guarded, so safe to run more
 /// than once) style-tag-injection script [`ensure_top_layer_ink_styles`]
-/// dispatches -- same two-guard shape as `anchor_positioning_inject_js`
-/// above and `toast.rs`'s `TOAST_BASE_STYLES_INJECT_JS`.
+/// dispatches on its own, and [`use_popover_sync`]/
+/// [`use_popover_shown_while_mounted`]/`lib.rs`'s `use_dialog_open_driver`
+/// each *also* prepend verbatim onto the front of their own "signal ->
+/// browser" show script -- same two-guard shape as
+/// `anchor_positioning_inject_js` above and `toast.rs`'s
+/// `TOAST_BASE_STYLES_INJECT_JS`, and the same prepend-don't-sequence
+/// reason [`anchor_positioning_inject_js`]'s own doc gives (see
+/// [`ensure_top_layer_ink_styles`]'s doc, "First-paint window," for the
+/// full account). `pub(crate)`, not private to this module, so `lib.rs`'s
+/// `use_dialog_open_driver` -- the third of this fix's three exhaustive
+/// call sites, and the only one outside this file -- can prepend it too.
 #[cfg(feature = "web")]
-const TOP_LAYER_INK_STYLES_INJECT_JS: &str = r#"
+pub(crate) const TOP_LAYER_INK_STYLES_INJECT_JS: &str = r#"
 if (!document.getElementById('dx-top-layer-ink-styles')) {
     const style = document.createElement('style');
     style.id = 'dx-top-layer-ink-styles';
@@ -729,8 +771,17 @@ pub(crate) fn use_popover_sync(
     use_effect(move || {
         let want_open = open.cloned();
         let id = id.clone();
+        // `inject` is prepended into this exact script, not left to the
+        // separate `use_effect(ensure_top_layer_ink_styles)` above --
+        // see `ensure_top_layer_ink_styles`'s doc, "First-paint window,"
+        // for why relying on that other effect's `document::eval()` having
+        // already run by the time *this* one calls `showPopover()` is not
+        // safe to assume, and why prepending (one synchronous script, not
+        // two separately-ordered ones) is what actually closes the gap.
+        let inject = TOP_LAYER_INK_STYLES_INJECT_JS;
         document::eval(&format!(
-            "const el = document.getElementById('{id}');
+            "{inject}
+            const el = document.getElementById('{id}');
             if (!el) return;
             const isOpen = el.matches(':popover-open');
             if ({want_open} && !isOpen) el.showPopover();
@@ -873,8 +924,14 @@ pub(crate) fn use_popover_shown_while_mounted(
             return;
         }
         let id = id.clone();
+        // See `use_popover_sync`'s matching comment / `ensure_top_layer_
+        // ink_styles`'s doc, "First-paint window": prepended into this
+        // exact script rather than left to the separate `use_effect(
+        // ensure_top_layer_ink_styles)` above, for the same reason.
+        let inject = TOP_LAYER_INK_STYLES_INJECT_JS;
         document::eval(&format!(
-            "const el = document.getElementById('{id}');
+            "{inject}
+            const el = document.getElementById('{id}');
             if (el && !el.matches(':popover-open')) el.showPopover();"
         ));
     });
