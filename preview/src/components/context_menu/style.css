@@ -1,5 +1,5 @@
 .dx-context-menu-content {
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
 
   /*
    * Migration A (slice 2/3): on the web arm this content carries
@@ -28,9 +28,9 @@
    */
   overflow: visible;
   min-width: 220px;
-  padding: 0.25rem;
+  padding: var(--dx-space-1);
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   margin: 0;
   background: var(--dark, var(--primary-color-5))
     var(--light, var(--primary-color));
@@ -43,7 +43,7 @@
 }
 
 .dx-context-menu-content[data-state="closed"] {
-  animation: dx-context-menu-animate-out 150ms ease-in forwards;
+  animation: dx-context-menu-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 @keyframes dx-context-menu-animate-out {
@@ -59,7 +59,7 @@
 }
 
 .dx-context-menu-content[data-state="open"] {
-  animation: dx-context-menu-animate-in 150ms ease-out forwards;
+  animation: dx-context-menu-animate-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
 }
 
 @keyframes dx-context-menu-animate-in {
@@ -77,16 +77,16 @@
 .dx-context-menu-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  border-radius: calc(0.5rem - 0.25rem);
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
   color: var(--secondary-color-4);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--dx-text-sm);
   outline: none;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  transition: background-color 100ms ease-out;
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
   user-select: none;
 }
 

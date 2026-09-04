@@ -1,11 +1,11 @@
 /* Base */
 .dx-textarea {
   width: 100%;
-  min-height: 4rem;
+  min-height: var(--dx-space-16);
   box-sizing: border-box;
-  padding: 8px 12px;
+  padding: var(--dx-space-2) var(--dx-space-3);
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   margin: 0;
   appearance: none;
   background: none;
@@ -14,7 +14,7 @@
   line-height: 1.5;
   outline: none;
   resize: vertical;
-  transition: background-color 100ms ease-out, border-color 100ms ease-out, box-shadow 100ms ease-out;
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out), border-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out), box-shadow var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
 .dx-textarea:disabled {

@@ -3,7 +3,7 @@
     display: flex;
     min-width: 200px;
     align-items: center;
-    padding: 0.5rem 0;
+    padding: var(--dx-space-2) 0;
     touch-action: none;
 }
 
@@ -18,7 +18,7 @@
     height: 0.5rem;
     box-sizing: border-box;
     flex-grow: 1;
-    border-radius: 9999px;
+    border-radius: var(--dx-radius-full);
     background: var(--primary-color-5);
 }
 
@@ -30,7 +30,7 @@
 .dx-slider-range {
     position: absolute;
     height: 100%;
-    border-radius: 9999px;
+    border-radius: var(--dx-radius-full);
     background-color: var(--secondary-color-2);
 }
 
@@ -55,7 +55,7 @@
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
     transform: translate3d(-50%, -50%, 0);
-    transition: box-shadow 150ms;
+    transition: box-shadow var(--dx-motion-duration-base);
     will-change: left, bottom, transform;
 }
 
@@ -69,7 +69,7 @@
 .dx-slider-thumb:hover {
     box-shadow: inset 0 0 0 1px var(--secondary-color-2),
         0 0 0 4px color-mix(in oklab, var(--primary-color-7) 50%, transparent);
-    transition: box-shadow 150ms;
+    transition: box-shadow var(--dx-motion-duration-base);
 }
 
 .dx-slider[data-disabled="true"] {

@@ -2,13 +2,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--dx-space-2);
 }
 
 .dx-avatar-label {
     margin: 0;
     color: var(--secondary-color-4);
-    font-size: 0.875rem;
+    font-size: var(--dx-text-sm);
 }
 
 /* Avatar Component Styles */
@@ -35,19 +35,19 @@
 .dx-avatar-sm {
     width: 2rem;
     height: 2rem;
-    font-size: 0.875rem;
+    font-size: var(--dx-text-sm);
 }
 
 .dx-avatar-md {
     width: 3rem;
     height: 3rem;
-    font-size: 1.25rem;
+    font-size: var(--dx-text-xl);
 }
 
 .dx-avatar-lg {
     width: 4rem;
     height: 4rem;
-    font-size: 1.75rem;
+    font-size: var(--dx-text-3xl);
 }
 
 /* Avatar shape */
@@ -56,7 +56,7 @@
 }
 
 .dx-avatar-rounded {
-    border-radius: 8px;
+    border-radius: var(--dx-radius-lg);
 }
 
 .dx-avatar[data-state="loading"] {
@@ -90,7 +90,7 @@
     justify-content: center;
     background: var(--primary-color);
     color: var(--secondary-color-4);
-    font-size: 1.5rem;
+    font-size: var(--dx-text-2xl);
 }
 
 .dx-avatar[data-state="error"] .dx-avatar-fallback {

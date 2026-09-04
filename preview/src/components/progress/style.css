@@ -4,7 +4,7 @@
     min-width: 200px;
     height: .5rem;
     box-sizing: border-box;
-    border-radius: 9999px;
+    border-radius: var(--dx-radius-full);
     background: var(--primary-color-5);
 }
 
@@ -17,7 +17,7 @@
     width: var(--progress-value, 0%);
     height: 100%;
     background-color: var(--secondary-color-1);
-    transition: width 250ms ease;
+    transition: width 250ms var(--dx-motion-ease);
 }
 
 @keyframes dx-indeterminate {

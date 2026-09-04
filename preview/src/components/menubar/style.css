@@ -1,12 +1,12 @@
 .dx-menubar {
   display: flex;
   box-sizing: border-box;
-  padding: 0.25rem;
+  padding: var(--dx-space-1);
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background: var(--primary-color-2);
   box-shadow: inset 0 0 0 1px var(--primary-color-6);
-  gap: 0.25rem;
+  gap: var(--dx-space-1);
 }
 
 .dx-menubar-menu {
@@ -14,16 +14,16 @@
 }
 
 .dx-menubar-trigger {
-  padding: 8px 12px;
+  padding: var(--dx-space-2) var(--dx-space-3);
   border: none;
-  border-radius: calc(0.5rem - 0.25rem);
+  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
   background: none;
   color: var(--secondary-color-4);
   cursor: pointer;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  transition: background-color 100ms ease-out;
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
 .dx-menubar-menu[data-state="open"] .dx-menubar-trigger {
@@ -48,7 +48,7 @@
 
 .dx-menubar-content {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
   top: 100%;
   left: 0;
 
@@ -77,11 +77,11 @@
   /* Clamp to the viewport so a menu never induces horizontal page scroll on
      narrow screens -- same reasoning as ../dropdown_menu/style.css's
      identical rule. */
-  max-width: calc(100vw - 2rem);
-  padding: 0.25rem;
+  max-width: calc(100vw - var(--dx-space-8));
+  padding: var(--dx-space-1);
   border: none;
-  border-radius: 0.5rem;
-  margin-top: 0.5rem;
+  border-radius: var(--dx-radius-lg);
+  margin-top: var(--dx-space-2);
   background: var(--light, var(--primary-color))
     var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6))
@@ -93,11 +93,11 @@
 }
 
 .dx-menubar-menu:first-child .dx-menubar-content {
-  margin-left: -0.25rem;
+  margin-left: calc(-1 * var(--dx-space-1));
 }
 
 .dx-menubar-content[data-state="closed"] {
-  animation: dx-menubar-content-animate-out 150ms ease-in forwards;
+  animation: dx-menubar-content-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
   pointer-events: none;
 }
 
@@ -114,7 +114,7 @@
 }
 
 .dx-menubar-content[data-state="open"] {
-  animation: dx-menubar-content-animate-in 150ms ease-out forwards;
+  animation: dx-menubar-content-animate-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
   pointer-events: auto;
 }
 
@@ -132,10 +132,10 @@
 
 .dx-menubar-item {
   display: block;
-  padding: 8px 12px;
-  border-radius: calc(0.5rem - 0.25rem);
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--dx-text-sm);
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;

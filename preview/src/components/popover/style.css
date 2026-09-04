@@ -5,14 +5,14 @@
 
 .dx-popover-content {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
   display: flex;
   overflow: visible;
   min-width: 200px;
   max-width: calc(100% - 2rem);
   box-sizing: border-box;
   flex-direction: column;
-  padding: .25rem;
+  padding: var(--dx-space-1);
 
   /*
    * `border` and `overflow` reset the UA popover stylesheet's
@@ -33,8 +33,8 @@
    * only ever touches the non-modal arm.
    */
   border: none;
-  border-radius: .5rem;
-  margin-top: .5rem;
+  border-radius: var(--dx-radius-lg);
+  margin-top: var(--dx-space-2);
   background: var(--light, var(--primary-color))
       var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
@@ -58,11 +58,11 @@
  */
 
 .dx-popover-content[data-state="open"] {
-  animation: dx-popover-fade-in .2s ease-in-out;
+  animation: dx-popover-fade-in var(--dx-motion-duration-slow) ease-in-out;
 }
 
 .dx-popover-content[data-state="closed"] {
-  animation: dx-popover-fade-out .2s ease-in-out forwards;
+  animation: dx-popover-fade-out var(--dx-motion-duration-slow) ease-in-out forwards;
   pointer-events: none;
 }
 
@@ -91,7 +91,7 @@
   position: absolute;
   bottom: 100%;
   left: 50%;
-  margin-bottom: 8px;
+  margin-bottom: var(--dx-space-2);
   transform: translateX(-50%);
 }
 
@@ -106,7 +106,7 @@
   position: absolute;
   top: 50%;
   left: 100%;
-  margin-left: 8px;
+  margin-left: var(--dx-space-2);
   transform: translateY(-50%);
 }
 
@@ -121,7 +121,7 @@
   position: absolute;
   top: 100%;
   left: 50%;
-  margin-top: 8px;
+  margin-top: var(--dx-space-2);
   transform: translateX(-50%);
 }
 
@@ -136,7 +136,7 @@
   position: absolute;
   top: 50%;
   right: 100%;
-  margin-right: 8px;
+  margin-right: var(--dx-space-2);
   transform: translateY(-50%);
 }
 
@@ -184,20 +184,20 @@
 .dx-popover-content-title {
   margin: 0;
   color: var(--secondary-color-4);
-  font-size: 1.25rem;
+  font-size: var(--dx-text-xl);
   font-weight: 700;
 }
 
 .dx-popover-content-description {
   margin: 0;
   color: var(--secondary-color-5);
-  font-size: 1rem;
+  font-size: var(--dx-text-base);
 }
 
 .dx-popover-content-actions {
   display: flex;
   flex-direction: column-reverse;
-  gap: 12px;
+  gap: var(--dx-space-3);
 }
 
 @media (width >= 40rem) {
@@ -213,15 +213,15 @@
 }
 
 .dx-popover-content-cancel {
-  padding: 8px 18px;
+  padding: var(--dx-space-2) 18px;
   border: 1px solid var(--primary-color-6);
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background-color: var(--light, var(--primary-color))
     var(--dark, var(--primary-color-3));
   color: var(--secondary-color-4);
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s ease;
+  font-size: var(--dx-text-base);
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-popover-content-cancel:hover {
@@ -241,14 +241,14 @@
 }
 
 .dx-popover-content-action {
-  padding: 8px 18px;
+  padding: var(--dx-space-2) 18px;
   border: 1px solid var(--primary-error-color);
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background-color: var(--primary-error-color);
   color: var(--contrast-error-color);
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s ease;
+  font-size: var(--dx-text-base);
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-popover-content-action:hover {
@@ -268,18 +268,18 @@
 }
 
 .dx-popover-trigger {
-  padding: 8px 18px;
+  padding: var(--dx-space-2) 18px;
   border: 1px solid var(--primary-color-6);
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background-color: var(--light, var(--primary-color))
     var(--dark, var(--primary-color-3));
   color: var(--secondary-color-4);
   cursor: pointer;
-  font-size: 1rem;
+  font-size: var(--dx-text-base);
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  transition: background-color 0.2s ease;
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-popover-trigger:hover {
