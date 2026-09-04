@@ -1,12 +1,12 @@
 # Draft issue: `#[css_module]` scoping pass silently skips `@supports` (and every non-allowlisted block at-rule)
 
-**Status:** filing-ready 2026-09-04 (drafted 2026-09-03). Verified against the vendored `manganis-core 0.7.9` source; two independent instances in this repo. Supersedes the tracking record at `docs/issues/css-module-supports-scoping.md` (kept, points here).
+**Status:** filing-ready 2026-09-04, checklist complete (drafted 2026-09-03). Verified against the vendored `manganis-core 0.7.9` source and re-verified unfixed in `0.7.10` (latest stable, 2026-07-30) and `0.8.0-alpha.1` (crates.io tarballs, identical `at_rule` allowlist at line 299) and on upstream `main` (`74a4973`, same); two independent instances in this repo. Supersedes the tracking record at `docs/issues/css-module-supports-scoping.md` (kept, points here).
 
 **Why still file it although row 32 (plain, unhashed CSS) removes the hazard for this repo:** every `css_module` user hits the same silent no-op, the failure is invisible at build time and in DevTools until you compare hashed and unhashed names, and the fix is a one-line allowlist change with an existing test shape to copy.
 
-**Target repo:** `DioxusLabs/dioxus`, crate `manganis-core`, file `packages/manganis-core/src/css_module_parser.rs` (confirm the path at the tag; the crate ships that file at `src/css_module_parser.rs`).
+**Target repo:** `DioxusLabs/dioxus`, crate `manganis-core`, file `packages/manganis/manganis-core/src/css_module_parser.rs`.
 
-**Version:** `manganis-core 0.7.9` from crates.io (this repo's `Cargo.lock`; `dioxus 0.7.9`).
+**Version:** `manganis-core 0.7.9` in this repo's `Cargo.lock`; unchanged in `0.7.10` (latest stable) and `0.8.0-alpha.1`, and on `main` as of 2026-09-04.
 
 ---
 
@@ -20,7 +20,7 @@
 
 `#[css_module]` hashes every class selector it finds (`.dx-select-list` → `.dx-select-list-e8d9eb03`) and rewrites the Rust-side names to match. The pass recurses into `@media`, `@layer` and `@container` bodies, but not into `@supports`. A rule written inside `@supports { … }` is copied to the output verbatim, with its original unhashed class name, while the DOM only ever carries the hashed one. The rule can never match in any browser, and nothing warns.
 
-The cause is an allowlist in `at_rule` (`src/css_module_parser.rs`, 0.7.9):
+The cause is the allowlist in `at_rule` ([`packages/manganis/manganis-core/src/css_module_parser.rs#L298-L306` at `v0.7.10`](https://github.com/DioxusLabs/dioxus/blob/57d6794ad60b949e5bd8aa282f6f8c3dc97a365e/packages/manganis/manganis-core/src/css_module_parser.rs#L298-L306); identical on [`main` at `74a4973`](https://github.com/DioxusLabs/dioxus/blob/74a49736c029e0e6f6fc4a79b5def923f0d587b8/packages/manganis/manganis-core/src/css_module_parser.rs#L298-L306) and in `0.7.9`/`0.8.0-alpha.1` on crates.io):
 
 ```rust
 match identifier {
@@ -89,11 +89,15 @@ Invert the allowlist: recurse with `style_rule_block_contents` for every block a
 
 ### References
 
-- This repo, `MentalGear/dioxus-components`: `docs/issues/css-module-supports-scoping.md` (first instance, 2026-09), `docs/backlog.md` rows 32 and 47 (second instance, 2026-09-04), `primitives/src/top_layer.rs` (`ensure_anchor_positioning_styles`, the workaround), `preview/src/components/select/style.css` (the dead rule's replacement comment).
+- Project where both instances occurred: `MentalGear/dioxus-components` at `bfe847e`:
+  - first instance and workaround record: [`docs/issues/css-module-supports-scoping.md`](https://github.com/MentalGear/dioxus-components/blob/bfe847e7aebbd1034e7b859d0e3b7e546327263d/docs/issues/css-module-supports-scoping.md)
+  - the workaround (one hand-injected stylesheet targeting deliberately unhashed marker classes): [`primitives/src/top_layer.rs#L107`](https://github.com/MentalGear/dioxus-components/blob/bfe847e7aebbd1034e7b859d0e3b7e546327263d/primitives/src/top_layer.rs#L107)
+  - second instance, the dead `min-width: anchor-size(width)` rule and its replacement: [`preview/src/components/select/style.css#L66`](https://github.com/MentalGear/dioxus-components/blob/bfe847e7aebbd1034e7b859d0e3b7e546327263d/preview/src/components/select/style.css#L66), tracked as [`docs/backlog.md` row 47](https://github.com/MentalGear/dioxus-components/blob/bfe847e7aebbd1034e7b859d0e3b7e546327263d/docs/backlog.md#L80)
 
-## Before filing
+## Before filing (done 2026-09-04)
 
 - [x] Verified the parser behaviour against the vendored `manganis-core 0.7.9` source (`at_rule`, `unknown_block_contents`), not from memory.
 - [x] Verified `@media` bodies ARE hashed in the served output (so the report's claim "only the allowlist is missing" is exact).
-- [ ] Re-check the latest `manganis-core` release notes for an `@supports` change before posting.
-- [ ] Replace the file reference with a permalink at the tag being reported against, and the two repo references with permalinks at the filing commit.
+- [x] Re-checked the latest releases: `0.7.10` (latest stable) and `0.8.0-alpha.1` crate tarballs from crates.io carry the identical allowlist at line 299; upstream `main` (`74a4973`) too. Not fixed.
+- [x] Permalinks: upstream file pinned to the `v0.7.10` tag commit (`57d6794`) and to `main` (`74a4973`); this repo's references pinned to `bfe847e`.
+- [ ] Post it (the reporter's step; this repo's own Issues are disabled, so it lives here until then).
