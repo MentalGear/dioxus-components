@@ -137,6 +137,17 @@ pub fn Navbar(props: NavbarProps) -> Element {
             display: "content",
             aria_label,
             div {
+                // Deliberately NOT routed through `menu_semantics`: this is
+                // the Menu and Menubar pattern's own top-level container
+                // role, the same element `Menubar`'s identical bare
+                // `role: "menubar"` literal renders (`menubar.rs`) --
+                // `menu_semantics`'s module doc states this exact case is
+                // out of its scope ("`menubar`'s own top-level container
+                // role ... a distinct element of the Menu and Menubar
+                // pattern, not shared with a menu-button's popup"). Leaving
+                // it inline here keeps `Navbar` consistent with `Menubar`
+                // rather than widening the module to cover a role it
+                // explicitly disclaims.
                 role: "menubar",
                 "data-disabled": (props.disabled)(),
                 tabindex: (!ctx.focus.any_focused()).then_some("0"),
@@ -329,7 +340,12 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 
     rsx! {
         div {
-            role: "menu",
+            // Pattern-class popup role, shared with `MenubarMenu`'s
+            // identical always-rendered wrapper div (`menubar.rs`) -- see
+            // `menu_semantics`'s module doc for why this is the `menu` half
+            // of "role of either `menu` or `menubar`", not a hand-written
+            // literal.
+            role: crate::menu_semantics::MENU_ROLE,
             "data-state": if is_open() { "open" } else { "closed" },
             "data-disabled": (ctx.disabled)() || (props.disabled)(),
 
@@ -527,7 +543,11 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
                     ctx.set_open_nav.call(None);
                 }
             },
-            role: "menuitem",
+            // Pattern-class activatable-item role -- see
+            // `MenubarTrigger`'s identical `crate::menu_semantics::
+            // MENU_ITEM_ROLE` (`menubar.rs`): this trigger is itself an
+            // item within the parent navbar's `role="menubar"` container.
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             type: "button",
             tabindex: if is_focused() { "0" } else { "-1" },
             ..attributes,
@@ -783,7 +803,10 @@ fn NavbarContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "menu",
+            // Pattern-class popup role -- see `MenubarContentRendered`'s
+            // identical web-arm `crate::menu_semantics::MENU_ROLE`
+            // (`menubar.rs`), which this mirrors.
+            role: crate::menu_semantics::MENU_ROLE,
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-open-menu-direction": "{open_direction}",
@@ -824,7 +847,10 @@ fn NavbarContentRendered(
     rsx! {
         div {
             id,
-            role: "menu",
+            // Pattern-class popup role -- see `MenubarContentRendered`'s
+            // identical native-arm `crate::menu_semantics::MENU_ROLE`
+            // (`menubar.rs`), which this mirrors.
+            role: crate::menu_semantics::MENU_ROLE,
             "data-state": if (nav_ctx.is_open)() { "open" } else { "closed" },
             "data-open-menu-direction": "{open_direction}",
             ..attributes,
@@ -1042,7 +1068,10 @@ pub fn NavbarItem(mut props: NavbarItemProps) -> Element {
             onclick_only: props.onclick_only,
             rel: props.rel,
             to: props.to,
-            role: "menuitem",
+            // Pattern-class activatable-item role -- see `MenubarItem`'s
+            // identical `crate::menu_semantics::MENU_ITEM_ROLE`
+            // (`menubar.rs`), which this mirrors.
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
             // Found via an axe `color-contrast` finding on this pattern
             // class's disabled state (docs/backlog.md row 39): see
             // `dropdown_menu.rs`'s identical `DropdownMenuItem` fix for the

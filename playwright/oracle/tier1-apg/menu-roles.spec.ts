@@ -53,13 +53,21 @@
  * below are graded directly against the prose, same as
  * `keyboard-matrix.spec.ts`'s own Menubar rows).
  *
- * Subject components -- three implementations of this one pattern class:
+ * Subject components -- four implementations of this one pattern class:
  *   - DropdownMenu   (menu-button pattern: single trigger + popup)
  *   - ContextMenu    (menu-and-menubar pattern via "context specific menu"
  *                      invocation, same as keyboard-matrix.spec.ts's own
  *                      ContextMenu describe block)
  *   - Menubar        (menu-and-menubar pattern; submenu popups graded here,
  *                      not the `menubar`-role top-level container itself)
+ *   - Navbar         (menu-and-menubar pattern, hover/click-opened nav
+ *                      dropdowns; same shape as Menubar's submenus -- popup
+ *                      role/items graded here, not the `menubar`-role
+ *                      top-level container. Added in the same pass that
+ *                      routed `navbar.rs`'s role literals through
+ *                      `menu_semantics` -- docs/backlog.md rows 24, 25, 41 --
+ *                      since a fourth hand-written role set was exactly what
+ *                      this file exists to catch)
  *
  * Contract asserted per component: popup is role="menu"; every item is
  * role="menuitem" (this crate has no menuitemcheckbox/menuitemradio item
@@ -87,7 +95,12 @@
  * real, separate, pre-existing gap, so the trigger-contract assertions
  * below run only against DropdownMenu and ContextMenu, whose triggers do
  * carry `aria-haspopup` today; the Menubar describe block asserts the
- * popup/item role contract only.
+ * popup/item role contract only. `NavbarTrigger` (`primitives/src/
+ * navbar.rs`) has the identical gap for the identical reason: it is the
+ * same "parent menuitem" role, in the same pattern, as `MenubarTrigger`, and
+ * carries neither `aria-haspopup` nor `aria-expanded` either (grepped for
+ * "haspopup"/"expanded", zero matches) -- so the Navbar describe block below
+ * asserts the same popup/item role contract only, not a trigger contract.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -279,6 +292,54 @@ test.describe("APG Menu and Menubar pattern — Menubar submenus", () => {
       expect(
         await item.getAttribute("aria-selected"),
         "submenu items are activated, not selected",
+      ).toBeNull();
+    }
+  });
+});
+
+test.describe("APG Menu and Menubar pattern — Navbar nav dropdowns", () => {
+  test.beforeEach(async ({ page }) => {
+    await goto(page, "navbar");
+  });
+
+  test('nav dropdown popup is role="menu", every item is role="menuitem", none carries aria-selected', async ({
+    page,
+  }) => {
+    // Navbar opens on hover, not click (its own gesture, unlike Menubar's
+    // click-driven trigger) -- see `navbar.spec.ts`'s identical "hover
+    // navigation" test for the same technique. `NavbarTrigger`'s own text
+    // ("Inputs") is always rendered, but its sibling `NavbarContent` popup
+    // only mounts once open, so the outer `NavbarNav` wrapper (itself also
+    // role="menu" -- see below) is what has to be located and hovered first.
+    const inputsNav = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "Inputs" }) })
+      .first();
+    await inputsNav.hover();
+    await expect(inputsNav).toHaveAttribute("data-state", "open");
+
+    // `NavbarNav`'s own always-rendered wrapper div is ALSO role="menu"
+    // (navbar.rs) and also matches this filter, alongside the actual popup
+    // content -- `.last()` picks the popup, mirroring the Menubar describe
+    // block's identical disambiguation above for the same two-elements-
+    // both-role-menu shape (both wrapper components mirror one another by
+    // construction, not by coincidence -- see `menu_semantics.rs`'s module
+    // doc, "Scope").
+    const navMenu = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "Calendar" }) })
+      .last();
+    await expect(navMenu).toHaveAttribute("data-state", "open");
+
+    const items = navMenu.getByRole("menuitem");
+    expect(
+      await items.count(),
+      "Inputs nav has 4 items (Calendar/Slider/Checkbox/Radio Group)",
+    ).toBe(4);
+    for (const item of await items.all()) {
+      expect(
+        await item.getAttribute("aria-selected"),
+        "nav dropdown items are activated, not selected",
       ).toBeNull();
     }
   });
