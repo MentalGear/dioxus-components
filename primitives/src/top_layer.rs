@@ -197,6 +197,36 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
     inset: auto;
     transform: none;
     position-try-fallbacks: flip-block, flip-inline;
+    /* Anchor width contract (docs/backlog.md row 47, 2026-09-04): publish
+       the trigger's width as the same --dx-anchor-width custom property
+       use_anchor_position_fallback's JS measurement writes on every
+       engine (see that function's doc, "Anchor width contract") -- a CSS-
+       native belt on a conforming engine, alongside that JS suspenders
+       everywhere else. Confirmed by execution (a throwaway Chromium probe,
+       this session) that anchor-size() substitutes correctly when only
+       referenced from inside a custom-property declaration and then read
+       back through var() at a sizing property's use site -- so this is
+       safe to declare generically here, on the marker classes every
+       anchored overlay already carries, without knowing anything about a
+       specific component's styling intent (that stays in each component's
+       own stylesheet, e.g. dx-select-list's min-width: var(--dx-anchor-
+       width, 100%)). The JS write is authoritative regardless: it fires
+       unconditionally too, right after this rule takes effect, and is
+       what actually covers Firefox/WebKit and any engine that reaches
+       this file's use_anchor_position_fallback at all -- this declaration
+       is only for the sliver of time between paint and that effect's
+       first reposition() call, and for engines that resolve anchor-size()
+       in a custom property, this simply keeps agreeing with it. Note:
+       this comment (and the one on the hover-card rule below) must never
+       contain a backtick character -- this whole stylesheet is embedded
+       as one JS template-literal string in
+       ANCHOR_POSITIONING_CSS_JS_LITERAL below, and a stray backtick here
+       would terminate that literal early, producing broken JS (confirmed
+       by execution: an earlier draft of this exact comment did this and
+       threw "Invalid left-hand side expression in postfix operation" at
+       runtime, from "--dx-anchor-width" being parsed as JS code instead
+       of string content once the literal closed early). */
+    --dx-anchor-width: anchor-size(width);
   }
 
   .dx-anchor-tooltip[popover][data-side="top"],
@@ -260,6 +290,11 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
     margin: 0;
     inset: auto;
     position-try-fallbacks: flip-block, flip-inline;
+    /* See the anchor width contract comment on the shared marker-class
+       rule above (no backticks in this comment either -- same reason) --
+       same reasoning, this selector just lives in its own rule because
+       HoverCard uses a wider default gap. */
+    --dx-anchor-width: anchor-size(width);
   }
 
   .dx-anchor-hover-card[popover][data-side="top"] {
@@ -812,6 +847,67 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// Rule 12 is the regression oracle, reusing Rule 11's own no-anchor-engine
 /// simulation.
 ///
+/// ## Anchor width contract (2026-09-04, `docs/backlog.md` row 47)
+///
+/// User report: the styled `Select` ("Choose a fruit"/"Select an option")
+/// on the home page gallery opens a listbox the full width of the
+/// viewport, on every engine and every width tested. Root cause was CSS,
+/// not this function -- `preview/src/components/select/style.css`'s
+/// `.dx-select-list` declares `min-width: 100%`, written back when this
+/// listbox was `position: absolute` inside a `position: relative` `Select`
+/// root (100% of *that* box, i.e. the trigger's own width); once promoted
+/// to the top layer via `popover` its containing block became the
+/// viewport (see [`position_anchor_style`]'s doc), so the same percentage
+/// silently started meaning 100% of the *viewport*. A later
+/// `@supports (anchor-name: --a) { .dx-select-list[popover] { min-width:
+/// anchor-size(width); } }` rule was added to restore trigger-relative
+/// sizing on the CSS Anchor Positioning path, but is dead in the actually-
+/// served stylesheet: this crate's `#[css_module]` class-hashing does not
+/// scope selectors written only inside an `@supports` body
+/// (`docs/issues/css-module-supports-scoping.md`; the same gap
+/// [`ensure_anchor_positioning_styles`]'s doc describes for the shared
+/// engine stylesheet -- this is a second instance of it, this time in a
+/// *component's own* stylesheet rather than a hand-copied engine snippet),
+/// so the rule that ships targets the unhashed `.dx-select-list` while the
+/// live element carries `.dx-select-list-<hash>`. And even on an engine
+/// where the `@supports` route did apply, it would only ever have covered
+/// the CSS-Anchor-Positioning path -- this function's own fallback
+/// override above corrects *position* on every other engine, but never
+/// touched `width` at all, so Firefox/WebKit (wherever this fallback
+/// engages) had no width fix regardless of the dead-CSS bug.
+///
+/// The fix is engine-level, not a one-off CSS patch: this function's own
+/// `reposition()` (the measurement step above, which -- unlike the
+/// inline-position override -- already runs unconditionally on *every*
+/// engine, conforming or not) publishes the trigger's live width as the
+/// custom property `--dx-anchor-width` on the content element, every time
+/// it measures -- see the `content.style.setProperty('--dx-anchor-width',
+/// ...)` call right after `t` is computed, deliberately placed *before*
+/// the `matches()` early return so a conforming engine gets it too, and
+/// kept fresh by the same scroll/resize/`visualViewport` tracking that
+/// already re-invokes this function for position. A themed stylesheet then
+/// opts in with `min-width: var(--dx-anchor-width, 100%)` (`100%` fallback
+/// keeps the native/non-web arm, where the list is still DOM-relative,
+/// correct) -- a plain custom property, not a class the engine has any
+/// opinion about, so this stays consistent with the rest of this module's
+/// contract: the engine publishes *facts* (a trigger's current width) and
+/// never bakes in a specific component's styling intent. The shared
+/// `@supports` stylesheet (`ANCHOR_POSITIONING_CSS_JS_LITERAL` below) also
+/// declares `--dx-anchor-width: anchor-size(width)` on the same marker
+/// classes, as a CSS-native belt alongside this JS write's suspenders --
+/// confirmed by execution (a throwaway Chromium probe, this session) that
+/// `anchor-size()` *does* substitute correctly when only referenced from
+/// inside a custom-property declaration and then read back through
+/// `var()` at a sizing property's use site, so this was worth keeping
+/// rather than skipping. It is still only a belt, not the whole fix: this
+/// JS write is what actually covers Firefox/WebKit and any engine that
+/// reaches this fallback at all, and is authoritative regardless of what
+/// the CSS path already set. Regression oracle: `select.spec.ts`, a new
+/// listbox-width assertion; `top-layer.spec.ts` Rule 13 (fit-content
+/// width) runs on this file's own *unstyled* fixture and cannot see a
+/// themed component's CSS, so it does not cover this bug -- see that
+/// rule's own header doc.
+///
 /// ## Scroll/resize tracking (decision 2026-09-01, revised 2026-09-02)
 ///
 /// Originally a one-shot measurement taken when `open` becomes true, not a
@@ -1058,6 +1154,27 @@ pub(crate) fn use_anchor_position_fallback(
             function reposition() {{
                 if (!content || !trigger) return;
                 const t = trigger.getBoundingClientRect();
+                // Engine contract (docs/backlog.md row 47, 2026-09-04):
+                // every anchored content's trigger width is published as
+                // `--dx-anchor-width`, unconditionally -- not gated on
+                // `usingFallback` below -- since this write needs to reach
+                // a themed stylesheet's `min-width: var(--dx-anchor-width,
+                // ...)` rule regardless of which positioning path this
+                // engine takes. Written here, before the `matches()`
+                // early-return further down, so it still runs (and keeps
+                // being refreshed by the scroll/resize/visualViewport
+                // tracking below, which just re-invokes this same
+                // function) even on a conforming CSS-Anchor-Positioning
+                // engine that never takes the inline-position-override
+                // branch at all -- position and width are two independent
+                // engine guarantees, and a component must not have to
+                // choose the JS fallback path just to get a correct width.
+                // See `preview/src/components/select/style.css`'s
+                // `.dx-select-list` rule for the consuming side of this
+                // contract, and this crate's other themed overlay
+                // stylesheets for why none of them currently need it (fixed
+                // pixel `min-width`s, not viewport-relative percentages).
+                content.style.setProperty('--dx-anchor-width', t.width + 'px');
                 const c = content.getBoundingClientRect();
                 const cw = content.offsetWidth;
                 const ch = content.offsetHeight;

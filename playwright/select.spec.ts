@@ -296,6 +296,86 @@ test("typeahead skips disabled options", async ({ page }) => {
     await expect(orange).not.toBeFocused();
 });
 
+/**
+ * Listbox width (docs/backlog.md row 47, 2026-09-04) -- regression guard for
+ * the reported symptom: opening the styled `Select` on the home page
+ * gallery rendered its listbox the full width of the viewport (1265px on a
+ * 1280px-wide viewport) instead of the width of its own trigger. Root
+ * cause: `.dx-select-list`'s `min-width: 100%` resolved against the
+ * *viewport* once this listbox was promoted to the top layer (its
+ * containing block is no longer `.dx-select`'s `position: relative` box),
+ * and the `@supports (anchor-name: --a) { min-width: anchor-size(width);
+ * }` rule meant to restore trigger-relative sizing never matched anything
+ * served, because `#[css_module]`'s class-hashing does not scope selectors
+ * written only inside an `@supports` body -- see
+ * `primitives/src/top_layer.rs`'s `use_anchor_position_fallback` doc,
+ * "Anchor width contract", for the full mechanism and the fix
+ * (`--dx-anchor-width`, engine-published on every anchored content).
+ *
+ * Covers both routes the report and the reproduction named: the component
+ * page (`/component/?name=select&`) and the home gallery (`/`, where the
+ * report actually came from -- the gallery embeds a *different* `Select`
+ * instance, "Choose a fruit", alongside its own "Select an option" ones).
+ *
+ * `oracle/tier2-html/top-layer.spec.ts`'s Rule 13 ("fit-content width") is
+ * a *different*, narrower regression guard: it opens every anchored
+ * content on that spec's own unstyled fixture page, which carries no
+ * `#[css_module]` stylesheet at all -- so it cannot see a themed
+ * component's CSS (this bug's actual location) and does not cover this
+ * symptom. This test is the real oracle for it.
+ */
+test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regression)", () => {
+    async function assertListboxTracksTriggerWidth(
+        page: Page,
+        trigger: ReturnType<Page["getByRole"]>,
+        listbox: ReturnType<Page["getByRole"]>,
+    ) {
+        const triggerBox = await trigger.boundingBox();
+        const listboxBox = await listbox.boundingBox();
+        const viewport = page.viewportSize();
+        if (!triggerBox || !listboxBox || !viewport) {
+            throw new Error("expected trigger, listbox and viewport to all have a bounding box");
+        }
+        const debug = `trigger=${JSON.stringify(triggerBox)} listbox=${JSON.stringify(listboxBox)} viewport=${JSON.stringify(viewport)}`;
+
+        // At least as wide as the trigger (the pre-migration contract this
+        // fix restores) -- 1px slack for subpixel rounding.
+        expect(listboxBox.width, debug).toBeGreaterThanOrEqual(triggerBox.width - 1);
+        // Not dramatically wider than the trigger (rules out "grew to fill
+        // the viewport" while still tolerating a listbox whose own option
+        // text is naturally wider than a narrow trigger).
+        expect(listboxBox.width, debug).toBeLessThanOrEqual(Math.max(triggerBox.width * 2, 320));
+        // The actual reported symptom: nowhere near viewport width.
+        expect(listboxBox.width, debug).toBeLessThan(0.6 * viewport.width);
+        // Anchored near the trigger's left edge (side="bottom",
+        // align="start" -- `select/components/list.rs`), not drifted to
+        // the viewport's own left edge.
+        expect(Math.abs(listboxBox.x - triggerBox.x), debug).toBeLessThanOrEqual(8);
+    }
+
+    test("component page: listbox tracks trigger width, not viewport width", async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
+        const trigger = singleSelectTrigger(page);
+        await trigger.click();
+        const listbox = page.getByRole("listbox");
+        await expect(listbox).toHaveAttribute("data-state", "open");
+        await assertListboxTracksTriggerWidth(page, trigger, listbox);
+    });
+
+    test("home gallery: listbox tracks trigger width, not viewport width", async ({ page }) => {
+        // The original report: desktop width, home page, the styled Select
+        // cards ("Choose a fruit" / "Select an option").
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto("http://127.0.0.1:8080/", { waitUntil: 'networkidle' });
+        const trigger = page.getByRole("button").filter({ hasText: /^(Select an option|Choose a fruit)$/ }).first();
+        await trigger.click();
+        const listbox = page.getByRole("listbox");
+        await expect(listbox).toHaveAttribute("data-state", "open");
+        await assertListboxTracksTriggerWidth(page, trigger, listbox);
+    });
+});
+
 test.describe("Axe automated scan", () => {
     test("loaded (listbox closed) has no automatically detectable a11y issues", async ({ page }) => {
         await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
