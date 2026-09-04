@@ -153,7 +153,7 @@ fn MessageRow(
     let uid = message.uid().cloned();
     let is_selected = selected_uid.as_deref() == Some(uid.as_str());
     let uid_for_click = uid.clone();
-    let uid_for_key = uid.clone();
+    let uid_for_open = uid.clone();
     let uid_for_trash = uid.clone();
     let uid_for_star = uid.clone();
     let m = lookup_message(message.source_index().cloned());
@@ -171,21 +171,44 @@ fn MessageRow(
     if flagged {
         classes.push_str(" ec-flagged");
     }
+    // docs/backlog.md row 37: axe's `nested-interactive` flagged this row
+    // for wrapping the whole thing (avatar, subject/sender/snippet, AND the
+    // per-row star/trash toggle buttons) in a single `role="button"` div --
+    // a button containing buttons, which no AT can announce sensibly (the
+    // toggles become unreachable "content" of the outer button per the
+    // accessibility tree). Restructured so the tree sees one primary action
+    // plus sibling toggles instead:
+    //   - `Item` (this row's own container) is back to being a plain div:
+    //     no `role`, no `tabindex`. It keeps a bare `onclick` fallback so
+    //     clicking empty space (the avatar, the grid gaps) still opens the
+    //     thread with the mouse, same as before -- but an unadorned
+    //     `onclick` on a non-interactive div isn't itself an axe target
+    //     (nested-interactive and friends key off ARIA/native interactive
+    //     semantics, which this div no longer carries), and every keyboard
+    //     path now goes through a real button below, not this div.
+    //   - The message content (subject/sender/snippet/tags) is wrapped in
+    //     an actual `<button>` (`.ec-row-open`) -- one focusable, correctly
+    //     -named control per row, exactly where `role="button"` used to
+    //     sit conceptually, just now a real button instead of a div
+    //     impersonating one. It stops propagation so it doesn't also
+    //     re-trigger the container's own click fallback.
+    //   - The avatar (`ItemMedia`) and the star/trash toggles
+    //     (`ItemActions`) stay direct siblings of that button, not
+    //     descendants -- exactly what `nested-interactive` wants: no
+    //     focusable content inside a button.
+    //   - The button's *implicit* accessible name (subject + sender +
+    //     the full lorem-ipsum snippet + any tag labels -- everything an AT
+    //     would flatten from its content) would be enormous and useless, so
+    //     it's given an explicit, short `aria-label` instead (sender +
+    //     subject). The visible content stays unchanged; only the
+    //     *computed* accessible name is overridden.
+    let open_aria_label = format!("{}: {}", m.sender.name, m.subject);
 
     rsx! {
         Item {
             class: classes,
-            role: "button",
-            tabindex: 0,
             onclick: move |_| {
                 state.select_message(uid_for_click.clone());
-            },
-            onkeydown: move |event: KeyboardEvent| {
-                let key = event.key().to_string();
-                if key == "Enter" || key == " " {
-                    event.prevent_default();
-                    state.select_message(uid_for_key.clone());
-                }
             },
             "data-selected": is_selected,
 
@@ -198,29 +221,39 @@ fn MessageRow(
                     {m.sender.initials}
                 }
             }
-            ItemContent {
-                ItemTitle {
-                    span { class: "ec-row-subject", "{m.subject}" }
-                }
-                div { class: "ec-row-sender",
-                    span { class: "ec-row-from", {m.sender.name} }
-                }
-                ItemDescription { class: "ec-row-snippet", {LOREM_IPSUM} }
-                if !tags.is_empty() || m.has_attachment || flagged {
-                    div { class: "ec-muted ec-row-tags",
-                        if flagged {
-                            LucideIcon { kind: IconKind::Flag, size: 12 }
-                        }
-                        for (i, tag) in tags.iter().enumerate() {
-                            span { key: "{tag.label()}",
-                                if i > 0 {
-                                    " · "
-                                }
-                                {tag.label()}
+            button {
+                r#type: "button",
+                class: "ec-row-open",
+                aria_label: "{open_aria_label}",
+                onclick: move |e: Event<MouseData>| {
+                    e.stop_propagation();
+                    state.select_message(uid_for_open.clone());
+                },
+
+                ItemContent {
+                    ItemTitle {
+                        span { class: "ec-row-subject", "{m.subject}" }
+                    }
+                    div { class: "ec-row-sender",
+                        span { class: "ec-row-from", {m.sender.name} }
+                    }
+                    ItemDescription { class: "ec-row-snippet", {LOREM_IPSUM} }
+                    if !tags.is_empty() || m.has_attachment || flagged {
+                        div { class: "ec-muted ec-row-tags",
+                            if flagged {
+                                LucideIcon { kind: IconKind::Flag, size: 12 }
                             }
-                        }
-                        if m.has_attachment {
-                            LucideIcon { kind: IconKind::Paperclip, size: 12 }
+                            for (i, tag) in tags.iter().enumerate() {
+                                span { key: "{tag.label()}",
+                                    if i > 0 {
+                                        " · "
+                                    }
+                                    {tag.label()}
+                                }
+                            }
+                            if m.has_attachment {
+                                LucideIcon { kind: IconKind::Paperclip, size: 12 }
+                            }
                         }
                     }
                 }

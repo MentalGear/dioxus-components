@@ -18,9 +18,20 @@ use time::{Date, Month};
 use super::super::calendar::*;
 use super::super::popover::*;
 
-#[css_module("/src/components/date_picker/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in the two public entry points -- `DatePicker`
+// and `DateRangePicker` -- the same way `select/component.rs` links from
+// both of ITS two entry points, since a caller uses exactly one of the two
+// and never both).
+//
+// This component is also on the row-32 "not already namespaced" lane: the
+// segment class used to be the bare `dx-date-segment`, not
+// `dx-date-picker-segment`. `#[css_module]`'s hash kept it collision-safe
+// regardless, but a plain `dx-date-segment` isn't provably this
+// component's own once the hash is gone. Renamed to `dx-date-picker-segment`
+// in the same change that drops the macro, in both this file and
+// `style.css` -- see `scripts/check-dx-class-prefix.sh`.
 fn fixed_date(year: i32, month: Month, day: u8) -> Date {
     Date::from_calendar_date(year, month, day).expect("valid fixed date")
 }
@@ -150,13 +161,14 @@ pub struct DateRangePickerProps {
 #[component]
 pub fn DatePicker(props: DatePickerProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_date_picker
+        class: "dx-date-picker"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
     let month_count = props.month_count.max(1);
     use_context_provider(|| StyledDatePickerContext { month_count });
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/date_picker/style.css") }
         div {
             date_picker::DatePicker {
                 on_value_change: props.on_value_change,
@@ -197,13 +209,14 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
 #[component]
 pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_date_picker
+        class: "dx-date-picker"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
     let month_count = props.month_count.max(1);
     use_context_provider(|| StyledDatePickerContext { month_count });
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/date_picker/style.css") }
         div {
             date_picker::DateRangePicker {
                 on_range_change: props.on_range_change,
@@ -234,7 +247,7 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
 #[component]
 pub(crate) fn DatePickerInput(props: DatePickerInputProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_date_picker_group
+        class: "dx-date-picker-group"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
     let extra_children = props.children;
@@ -274,7 +287,7 @@ pub(crate) fn DatePickerInput(props: DatePickerInputProps) -> Element {
 #[component]
 pub(crate) fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_date_picker_group
+        class: "dx-date-picker-group"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
     let extra_children = props.children;
@@ -327,7 +340,7 @@ pub(crate) fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
 pub(crate) fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
     rsx! {
         date_picker::DatePickerYearSegment {
-            class: Styles::dx_date_segment,
+            class: "dx-date-picker-segment",
             attributes: props.attributes,
         }
     }
@@ -337,7 +350,7 @@ pub(crate) fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Elemen
 pub(crate) fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
     rsx! {
         date_picker::DatePickerMonthSegment {
-            class: Styles::dx_date_segment,
+            class: "dx-date-picker-segment",
             attributes: props.attributes,
         }
     }
@@ -347,7 +360,7 @@ pub(crate) fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Elem
 pub(crate) fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
     rsx! {
         date_picker::DatePickerDaySegment {
-            class: Styles::dx_date_segment,
+            class: "dx-date-picker-segment",
             attributes: props.attributes,
         }
     }
@@ -357,7 +370,7 @@ pub(crate) fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element 
 pub(crate) fn DatePickerSeparator(props: DatePickerSeparatorProps) -> Element {
     rsx! {
         date_picker::DatePickerSeparator {
-            class: Styles::dx_date_segment,
+            class: "dx-date-picker-segment",
             symbol: props.symbol,
             attributes: props.attributes,
         }
@@ -386,11 +399,11 @@ pub(crate) fn DateRangePickerEndValue(props: DateRangePickerEndValueProps) -> El
 pub(crate) fn DatePickerPopoverTrigger(props: PopoverTriggerProps) -> Element {
     rsx! {
         PopoverTrigger {
-            class: Styles::dx_date_picker_popover_trigger,
+            class: "dx-date-picker-popover-trigger",
             aria_label: "Show Calendar",
             attributes: props.attributes,
             ChevronDown {
-                class: Styles::dx_date_picker_trigger,
+                class: "dx-date-picker-trigger",
                 size: "20px",
                 stroke: "var(--primary-color-7)",
             }
@@ -402,7 +415,7 @@ pub(crate) fn DatePickerPopoverTrigger(props: PopoverTriggerProps) -> Element {
 pub(crate) fn DatePickerPopoverContent(props: PopoverContentProps) -> Element {
     rsx! {
         PopoverContent {
-            class: Styles::dx_date_picker_popover_content.to_string(),
+            class: "dx-date-picker-popover-content".to_string(),
             id: props.id,
             side: props.side,
             align: props.align,

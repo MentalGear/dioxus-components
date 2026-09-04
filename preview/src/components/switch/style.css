@@ -1,21 +1,22 @@
 .dx-switch-example {
   display: flex;
   align-items: center;
-  padding: 20px;
+  padding: var(--dx-space-5);
   gap: 15px;
 }
 
 .dx-switch {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   all: unset;
   position: relative;
-  width: 2rem;
+  width: var(--dx-space-8);
   height: 1.15rem;
-  border-radius: 9999px;
+  border-radius: var(--dx-radius-full);
   background-color: var(--primary-color-6);
   cursor: pointer;
-  transition: background-color 150ms, box-shadow 150ms;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+  transition: background-color var(--dx-motion-duration-base), box-shadow var(--dx-motion-duration-base);
 }
 
 .dx-switch[data-state="checked"] {
@@ -31,16 +32,16 @@
   display: block;
   width: calc(1.15rem - 2px);
   height: calc(1.15rem - 2px);
-  border-radius: 9999px;
+  border-radius: var(--dx-radius-full);
   background-color: var(--light, var(--primary-color)) var(--dark, var(--secondary-color-2));
   transform: translateX(1px);
-  transition: transform 150ms;
+  transition: transform var(--dx-motion-duration-base);
   will-change: transform;
 }
 
 .dx-switch[data-state="checked"] .dx-switch-thumb {
   background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
-  transform: translateX(calc(2rem - 1px - (1.15rem - 2px)));
+  transform: translateX(calc(var(--dx-space-8) - 1px - (1.15rem - 2px)));
 }
 
 /* Only apply disabled styles when data-disabled is "true" */

@@ -11,9 +11,6 @@ use dioxus_primitives::calendar::{
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 use time::{Date, Month, UtcDateTime, Weekday};
 
-#[css_module("/src/components/calendar/style.css")]
-struct Styles;
-
 fn fixed_date(year: i32, month: Month, day: u8) -> Date {
     Date::from_calendar_date(year, month, day).expect("valid fixed date")
 }
@@ -153,6 +150,7 @@ pub fn Calendar(props: CalendarProps) -> Element {
     let month_count = props.month_count.max(1);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         CalendarRoot {
             selected_date: props.selected_date,
             on_date_change: props.on_date_change,
@@ -179,6 +177,7 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
     let month_count = props.month_count.max(1);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         RangeCalendarRoot {
             selected_range: props.selected_range,
             on_range_change: props.on_range_change,
@@ -203,7 +202,7 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
 #[component]
 pub(crate) fn CalendarRoot(props: calendar::CalendarProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_calendar
+        class: "dx-calendar"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
@@ -230,7 +229,7 @@ pub(crate) fn CalendarRoot(props: calendar::CalendarProps) -> Element {
 #[component]
 pub(crate) fn RangeCalendarRoot(props: calendar::RangeCalendarProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_calendar
+        class: "dx-calendar"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
@@ -282,7 +281,7 @@ pub(crate) fn CalendarMonthView(offset: u8, month_count: u8) -> Element {
 fn CalendarView(props: CalendarViewProps) -> Element {
     rsx! {
         calendar::CalendarView {
-            class: Styles::dx_calendar_view,
+            class: "dx-calendar-view",
             offset: props.offset,
             attributes: props.attributes,
             {props.children}
@@ -300,7 +299,7 @@ fn CalendarHeader(props: CalendarHeaderProps) -> Element {
 #[component]
 fn CalendarNavigation(props: CalendarNavigationProps) -> Element {
     rsx! {
-        calendar::CalendarNavigation { class: Styles::dx_calendar_navigation, attributes: props.attributes, {props.children} }
+        calendar::CalendarNavigation { class: "dx-calendar-navigation", attributes: props.attributes, {props.children} }
     }
 }
 
@@ -309,7 +308,7 @@ fn CalendarPreviousMonthButton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
     rsx! {
-        calendar::CalendarPreviousMonthButton { class: Styles::dx_calendar_nav_prev, attributes,
+        calendar::CalendarPreviousMonthButton { class: "dx-calendar-nav-prev", attributes,
             ChevronLeft { size: "20px" }
         }
     }
@@ -320,7 +319,7 @@ fn CalendarNextMonthButton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
     rsx! {
-        calendar::CalendarNextMonthButton { class: Styles::dx_calendar_nav_next, attributes,
+        calendar::CalendarNextMonthButton { class: "dx-calendar-nav-next", attributes,
             ChevronRight { size: "20px" }
         }
     }
@@ -331,7 +330,7 @@ fn CalendarSelectMonth(props: CalendarSelectMonthProps) -> Element {
     rsx! {
         calendar::CalendarSelectMonth {
             attributes: props.attributes,
-            class: Styles::dx_calendar_month_select_container,
+            class: "dx-calendar-month-select-container",
             CalendarSelectMonthSelect {}
             CalendarSelectMonthValue {
                 DropDownIcon { }
@@ -345,7 +344,7 @@ fn CalendarSelectMonth(props: CalendarSelectMonthProps) -> Element {
 fn CalendarSelectMonthSelect(props: CalendarSelectMonthSelectProps) -> Element {
     rsx! {
         calendar::CalendarSelectMonthSelect {
-            class: Styles::dx_calendar_month_select,
+            class: "dx-calendar-month-select",
             attributes: props.attributes,
         }
     }
@@ -355,7 +354,7 @@ fn CalendarSelectMonthSelect(props: CalendarSelectMonthSelectProps) -> Element {
 fn CalendarSelectMonthValue(props: CalendarSelectMonthValueProps) -> Element {
     rsx! {
         calendar::CalendarSelectMonthValue {
-            class: Styles::dx_calendar_month_select_value,
+            class: "dx-calendar-month-select-value",
             attributes: props.attributes,
             {props.children}
         }
@@ -367,7 +366,7 @@ fn CalendarSelectYear(props: CalendarSelectYearProps) -> Element {
     rsx! {
         calendar::CalendarSelectYear {
             attributes: props.attributes,
-            class: Styles::dx_calendar_year_select_container,
+            class: "dx-calendar-year-select-container",
             CalendarSelectYearSelect {}
             CalendarSelectYearValue {
                 DropDownIcon { }
@@ -381,7 +380,7 @@ fn CalendarSelectYear(props: CalendarSelectYearProps) -> Element {
 fn CalendarSelectYearSelect(props: CalendarSelectYearSelectProps) -> Element {
     rsx! {
         calendar::CalendarSelectYearSelect {
-            class: Styles::dx_calendar_year_select,
+            class: "dx-calendar-year-select",
             attributes: props.attributes,
         }
     }
@@ -391,7 +390,7 @@ fn CalendarSelectYearSelect(props: CalendarSelectYearSelectProps) -> Element {
 fn CalendarSelectYearValue(props: CalendarSelectYearValueProps) -> Element {
     rsx! {
         calendar::CalendarSelectYearValue {
-            class: Styles::dx_calendar_year_select_value,
+            class: "dx-calendar-year-select-value",
             attributes: props.attributes,
             {props.children}
         }
@@ -438,7 +437,7 @@ fn CalendarGrid(
 fn CalendarGridRoot(props: CalendarGridRootProps) -> Element {
     rsx! {
         calendar::CalendarGridRoot {
-            class: Styles::dx_calendar_grid,
+            class: "dx-calendar-grid",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -460,7 +459,7 @@ fn CalendarGridHead(props: CalendarGridHeadProps) -> Element {
 fn CalendarGridHeaderRow(props: CalendarGridHeaderRowProps) -> Element {
     rsx! {
         calendar::CalendarGridHeaderRow {
-            class: Styles::dx_calendar_grid_header,
+            class: "dx-calendar-grid-header",
             attributes: props.attributes,
             {props.children}
         }
@@ -471,7 +470,7 @@ fn CalendarGridHeaderRow(props: CalendarGridHeaderRowProps) -> Element {
 fn CalendarGridDayHeader(props: CalendarGridDayHeaderProps) -> Element {
     rsx! {
         calendar::CalendarGridDayHeader {
-            class: Styles::dx_calendar_grid_day_header,
+            class: "dx-calendar-grid-day-header",
             weekday: props.weekday,
             attributes: props.attributes,
             {props.children}
@@ -483,7 +482,7 @@ fn CalendarGridDayHeader(props: CalendarGridDayHeaderProps) -> Element {
 fn CalendarGridBody(props: CalendarGridBodyProps) -> Element {
     rsx! {
         calendar::CalendarGridBody {
-            class: Styles::dx_calendar_grid_body,
+            class: "dx-calendar-grid-body",
             attributes: props.attributes,
             {props.children}
         }
@@ -494,7 +493,7 @@ fn CalendarGridBody(props: CalendarGridBodyProps) -> Element {
 fn CalendarGridWeek(props: CalendarGridWeekProps) -> Element {
     rsx! {
         calendar::CalendarGridWeek {
-            class: Styles::dx_calendar_grid_week,
+            class: "dx-calendar-grid-week",
             attributes: props.attributes,
             {props.children}
         }
@@ -515,7 +514,7 @@ fn CalendarGridCell(props: CalendarGridCellProps) -> Element {
 fn CalendarDay(props: CalendarDayProps) -> Element {
     rsx! {
         calendar::CalendarDay {
-            class: Styles::dx_calendar_grid_cell,
+            class: "dx-calendar-grid-cell",
             date: props.date,
             attributes: props.attributes,
             children: props.children,

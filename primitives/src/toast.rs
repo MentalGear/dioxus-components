@@ -11,6 +11,15 @@ use dioxus_sdk_time::use_timeout;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+// `document`/`Cell` are only needed for the web-arm's engine-injected
+// baseline stylesheet (`ensure_toast_base_styles`, docs/backlog.md row 44)
+// -- same shape as `top_layer.rs`'s `ensure_anchor_positioning_styles`,
+// which this mirrors.
+#[cfg(feature = "web")]
+use dioxus::document;
+#[cfg(feature = "web")]
+use std::cell::Cell;
+
 /// Toast types for different visual styles
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastType {
@@ -304,6 +313,128 @@ pub fn ToastProvider(props: ToastProviderProps) -> Element {
     }
 }
 
+#[cfg(feature = "web")]
+thread_local! {
+    /// Whether [`ensure_toast_base_styles`]'s `document::eval` has already
+    /// been scheduled once in this WASM instance -- same idempotency guard
+    /// shape as `top_layer.rs`'s `ANCHOR_POSITIONING_STYLES_INSTALLED`
+    /// (itself modeled on `scroll_lock.rs`'s
+    /// `SCROLLBAR_GUTTER_BASELINE_INSTALLED`).
+    static TOAST_BASE_STYLES_INSTALLED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Installs a minimal, always-applied fallback stylesheet for the raw
+/// primitive's own markup, at most once per WASM instance -- docs/backlog.md
+/// row 44, construction (2).
+///
+/// ## The bug this closes
+///
+/// `ToastRegionRendered`'s `div[popover]` and [`Toast`]'s
+/// `div[role="alertdialog"]` carry no layout CSS of their own; every real
+/// box they get comes from whatever a *consumer's* stylesheet supplies
+/// (`preview/src/components/toast/style.css`'s `.dx-toast-container[popover]`/
+/// `.dx-toast`, for the themed wrapper -- see `docs/preview-composition.md`).
+/// `preview/src/components/top_layer/component.rs`'s oracle fixture
+/// deliberately composes this raw primitive with no such class at all (its
+/// own header doc: calibrated against native `popover`/top-layer mechanics,
+/// not a themed look), so before this function existed its toast had
+/// whatever box the *engine's own* UA popover-stylesheet defaults
+/// (`[popover] { inset: 0; margin: auto; border: solid; padding: 0.25em;
+/// overflow: auto; background-color: Canvas; }`) plus `fit-content` sizing
+/// happened to produce -- per docs/backlog.md row 44's own root-cause
+/// analysis, this is a real gap between engines: Chromium's default gives
+/// it a small (~105x40px) on-screen box (confirmed there by execution
+/// against a real build), while a 2026-09-03 iOS 18 device report of the
+/// fixture's "Add toast" appearing dead is the unverified-but-plausible
+/// WebKit instance of the same gap -- this crate has no WebKit build to
+/// confirm that half against directly. Rather than tie the
+/// fixture's deliberately-raw composition to the theme (which would also
+/// mean removing `scripts/check-preview-composition.sh`'s stated exemption
+/// for it, a bigger and unrelated call), this gives the *primitive itself*
+/// a minimal, engine-independent layout baseline -- the same idea
+/// `top_layer.rs`'s `ensure_anchor_positioning_styles` already applies for
+/// anchor positioning, just for toast's own box instead.
+///
+/// ## Zero specificity, deliberately
+///
+/// Every rule below is wrapped in `:where(...)`, exactly like
+/// `top_layer.rs`'s own `[popover]` reset -- see that function's doc for
+/// why: it lets a themed wrapper's real, higher-specificity CSS
+/// (`.dx-toast-container[popover]`, `.dx-toast`, both plain classes with
+/// nonzero specificity) win outright for every property it declares, so
+/// this baseline only ever fills a gap a themed page's own stylesheet
+/// leaves, never fights it.
+///
+/// Call this once per `ToastRegionRendered` mount (it is idempotent, so
+/// calling it more than once is harmless) -- mirrors
+/// `use_anchor_position_fallback`'s own `use_effect(ensure_anchor_
+/// positioning_styles)` call for the identical reason.
+#[cfg(feature = "web")]
+fn ensure_toast_base_styles() {
+    if TOAST_BASE_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
+        return;
+    }
+    let eval = document::eval(TOAST_BASE_STYLES_INJECT_JS);
+    let _ = eval;
+}
+
+/// The idempotent (JS-side `getElementById` guarded, so safe to run more
+/// than once -- same double-guard shape as `top_layer.rs`'s
+/// `anchor_positioning_inject_js`) style-tag-injection script
+/// [`ensure_toast_base_styles`] dispatches.
+///
+/// `dx-toast-base-region`/`dx-toast-base-item` are plain, hand-written
+/// marker classes (never `#[css_module]`-routed -- this crate has no
+/// build-time CSS pipeline of its own, only `preview/`'s does), applied
+/// unconditionally by `ToastRegionRendered`/[`Toast`] alongside whatever
+/// class a themed wrapper also merges in via `merge_attributes`'s
+/// concatenating `class` rule.
+#[cfg(feature = "web")]
+const TOAST_BASE_STYLES_INJECT_JS: &str = r#"
+if (!document.getElementById('dx-toast-base-styles')) {
+    const style = document.createElement('style');
+    style.id = 'dx-toast-base-styles';
+    style.textContent = `
+      :where(.dx-toast-base-region[popover]) {
+        position: fixed;
+        inset: auto 1rem 1rem auto;
+        margin: 0;
+        overflow: visible;
+        border: none;
+        padding: 0;
+        background: none;
+        color: inherit;
+      }
+      :where(.dx-toast-base-region ol) {
+        display: flex;
+        flex-direction: column-reverse;
+        margin: 0;
+        padding: 0;
+        gap: 0.5rem;
+        list-style: none;
+      }
+      :where(.dx-toast-base-region li) {
+        display: flex;
+      }
+      :where(.dx-toast-base-item) {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        box-sizing: border-box;
+        min-width: 12rem;
+        min-height: 2.5rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid CanvasText;
+        border-radius: 0.25rem;
+        background: Canvas;
+        color: CanvasText;
+      }
+    `;
+    document.head.appendChild(style);
+}
+"#;
+
 /// Web arm (Migration A slice 3/3, final): promote the toast region to the
 /// top layer via `popover="manual"` so toasts are never clipped by an
 /// `overflow: hidden` ancestor and always paint above everything else on
@@ -420,6 +551,15 @@ fn ToastRegionRendered(
     // exact mistake in an earlier version of the top-layer oracle fixture,
     // `preview/src/components/top_layer/component.rs` -- see its own
     // comment on this).
+
+    // Installs `ensure_toast_base_styles`'s engine-injected fallback
+    // stylesheet -- see its own doc for the bug this closes (docs/backlog.md
+    // row 44) and why zero relative-ordering risk exists here (unlike
+    // `use_anchor_position_fallback`'s pairing with a same-tick measurement
+    // eval, nothing below reads computed layout, so a separate `use_effect`
+    // call is sufficient, no same-script prepending needed).
+    use_effect(ensure_toast_base_styles);
+
     let always_open = use_signal(|| true);
     crate::top_layer::use_popover_shown_while_mounted(
         id.clone(),
@@ -430,14 +570,44 @@ fn ToastRegionRendered(
     // See "Attribute-override dedup" above: drop any caller `id` (never
     // overridable) and merge everything else with caller-wins semantics so
     // neither lane ever emits a duplicate attribute.
+    //
+    // `style` needs its own pass first, though (docs/backlog.md row 44,
+    // found by execution): a caller's own plain `style` attribute (e.g. the
+    // `top_layer` preview fixture's `ToastProvider { style: "position:
+    // fixed; ..." }`) is the *same* `(name, namespace)` key --
+    // `("style", None)` -- as this element's own `style: "--toast-count:
+    // {length}"` literal below, so plain `merge_attributes` sees them as one
+    // collision and keeps only the last-in-the-list value (the caller's),
+    // silently dropping `--toast-count` -- the exact same duplicate-`style`
+    // hazard `top_layer::anchored_content_attributes` exists to fix for the
+    // anchored-content family (its own doc). `crate::fold_style_attributes`
+    // pulls whatever `style` the caller supplied (plain literal or
+    // shorthand props) out as one string first, so it can be folded
+    // together with `--toast-count` into a single resulting `style`
+    // instead of two competing ones -- `--toast-count` first so the
+    // caller's own declarations, listed after, can still override any
+    // property they want without ever being able to drop the counter
+    // itself (same ordering rationale as `anchored_content_attributes`).
     let attributes: Vec<Attribute> = attributes.into_iter().filter(|a| a.name != "id").collect();
+    let (caller_style, attributes) = crate::fold_style_attributes(attributes);
+    let region_style = match caller_style {
+        Some(caller_style) => format!("--toast-count: {length}; {caller_style}"),
+        None => format!("--toast-count: {length}"),
+    };
     let merged = merge_attributes(vec![
         attributes!(div {
             role: "region",
             aria_label: "{length} notifications",
             tabindex: "-1",
             popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            style: "--toast-count: {length}",
+            style: "{region_style}",
+            // See `ensure_toast_base_styles`'s doc: a plain, always-present
+            // marker class the engine-injected fallback stylesheet selects
+            // on, merged (space-concatenated, `merge_attributes`'s own
+            // `class` rule) with whatever class a themed wrapper also
+            // passes through `attributes` -- never overridden by one, only
+            // ever added alongside it.
+            class: "dx-toast-base-region",
         }),
         attributes,
     ]);
@@ -468,13 +638,23 @@ fn ToastRegionRendered(
     onmounted: EventHandler<MountedEvent>,
     children: Element,
 ) -> Element {
+    // Same `style`-clobber fix as the web arm above (docs/backlog.md row
+    // 44) -- kept in both arms for the reason this file's own "Native
+    // (Blitz) arm" doc gives for the identical id/attribute-dedup choice:
+    // both arms' semantics should agree by construction, not by accident of
+    // which one a caller happens to exercise.
     let attributes: Vec<Attribute> = attributes.into_iter().filter(|a| a.name != "id").collect();
+    let (caller_style, attributes) = crate::fold_style_attributes(attributes);
+    let region_style = match caller_style {
+        Some(caller_style) => format!("--toast-count: {length}; {caller_style}"),
+        None => format!("--toast-count: {length}"),
+    };
     let merged = merge_attributes(vec![
         attributes!(div {
             role: "region",
             aria_label: "{length} notifications",
             tabindex: "-1",
-            style: "--toast-count: {length}",
+            style: "{region_style}",
         }),
         attributes,
     ]);
@@ -700,6 +880,46 @@ pub fn Toast(props: ToastProps) -> Element {
         }
     });
 
+    // `dx-toast-base-item` -- see `ensure_toast_base_styles`'s doc: the
+    // plain marker class the web arm's engine-injected fallback stylesheet
+    // selects on, giving a raw (unstyled-wrapper) toast a real, nonzero box
+    // cross-engine (docs/backlog.md row 44). Routed through
+    // `merge_attributes` rather than a bare literal alongside `..props.
+    // attributes` below -- a themed wrapper's own `class` (e.g.
+    // `preview/src/components/toast/component.rs`'s `class: Styles::
+    // dx_toast`) arrives inside `props.attributes` (the `#[props(extends =
+    // GlobalAttributes)]` catch-all), and a second, bare `class` literal on
+    // the same tag would be the identical duplicate-attribute hazard this
+    // file's own "Attribute-override dedup" doc (above, on
+    // `ToastRegionRendered`) already explains -- `merge_attributes`'s
+    // concatenating `class` rule is what lets both live on the one
+    // resulting attribute instead.
+    // `style` needs the same fold the region above does, and for the same
+    // reason (docs/backlog.md row 44): a caller's own plain `style` arrives
+    // in `props.attributes` under the *same* `("style", None)` key as this
+    // element's own `--toast-index` literal, so spreading both onto one tag
+    // makes `merge_attributes` treat them as a single collision and keep
+    // only the caller's -- silently dropping the index the themed
+    // stylesheet's `z-index: calc(var(--toast-count) - var(--toast-index))`
+    // reads. No caller in this repo passes a per-toast `style` today, so
+    // this is prevention rather than a live defect; it is fixed here anyway
+    // because leaving the identical clobber on the sibling element of the
+    // one row 44 fixes is exactly how that bug got two independent
+    // instances in the first place. `--toast-index` goes first so a caller
+    // can override any property but never drop the counter.
+    let (caller_style, props_attributes) = crate::fold_style_attributes(props.attributes);
+    let item_style = match caller_style {
+        Some(caller_style) => format!("--toast-index: {}; {caller_style}", props.index),
+        None => format!("--toast-index: {}", props.index),
+    };
+    let attributes = merge_attributes(vec![
+        attributes!(div {
+            class: "dx-toast-base-item",
+            style: "{item_style}",
+        }),
+        props_attributes,
+    ]);
+
     rsx! {
         div {
             id,
@@ -714,8 +934,7 @@ pub fn Toast(props: ToastProps) -> Element {
             "data-toast-even": (props.index % 2 == 0).then_some("true"),
             "data-toast-odd": (props.index % 2 == 1).then_some("true"),
             "data-top": (props.index == 0).then_some("true"),
-            style: "--toast-index: {props.index}",
-            ..props.attributes,
+            ..attributes,
 
             {children}
         }

@@ -5,22 +5,23 @@
 }
 
 .dx-hover-card-trigger {
+  display: inline-block;
+
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  display: inline-block;
 }
 
 .dx-hover-card-content {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
   overflow: visible;
   min-width: 200px;
   padding: 5px;
   border: 1px solid var(--light, var(--primary-color-6))
     var(--dark, var(--primary-color-7));
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   margin: 0;
-  animation: dx-hover-card-fade-in 0.1s ease-out;
+  animation: dx-hover-card-fade-in var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
   background: var(--light, var(--primary-color))
     var(--dark, var(--primary-color-5));
 

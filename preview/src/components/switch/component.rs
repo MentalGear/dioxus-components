@@ -1,14 +1,12 @@
 use dioxus::prelude::*;
 use dioxus_primitives::switch::{self, SwitchProps};
 
-#[css_module("/src/components/switch/style.css")]
-struct Styles;
-
 #[component]
 pub fn Switch(props: SwitchProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/switch/style.css") }
         switch::Switch {
-            class: Styles::dx_switch,
+            class: "dx-switch",
             checked: props.checked,
             default_checked: props.default_checked,
             disabled: props.disabled,
@@ -17,7 +15,7 @@ pub fn Switch(props: SwitchProps) -> Element {
             value: props.value,
             on_checked_change: props.on_checked_change,
             attributes: props.attributes,
-            switch::SwitchThumb { class: Styles::dx_switch_thumb }
+            switch::SwitchThumb { class: "dx-switch-thumb" }
         }
     }
 }

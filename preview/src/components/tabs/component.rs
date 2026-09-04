@@ -2,9 +2,6 @@ use dioxus::prelude::*;
 use dioxus_primitives::tabs::{self, TabContentProps, TabListProps, TabTriggerProps};
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
-#[css_module("/src/components/tabs/style.css")]
-struct Styles;
-
 /// The props for the [`Tabs`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct TabsProps {
@@ -70,12 +67,13 @@ impl TabsVariant {
 #[component]
 pub fn Tabs(props: TabsProps) -> Element {
     let base = attributes!(div {
-        class: format!("{} {}", props.class, Styles::dx_tabs),
+        class: format!("{} {}", props.class, "dx-tabs"),
         "data-variant": props.variant.to_class(),
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tabs/style.css") }
         tabs::Tabs {
             value: props.value,
             default_value: props.default_value,
@@ -92,11 +90,12 @@ pub fn Tabs(props: TabsProps) -> Element {
 #[component]
 pub fn TabList(props: TabListProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_tabs_list
+        class: "dx-tabs-list"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tabs/style.css") }
         tabs::TabList { attributes: merged, {props.children} }
     }
 }
@@ -106,13 +105,14 @@ pub fn TabTrigger(props: TabTriggerProps) -> Element {
     let base = attributes!(button {
         class: format!(
             "{} {}",
-            Styles::dx_tabs_trigger,
+            "dx-tabs-trigger",
             props.class.unwrap_or_default()
         )
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tabs/style.css") }
         tabs::TabTrigger {
             class: None,
             id: props.id,
@@ -131,13 +131,14 @@ pub fn TabContent(props: TabContentProps) -> Element {
         class: format!(
             "{} {} {}",
             props.class.unwrap_or_default(),
-            Styles::dx_tabs_content,
-            Styles::dx_tabs_content_themed
+            "dx-tabs-content",
+            "dx-tabs-content-themed"
         )
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/tabs/style.css") }
         tabs::TabContent {
             class: None,
             value: props.value,

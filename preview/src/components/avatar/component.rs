@@ -3,9 +3,6 @@ use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::avatar::{self, AvatarState};
 use dioxus_primitives::merge_attributes;
 
-#[css_module("/src/components/avatar/style.css")]
-struct Styles;
-
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum AvatarImageSize {
     #[default]
@@ -17,9 +14,9 @@ pub enum AvatarImageSize {
 impl AvatarImageSize {
     fn to_class(self) -> &'static str {
         match self {
-            AvatarImageSize::Small => Styles::dx_avatar_sm.inner,
-            AvatarImageSize::Medium => Styles::dx_avatar_md.inner,
-            AvatarImageSize::Large => Styles::dx_avatar_lg.inner,
+            AvatarImageSize::Small => "dx-avatar-sm",
+            AvatarImageSize::Medium => "dx-avatar-md",
+            AvatarImageSize::Large => "dx-avatar-lg",
         }
     }
 }
@@ -34,8 +31,8 @@ pub enum AvatarShape {
 impl AvatarShape {
     fn to_class(self) -> &'static str {
         match self {
-            AvatarShape::Circle => Styles::dx_avatar_circle.inner,
-            AvatarShape::Rounded => Styles::dx_avatar_rounded.inner,
+            AvatarShape::Circle => "dx-avatar-circle",
+            AvatarShape::Rounded => "dx-avatar-rounded",
         }
     }
 }
@@ -73,7 +70,7 @@ pub struct AvatarProps {
 pub fn Avatar(props: AvatarProps) -> Element {
     let class = format!(
         "{} {} {}",
-        Styles::dx_avatar,
+        "dx-avatar",
         props.size.to_class(),
         props.shape.to_class()
     );
@@ -83,6 +80,7 @@ pub fn Avatar(props: AvatarProps) -> Element {
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/avatar/style.css") }
         avatar::Avatar {
             on_load: props.on_load,
             on_error: props.on_error,
@@ -110,12 +108,13 @@ pub struct AvatarImageProps {
 #[component]
 pub fn AvatarImage(props: AvatarImageProps) -> Element {
     let base = attributes!(img {
-        class: Styles::dx_avatar_image,
+        class: "dx-avatar-image",
         draggable: "false",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/avatar/style.css") }
         avatar::AvatarImage {
             id: props.id,
             src: props.src,
@@ -136,11 +135,12 @@ pub struct AvatarFallbackProps {
 #[component]
 pub fn AvatarFallback(props: AvatarFallbackProps) -> Element {
     let base = attributes!(span {
-        class: Styles::dx_avatar_fallback,
+        class: "dx-avatar-fallback",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/avatar/style.css") }
         avatar::AvatarFallback {
             attributes: merged,
             {props.children}
@@ -207,6 +207,7 @@ pub fn ImageAvatar(props: ImageAvatarProps) -> Element {
     let attributes = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/avatar/style.css") }
         Avatar {
             on_load: props.on_load,
             on_error: props.on_error,

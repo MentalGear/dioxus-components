@@ -6,8 +6,19 @@ use std::time::Duration;
 
 pub use dioxus_primitives::select::SelectGroup;
 
-#[css_module("/src/components/select/style.css")]
-struct Styles;
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in the wrapper so a `dx components add
+// select`-copied component needs no extra wiring). This file has TWO
+// independent entry components (`Select` and `SelectMulti` -- callers use
+// exactly one, never both), so the stylesheet Link is placed in both of
+// them rather than only the first, mirroring how `#[css_module]`'s own
+// single `OnceLock`-guarded injection used to fire from whichever of the
+// two happened to render first. `SelectGroupLabel`/`SelectOption` are
+// always composed as children of one of those two (never standalone, per
+// this crate's own API), so they don't need their own copy --
+// `document::Link`'s `(href, rel)` dedup makes it harmless either way if a
+// future edit adds one there too.
 
 /// Props for the themed [`Select`]. Deliberately its own struct rather than
 /// a reuse of `dioxus_primitives::select::SelectProps` (as the other
@@ -82,11 +93,11 @@ pub struct SelectProps<T: Clone + PartialEq + 'static = String> {
     #[props(default)]
     pub placeholder: Option<String>,
 
-    /// Extra class appended alongside `Styles::dx_select_trigger`.
+    /// Extra class appended alongside `"dx-select-trigger"`.
     #[props(default)]
     pub trigger_class: Option<String>,
 
-    /// Extra class appended alongside `Styles::dx_select_list`.
+    /// Extra class appended alongside `"dx-select-list"`.
     #[props(default)]
     pub list_class: Option<String>,
 
@@ -162,11 +173,11 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
     #[props(default)]
     pub placeholder: Option<String>,
 
-    /// Extra class appended alongside `Styles::dx_select_trigger`.
+    /// Extra class appended alongside `"dx-select-trigger"`.
     #[props(default)]
     pub trigger_class: Option<String>,
 
-    /// Extra class appended alongside `Styles::dx_select_list`.
+    /// Extra class appended alongside `"dx-select-list"`.
     #[props(default)]
     pub list_class: Option<String>,
 
@@ -195,12 +206,13 @@ fn with_extra_class(base: impl std::fmt::Display, extra: &Option<String>) -> Str
 
 #[component]
 pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element {
-    let base = attributes!(div { class: Styles::dx_select });
+    let base = attributes!(div { class: "dx-select" });
     let merged = merge_attributes(vec![base, props.attributes]);
-    let trigger_class = with_extra_class(Styles::dx_select_trigger, &props.trigger_class);
-    let list_class = with_extra_class(Styles::dx_select_list, &props.list_class);
+    let trigger_class = with_extra_class("dx-select-trigger", &props.trigger_class);
+    let list_class = with_extra_class("dx-select-list", &props.list_class);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/select/style.css") }
         select::Select {
             value: props.value,
             default_value: props.default_value,
@@ -245,12 +257,13 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
 
 #[component]
 pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -> Element {
-    let base = attributes!(div { class: Styles::dx_select });
+    let base = attributes!(div { class: "dx-select" });
     let merged = merge_attributes(vec![base, props.attributes]);
-    let trigger_class = with_extra_class(Styles::dx_select_trigger, &props.trigger_class);
-    let list_class = with_extra_class(Styles::dx_select_list, &props.list_class);
+    let trigger_class = with_extra_class("dx-select-trigger", &props.trigger_class);
+    let list_class = with_extra_class("dx-select-list", &props.list_class);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/select/style.css") }
         select::SelectMulti {
             values: props.values,
             default_values: props.default_values,
@@ -294,7 +307,7 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
 
 #[component]
 pub fn SelectGroupLabel(props: SelectGroupLabelProps) -> Element {
-    let base = attributes!(div { class: Styles::dx_select_group_label });
+    let base = attributes!(div { class: "dx-select-group-label" });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
@@ -308,7 +321,7 @@ pub fn SelectGroupLabel(props: SelectGroupLabelProps) -> Element {
 
 #[component]
 pub fn SelectOption<T: Clone + PartialEq + 'static>(props: SelectOptionProps<T>) -> Element {
-    let base = attributes!(div { class: Styles::dx_select_option });
+    let base = attributes!(div { class: "dx-select-option" });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {

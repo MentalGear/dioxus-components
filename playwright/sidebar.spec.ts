@@ -113,16 +113,19 @@ test.describe("sidebar: block route", () => {
   });
 });
 
-// KNOWN RED, filed rather than fixed (docs/backlog.md): the `/component/
-// block/?name=sidebar&variant=main&` route (this file's `gotoSidebarBlock`)
-// is a bare block fixture with no page-level `<h1>`/`<main>` wrapper of its
-// own -- by design, it is normally embedded in an `<iframe>` from the main
-// preview page (see the "preview page renders block" test above), where
-// that absence is a non-issue (the iframe's own document is a separate
-// accessibility-tree root). Visiting it directly, as both tests below do,
-// surfaces `page-has-heading-one`/`region` for exactly that reason -- a
-// product decision on whether block routes should carry a lightweight
-// semantic wrapper for direct-visit accessibility, not a Sidebar defect.
+// Fixed 2026-09-04 (docs/backlog.md row 38): the `/component/block/
+// ?name=sidebar&variant=main&` route (this file's `gotoSidebarBlock`) used
+// to be a bare block fixture with no page-level `<h1>`/`<main>` wrapper of
+// its own -- by design, it is normally embedded in an `<iframe>` from the
+// main preview page (see the "preview page renders block" test above),
+// where that absence is a non-issue (the iframe's own document is a
+// separate accessibility-tree root). Visiting it directly, as both tests
+// below do, used to surface `page-has-heading-one`/`region` for exactly
+// that reason. `ComponentBlockDemo` (`preview/src/main.rs`) now renders a
+// visually-hidden `<h1>` naming the block, in its own `<header>` landmark;
+// and `Sidebar` (`preview/src/components/sidebar/component.rs`) now gives
+// its own content a `complementary` landmark too, so nothing on the page
+// sits outside a landmark. Both scans below are expected to pass clean.
 test.describe("Axe automated scan", () => {
   test("loaded (expanded) has no automatically detectable a11y issues", async ({ page }) => {
     await gotoSidebarBlock(page);

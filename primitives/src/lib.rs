@@ -433,6 +433,14 @@ fn use_dialog_open_driver(
     id: impl Readable<Target = String> + Copy + 'static,
     open: impl Readable<Target = bool> + Copy + 'static,
 ) {
+    // Installs `top_layer::ensure_top_layer_ink_styles`'s engine-injected
+    // ink baseline -- see that function's own doc for the bug this closes
+    // and why this hook (every native-`<dialog>`/`showModal()` consumer:
+    // `dialog.rs`, `alert_dialog.rs`, `popover.rs`'s modal arm, and
+    // therefore `Sheet`) is one of the three provably-exhaustive call sites
+    // it lists.
+    use_effect(crate::top_layer::ensure_top_layer_ink_styles);
+
     use_effect(move || {
         let want_open = open.cloned();
         let id = id.cloned();

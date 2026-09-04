@@ -1,8 +1,8 @@
 .dx-toast-container {
   position: fixed;
-  z-index: 9999;
-  right: 20px;
-  bottom: 20px;
+  z-index: var(--dx-z-top);
+  right: var(--dx-space-5);
+  bottom: var(--dx-space-5);
   max-width: 350px;
 }
 
@@ -48,7 +48,7 @@
      with the `right`/`bottom` longhands above: a single declaration has no
      internal source-order hazard the way a shorthand plus overlapping
      longhands would. */
-  inset: auto 20px 20px auto;
+  inset: auto var(--dx-space-5) var(--dx-space-5) auto;
 }
 
 .dx-toast-container ol {
@@ -56,7 +56,7 @@
   flex-direction: column-reverse;
   padding: 0;
   margin: 0;
-  gap: 0.75rem;
+  gap: var(--dx-space-3);
 }
 
 .dx-toast-container li {
@@ -68,15 +68,15 @@
   display: flex;
   overflow: hidden;
   width: 18rem;
-  height: 4rem;
+  height: var(--dx-space-16);
   box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--dx-space-3) var(--dx-space-4);
   border: 1px solid var(--light, var(--primary-color-6))
     var(--dark, var(--primary-color-7));
-  border-radius: 0.5rem;
-  margin-top: -4rem;
+  border-radius: var(--dx-radius-lg);
+  margin-top: calc(-1 * var(--dx-space-16));
   box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
   filter: var(--light, none)
     var(
@@ -88,24 +88,24 @@
     calc(100% - var(--toast-index) * 5%),
     calc(100% - var(--toast-index) * 2%)
   );
-  transition: transform 0.2s ease, margin-top 0.2s ease, opacity 0.2s ease;
+  transition: transform var(--dx-motion-duration-slow) var(--dx-motion-ease), margin-top var(--dx-motion-duration-slow) var(--dx-motion-ease), opacity var(--dx-motion-duration-slow) var(--dx-motion-ease);
 
   --toast-hidden: calc(min(max(0, var(--toast-index) - 2), 1));
 }
 
 .dx-toast-container:not(:hover, :focus-within)
   .dx-toast[data-toast-even]:not([data-top]) {
-  animation: dx-slide-up-even 0.2s ease-out;
+  animation: dx-slide-up-even var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
 .dx-toast-container:not(:hover, :focus-within)
   .dx-toast[data-toast-odd]:not([data-top]) {
-  animation: dx-slide-up-odd 0.2s ease-out;
+  animation: dx-slide-up-odd var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
 @keyframes dx-slide-up-even {
   from {
-    transform: translateY(0.5rem)
+    transform: translateY(var(--dx-space-2))
       scale(
         calc(100% - var(--toast-index) * 5%),
         calc(100% - var(--toast-index) * 2%)
@@ -123,7 +123,7 @@
 
 @keyframes dx-slide-up-odd {
   from {
-    transform: translateY(0.5rem)
+    transform: translateY(var(--dx-space-2))
       scale(
         calc(100% - var(--toast-index) * 5%),
         calc(100% - var(--toast-index) * 2%)
@@ -140,12 +140,12 @@
 }
 
 .dx-toast[data-top] {
-  animation: dx-toast-slide-in 0.2s ease-out;
+  animation: dx-toast-slide-in var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
 .dx-toast-container:hover .dx-toast[data-top],
 .dx-toast-container:focus-within .dx-toast[data-top] {
-  animation: dx-toast-slide-in 0 ease-out;
+  animation: dx-toast-slide-in 0 var(--dx-motion-ease-out);
 }
 
 @keyframes dx-toast-slide-in {
@@ -198,24 +198,22 @@
 
 .dx-toast-content {
   flex: 1;
-  margin-right: 8px;
-  transition: filter 0.2s ease;
+  margin-right: var(--dx-space-2);
+  transition: filter var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-toast-title {
-  margin-bottom: 4px;
+  margin-bottom: var(--dx-space-1);
   color: var(--secondary-color-4);
   font-weight: 600;
 }
 
 .dx-toast-description {
   color: var(--secondary-color-3);
-  font-size: 0.875rem;
+  font-size: var(--dx-text-sm);
 }
 
 .dx-toast-close {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   align-self: flex-start;
   padding: 0;
   border: none;
@@ -223,8 +221,11 @@
   background: none;
   color: var(--secondary-color-3);
   cursor: pointer;
-  font-size: 18px;
+  font-size: var(--dx-text-lg);
   line-height: 1;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
 }
 
 .dx-toast-close:hover {

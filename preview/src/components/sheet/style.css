@@ -1,7 +1,7 @@
 /* Sheet Root */
 .dx-sheet-root {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
   background: rgb(0 0 0 / 50%);
   inset: 0;
   opacity: 0;
@@ -9,12 +9,12 @@
 }
 
 .dx-sheet-root[data-state="closed"] {
-  animation: dx-sheet-root-out 150ms ease-in forwards;
+  animation: dx-sheet-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
   pointer-events: none;
 }
 
 .dx-sheet-root[data-state="open"] {
-  animation: dx-sheet-root-in 200ms ease-out forwards;
+  animation: dx-sheet-root-in var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
 @keyframes dx-sheet-root-in {
@@ -39,7 +39,7 @@
 
 .dx-sheet {
   position: fixed;
-  z-index: 1001;
+  z-index: var(--dx-z-overlay-raised);
   display: flex;
 
   /* The web arm's modal Dialog (docs/plan.md Phase 4.2) renders this as a
@@ -59,7 +59,7 @@
   box-shadow: 0 4px 20px rgb(0 0 0 / 20%);
   color: var(--secondary-color-4);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  gap: 1rem;
+  gap: var(--dx-space-4);
   will-change: transform;
 }
 
@@ -102,19 +102,19 @@
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="right"] {
-  animation: dx-slide-in-right 200ms ease-out forwards;
+  animation: dx-slide-in-right var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="left"] {
-  animation: dx-slide-in-left 200ms ease-out forwards;
+  animation: dx-slide-in-left var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="top"] {
-  animation: dx-slide-in-top 200ms ease-out forwards;
+  animation: dx-slide-in-top var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="bottom"] {
-  animation: dx-slide-in-bottom 200ms ease-out forwards;
+  animation: dx-slide-in-bottom var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
 /* KNOWN GAP (docs/plan.md Phase 4.2; same treatment as docs/backlog.md row
@@ -133,19 +133,19 @@
  * out of scope here. Native (Blitz) arm unaffected (plain `div`, no
  * `<dialog>`). No oracle rule currently checks animation duration. */
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="right"] {
-  animation: dx-slide-out-right 150ms ease-in forwards;
+  animation: dx-slide-out-right var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="left"] {
-  animation: dx-slide-out-left 150ms ease-in forwards;
+  animation: dx-slide-out-left var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="top"] {
-  animation: dx-slide-out-top 150ms ease-in forwards;
+  animation: dx-slide-out-top var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="bottom"] {
-  animation: dx-slide-out-bottom 150ms ease-in forwards;
+  animation: dx-slide-out-bottom var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 @keyframes dx-slide-in-right {
@@ -231,34 +231,32 @@
 .dx-sheet-header {
   display: flex;
   flex-direction: column;
-  padding: 1rem;
+  padding: var(--dx-space-4);
   gap: 0.375rem;
 }
 
 .dx-sheet-footer {
   display: flex;
   flex-direction: column;
-  padding: 1rem;
+  padding: var(--dx-space-4);
   margin-top: auto;
-  gap: 0.5rem;
+  gap: var(--dx-space-2);
 }
 
 .dx-sheet-title {
   margin: 0;
   color: var(--secondary-color-4);
-  font-size: 1.125rem;
+  font-size: var(--dx-text-lg);
   font-weight: 600;
 }
 
 .dx-sheet-description {
   margin: 0;
   color: var(--secondary-color-5);
-  font-size: 0.875rem;
+  font-size: var(--dx-text-sm);
 }
 
 .dx-sheet-close {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   position: absolute;
   top: 1rem;
   right: 1rem;
@@ -269,11 +267,14 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--dx-radius-sm);
   background: none;
   color: var(--primary-color-7);
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+  transition: color var(--dx-motion-duration-base) var(--dx-motion-ease), background-color var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
 .dx-sheet-close:hover {

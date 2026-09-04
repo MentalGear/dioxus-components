@@ -3,14 +3,13 @@ use dioxus_primitives::menubar::{
     self, MenubarContentProps, MenubarItemProps, MenubarMenuProps, MenubarProps,
     MenubarTriggerProps,
 };
-#[css_module("/src/components/menubar/style.css")]
-struct Styles;
 
 #[component]
 pub fn Menubar(props: MenubarProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/menubar/style.css") }
         menubar::Menubar {
-            class: Styles::dx_menubar,
+            class: "dx-menubar",
             disabled: props.disabled,
             roving_loop: props.roving_loop,
             attributes: props.attributes,
@@ -22,8 +21,9 @@ pub fn Menubar(props: MenubarProps) -> Element {
 #[component]
 pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/menubar/style.css") }
         menubar::MenubarMenu {
-            class: Styles::dx_menubar_menu,
+            class: "dx-menubar-menu",
             index: props.index,
             disabled: props.disabled,
             attributes: props.attributes,
@@ -35,15 +35,17 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
 #[component]
 pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     rsx! {
-        menubar::MenubarTrigger { class: Styles::dx_menubar_trigger, attributes: props.attributes, {props.children} }
+        document::Link { rel: "stylesheet", href: asset!("/src/components/menubar/style.css") }
+        menubar::MenubarTrigger { class: "dx-menubar-trigger", attributes: props.attributes, {props.children} }
     }
 }
 
 #[component]
 pub fn MenubarContent(props: MenubarContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/menubar/style.css") }
         menubar::MenubarContent {
-            class: Styles::dx_menubar_content,
+            class: "dx-menubar-content",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -54,8 +56,9 @@ pub fn MenubarContent(props: MenubarContentProps) -> Element {
 #[component]
 pub fn MenubarItem(props: MenubarItemProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/menubar/style.css") }
         menubar::MenubarItem {
-            class: Styles::dx_menubar_item,
+            class: "dx-menubar-item",
             index: props.index,
             value: props.value,
             disabled: props.disabled,

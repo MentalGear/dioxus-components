@@ -1,12 +1,10 @@
 .dx-radio-group {
   display: flex;
   flex-direction: column;
-  gap: .75rem;
+  gap: var(--dx-space-3);
 }
 
-.dx-radio-item {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
+.dx-radio-group-item {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -14,16 +12,19 @@
   border: none;
   background-color: transparent;
   color: var(--secondary-color-4);
-  font-size: 14px;
-  gap: .75rem;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-3);
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
 }
 
-.dx-radio-item::before {
+.dx-radio-group-item::before {
   display: block;
   width: 1rem;
   height: 1rem;
   box-sizing: border-box;
-  border-radius: 1.5rem;
+  border-radius: var(--dx-radius-3xl);
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
   box-shadow: 0 0 0 1px var(--light, var(--primary-color-6))
     var(--dark, var(--primary-color-7));
@@ -31,25 +32,25 @@
   cursor: pointer;
 }
 
-.dx-radio-item:focus-visible {
+.dx-radio-group-item:focus-visible {
   outline: none;
 }
 
-.dx-radio-item:focus-visible::before {
-  box-shadow: 0 0 0 2px var(--focused-border-color);
+.dx-radio-group-item:focus-visible::before {
+  box-shadow: var(--dx-ring);
 }
 
-.dx-radio-item[data-state="checked"]::before {
+.dx-radio-group-item[data-state="checked"]::before {
   border: 0.25rem solid var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
   background: var(--secondary-color-4);
 }
 
-.dx-radio-item:disabled {
+.dx-radio-group-item:disabled {
   color: var(--secondary-color-5);
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.dx-radio-item:disabled::before {
+.dx-radio-group-item:disabled::before {
   cursor: not-allowed;
 }

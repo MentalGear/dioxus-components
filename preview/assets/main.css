@@ -14,6 +14,7 @@
 :root {
   --highlight-color-main: #dd7230;
   --highlight-color-secondary: #eb5160;
+
   /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03): the
    * previous #2b7fff, used as `color` (not a border/background) in 11
    * rules across this file, measured 3.76:1 on white -- below WCAG's
@@ -21,6 +22,7 @@
    * lightness only, and clears 4.5:1 (measured 4.88:1 on white). */
   --highlight-color-tertiary: #0065ff;
   --dx-content-width: 1360px;
+
   /* Comfortably >= .dx-preview-navbar's tallest steady-state rendered
      height (measured ~54px single-row at desktop width) -- a fixed
      assumption, not a live measurement, matching how `scroll-padding-top`
@@ -118,8 +120,15 @@ body {
        Found by execution: the touch-focus-zoom oracle stayed red on every
        route through the navbar's language <select> until this won the
        cascade. Scoped to coarse pointers only, so desktop sizes are
-       untouched. */
-    font-size: 16px !important;
+       untouched. `var(--dx-text-base)` (docs/backlog.md row 31a) resolves
+       to the same `16px`/`1rem` this was hardcoded to -- it is both the
+       type scale's base step and this touch floor, one token. Custom
+       property resolution doesn't depend on `<link>` order (there is
+       exactly one declaration of `--dx-text-base` to resolve, defined on
+       `:root` in dx-components-theme.css), so it is safe to reference
+       here even though this file's own `<link>` comes first in
+       `preview/src/main.rs`. */
+    font-size: var(--dx-text-base) !important;
   }
 }
 

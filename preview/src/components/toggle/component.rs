@@ -1,14 +1,12 @@
 use dioxus::prelude::*;
 use dioxus_primitives::toggle::{self, ToggleProps};
 
-#[css_module("/src/components/toggle/style.css")]
-struct Styles;
-
 #[component]
 pub fn Toggle(props: ToggleProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toggle/style.css") }
         toggle::Toggle {
-            class: Styles::dx_toggle,
+            class: "dx-toggle",
             pressed: props.pressed,
             default_pressed: props.default_pressed,
             disabled: props.disabled,

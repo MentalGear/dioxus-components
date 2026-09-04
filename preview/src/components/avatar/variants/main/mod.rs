@@ -1,9 +1,11 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-#[css_module("/src/components/avatar/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: no `#[css_module]` of its own here, and no
+// `document::Link` needed either -- this `Demo` always renders several
+// `ImageAvatar`/`Avatar` themed-wrapper instances below, each of which (as
+// of this migration) now carries its own `document::Link` for `style.css`.
+// `document::Link` dedupes on `(href, rel)`, so those links cover this page.
 // Keep this request pending so the example uses the real avatar loading state.
 const LOADING_AVATAR_SRC: &str = "https://httpbin.org/delay/3600";
 
@@ -18,8 +20,8 @@ pub fn Demo() -> Element {
             justify_content: "center",
             flex_wrap: "wrap",
             gap: "1rem",
-            div { class: Styles::dx_avatar_item,
-                p { class: Styles::dx_avatar_label, "Basic Usage" }
+            div { class: "dx-avatar-item",
+                p { class: "dx-avatar-label", "Basic Usage" }
                 ImageAvatar {
                     size: AvatarImageSize::Small,
                     src: "https://avatars.githubusercontent.com/u/66571940?s=96&v=4",
@@ -31,8 +33,8 @@ pub fn Demo() -> Element {
                     "EA"
                 }
             }
-            div { class: Styles::dx_avatar_item,
-                p { class: Styles::dx_avatar_label, "Rounded" }
+            div { class: "dx-avatar-item",
+                p { class: "dx-avatar-label", "Rounded" }
                 ImageAvatar {
                     size: AvatarImageSize::Small,
                     shape: AvatarShape::Rounded,
@@ -45,8 +47,8 @@ pub fn Demo() -> Element {
                     "EA"
                 }
             }
-            div { class: Styles::dx_avatar_item,
-                p { class: Styles::dx_avatar_label, "Loading" }
+            div { class: "dx-avatar-item",
+                p { class: "dx-avatar-label", "Loading" }
                 Avatar {
                     size: AvatarImageSize::Small,
                     aria_label: "Loading avatar",
@@ -56,8 +58,8 @@ pub fn Demo() -> Element {
                     }
                 }
             }
-            div { class: Styles::dx_avatar_item,
-                p { class: Styles::dx_avatar_label, "Error State" }
+            div { class: "dx-avatar-item",
+                p { class: "dx-avatar-label", "Error State" }
                 ImageAvatar {
                     size: AvatarImageSize::Medium,
                     src: "https://invalid-url.example/image.jpg",
@@ -69,8 +71,8 @@ pub fn Demo() -> Element {
                     "JK"
                 }
             }
-            div { class: Styles::dx_avatar_item,
-                p { class: Styles::dx_avatar_label, "Large Size" }
+            div { class: "dx-avatar-item",
+                p { class: "dx-avatar-label", "Large Size" }
                 ImageAvatar {
                     size: AvatarImageSize::Large,
                     src: asset!("/assets/dioxus-logo.png", ImageAssetOptions::new().with_avif()).to_string(),

@@ -2,67 +2,68 @@
   width: fit-content;
 }
 
-.dx-toggle-item {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
+.dx-toggle-group-item {
   min-width: 35px;
   padding: 10px;
   border: none;
   border-radius: 0;
   background-color: transparent;
   color: var(--secondary-color-4);
-  font-size: 14px;
+  font-size: var(--dx-text-sm);
   outline: none;
-  transition: background-color 200ms ease, border 200ms ease, outline-color 150ms;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease), border var(--dx-motion-duration-slow) var(--dx-motion-ease), outline-color var(--dx-motion-duration-base);
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
-  .dx-toggle-item {
+  .dx-toggle-group-item {
   border-top: 1px solid var(--primary-color-6);
   border-right: 1px solid var(--primary-color-6);
   border-bottom: 1px solid var(--primary-color-6);
 }
 
-.dx-toggle-item:hover,
-.dx-toggle-item:focus-visible {
+.dx-toggle-group-item:hover,
+.dx-toggle-group-item:focus-visible {
   background-color: var(--primary-color-4);
   cursor: pointer;
 }
 
-.dx-toggle-item[data-state="on"] {
+.dx-toggle-group-item[data-state="on"] {
   background-color: var(--primary-color-7);
   color: var(--secondary-color-1);
 }
 
-.dx-toggle-item:focus-visible {
+.dx-toggle-group-item:focus-visible {
   position: relative;
-  z-index: 1;
+  z-index: var(--dx-z-raise);
   outline: 2px solid var(--focused-border-color);
   outline-offset: 2px;
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
-  .dx-toggle-item[data-state="on"] {
+  .dx-toggle-group-item[data-state="on"] {
   border-top: 1px solid var(--secondary-color-6);
   border-right: 1px solid var(--secondary-color-6);
   border-bottom: 1px solid var(--secondary-color-6);
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
-  .dx-toggle-item:first-child[data-state="on"] {
+  .dx-toggle-group-item:first-child[data-state="on"] {
   border: 1px solid var(--secondary-color-6);
 }
 
-.dx-toggle-item:first-child {
-  border-bottom-left-radius: 0.5rem;
-  border-top-left-radius: 0.5rem;
+.dx-toggle-group-item:first-child {
+  border-bottom-left-radius: var(--dx-radius-lg);
+  border-top-left-radius: var(--dx-radius-lg);
 }
 
-.dx-toggle-group[data-allow-multiple-pressed="true"] .dx-toggle-item:first-child {
+.dx-toggle-group[data-allow-multiple-pressed="true"] .dx-toggle-group-item:first-child {
   border: 1px solid var(--primary-color-6);
 }
 
-.dx-toggle-item:last-child {
-  border-bottom-right-radius: 0.5rem;
-  border-top-right-radius: 0.5rem;
+.dx-toggle-group-item:last-child {
+  border-bottom-right-radius: var(--dx-radius-lg);
+  border-top-right-radius: var(--dx-radius-lg);
 }

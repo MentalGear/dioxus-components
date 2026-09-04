@@ -384,6 +384,12 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
 /// The props for the [`MenubarTrigger`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct MenubarTriggerProps {
+    /// The ID of the trigger button. If not provided, an internally
+    /// generated ID is used -- see `MenubarTrigger`'s use of `use_id_or`
+    /// for why this is a typed field rather than left to
+    /// `GlobalAttributes` alone (docs/backlog.md row 36).
+    pub id: ReadSignal<Option<String>>,
+
     /// Additional attributes to apply to the trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -467,6 +473,16 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     let index = menu_ctx.index;
     let is_focused = move || item.focused() && !menu_ctx.focus.any_focused();
 
+    // docs/backlog.md row 36: `menu_ctx.trigger_id` is the same signal
+    // `MenubarContent`'s `aria-labelledby` reads back (row 25, below) -- a
+    // caller-supplied `id` here must resolve into it, not just win the
+    // render. Feeding it straight into `use_id_or` as the generated-id
+    // signal does that: `use_id_or`'s own effect writes a caller override
+    // back into its `gen_id` argument, which *is* `menu_ctx.trigger_id`
+    // here -- mirrors `DialogTitle`'s identical
+    // `use_id_or(ctx.dialog_labelledby, props.id)` (`dialog.rs`).
+    let id = use_id_or(menu_ctx.trigger_id, props.id);
+
     // Merged (caller-wins, deduped) rather than a plain explicit-attribute +
     // `..props.attributes` spread: `id` below and a caller-supplied `id` in
     // `props.attributes` would otherwise both render, the same
@@ -476,7 +492,7 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
         attributes!(button {
             // This menu's own trigger id, so `MenubarContent` can label
             // itself `aria_labelledby` from it -- docs/backlog.md row 25.
-            id: menu_ctx.trigger_id,
+            id: id.cloned(),
         }),
         props.attributes,
     ]);

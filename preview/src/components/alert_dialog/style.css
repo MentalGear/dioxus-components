@@ -1,7 +1,7 @@
 /* Alert Dialog Backdrop */
 .dx-alert-dialog-backdrop {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--dx-z-overlay);
   background: rgb(0 0 0 / 30%);
   inset: 0;
   opacity: 0;
@@ -9,7 +9,7 @@
 }
 
 .dx-alert-dialog-backdrop[data-state="closed"] {
-  animation: dx-alert-animate-out 150ms ease-in forwards;
+  animation: dx-alert-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
 @keyframes dx-alert-animate-out {
@@ -23,7 +23,7 @@
 }
 
 .dx-alert-dialog-backdrop[data-state="open"] {
-  animation: dx-alert-animate-in 150ms ease-out forwards;
+  animation: dx-alert-animate-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
 }
 
 @keyframes dx-alert-animate-in {
@@ -39,7 +39,7 @@
 /* Alert Dialog Container - improved for theme consistency */
 .dx-alert-dialog {
   position: fixed;
-  z-index: 1001;
+  z-index: var(--dx-z-overlay-raised);
   top: 50%;
   left: 50%;
   display: flex;
@@ -47,9 +47,9 @@
   max-width: calc(100% - 2rem);
   box-sizing: border-box;
   flex-direction: column;
-  padding: 32px 24px 24px;
+  padding: var(--dx-space-8) var(--dx-space-6) var(--dx-space-6);
   border: 1px solid var(--primary-color-6);
-  border-radius: 8px;
+  border-radius: var(--dx-radius-lg);
   margin: 0;
   animation: none;
   background: var(--primary-color-2);
@@ -57,7 +57,7 @@
   color: var(--secondary-color-4);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
-  gap: 16px;
+  gap: var(--dx-space-4);
   text-align: center;
   transform: translate(-50%, -50%);
 }
@@ -65,20 +65,20 @@
 .dx-alert-dialog-title {
   margin: 0;
   color: var(--secondary-color-4);
-  font-size: 1.25rem;
+  font-size: var(--dx-text-xl);
   font-weight: 700;
 }
 
 .dx-alert-dialog-description {
   margin: 0;
   color: var(--secondary-color-5);
-  font-size: 1rem;
+  font-size: var(--dx-text-base);
 }
 
 .dx-alert-dialog-actions {
   display: flex;
   flex-direction: column-reverse;
-  gap: 12px;
+  gap: var(--dx-space-3);
 }
 
 @media (width >= 40rem) {
@@ -94,44 +94,62 @@
 }
 
 .dx-alert-dialog-cancel {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
-  padding: 8px 18px;
+  padding: var(--dx-space-2) 18px;
   border: 1px solid var(--primary-color-6);
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background-color: var(--light, var(--primary-color))
     var(--dark, var(--primary-color-3));
   color: var(--secondary-color-4);
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s ease;
+  font-size: var(--dx-text-base);
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-alert-dialog-cancel:hover {
   background-color: var(--primary-color-4);
 }
 
+/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
+   but the RULE stays here rather than in the shared interaction layer.
+   `#[css_module]` hashes this class in both the DOM and this stylesheet
+   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
+   an unhashed selector in the global theme sheet can never match the rendered
+   element -- confirmed against the built artifact, where the wasm carries the
+   hashed name. Once row 32 drops css_module hashing, this can collapse into
+   the shared layer for real. */
 .dx-alert-dialog-cancel:focus-visible {
-  box-shadow: 0 0 0 2px var(--focused-border-color);
+  box-shadow: var(--dx-ring);
 }
 
 .dx-alert-dialog-action {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
-  padding: 8px 18px;
+  padding: var(--dx-space-2) 18px;
   border: 1px solid var(--primary-error-color);
-  border-radius: 0.5rem;
+  border-radius: var(--dx-radius-lg);
   background-color: var(--primary-error-color);
   color: var(--contrast-error-color);
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s ease;
+  font-size: var(--dx-text-base);
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-alert-dialog-action:hover {
   background-color: var(--secondary-error-color);
 }
 
+/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
+   but the RULE stays here rather than in the shared interaction layer.
+   `#[css_module]` hashes this class in both the DOM and this stylesheet
+   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
+   an unhashed selector in the global theme sheet can never match the rendered
+   element -- confirmed against the built artifact, where the wasm carries the
+   hashed name. Once row 32 drops css_module hashing, this can collapse into
+   the shared layer for real. */
 .dx-alert-dialog-action:focus-visible {
-  box-shadow: 0 0 0 2px var(--focused-border-color);
+  box-shadow: var(--dx-ring);
 }

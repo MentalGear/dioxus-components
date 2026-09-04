@@ -312,6 +312,12 @@ pub struct DropdownMenuTriggerProps {
     #[props(default)]
     pub r#as: Option<Callback<Vec<Attribute>, Element>>,
 
+    /// The ID of the trigger button. If not provided, an internally
+    /// generated ID is used -- see `DropdownMenuTrigger`'s use of
+    /// `use_id_or` for why this is a typed field rather than left to
+    /// `GlobalAttributes` alone (docs/backlog.md row 36).
+    pub id: ReadSignal<Option<String>>,
+
     /// Additional attributes to apply to the trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -374,8 +380,19 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
     let disabled = ctx.disabled;
     let data_state = if open() { "open" } else { "closed" };
 
+    // docs/backlog.md row 36: `ctx.trigger_id` is the same signal
+    // `DropdownMenuContent`'s `aria-labelledby` (below) and
+    // `use_refocus_on_close_unless` both read back -- a caller-supplied
+    // `id` here must resolve into it, not just win the render. Feeding it
+    // straight into `use_id_or` as the generated-id signal does that:
+    // `use_id_or`'s own effect writes a caller override back into its
+    // `gen_id` argument, which *is* `ctx.trigger_id` here -- mirrors
+    // `DialogTitle`'s identical `use_id_or(ctx.dialog_labelledby,
+    // props.id)` (`dialog.rs`).
+    let id = use_id_or(ctx.trigger_id, props.id);
+
     let base = attributes!(button {
-        id: ctx.trigger_id,
+        id: id.cloned(),
         r#type: "button",
         "data-state": data_state,
         "data-disabled": disabled,

@@ -3,9 +3,11 @@ use crate::components::button::component::Button;
 use super::super::component::{Dialog, DialogDescription, DialogTitle};
 use dioxus::prelude::*;
 
-#[css_module("/src/components/dialog/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: no `#[css_module]` of its own here, and no
+// `document::Link` needed either -- this `Demo` always renders the `Dialog`
+// themed wrapper below, which (as of this migration) now carries its own
+// `document::Link` for `style.css`. `document::Link` dedupes on `(href,
+// rel)`, so the link the wrapper inserts covers this page.
 #[component]
 pub fn Demo() -> Element {
     let mut open = use_signal(|| false);
@@ -24,7 +26,7 @@ pub fn Demo() -> Element {
         }
         Dialog { open: open(), on_open_change: move |v| open.set(v),
             button {
-                class: Styles::dx_dialog_close,
+                class: "dx-dialog-close",
                 r#type: "button",
                 aria_label: "Close",
                 tabindex: if open() { "0" } else { "-1" },
@@ -46,7 +48,7 @@ pub fn Demo() -> Element {
                 open: nested_open(),
                 on_open_change: move |v| nested_open.set(v),
                 button {
-                    class: Styles::dx_dialog_close,
+                    class: "dx-dialog-close",
                     r#type: "button",
                     aria_label: "Close Nested",
                     tabindex: if nested_open() { "0" } else { "-1" },

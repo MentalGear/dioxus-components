@@ -2,17 +2,15 @@ use dioxus::prelude::*;
 use dioxus_primitives::toolbar::{self, ToolbarButtonProps, ToolbarProps, ToolbarSeparatorProps};
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
-#[css_module("/src/components/toolbar/style.css")]
-struct Styles;
-
 #[component]
 pub fn Toolbar(props: ToolbarProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_toolbar,
+        class: "dx-toolbar",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toolbar/style.css") }
         toolbar::Toolbar {
             aria_label: props.aria_label,
             disabled: props.disabled,
@@ -26,6 +24,7 @@ pub fn Toolbar(props: ToolbarProps) -> Element {
 #[component]
 pub fn ToolbarButton(props: ToolbarButtonProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toolbar/style.css") }
         toolbar::ToolbarButton {
             index: props.index,
             disabled: props.disabled,
@@ -39,11 +38,12 @@ pub fn ToolbarButton(props: ToolbarButtonProps) -> Element {
 #[component]
 pub fn ToolbarSeparator(props: ToolbarSeparatorProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_toolbar_separator,
+        class: "dx-toolbar-separator",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toolbar/style.css") }
         toolbar::ToolbarSeparator {
             decorative: props.decorative,
             horizontal: props.horizontal,
@@ -60,11 +60,12 @@ pub fn ToolbarGroup(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_toolbar_group,
+        class: "dx-toolbar-group",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/toolbar/style.css") }
         div { ..merged, {children} }
     }
 }

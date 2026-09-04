@@ -432,19 +432,17 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await expectNoAxeViolations(page, "top-layer fixture: Menubar open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
-  // KNOWN RED, filed rather than fixed (docs/backlog.md): `SelectList`'s
-  // default `aria-labelledby` (added this round) points at
-  // `ctx.selectable.trigger_id`'s internally-generated value, which this
-  // fixture's `SelectTrigger { id: "clip-select-trigger", ... }` diverges
-  // from -- `merge_attributes`'s caller-wins rule overrides the *rendered*
-  // DOM id with the fixture's own, but the id the listbox labels itself by
-  // is a separate signal that is never resynced to match, so the reference
-  // dangles. Only manifests when a caller overrides `SelectTrigger`'s own
-  // `id` (as this fixture and, presumably, some real consumers do); every
-  // component spec's own (un-overridden) Select stays green. Fixing this
-  // generally needs the same id-sync plumbing `content_id` already has,
-  // added to `SelectTrigger`'s otherwise-untyped `id` -- out of this
-  // round's "small and clearly correct" scope.
+  // Previously KNOWN RED here (docs/backlog.md row 36): `SelectList`'s
+  // default `aria-labelledby` pointed at `ctx.selectable.trigger_id`'s
+  // internally-generated value, which this fixture's
+  // `SelectTrigger { id: "clip-select-trigger", ... }` diverged from --
+  // `merge_attributes`'s caller-wins rule overrode the *rendered* DOM id
+  // with the fixture's own, but the id the listbox labelled itself by was
+  // a separate signal never resynced to match, so the reference dangled.
+  // Fixed by feeding `ctx.selectable.trigger_id` straight into `use_id_or`
+  // in `SelectTrigger` (`select/components/trigger.rs`) -- see Rule 14
+  // below for the direct (non-axe) regression guard on the resolved
+  // reference itself, across every trigger this same fix touched.
   test("Select listbox open has no automatically detectable a11y issues", async ({ page }) => {
     await gotoFixture(page);
     await page.locator("#clip-select-trigger").click();
@@ -1131,6 +1129,30 @@ const KEYBOARD_VIEWPORT = { width: 390, height: 460 };
  * `KEYBOARD_VIEWPORT` regardless of where this section falls in page flow.
  */
 async function pinNearTop(page: Page, locator: import("@playwright/test").Locator): Promise<void> {
+  // A viewport-pinned trigger cannot be scrolled anywhere, so "pin it near the
+  // top" is meaningless for one -- and worse than meaningless: `rect.top` for a
+  // `position: fixed` element is always its fixed on-screen position, so the
+  // scroll below computes a large, arbitrary offset (+659px measured for
+  // `#edge-bottom-popover-trigger`, whose row is `position: fixed; bottom: 4px`)
+  // that scrolls the *rest* of the page under the stationary trigger. That drags
+  // the fixture's unrelated `#stack-sibling` (`position: absolute; z-index: 9999`,
+  // belonging to the light-dismiss/stacking section) into the same on-screen
+  // rectangle, where it intercepts the click and sends Playwright into a
+  // scroll-and-retry loop until the 5-minute test timeout.
+  //
+  // Found by execution 2026-09-04, the first run of this file in a container that
+  // actually had Playwright browsers -- Rule 11(c)'s Popover case had never once
+  // opened its popover. Fixed here rather than in that one case because the
+  // hazard belongs to this helper's own assumption (that a trigger sits in normal
+  // document flow), so any future fixed-position trigger would hit it again.
+  const isViewportPinned = await locator.evaluate((el) => {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      if (getComputedStyle(node).position === "fixed") return true;
+    }
+    return false;
+  });
+  if (isViewportPinned) return;
+
   // Centre the trigger horizontally inside its own scroll container first:
   // on the 390px mobile viewport the fixture's clip box is wider than the
   // page, and a trigger hanging past the right edge collides with the
@@ -1400,6 +1422,24 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
      *   - Menubar conforms at open on its own gallery page at desktop
      *     width, but confirmed by execution: not at `MOBILE_VIEWPORT`
      *     width (390px) -- the one precondition this case needs.
+     *   - Navbar (docs/backlog.md row 41; added to `ANCHORED_OVERLAYS`
+     *     above for parts (a)/(b) by finding C, not previously carried
+     *     into this `CONFORMING_CASES` table) opens the same way here as
+     *     in `ANCHORED_OVERLAYS` above -- `.hover()` on its trigger, with
+     *     a `reengage` step after the keyboard-simulation resize -- the
+     *     exact shape that entry's own doc gives Tooltip/HoverCard
+     *     `reengage` for (a hover-driven overlay that can lose `:hover`
+     *     when the resize moves the trigger out from under the
+     *     stationary synthetic cursor). That is the same Chromium
+     *     hover/pointerleave behaviour the Tooltip/HoverCard bullet above
+     *     already established by execution -- a property of *how the
+     *     overlay opens*, not of this component's own code -- so it
+     *     applies here on the same grounds. Marked unsupported on that
+     *     basis, NOT independently re-confirmed by execution for Navbar
+     *     in this environment (no Playwright browser available this
+     *     round, docs/backlog.md rows 36/41's own report) -- flagged so a
+     *     future execution pass can confirm or correct it, the same
+     *     standard every other entry here was held to.
      *   - Popover is the sole survivor, and is enough: confirmed by
      *     execution (before this section's assertions were tightened) that
      *     its content really does stop tracking after the strip (stays at
@@ -1483,6 +1523,23 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
           "on the JS fallback path at open already, which is itself the correctly-handled case, not this " +
           "gap). This is the reported bug's own component -- see this session's report for why real-device " +
           "iOS Safari verification is still needed for the exact 'conforming at open' shape.",
+      },
+      {
+        // docs/backlog.md row 41(b). See this section's header doc's own
+        // "Navbar" bullet above for the full reasoning and its caveat: this
+        // is a structural inference from `ANCHORED_OVERLAYS`' own hover +
+        // `reengage` shape for Navbar (identical to Tooltip/HoverCard's,
+        // already execution-confirmed above), not an independent execution
+        // run against Navbar itself in this environment.
+        name: "Navbar",
+        supported: false,
+        reason:
+          "same as Tooltip/HoverCard above -- ANCHORED_OVERLAYS opens Navbar via .hover() with a reengage " +
+          "step after the keyboard-simulation resize, the same hover-driven shape that makes Tooltip/HoverCard " +
+          "genuinely close via a real pointerleave when the resize moves the trigger out from under the " +
+          "stationary synthetic cursor, before this fix's logic ever runs. Not independently confirmed by " +
+          "execution for Navbar in this environment (docs/backlog.md rows 36/41's own report) -- a future " +
+          "execution pass should confirm or correct this.",
       },
     ];
 
@@ -1760,6 +1817,145 @@ test.describe("Rule 13 — fit-content width (not full page width)", () => {
       // binding would land it (`position: absolute; left: 0` from each
       // component's own pre-top-layer stylesheet fallback).
       expect(Math.abs(content.left - trigger.left), debug).toBeLessThan(viewport.width * 0.5);
+    });
+  }
+});
+
+/**
+ * Rule 14 — trigger id resync: an overlay's `aria-labelledby` must resolve
+ * to an element that actually exists, at the caller's own id where the
+ * caller overrides one (docs/backlog.md rows 36/41).
+ *
+ * Citation: WAI-ARIA's `aria-labelledby` is only well-formed when it refers
+ * to an `id` present in the document -- the same normative property the
+ * APG Menu Button pattern's "aria-labelledby set to a value that refers to
+ * the menuitem or button that controls its display" already cites
+ * (`oracle/tier1-apg/menu-roles.spec.ts`'s file header), applied here to
+ * the *id-desync* failure mode rather than the *missing-labelledby-at-all*
+ * one that file's calibration already covers.
+ *
+ * Root cause (row 36): `DropdownMenuContent`/`ContextMenuContent`/
+ * `MenubarContent`/`SelectList`/`NavbarContent` (row 41) all label
+ * themselves from an internally generated `trigger_id` context signal, but
+ * each trigger used to render its own `id` through the caller-wins
+ * `merge_attributes` pattern without ever writing a caller override back
+ * into that signal -- so a caller-supplied `id` (exactly what this
+ * fixture's `clip-*-trigger` ids are) won the *rendered* DOM id while the
+ * content's `aria-labelledby` kept pointing at the old, internally
+ * generated one nothing in the DOM carries any more: a dangling reference.
+ * `SelectTrigger`'s case was axe-detectable (Rule "Select listbox open" in
+ * the section above, via `aria-input-field-name`); the other four were not
+ * (row 25's own finding: axe carries no rule that checks a bare
+ * `role="menu"` container for an accessible name at all) -- this rule is
+ * the direct, non-axe regression guard that catches all five the same way,
+ * by checking the reference itself rather than relying on axe's coverage
+ * gaps lining up.
+ *
+ * Fix: `SelectTrigger`/`DropdownMenuTrigger`/`ContextMenuTrigger`/
+ * `MenubarTrigger`/`NavbarTrigger` now feed their own (previously
+ * untyped-`id`) shared `trigger_id` context signal straight into
+ * `use_id_or` alongside a new typed `id` prop, mirroring `DialogTitle`'s
+ * identical `use_id_or(ctx.dialog_labelledby, props.id)`
+ * (`primitives/src/dialog.rs`) -- `use_id_or`'s own effect writes a caller
+ * override back into that signal, so every reader of `trigger_id`
+ * (`aria-labelledby` here, `use_refocus_on_close_unless`, the anchor-
+ * position fallback) agrees with the actually-rendered id.
+ *
+ * Reuses the `#clip-*-trigger`/`#clip-*-content` fixture pairs above --
+ * every one of these five already carries a caller-overridden trigger `id`
+ * (`clip-select-trigger`, `clip-dropdown-menu-trigger`,
+ * `clip-context-menu-trigger`, `clip-menubar-trigger`,
+ * `clip-navbar-trigger`), which is exactly the condition row 36 needed to
+ * manifest -- no new fixture markup required. `Tooltip`/`HoverCard`/
+ * `Popover`/`Combobox` are not included: none of them label their content
+ * from a `trigger_id`-shaped context signal the way this family does
+ * (`Tooltip`/`HoverCard`/`Popover` use `aria-describedby`/no default label
+ * at all; `Combobox`'s listbox labelling is a distinct, already-covered
+ * mechanism -- `oracle/tier1-apg/menu-roles.spec.ts`), so row 36's defect
+ * class cannot arise for them.
+ *
+ * NOT YET RUN in this environment (no Playwright browser available this
+ * round -- docs/backlog.md rows 36/41's own report spells out exactly
+ * what is and isn't verified here): written red-first against the
+ * pre-fix code per this repo's convention, and expected to fail pre-fix
+ * for all five cases below (the labelledby value would resolve to nothing,
+ * or to the stale internally-generated id rather than the caller's own),
+ * and pass post-fix.
+ */
+test.describe("Rule 14 — aria-labelledby resolves to the caller-overridden trigger id", () => {
+  const LABELLEDBY_CASES: Array<{
+    name: string;
+    triggerId: string;
+    contentId: string;
+    open: (page: Page) => Promise<void>;
+  }> = [
+    {
+      name: "DropdownMenu",
+      triggerId: "clip-dropdown-menu-trigger",
+      contentId: "clip-dropdown-menu-content",
+      open: (page) => page.locator("#clip-dropdown-menu-trigger").click(),
+    },
+    {
+      name: "ContextMenu",
+      triggerId: "clip-context-menu-trigger",
+      contentId: "clip-context-menu-content",
+      open: (page) => page.locator("#clip-context-menu-trigger").click({ button: "right" }),
+    },
+    {
+      name: "Menubar",
+      triggerId: "clip-menubar-trigger",
+      contentId: "clip-menubar-content",
+      open: (page) => page.locator("#clip-menubar-trigger").click(),
+    },
+    {
+      name: "Select",
+      triggerId: "clip-select-trigger",
+      contentId: "clip-select-content",
+      open: (page) => page.locator("#clip-select-trigger").click(),
+    },
+    {
+      name: "Navbar",
+      triggerId: "clip-navbar-trigger",
+      contentId: "clip-navbar-content",
+      open: (page) => page.locator("#clip-navbar-trigger").hover(),
+    },
+  ];
+
+  for (const kase of LABELLEDBY_CASES) {
+    test(`${kase.name}: content's aria-labelledby resolves to the trigger's own (caller-overridden) id`, async ({
+      page,
+    }) => {
+      await gotoFixture(page);
+      await kase.open(page);
+      const content = page.locator(`#${kase.contentId}`);
+      await expect(content).toBeVisible();
+
+      const trigger = page.locator(`#${kase.triggerId}`);
+      // The trigger itself must still render at the caller's own id --
+      // otherwise the fixture stopped exercising the caller-wins case this
+      // rule depends on, and every assertion below would vacuously pass.
+      await expect(trigger, `${kase.name} trigger must render at the caller's own id`).toHaveCount(1);
+
+      const labelledby = await content.getAttribute("aria-labelledby");
+      expect(labelledby, `${kase.name} content must carry an aria-labelledby`).not.toBeNull();
+      // The direct row-36 regression check: the id the content labels
+      // itself by must be the trigger's own *actual, caller-overridden*
+      // id, not a stale internally generated one nothing in the DOM has.
+      expect(
+        labelledby,
+        `${kase.name}: aria-labelledby must equal the caller's own trigger id ("${kase.triggerId}"), ` +
+          `not an internally generated one left dangling by the caller override`,
+      ).toBe(kase.triggerId);
+
+      // Non-dangling: the id aria-labelledby names must resolve to
+      // exactly one real element in the document (the fix must have
+      // resynced the signal, not merely rendered a plausible-looking
+      // string).
+      const resolvedCount = await page.locator(`#${labelledby}`).count();
+      expect(
+        resolvedCount,
+        `${kase.name}: aria-labelledby="${labelledby}" must resolve to exactly one element in the document`,
+      ).toBe(1);
     });
   }
 });

@@ -3,12 +3,10 @@ use dioxus_primitives::context_menu::{
     self, ContextMenuContentProps, ContextMenuItemProps, ContextMenuProps, ContextMenuTriggerProps,
 };
 
-#[css_module("/src/components/context_menu/style.css")]
-struct Styles;
-
 #[component]
 pub fn ContextMenu(props: ContextMenuProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenu {
             disabled: props.disabled,
             open: props.open,
@@ -24,6 +22,7 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
 #[component]
 pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuTrigger {
             padding: "20px",
             background: "var(--primary-color)",
@@ -41,8 +40,9 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
 #[component]
 pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuContent {
-            class: Styles::dx_context_menu_content,
+            class: "dx-context-menu-content",
             id: props.id,
             attributes: props.attributes,
             {props.children}
@@ -53,8 +53,9 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
 #[component]
 pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuItem {
-            class: Styles::dx_context_menu_item,
+            class: "dx-context-menu-item",
             disabled: props.disabled,
             value: props.value,
             index: props.index,

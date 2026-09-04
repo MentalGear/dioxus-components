@@ -1,10 +1,10 @@
-.dx-dnd-list {
+.dx-drag-and-drop-list {
   --dx-item-gap: 6px;
 
   width: 100%;
 }
 
-.dx-dnd-list-ul {
+.dx-drag-and-drop-list-ul {
   display: flex;
   flex-direction: column;
   padding-left: 0;
@@ -13,7 +13,7 @@
   perspective: 1200px;
 }
 
-.dx-dnd-list-item {
+.dx-drag-and-drop-list-item {
   --gap-shift: 0px;
   --tilt: 0deg;
 
@@ -22,7 +22,7 @@
   box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px 12px 10px;
+  padding: var(--dx-space-3) 14px var(--dx-space-3) 10px;
   border: 1px solid var(--primary-color-6);
   border-radius: 10px;
   background-color: var(--light, #fff)
@@ -34,16 +34,16 @@
   transform: translateY(var(--gap-shift)) rotateX(var(--tilt));
   transform-style: preserve-3d;
   transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    box-shadow 150ms ease,
+    border-color var(--dx-motion-duration-base) var(--dx-motion-ease),
+    background-color var(--dx-motion-duration-base) var(--dx-motion-ease),
+    box-shadow var(--dx-motion-duration-base) var(--dx-motion-ease),
     transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1),
-    opacity 150ms ease;
+    opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
   user-select: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .dx-dnd-list-item:hover {
+  .dx-drag-and-drop-list-item:hover {
     --gap-shift: -1px;
 
     border-color: var(--primary-color-7);
@@ -53,20 +53,20 @@
       0 3px 8px rgb(0 0 0 / 4%);
   }
 
-  .dx-dnd-list-item:active {
+  .dx-drag-and-drop-list-item:active {
     --gap-shift: 0px;
 
     transition-duration: 80ms;
   }
 }
 
-.dx-dnd-list-item:focus-visible {
+.dx-drag-and-drop-list-item:focus-visible {
   border-color: var(--focused-border-color);
   box-shadow: 0 0 0 3px
     var(--light, rgb(43 127 255 / 18%)) var(--dark, rgb(43 127 255 / 30%));
 }
 
-.dx-dnd-list-item[data-is-grabbing="true"] {
+.dx-drag-and-drop-list-item[data-is-grabbing="true"] {
   --gap-shift: 0px;
   --tilt: 0deg;
 
@@ -79,7 +79,7 @@
   transition-duration: 80ms;
 }
 
-.dx-dnd-list-item[data-is-grabbing="true"][data-drop-at-origin="true"] {
+.dx-drag-and-drop-list-item[data-is-grabbing="true"][data-drop-at-origin="true"] {
   border-style: solid;
   border-color: var(--focused-border-color);
   box-shadow: 0 0 0 3px
@@ -87,30 +87,28 @@
   opacity: 0.75;
 }
 
-.dx-item-icon {
+.dx-drag-and-drop-list-item-icon {
   flex-shrink: 0;
   margin-right: 6px;
   color: var(--secondary-color-6);
-  transition: color 150ms ease;
+  transition: color var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .dx-dnd-list-item:hover .dx-item-icon {
+  .dx-drag-and-drop-list-item:hover .dx-drag-and-drop-list-item-icon {
     color: var(--secondary-color-2);
   }
 }
 
-.dx-item-body-div {
+.dx-drag-and-drop-list-item-body-div {
   min-width: 0;
   flex-grow: 1;
-  font-size: 14px;
+  font-size: var(--dx-text-sm);
   font-weight: normal;
   line-height: 20px;
 }
 
-.dx-remove-button {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
+.dx-drag-and-drop-list-remove-button {
   display: flex;
   overflow: visible;
   width: 26px;
@@ -120,38 +118,41 @@
   justify-content: center;
   padding: 0;
   border-style: none;
-  border-radius: 6px;
+  border-radius: var(--dx-radius-md);
   margin-left: 10px;
   background-color: transparent;
   color: var(--secondary-color-6);
   cursor: pointer;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   transition:
     background-color 120ms ease,
     color 120ms ease,
     transform 80ms ease;
 }
 
-.dx-remove-button:hover {
+.dx-drag-and-drop-list-remove-button:hover {
   background-color: var(--light, var(--primary-color-5))
     var(--dark, var(--primary-color-6));
   color: var(--secondary-color-2);
 }
 
-.dx-remove-button:active {
+.dx-drag-and-drop-list-remove-button:active {
   transform: scale(0.92);
 }
 
-.dx-remove-button:focus-visible {
+.dx-drag-and-drop-list-remove-button:focus-visible {
   outline: 2px solid var(--focused-border-color);
   outline-offset: 2px;
 }
 
-.dx-drop-indicator {
+.dx-drag-and-drop-list-drop-indicator {
   display: none;
 }
 
-.dx-dnd-list-item::before,
-.dx-dnd-list-item::after {
+.dx-drag-and-drop-list-item::before,
+.dx-drag-and-drop-list-item::after {
   position: absolute;
   right: 10px;
   left: 10px;
@@ -170,18 +171,18 @@
     transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.dx-dnd-list-item::before {
+.dx-drag-and-drop-list-item::before {
   top: calc(-1 * (var(--dx-item-gap) / 2 + 2.5px));
   transform-origin: center bottom;
 }
 
-.dx-dnd-list-item::after {
+.dx-drag-and-drop-list-item::after {
   bottom: calc(-1 * (var(--dx-item-gap) / 2 + 2.5px));
   transform-origin: center top;
 }
 
-.dx-drop-indicator[data-position="before"] + .dx-dnd-list-item::before,
-.dx-dnd-list-item:has(+ .dx-drop-indicator[data-position="after"])::after {
+.dx-drag-and-drop-list-drop-indicator[data-position="before"] + .dx-drag-and-drop-list-item::before,
+.dx-drag-and-drop-list-item:has(+ .dx-drag-and-drop-list-drop-indicator[data-position="after"])::after {
   opacity: 0.9;
   transform:
     rotateX(calc(-1 * var(--tilt)))
@@ -189,14 +190,14 @@
     scaleX(1);
 }
 
-.dx-dnd-list-item:has(+ .dx-drop-indicator) {
+.dx-drag-and-drop-list-item:has(+ .dx-drag-and-drop-list-drop-indicator) {
   --gap-shift: -1px;
   --tilt: -3deg;
 
   transform-origin: center bottom;
 }
 
-.dx-drop-indicator + .dx-dnd-list-item {
+.dx-drag-and-drop-list-drop-indicator + .dx-drag-and-drop-list-item {
   --gap-shift: 1px;
   --tilt: 3deg;
 

@@ -12,8 +12,32 @@ use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 use dioxus_primitives::use_controlled;
 
-#[css_module("/src/components/sidebar/style.css")]
-struct Styles;
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link). This is the heaviest component on the migration: every
+// exported entry point in this file gets its own `document::Link` (dedup on
+// (href, rel) makes that free), and `variants/{main,inset,floating}/mod.rs`
+// each carried their OWN `#[css_module("/src/components/sidebar/style.css")]
+// struct Styles;` pointing at this same sheet -- those are simply deleted
+// (their `Styles::` refs swapped to literals, same as here) rather than given
+// their own `Link`, because every one of those variant demo pages always
+// also renders the real themed wrapper (`SidebarProvider`/`Sidebar`) from
+// THIS file, whose `Link` already covers the sheet. Those three variant
+// files also each carry a second, genuinely separate
+// `#[css_module("/src/components/sidebar/variants/demo.css")] struct
+// DemoStyles;` for their own demo-only decorative classes (team-switcher
+// icon/info-block/chevron, `dx-sidebar-hide-on-collapse`) -- that sheet is
+// NOT this component's own `style.css` and nothing else links it, so each
+// variant's own `Demo()` now carries its own `asset!()` + `document::Link`
+// for `demo.css` instead.
+//
+// This component is also on the row-32 "not already namespaced" lane: its
+// screen-reader-only helper used to be the bare `dx-sr-only`, which
+// `pagination/style.css` also defines (byte-identical). `#[css_module]`'s
+// hash kept the two apart; renamed to `dx-sidebar-sr-only` in the same
+// change that drops the macro (`pagination` gets its own
+// `dx-pagination-sr-only` copy) -- see `style.css`'s comment on that rule
+// and `scripts/check-dx-class-prefix.sh`.
 
 // constants
 const SIDEBAR_WIDTH: &str = "16rem";
@@ -244,13 +268,14 @@ pub fn SidebarProvider(
     );
 
     let base = attributes!(div {
-        class: Styles::dx_sidebar_wrapper,
+        class: "dx-sidebar-wrapper",
         "data-slot": "sidebar-wrapper",
         style: sidebar_style,
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -274,13 +299,27 @@ pub fn Sidebar(
     let open_mobile = ctx.open_mobile;
 
     if collapsible == SidebarCollapsible::None {
+        // axe `region` (docs/backlog.md row 38): this was a plain `<div>`
+        // with no landmark role at all, so its content (menu items,
+        // footer) sat outside every landmark on the page -- surfaced both
+        // by the block-route direct-visit case (`ComponentBlockDemo`,
+        // `preview/src/main.rs`) and, independently, by the dashboard
+        // email client's own embedded sidebar (`dashboard/views/
+        // email_client/sidebar.rs`), which renders `Sidebar` directly and
+        // was never routed through the block preview at all. `role:
+        // "complementary"` (the `<aside>` landmark) fixes both call sites
+        // at their one shared source; labelled so it stays unambiguous if
+        // a future page ever has more than one.
         let base = attributes!(div {
-            class: Styles::dx_sidebar_static,
+            class: "dx-sidebar-static",
             "data-slot": "sidebar",
+            role: "complementary",
+            aria_label: "Sidebar",
         });
         let merged = merge_attributes(vec![base, attributes]);
 
         return rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             div { ..merged, {children} }
         };
     }
@@ -292,20 +331,21 @@ pub fn Sidebar(
         };
 
         return rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             Sheet {
                 open: open_mobile(),
                 on_open_change: move |v| ctx.set_open_mobile(v),
                 "data-side": sheet_side.as_str(),
-                class: Styles::dx_sidebar_sheet.to_string(),
+                class: "dx-sidebar-sheet".to_string(),
                 "data-sidebar": "sidebar",
                 "data-slot": "sidebar",
                 "data-mobile": "true",
-                SheetContentClose { class: Styles::dx_sidebar_sheet_close }
-                SheetHeader { class: Styles::dx_sr_only,
+                SheetContentClose { class: "dx-sidebar-sheet-close" }
+                SheetHeader { class: "dx-sidebar-sr-only",
                     SheetTitle { "Sidebar" }
                     SheetDescription { "Displays the mobile sidebar." }
                 }
-                div { class: Styles::dx_sidebar_mobile_inner, {children} }
+                div { class: "dx-sidebar-mobile-inner", {children} }
             }
         };
     }
@@ -317,24 +357,34 @@ pub fn Sidebar(
     };
 
     let container_base = attributes!(div {
-        class: Styles::dx_sidebar_container,
+        class: "dx-sidebar-container",
         "data-slot": "sidebar-container",
     });
     let container_attrs = merge_attributes(vec![container_base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div {
-            class: Styles::dx_sidebar_desktop,
+            class: "dx-sidebar-desktop",
             "data-state": state().as_str(),
             "data-collapsible": collapsible_str,
             "data-variant": variant.as_str(),
             "data-side": side.as_str(),
             "data-slot": "sidebar",
-            div { class: Styles::dx_sidebar_gap, "data-slot": "sidebar-gap" }
+            // axe `region` (docs/backlog.md row 38) -- see the identical
+            // comment on the `collapsible == SidebarCollapsible::None`
+            // branch above; this is the desktop-expanded/-collapsed
+            // branch actually rendered by both known affected call sites
+            // (the block route's `sidebar` demo and the dashboard email
+            // client's sidebar), so it's the one that mattered for the
+            // reported gap.
+            role: "complementary",
+            aria_label: "Sidebar",
+            div { class: "dx-sidebar-gap", "data-slot": "sidebar-gap" }
             div {
                 ..container_attrs,
                 div {
-                    class: Styles::dx_sidebar_inner,
+                    class: "dx-sidebar-inner",
                     "data-sidebar": "sidebar",
                     "data-slot": "sidebar-inner",
                     {children}
@@ -354,13 +404,14 @@ pub fn SidebarTrigger(
     let ctx = use_sidebar();
 
     let base = attributes!(button {
-        class: Styles::dx_sidebar_trigger,
+        class: "dx-sidebar-trigger",
         "data-sidebar": "trigger",
         "data-slot": "sidebar-trigger",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         Button {
             variant: ButtonVariant::Ghost,
             onclick: move |e| {
@@ -371,10 +422,10 @@ pub fn SidebarTrigger(
             },
             attributes: merged,
             PanelLeft {
-                class: Styles::dx_sidebar_trigger_icon,
+                class: "dx-sidebar-trigger-icon",
                 size: "1rem",
             }
-            span { class: Styles::dx_sr_only, "Toggle Sidebar" }
+            span { class: "dx-sidebar-sr-only", "Toggle Sidebar" }
         }
     }
 }
@@ -384,13 +435,14 @@ pub fn SidebarRail(#[props(extends = GlobalAttributes)] attributes: Vec<Attribut
     let ctx = use_sidebar();
 
     let base = attributes!(button {
-        class: Styles::dx_sidebar_rail,
+        class: "dx-sidebar-rail",
         "data-sidebar": "rail",
         "data-slot": "sidebar-rail",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         button {
             aria_label: "Toggle Sidebar",
             tabindex: -1,
@@ -407,12 +459,13 @@ pub fn SidebarInset(
     children: Element,
 ) -> Element {
     let base = attributes!(main {
-        class: Styles::dx_sidebar_inset,
+        class: "dx-sidebar-inset",
         "data-slot": "sidebar-inset",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         main { ..merged, {children} }
     }
 }
@@ -423,13 +476,14 @@ pub fn SidebarHeader(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_header,
+        class: "dx-sidebar-header",
         "data-slot": "sidebar-header",
         "data-sidebar": "header",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -440,13 +494,14 @@ pub fn SidebarContent(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_content,
+        class: "dx-sidebar-content",
         "data-slot": "sidebar-content",
         "data-sidebar": "content",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -457,13 +512,14 @@ pub fn SidebarFooter(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_footer,
+        class: "dx-sidebar-footer",
         "data-slot": "sidebar-footer",
         "data-sidebar": "footer",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -475,13 +531,14 @@ pub fn SidebarSeparator(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_separator,
+        class: "dx-sidebar-separator",
         "data-slot": "sidebar-separator",
         "data-sidebar": "separator",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         Separator { horizontal, decorative, attributes: merged }
     }
 }
@@ -492,13 +549,14 @@ pub fn SidebarGroup(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_group,
+        class: "dx-sidebar-group",
         "data-slot": "sidebar-group",
         "data-sidebar": "group",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -510,7 +568,7 @@ pub fn SidebarGroupLabel(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_group_label,
+        class: "dx-sidebar-group-label",
         "data-slot": "sidebar-group-label",
         "data-sidebar": "group-label",
     });
@@ -520,6 +578,7 @@ pub fn SidebarGroupLabel(
         dynamic.call(merged)
     } else {
         rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             div { ..merged,{children} }
         }
     }
@@ -532,7 +591,7 @@ pub fn SidebarGroupAction(
     children: Element,
 ) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_sidebar_group_action,
+        class: "dx-sidebar-group-action",
         "data-slot": "sidebar-group-action",
         "data-sidebar": "group-action",
     });
@@ -542,6 +601,7 @@ pub fn SidebarGroupAction(
         dynamic.call(merged)
     } else {
         rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             button { ..merged,{children} }
         }
     }
@@ -553,13 +613,14 @@ pub fn SidebarGroupContent(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_group_content,
+        class: "dx-sidebar-group-content",
         "data-slot": "sidebar-group-content",
         "data-sidebar": "group-content",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -570,13 +631,14 @@ pub fn SidebarMenu(
     children: Element,
 ) -> Element {
     let base = attributes!(ul {
-        class: Styles::dx_sidebar_menu,
+        class: "dx-sidebar-menu",
         "data-slot": "sidebar-menu",
         "data-sidebar": "menu",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         ul { ..merged, {children} }
     }
 }
@@ -587,13 +649,14 @@ pub fn SidebarMenuItem(
     children: Element,
 ) -> Element {
     let base = attributes!(li {
-        class: Styles::dx_sidebar_menu_item,
+        class: "dx-sidebar-menu-item",
         "data-slot": "sidebar-menu-item",
         "data-sidebar": "menu-item",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         li { ..merged, {children} }
     }
 }
@@ -649,7 +712,7 @@ pub fn SidebarMenuButton(
     let state = ctx.state;
 
     let base = attributes!(button {
-        class: Styles::dx_sidebar_menu_button,
+        class: "dx-sidebar-menu-button",
         "data-slot": "sidebar-menu-button",
         "data-sidebar": "menu-button",
         "data-size": size.as_str(),
@@ -662,7 +725,10 @@ pub fn SidebarMenuButton(
         return if let Some(dynamic) = r#as {
             dynamic.call(merged)
         } else {
-            rsx! { button { ..merged, {children} } }
+            rsx! {
+                document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
+                button { ..merged, {children} }
+            }
         };
     };
 
@@ -670,8 +736,9 @@ pub fn SidebarMenuButton(
     let sidebar_side = ctx.side;
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         Tooltip {
-            class: Styles::dx_sidebar_tooltip,
+            class: "dx-sidebar-tooltip",
             disabled: hidden,
             TooltipTrigger {
                 as: move |tooltip_attrs: Vec<Attribute>| {
@@ -703,7 +770,7 @@ pub fn SidebarMenuAction(
     children: Element,
 ) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_sidebar_menu_action,
+        class: "dx-sidebar-menu-action",
         "data-slot": "sidebar-menu-action",
         "data-sidebar": "menu-action",
         "data-show-on-hover": if show_on_hover { "true" } else { "false" },
@@ -714,6 +781,7 @@ pub fn SidebarMenuAction(
         dynamic.call(merged)
     } else {
         rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             button { ..merged,{children} }
         }
     }
@@ -725,13 +793,14 @@ pub fn SidebarMenuBadge(
     children: Element,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_menu_badge,
+        class: "dx-sidebar-menu-badge",
         "data-slot": "sidebar-menu-badge",
         "data-sidebar": "menu-badge",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -742,19 +811,20 @@ pub fn SidebarMenuSkeleton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_sidebar_menu_skeleton,
+        class: "dx-sidebar-menu-skeleton",
         "data-slot": "sidebar-menu-skeleton",
         "data-sidebar": "menu-skeleton",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         div {
             ..merged,
             if show_icon {
-                Skeleton { class: Styles::dx_sidebar_menu_skeleton_icon }
+                Skeleton { class: "dx-sidebar-menu-skeleton-icon" }
             }
-            Skeleton { class: Styles::dx_sidebar_menu_skeleton_text, width: "70%" }
+            Skeleton { class: "dx-sidebar-menu-skeleton-text", width: "70%" }
         }
     }
 }
@@ -765,13 +835,14 @@ pub fn SidebarMenuSub(
     children: Element,
 ) -> Element {
     let base = attributes!(ul {
-        class: Styles::dx_sidebar_menu_sub,
+        class: "dx-sidebar-menu-sub",
         "data-slot": "sidebar-menu-sub",
         "data-sidebar": "menu-sub",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         ul { ..merged, {children} }
     }
 }
@@ -782,13 +853,14 @@ pub fn SidebarMenuSubItem(
     children: Element,
 ) -> Element {
     let base = attributes!(li {
-        class: Styles::dx_sidebar_menu_sub_item,
+        class: "dx-sidebar-menu-sub-item",
         "data-slot": "sidebar-menu-sub-item",
         "data-sidebar": "menu-sub-item",
     });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         li { ..merged, {children} }
     }
 }
@@ -819,7 +891,7 @@ pub fn SidebarMenuSubButton(
     children: Element,
 ) -> Element {
     let base = attributes!(a {
-        class: Styles::dx_sidebar_menu_sub_button,
+        class: "dx-sidebar-menu-sub-button",
         "data-slot": "sidebar-menu-sub-button",
         "data-sidebar": "menu-sub-button",
         "data-size": size.as_str(),
@@ -831,6 +903,7 @@ pub fn SidebarMenuSubButton(
         dynamic.call(merged)
     } else {
         rsx! {
+            document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
             a { ..merged, {children} }
         }
     }

@@ -13,6 +13,7 @@ pub fn Demo() -> Element {
             PopoverTrigger { "Show Popover" }
             PopoverContent { gap: "0.25rem",
                 h3 {
+                    class: "dx-popover-content-title",
                     padding_top: "0.25rem",
                     padding_bottom: "0.25rem",
                     width: "100%",

@@ -2,19 +2,17 @@ use dioxus::prelude::*;
 use dioxus_primitives::dialog::{self, DialogDescriptionProps, DialogRootProps, DialogTitleProps};
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
-#[css_module("/src/components/dialog/style.css")]
-struct Styles;
-
 #[component]
 pub fn Dialog(props: DialogRootProps) -> Element {
     let base = attributes!(div {
-        class: Styles::dx_dialog,
+        class: "dx-dialog",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dialog/style.css") }
         dialog::DialogRoot {
-            class: Styles::dx_dialog_backdrop,
+            class: "dx-dialog-backdrop",
             id: props.id,
             is_modal: props.is_modal,
             open: props.open,
@@ -32,11 +30,12 @@ pub fn Dialog(props: DialogRootProps) -> Element {
 #[component]
 pub fn DialogTitle(props: DialogTitleProps) -> Element {
     let base = attributes!(h2 {
-        class: Styles::dx_dialog_title,
+        class: "dx-dialog-title",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dialog/style.css") }
         dialog::DialogTitle {
             id: props.id,
             attributes: merged,
@@ -48,11 +47,12 @@ pub fn DialogTitle(props: DialogTitleProps) -> Element {
 #[component]
 pub fn DialogDescription(props: DialogDescriptionProps) -> Element {
     let base = attributes!(p {
-        class: Styles::dx_dialog_description,
+        class: "dx-dialog-description",
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/dialog/style.css") }
         dialog::DialogDescription {
             id: props.id,
             attributes: merged,

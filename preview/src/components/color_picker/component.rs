@@ -10,9 +10,22 @@ use palette::{encoding, FromColor, Hsv, IntoColor, RgbHue, Srgb};
 
 use crate::components::input::Input;
 
-#[css_module("/src/components/color_picker/style.css")]
-struct Styles;
-
+// docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
+// header comment for the full delivery-mechanism rationale (asset!() +
+// document::Link, embedded in the wrapper so a `dx components add
+// color_picker`-copied component needs no extra wiring).
+//
+// This component is also on the row-32 "not already namespaced" lane: before
+// hashing came off, several of this sheet's classes were spelled
+// `dx-color-*` (`dx-color-swatch`, `dx-color-slider*`, `dx-color-area*`,
+// `dx-color-field*`) rather than `dx-color-picker-*`. `#[css_module]`'s hash
+// suffix kept them collision-safe regardless, but the moment that hash is
+// gone a plain `dx-color-swatch` is indistinguishable from any other
+// component that might someday define the same short name. All such classes
+// were renamed to carry the full `dx-color-picker-` namespace (e.g.
+// `dx-color-swatch` -> `dx-color-picker-swatch`) in the same change that
+// drops the macro, in both this file and `style.css` -- see
+// `scripts/check-dx-class-prefix.sh`, which enforces this repo-wide.
 fn format_color_hex(color: Color) -> String {
     format!("#{color:X}")
 }
@@ -69,8 +82,9 @@ pub fn ColorPickerRoot(props: ColorPickerRootProps) -> Element {
     });
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         color_picker::ColorPicker {
-            class: Styles::dx_color_picker,
+            class: "dx-color-picker",
             color: props.color,
             on_color_change: props.on_color_change,
             disabled: props.disabled,
@@ -126,6 +140,7 @@ pub struct ColorPickerProps {
 #[component]
 pub fn ColorPicker(props: ColorPickerProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         ColorPickerRoot {
             color: props.color,
             on_color_change: props.on_color_change,
@@ -169,8 +184,9 @@ pub fn ColorPickerTrigger(props: ColorPickerTriggerProps) -> Element {
     });
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         popover::PopoverTrigger {
-            class: Styles::dx_color_picker_button,
+            class: "dx-color-picker-button",
             disabled: if (ctx.disabled)() { true },
             aria_label: format!("Color picker {aria_hex}"),
             aria_expanded: (ctx.open)(),
@@ -196,8 +212,9 @@ pub struct ColorPickerPopoverProps {
 #[component]
 pub fn ColorPickerPopover(props: ColorPickerPopoverProps) -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         popover::PopoverContent {
-            class: Styles::dx_color_picker_popover.to_string(),
+            class: "dx-color-picker-popover".to_string(),
             attributes: props.attributes,
             {props.children}
         }
@@ -259,12 +276,12 @@ fn ColorField(props: ColorFieldProps) -> Element {
 
     rsx! {
         div {
-            class: Styles::dx_color_field_container,
+            class: "dx-color-picker-field-container",
             ..props.attributes,
             if let Some(label) = props.label {
                 Label {
                     html_for: "color_field",
-                    class: Styles::dx_color_slider_title,
+                    class: "dx-color-picker-slider-title",
                     {label}
                 }
             }
@@ -292,7 +309,7 @@ fn ColorField(props: ColorFieldProps) -> Element {
                 },
             }
             if let Some(text) = props.description {
-                span { class: Styles::dx_color_field_description, {text} }
+                span { class: "dx-color-picker-field-description", {text} }
             }
             {props.children}
         }
@@ -328,7 +345,7 @@ fn ColorSwatch(props: ColorSwatchProps) -> Element {
         div {
             role: "img",
             aria_label: format!("Selected color {hex_color}"),
-            class: Styles::dx_color_swatch,
+            class: "dx-color-picker-swatch",
             style: "--swatch-color: {hex_color}",
             ..props.attributes,
             {props.children}
@@ -392,12 +409,12 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
     rsx! {
 
         div {
-            class: Styles::dx_color_slider_container,
+            class: "dx-color-picker-slider-container",
             ..props.attributes,
-            label { class: Styles::dx_color_slider_title, {props.title} }
-            output { class: Styles::dx_color_slider_output, "{display_value}" }
+            label { class: "dx-color-picker-slider-title", {props.title} }
+            output { class: "dx-color-picker-slider-output", "{display_value}" }
             Slider {
-                class: Styles::dx_color_slider,
+                class: "dx-color-picker-slider",
                 label: "Color Slider",
                 horizontal: true,
                 max: 360.0,
@@ -409,9 +426,9 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
                     ctx.set_hue(h);
                 },
                 SliderTrack {
-                    class: Styles::dx_color_slider_track,
+                    class: "dx-color-picker-slider-track",
                     SliderThumb {
-                        class: Styles::dx_color_slider_thumb,
+                        class: "dx-color-picker-slider-thumb",
                         aria_label: "Hue",
                         aria_valuetext: format!("{:.0}°", current_hue()),
                         background_color: format_color_hex(thumb_color()),
@@ -427,18 +444,18 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
 fn ColorArea(props: ColorAreaProps) -> Element {
     rsx! {
         color_picker::ColorArea {
-            class: Styles::dx_color_area_container,
+            class: "dx-color-picker-area-container",
             step: props.step,
             attributes: props.attributes,
             color_picker::AreaTrack {
-                class: Styles::dx_color_area_track,
+                class: "dx-color-picker-area-track",
                 color_picker::AreaThumb {
-                    class: Styles::dx_color_area_thumb,
+                    class: "dx-color-picker-area-thumb",
                     color_picker::AreaThumbSaturationInput {
-                        class: Styles::dx_color_area_input,
+                        class: "dx-color-picker-area-input",
                     }
                     color_picker::AreaThumbValueInput {
-                        class: Styles::dx_color_area_input,
+                        class: "dx-color-picker-area-input",
                     }
                 }
             }
@@ -463,13 +480,14 @@ pub fn ColorPickerSelect(props: ColorPickerSelectProps) -> Element {
     let ctx = use_context::<ColorPickerContext>();
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         div {
-            class: Styles::dx_color_picker_dialog,
+            class: "dx-color-picker-dialog",
             ..props.attributes,
             ColorArea {}
             ColorSlider { title: "Hue" }
             div {
-                class: Styles::dx_color_picker_input,
+                class: "dx-color-picker-input",
                 ColorField { label: "Hex" }
                 ColorSwatch { color: ctx.color() }
             }

@@ -241,12 +241,33 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   // at all (it's a full dashboard demo, not a component gallery page), so
   // both its default and compose-open states are new coverage here, per
   // docs/backlog.md row 34.
-  // KNOWN RED, filed rather than fixed (docs/backlog.md): each message row
-  // (`ListPane`) renders `role="button"` on a `div` that also contains its
-  // own further-interactive controls (star/flag toggles), which axe's
-  // `nested-interactive` rule flags -- a real structural markup question
-  // (how the row's own click-to-open should coexist with per-row controls)
-  // that this round's "small, clearly correct" fix bar does not cover.
+  //
+  // Fixed 2026-09-04 (docs/backlog.md row 38): this page's own embedded
+  // sidebar (`EmailSidebar`, `dashboard/views/email_client/sidebar.rs`)
+  // renders the themed `Sidebar` directly, not through the `/component/
+  // block/` route -- but shared the same underlying defect the block route
+  // had (`sidebar.spec.ts`'s own axe tests): `Sidebar`'s content rendered
+  // as a plain, unlandmarked `<div>`, so axe's `region` rule flagged it
+  // here too even though this page already has its own `<h1>` (`ec-title`)
+  // and `<main>` (`SidebarInset`). Fixed at the shared source -- `Sidebar`
+  // now renders a `complementary` landmark (`preview/src/components/
+  // sidebar/component.rs`) -- rather than duplicated per call site.
+  //
+  // Fixed 2026-09-04 (docs/backlog.md row 37): each message row
+  // (`ListPane`'s `MessageRow`, `dashboard/views/email_client/list_pane.rs`)
+  // used to render `role="button"` on a `div` that also contained its own
+  // further-interactive controls (star/trash toggles) -- a button
+  // containing buttons, which axe's `nested-interactive` rule flagged (6
+  // nodes: 3 rows x their star/trash toggles). Restructured so the
+  // accessibility tree sees one primary action plus sibling toggles
+  // instead: the row container (`Item`) is a plain div again (no `role`,
+  // no `tabindex`), the row's "open thread" action is now a real
+  // `<button>` (`.ec-row-open`) wrapping the subject/sender/snippet/tags
+  // with an explicit `aria-label` (sender + subject -- the implicit name
+  // from its content, which includes the full message-preview snippet,
+  // would be unusably long), and the star/trash toggle buttons stay
+  // direct siblings of that button rather than descendants. Both scans
+  // below now expect a fully clean axe run.
   test("dashboard email client: default state has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
     // Wait for the inbox list to actually render before scanning, rather

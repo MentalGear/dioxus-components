@@ -1,6 +1,6 @@
 .dx-top-layer-fixture {
   display: flex;
-  max-width: 42rem;
+
   /* Also never wider than the (flex-centred, 341px on a 390px viewport)
      preview frame: a fixed 42rem max-width alone let this fixture overflow
      the frame on BOTH sides (x = -149 .. 524), which put its clip-box
@@ -8,6 +8,7 @@
      Found by execution 2026-09-02, the first run with main.css actually
      applied (oracle/tier2-html/global-stylesheet.spec.ts). */
   width: 100%;
+  max-width: 42rem;
   box-sizing: border-box;
   flex-direction: column;
   gap: 2.5rem;
@@ -26,6 +27,7 @@
 .dx-top-layer-clip-box {
   display: flex;
   overflow: hidden;
+
   /* Never wider than the page: this box shrink-wraps its 670px of trigger
      content, and on a 390px viewport it used to hang off both edges (x from
      -149 to 524) -- with `body { overflow-x: clip }` (main.css) those
@@ -36,15 +38,16 @@
      by execution 2026-09-02, the first run with main.css actually applied
      (see oracle/tier2-html/global-stylesheet.spec.ts). */
   max-width: 100%;
+  height: 60px;
   box-sizing: border-box;
+  align-items: center;
+
   /* Start-aligned on purpose: centred flex content that overflows spills to
      BOTH sides, and the left spill can never be scrolled to (scrollLeft has
      no negative range) -- the tooltip trigger sat at x = -132 on a 390px
      viewport. Start alignment keeps every trigger reachable by scrolling
      the box. */
   justify-content: flex-start;
-  height: 60px;
-  align-items: center;
   padding: 0 1rem;
   border: 1px dashed var(--primary-color-6);
   gap: 1.5rem;
