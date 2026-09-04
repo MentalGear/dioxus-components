@@ -64,6 +64,36 @@ test('test', async ({ page }) => {
   await expect(menuElement).toHaveAttribute('data-state', 'closed');
 });
 
+// Regression guard for the 2026-09-04 user report ("dropdown menu has full
+// page width"): `DropdownMenuContent` is a fit-content popover positioned
+// under its trigger, not a full-viewport-width one. See
+// `oracle/tier2-html/top-layer.spec.ts`'s "Rule 13" for the full mechanism
+// this guards against (a duplicated/un-folded `style` attribute letting the
+// popover UA stylesheet's centering-trap default, or a stray caller
+// `width`, stretch the content) and why every anchored content's own
+// stylesheet authors `min-width` only, never `width`.
+test('open content is fit-content width, not full page width, and sits near its trigger', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+  const trigger = page.getByRole('button', { name: 'Open Menu' });
+  const triggerBox = await trigger.boundingBox();
+  await trigger.click();
+  const content = page.getByRole('menu');
+  await expect(content).toBeVisible();
+  const box = await content.boundingBox();
+  if (!triggerBox || !box) {
+    throw new Error(`expected both trigger and content boxes, got trigger=${triggerBox} content=${box}`);
+  }
+  const viewport = page.viewportSize();
+  const debug = JSON.stringify({ triggerBox, box, viewport });
+  expect(box.width, debug).toBeLessThan((viewport?.width ?? 1280) * 0.6);
+  // Left-aligned under its trigger (DropdownMenu's `side="bottom"
+  // align="start"` contract) -- generous tolerance for viewport-edge
+  // clamping, just enough to catch full detachment to the viewport's own
+  // left edge.
+  expect(Math.abs(box.x - triggerBox.x), debug).toBeLessThan(200);
+});
+
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
