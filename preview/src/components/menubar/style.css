@@ -134,6 +134,7 @@
   display: block;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
+  color: var(--secondary-color-4);
   cursor: pointer;
   font-size: var(--dx-text-sm);
 

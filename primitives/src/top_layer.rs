@@ -37,6 +37,13 @@ thread_local! {
     /// guard shape as `scroll_lock.rs`'s
     /// `SCROLLBAR_GUTTER_BASELINE_INSTALLED`.
     static ANCHOR_POSITIONING_STYLES_INSTALLED: Cell<bool> = const { Cell::new(false) };
+
+    /// Whether [`ensure_top_layer_ink_styles`]'s `document::eval` has
+    /// already been scheduled once in this WASM instance -- same
+    /// idempotency guard shape as `ANCHOR_POSITIONING_STYLES_INSTALLED`
+    /// above (itself modeled on `scroll_lock.rs`'s
+    /// `SCROLLBAR_GUTTER_BASELINE_INSTALLED`).
+    static TOP_LAYER_INK_STYLES_INSTALLED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Installs the shared, engine-level anchor-positioning stylesheet described
@@ -459,6 +466,137 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 }
 `"#;
 
+/// Installs the shared top-layer ink-color baseline described below, at
+/// most once per WASM instance -- same idempotent style-tag-injection shape
+/// as [`ensure_anchor_positioning_styles`] (a Rust-side `Cell` guard, plus a
+/// JS-side `getElementById` check as a second guard that survives a
+/// hot-reload resetting Rust statics but leaving the already-injected tag in
+/// the live DOM).
+///
+/// ## The bug class this closes
+///
+/// Both the `[popover]` and `<dialog>` UA stylesheets set `color: CanvasText`
+/// **directly on the element** -- e.g. Chromium's `html.css` has
+/// `[popover] { color: CanvasText; ... }` and `dialog { color: CanvasText;
+/// ... }`. A directly-cascaded declaration always beats an *inherited* one,
+/// regardless of specificity or source order (CSS Cascade §4.1's "winning
+/// declaration" step never even reaches the inheritance fallback once any
+/// origin has a declaration for the property on the element itself) -- so
+/// any top-layer content wrapper that does not declare its own `color`
+/// renders the UA default (opaque black in light mode, `CanvasText`
+/// resolving dark-on-dark under a dark color-scheme) instead of this app's
+/// ink token (`--secondary-color-4`), no matter how deeply that token is
+/// set on an ancestor. `primitives/src/toast.rs`'s
+/// `ensure_toast_base_styles` already carries a narrower, single-selector
+/// instance of this exact fix (`:where(.dx-toast-base-region[popover]) {
+/// color: inherit; }`, docs/backlog.md row 44) for the raw toast fallback
+/// only; this generalizes it to every `[popover]`/`<dialog>` element in the
+/// app, promoted or not, themed or not.
+///
+/// `:where([popover]), :where(dialog)` is used -- rather than a plain
+/// `[popover], dialog` rule -- for the same reason
+/// [`ensure_anchor_positioning_styles`]'s own doc gives for its `:where(...)`
+/// selectors: `:where()` always contributes zero specificity, so this rule
+/// only ever fills a gap where *nothing* is declared. It can out-cascade the
+/// UA default (author origin always beats user-agent origin, at any
+/// specificity) but can never out-specificity-fight a component's own
+/// `color` rule -- `tooltip.rs`'s `.dx-tooltip-content` (which sets its own
+/// `color`) keeps winning exactly as before, with no change to this rule's
+/// selector needed to protect that.
+///
+/// A second `:where()` rule (see [`TOP_LAYER_INK_STYLES_INJECT_JS`]'s own
+/// comment) closes the identical defect one DOM level deeper: `<button>`/
+/// `<input>`/`<select>`/`<textarea>` each carry their *own* direct UA
+/// `color` declaration too (`buttontext`/`fieldtext`, never inherited by
+/// default), so the wrapper rule's `color: inherit` cannot reach a form
+/// control nested inside promoted content -- confirmed by execution against
+/// `DatePicker`'s calendar day-grid buttons.
+///
+/// ## Coverage: every top-layer consumer reaches this, by construction
+///
+/// This crate has exactly two ways an element ever enters the top layer:
+/// the `popover` attribute (`showPopover()`/`hidePopover()`) or a native
+/// `<dialog>`'s `showModal()`. Every consumer of either mechanism routes
+/// through one of three hooks, and this function is called from all three,
+/// so no top-layer surface can bypass it:
+/// - [`use_popover_sync`] (below) -- every `popover`-promoted consumer with
+///   a plain open/close lifecycle: `tooltip.rs`, `hover_card.rs`,
+///   `popover.rs`'s non-modal arm (and therefore `date_picker.rs`/
+///   `color_picker.rs`, both built on `popover::PopoverRoot`),
+///   `dropdown_menu.rs`, `context_menu.rs`, `menubar.rs`, `navbar.rs`.
+/// - [`use_popover_shown_while_mounted`] (below) -- every `popover`-promoted
+///   consumer that stays mounted through an exit animation:
+///   `toast.rs`, `select/components/list.rs`, `combobox/components/list.rs`
+///   (and therefore `select.rs`/`combobox.rs`).
+/// - `use_dialog_open_driver` (`lib.rs`) -- every native-`<dialog>`
+///   (`showModal()`) consumer: `dialog.rs`, `alert_dialog.rs`, `popover.rs`'s
+///   modal arm -- and therefore `preview/src/components/sheet/component.rs`'s
+///   `Sheet`, which composes `dialog::DialogRoot`/`DialogContent` rather than
+///   opening its own `<dialog>`.
+///
+/// Calling this from all three (instead of only one, the way
+/// [`ensure_anchor_positioning_styles`] is called only from
+/// [`use_anchor_position_fallback`]) is deliberate and load-bearing: a modal
+/// `Dialog`/`AlertDialog`/`Sheet` never takes the anchored-overlay path at
+/// all, so it never calls [`use_anchor_position_fallback`] -- putting this
+/// rule only there would leave every native-`<dialog>` consumer unfixed.
+#[cfg(feature = "web")]
+pub(crate) fn ensure_top_layer_ink_styles() {
+    if TOP_LAYER_INK_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
+        return;
+    }
+    let eval = document::eval(TOP_LAYER_INK_STYLES_INJECT_JS);
+    let _ = eval;
+}
+
+/// The idempotent (JS-side `getElementById` guarded, so safe to run more
+/// than once) style-tag-injection script [`ensure_top_layer_ink_styles`]
+/// dispatches -- same two-guard shape as `anchor_positioning_inject_js`
+/// above and `toast.rs`'s `TOAST_BASE_STYLES_INJECT_JS`.
+#[cfg(feature = "web")]
+const TOP_LAYER_INK_STYLES_INJECT_JS: &str = r#"
+if (!document.getElementById('dx-top-layer-ink-styles')) {
+    const style = document.createElement('style');
+    style.id = 'dx-top-layer-ink-styles';
+    style.textContent = `
+      :where([popover]), :where(dialog) {
+        color: inherit;
+      }
+
+      /* The same defect, one level deeper. Neutralising the wrapper's own
+         UA color is not enough for a form control INSIDE it: <button>,
+         <input>, <select> and <textarea> each carry their own UA rule
+         setting color directly on the element (buttontext / fieldtext), and
+         a directly-cascaded value beats an inherited one just as it does for
+         [popover]/dialog -- so an ancestor's \`color: inherit\` can never
+         reach them. Caught by execution: DatePicker's calendar day-grid
+         cells (\`.dx-calendar-grid-cell\`, real <button>s) stayed black even
+         after the wrapper-only rule above -- \`Calendar\`'s own stylesheet
+         turns out not to be loaded on the DatePicker route at all
+         (a separate, pre-existing, unrelated composition defect -- see
+         docs/backlog.md/this session's report), so those buttons had no
+         author \`color\` of any kind to fall back to, only their own UA
+         default. This rule gives every top-layer-descendant form control
+         the same DOM-tree-inherited inbox this file's whole construction is
+         about, independent of whether that control's own stylesheet
+         happens to be wired up. (Select/Combobox's listboxes are plain
+         <div> options, not form controls -- unaffected by this rule either
+         way; both already carry their own explicit, intentionally different
+         \`color: var(--secondary-color-1)\` declared directly on the list,
+         which already won outright before this rule existed.) Scoped to
+         top-layer descendants rather than applied app-wide: this closes the
+         class where it actually bites without silently restyling every
+         ordinary button on the page. Still :where(), so any component that
+         sets its own color continues to win outright. */
+      :where([popover]) :where(button, input, select, textarea),
+      :where(dialog) :where(button, input, select, textarea) {
+        color: inherit;
+      }
+    `;
+    document.head.appendChild(style);
+}
+"#;
+
 /// Which `popover` dismissal behaviour an element declares.
 /// WHATWG HTML §the-popover-attribute (see module docs for the link).
 ///
@@ -559,6 +697,12 @@ pub(crate) fn use_popover_sync(
     open: impl Readable<Target = bool> + Copy + 'static,
     set_open: Callback<bool>,
 ) {
+    // Installs `ensure_top_layer_ink_styles`'s engine-injected ink baseline
+    // -- see that function's own doc for the bug this closes and why every
+    // `use_popover_sync` call site (every plain-lifecycle `[popover]`
+    // consumer) is one of the three provably-exhaustive call sites it lists.
+    use_effect(ensure_top_layer_ink_styles);
+
     // Browser -> signal.
     let id_for_listener = id.clone();
     crate::use_effect_with_cleanup(move || {
@@ -687,6 +831,13 @@ pub(crate) fn use_popover_shown_while_mounted(
     open: impl Readable<Target = bool> + Copy + 'static,
     on_native_close: Callback<bool>,
 ) {
+    // Installs `ensure_top_layer_ink_styles`'s engine-injected ink baseline
+    // -- see that function's own doc for the bug this closes and why every
+    // `use_popover_shown_while_mounted` call site (every animated-exit
+    // `[popover]` consumer) is one of the three provably-exhaustive call
+    // sites it lists.
+    use_effect(ensure_top_layer_ink_styles);
+
     // Browser -> signal: identical in shape to `use_popover_sync`'s own --
     // forwards every native `toggle` for this element's whole mounted
     // lifetime, unconditionally.
