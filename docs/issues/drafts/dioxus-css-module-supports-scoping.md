@@ -1,72 +1,99 @@
-# Draft issue: `css_module`'s class-scoping pass silently ignores `@supports` blocks
+# Draft issue: `#[css_module]` scoping pass silently skips `@supports` (and every non-allowlisted block at-rule)
 
-**Status:** drafted 2026-09-03, not filed. Ready to paste once the "before filing" checklist below is done. Upgrades the existing tracking record at `docs/issues/css-module-supports-scoping.md` (kept, points here).
+**Status:** filing-ready 2026-09-04 (drafted 2026-09-03). Verified against the vendored `manganis-core 0.7.9` source; two independent instances in this repo. Supersedes the tracking record at `docs/issues/css-module-supports-scoping.md` (kept, points here).
+
+**Why still file it although row 32 (plain, unhashed CSS) removes the hazard for this repo:** every `css_module` user hits the same silent no-op, the failure is invisible at build time and in DevTools until you compare hashed and unhashed names, and the fix is a one-line allowlist change with an existing test shape to copy.
+
+**Target repo:** `DioxusLabs/dioxus`, crate `manganis-core`, file `packages/manganis-core/src/css_module_parser.rs` (confirm the path at the tag; the crate ships that file at `src/css_module_parser.rs`).
+
+**Version:** `manganis-core 0.7.9` from crates.io (this repo's `Cargo.lock`; `dioxus 0.7.9`).
 
 ---
 
-**Target repo:** `DioxusLabs/dioxus` (the `manganis-core` crate, `packages/manganis-core` in that monorepo — confirm the exact path against the release tag before filing; this repo consumes it only as a versioned dependency, not as a submodule, so no local copy of `manganis-core`'s source exists to link a permalink from directly).
-
-**Versions in use** (from this repo's own `Cargo.lock`, not assumed): `dioxus 0.7.9`, `manganis 0.7.9`, `manganis-core 0.7.9` — all pinned to the same workspace version, resolved from crates.io.
-
 ## Title
 
-`#[css_module]` scoping pass silently drops classes referenced only inside `@supports` blocks
+`#[css_module]`: class selectors inside `@supports` (and any at-rule other than `media`/`layer`/`container`/`include`) are emitted unhashed and never match the DOM
 
 ## Body
 
-### Context
+### What happens
 
-`#[css_module(...)]` (via `manganis-core`'s CSS parser) scopes every class name it finds in a stylesheet by appending a content hash — e.g. `.dx-tooltip-content` becomes `.dx-tooltip-content-b50b2adc` — and rewrites the corresponding Rust-side class name the same way, so the DOM and the stylesheet agree. This scoping pass recurses into `@media`, `@layer`, and `@container` blocks to find and rewrite classes nested inside them. It does **not** recurse into `@supports` blocks. Any selector defined only inside an `@supports { … }` body is treated as an opaque, unparsed blob (consistent with how the parser also skips `@include` and any other at-rule it doesn't specifically special-case) — its class name is left unhashed in the compiled stylesheet, while the DOM side still carries the hashed name generated from the un-nested part of the file. The two names can never match, in any browser, and no error or warning is emitted anywhere in the build.
+`#[css_module]` hashes every class selector it finds (`.dx-select-list` → `.dx-select-list-e8d9eb03`) and rewrites the Rust-side names to match. The pass recurses into `@media`, `@layer` and `@container` bodies, but not into `@supports`. A rule written inside `@supports { … }` is copied to the output verbatim, with its original unhashed class name, while the DOM only ever carries the hashed one. The rule can never match in any browser, and nothing warns.
+
+The cause is an allowlist in `at_rule` (`src/css_module_parser.rs`, 0.7.9):
+
+```rust
+match identifier {
+    "media" | "layer" | "container" | "include" => {
+        cut_err(terminated(style_rule_block_contents, '}')).parse_next(input)
+    }
+    _ => {
+        cut_err(terminated(unknown_block_contents, '}')).parse_next(input)?;
+        Ok(vec![])
+    }
+}
+```
+
+Everything not in that list, `@supports`, `@scope`, `@starting-style`, `@document`, and any future block at-rule that contains style rules, falls into `unknown_block_contents`, which recognises the block and returns no fragments, so no class inside it is ever rewritten.
 
 ### Minimal reproduction
 
 ```rust
 #[component]
 fn Demo() -> Element {
-    rsx! {
-        div {
-            class: "dx-demo",
-            "hello"
-        }
-    }
+    rsx! { div { class: "demo", "hello" } }
 }
 ```
 
 ```css
 /* demo.module.css */
-.dx-demo {
-    color: black;
+.demo { color: black; }
+
+@media (min-width: 1px) {
+    .demo { color: blue; }   /* hashed, applies */
 }
 
 @supports (display: grid) {
-    .dx-demo {
-        color: red; /* never applied, in any browser that reaches this build's @supports check */
-    }
+    .demo { color: red; }    /* emitted as `.demo`, unhashed, never applies */
 }
 ```
 
-Build with `dx-demo`'s stylesheet passed through `#[css_module(...)]`. Inspect the compiled CSS output: the top-level `.dx-demo` rule is rewritten to `.dx-demo-<hash>` and matches the DOM's rewritten class. The `@supports` block's `.dx-demo` rule is emitted verbatim, unhashed, and never matches anything in the rendered DOM.
+Compiled output (this repo's build, served asset):
 
-### Expected vs actual
+```css
+.demo-<hash>{color:black}
+@media (min-width:1px){.demo-<hash>{color:blue}}
+@supports (display:grid){.demo{color:red}}
+```
 
-- **Expected:** the scoping pass recurses into `@supports` bodies the same way it already does for `@media`/`@layer`/`@container`, rewriting any class selector found inside to the same hashed name used elsewhere in the file.
-- **Actual:** selectors inside `@supports` are left completely unscoped. The rule is not merely lower-specificity or overridden — it targets a class name that literally does not exist anywhere in the rendered document, so it can never match, and nothing in the build surfaces this as an error.
+The `@media` body proves the recursion machinery works; only the allowlist is missing `supports`.
 
-### Evidence — how this was found and confirmed
+### Expected
 
-Found building this repo's CSS Anchor Positioning support (`docs/plan.md` Phase 4.4): the anchor-positioning rules for `Tooltip`/`HoverCard`/`Popover` were gated behind `@supports (anchor-name: --a)` inside each component's `#[css_module]` stylesheet. The entire enhancement was dead code on every engine, in every environment — elements fell back silently to the `[popover]` user-agent stylesheet default (an unexpected border, `margin: auto` centering placing content hundreds of pixels away from its trigger). Root-caused by comparing the compiled CSS's class names against the DOM's `class` attribute under computed-style inspection: the `@supports` selectors were byte-for-byte present in the output CSS, unhashed, while the DOM's classes were all hashed. Full account and the workaround convention adopted in the meantime: `docs/issues/css-module-supports-scoping.md` in this repo (`MentalGear/dioxus-components`), and `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles`/the `dx-anchor-*` marker-class convention used across `dropdown_menu.rs`, `combobox/components/list.rs`, and other migrated overlay components.
+Class selectors inside `@supports` bodies are hashed exactly like those inside `@media`.
+
+### Actual
+
+They are emitted verbatim and unscoped. The rule targets a class that does not exist in the rendered document. No build error, no warning.
+
+### Impact (two independent instances in one project, both found only by comparing served CSS to DOM class names)
+
+1. **CSS Anchor Positioning** for tooltips, hover cards and popovers, gated behind `@supports (anchor-name: --a)` per component stylesheet: the whole enhancement was dead in every browser, and content fell back to the `[popover]` UA stylesheet (`margin: auto`, centred hundreds of pixels from its trigger). Workaround: the anchor rules moved into one hand-injected stylesheet that targets deliberately unhashed marker classes (`primitives/src/top_layer.rs`, `ensure_anchor_positioning_styles`).
+2. **Select listbox width**, `@supports (anchor-name: --a) { .dx-select-list[popover] { min-width: anchor-size(width) } }`: dead, so the list rendered at full viewport width once it was promoted to the top layer (`min-width: 100%` against the viewport). Reported from a device; root-caused only by reading the served CSS.
+
+This class of bug is likely to grow: `@supports` is exactly where progressive-enhancement CSS for new platform features lives (anchor positioning, `@starting-style` for popover/dialog entry animations, `@scope`).
 
 ### Proposed fix
 
-In `manganis-core`'s CSS parser (the function walking at-rule bodies to find nested selectors — recurses today for `@media`/`@layer`/`@container`), add `@supports` to the set of at-rules it recurses into rather than treats as an opaque blob via `unknown_block_contents`. Arguably any at-rule containing nested rule bodies (rather than declarations) should recurse by default, with an explicit opt-out list rather than an opt-in list, so a future CSS at-rule doesn't reproduce this same silent-drop failure mode.
+Invert the allowlist: recurse with `style_rule_block_contents` for every block at-rule whose body contains style rules, and keep an explicit deny-list for the at-rules whose bodies are declarations or non-CSS (`@font-face`, `@page`, `@property`, `@counter-style`, `@keyframes` frames, `@font-feature-values`). At minimum, add `"supports" | "scope" | "starting-style"` to the existing match arm. The `test_at_rule_media` / `test_at_rule_layer` tests in the same file give the shape for a `test_at_rule_supports` case.
 
-### Workaround in use (for context, not part of the report)
+### References
 
-This repo's binding convention until upstream fixes the parser: any selector that must live inside `@supports` targets a plain, hand-written marker class (the `dx-anchor-*` family) that is never referenced anywhere outside that `@supports` block, so the scoping pass has nothing of its own to rewrite and the selector matches by construction. Not proposed as the fix — just evidence this is a known, worked-around gap, not a one-off misreading of the parser's behavior.
+- This repo, `MentalGear/dioxus-components`: `docs/issues/css-module-supports-scoping.md` (first instance, 2026-09), `docs/backlog.md` rows 32 and 47 (second instance, 2026-09-04), `primitives/src/top_layer.rs` (`ensure_anchor_positioning_styles`, the workaround), `preview/src/components/select/style.css` (the dead rule's replacement comment).
 
 ## Before filing
 
-- [ ] Re-verify against the latest Dioxus release (this draft is written against `0.7.9`; check whether a later release's `manganis-core` changelog already mentions `@supports` recursion).
-- [ ] Confirm the exact file/function inside `manganis-core`'s source at the version being reported against, and link a permalink to it (not done here — this repo does not vendor or submodule `manganis-core`'s source, so the claim above about `unknown_block_contents` and the `@media`/`@layer`/`@container` recursion list is from the original 2026 investigation's reading of the crate, not a live link).
-- [ ] Link a permalink to `docs/issues/css-module-supports-scoping.md` and `primitives/src/top_layer.rs` at the commit this issue is filed from (both will have moved since 2026-09-03).
-- [ ] Confirm GitHub Issues is enabled on the target repo/organization's policy for external reports (this repo's own Issues are disabled, which is why this exists as a drafts file rather than a filed issue in the first place).
+- [x] Verified the parser behaviour against the vendored `manganis-core 0.7.9` source (`at_rule`, `unknown_block_contents`), not from memory.
+- [x] Verified `@media` bodies ARE hashed in the served output (so the report's claim "only the allowlist is missing" is exact).
+- [ ] Re-check the latest `manganis-core` release notes for an `@supports` change before posting.
+- [ ] Replace the file reference with a permalink at the tag being reported against, and the two repo references with permalinks at the filing commit.
