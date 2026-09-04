@@ -1651,3 +1651,115 @@ test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider tha
     });
   }
 });
+
+/**
+ * Rule 13 — fit-content width (2026-09-04 user report: "dropdown menu has
+ * full page width").
+ *
+ * Regression guard for the exact failure mode `top_layer::
+ * anchored_content_attributes` (`primitives/src/top_layer.rs`, added
+ * 2026-09-03) exists to prevent: a duplicated `style` attribute on an
+ * anchored-content leaf where SSR and the WASM client disagree about which
+ * `style` wins (`docs/conformance-harness.md` hydration-parity Rule 4). If
+ * the client ever kept a caller/wrapper `style` in place of (rather than
+ * folded with) this module's own `position-anchor`/`position: fixed`
+ * declarations, the popover UA stylesheet's `[popover] { inset: 0; margin:
+ * auto; }` centering-trap default (undone today by the engine-injected
+ * `:where(...)` reset in `ensure_anchor_positioning_styles`) or a stray
+ * caller `width: 100%` would be free to stretch the content across the
+ * whole viewport instead of shrink-wrapping its own children -- the
+ * reported symptom. Every one of these components is authored `min-width`
+ * only (no `width`), so a correctly-folded `style` always leaves the UA
+ * `width: fit-content` default (or this fixture's own short menu-item/
+ * option text) in charge, and the box stays well under the viewport.
+ *
+ * Uses the same `#clip-*-trigger`/`#clip-*-content` fixture pairs Rule 1
+ * above already opens (one already-anchored instance per component is
+ * enough; this rule checks a different property of the same open content,
+ * not a new state) -- every anchored content on this fixture page in one
+ * place, so a regression in any one of them fails loudly here rather than
+ * only in that component's own, separate spec file.
+ */
+test.describe("Rule 13 — fit-content width (not full page width)", () => {
+  const WIDTH_CASES: Array<{
+    name: string;
+    triggerId: string;
+    contentId: string;
+    open: (page: Page) => Promise<void>;
+  }> = [
+    {
+      name: "Tooltip",
+      triggerId: "clip-tooltip-trigger",
+      contentId: "clip-tooltip-content",
+      open: (page) => page.locator("#clip-tooltip-trigger").hover(),
+    },
+    {
+      name: "HoverCard",
+      triggerId: "clip-hovercard-trigger",
+      contentId: "clip-hovercard-content",
+      open: (page) => page.locator("#clip-hovercard-trigger").hover(),
+    },
+    {
+      name: "Popover (non-modal)",
+      triggerId: "clip-popover-trigger",
+      contentId: "clip-popover-content",
+      open: (page) => page.locator("#clip-popover-trigger").click(),
+    },
+    {
+      name: "DropdownMenu",
+      triggerId: "clip-dropdown-menu-trigger",
+      contentId: "clip-dropdown-menu-content",
+      open: (page) => page.locator("#clip-dropdown-menu-trigger").click(),
+    },
+    {
+      name: "Menubar",
+      triggerId: "clip-menubar-trigger",
+      contentId: "clip-menubar-content",
+      open: (page) => page.locator("#clip-menubar-trigger").click(),
+    },
+    {
+      name: "Select",
+      triggerId: "clip-select-trigger",
+      contentId: "clip-select-content",
+      open: (page) => page.locator("#clip-select-trigger").click(),
+    },
+    {
+      name: "Combobox",
+      triggerId: "clip-combobox-trigger",
+      contentId: "clip-combobox-content",
+      open: async (page) => {
+        await page.locator("#clip-combobox-trigger").click();
+        await page.keyboard.press("ArrowDown");
+      },
+    },
+    {
+      name: "Navbar",
+      triggerId: "clip-navbar-trigger",
+      contentId: "clip-navbar-content",
+      open: (page) => page.locator("#clip-navbar-trigger").hover(),
+    },
+  ];
+
+  for (const kase of WIDTH_CASES) {
+    test(`${kase.name} content is well under the viewport width, not stretched full-page`, async ({ page }) => {
+      await gotoFixture(page);
+      await kase.open(page);
+      await expect(page.locator(`#${kase.contentId}`)).toBeVisible();
+
+      const content = await rectOf(page, `#${kase.contentId}`);
+      const trigger = await rectOf(page, `#${kase.triggerId}`);
+      const viewport = await viewportSize(page);
+      const debug = JSON.stringify({ overlay: kase.name, content, trigger, viewport });
+      // Fit-content, not full-page: well under the viewport width (60%
+      // leaves generous room for a component's own min-width plus this
+      // fixture's short fixed label/option text, while still catching a
+      // stretched-to-100% regression by a wide margin).
+      expect(content.width, debug).toBeLessThan(viewport.width * 0.6);
+      // Still anchored near its own trigger horizontally, not detached to
+      // the viewport's left edge the way an un-folded/lost `position-anchor`
+      // binding would land it (`position: absolute; left: 0` from each
+      // component's own pre-top-layer stylesheet fallback).
+      expect(Math.abs(content.left - trigger.left), debug).toBeLessThan(viewport.width * 0.5);
+    });
+  }
+});
