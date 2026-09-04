@@ -49,6 +49,26 @@ test.describe('Toast bounding box (docs/backlog.md row 44)', () => {
   async function assertToastOnScreen(page: Page) {
     const toast = page.getByRole('alertdialog').first();
     await expect(toast).toBeVisible();
+    // Wait for the entrance animation to finish before measuring. The themed
+    // toast slides in via `@keyframes dx-toast-slide-in`
+    // (`preview/src/components/toast/style.css`), `translateY(100%)` -> `0`
+    // over 0.2s, plus a `transform: scale()` transition. Measuring during
+    // that window reports a real but still-travelling box: caught by
+    // execution, where this assertion first read
+    // `y=680.98 height=68.73` against a 720px-tall viewport -- ~50px below
+    // the bottom edge, and a height above the settled `4rem`, both explained
+    // entirely by the in-flight transform. That is a test-timing artifact,
+    // not the off-screen defect this rule is for, and waiting on the
+    // animations rather than on a fixed timeout keeps the distinction sharp.
+    // `{ subtree: true }` because the animation is declared on the toast
+    // itself while the scale transition applies to its inner box; `.catch()`
+    // absorbs an animation cancelled by a subsequent state change, which is
+    // a settled outcome for our purposes too.
+    await toast.evaluate((el) =>
+      Promise.all(
+        el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined)),
+      ),
+    );
     const box = await toast.boundingBox();
     const viewport = page.viewportSize();
     if (!box || !viewport) {
