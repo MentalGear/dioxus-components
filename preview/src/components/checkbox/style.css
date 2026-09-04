@@ -1,6 +1,4 @@
 .dx-checkbox {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
     width: 1rem;
     height: 1rem;
     box-sizing: border-box;
@@ -12,6 +10,9 @@
     box-shadow: inset 0 0 0 1px var(--primary-color-7);
     color: var(--secondary-color-4);
     cursor: pointer;
+
+    /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+    touch-action: manipulation;
 }
 
 .dx-checkbox-indicator {
@@ -26,6 +27,14 @@
     color: var(--primary-color);
 }
 
+/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
+   but the RULE stays here rather than in the shared interaction layer.
+   `#[css_module]` hashes this class in both the DOM and this stylesheet
+   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
+   an unhashed selector in the global theme sheet can never match the rendered
+   element -- confirmed against the built artifact, where the wasm carries the
+   hashed name. Once row 32 drops css_module hashing, this can collapse into
+   the shared layer for real. */
 .dx-checkbox:focus-visible {
-    box-shadow: 0 0 0 2px var(--focused-border-color);
+    box-shadow: var(--dx-ring);
 }

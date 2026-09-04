@@ -90,6 +90,6 @@
  */
 @media (pointer: coarse) {
   .dx-textarea {
-    font-size: 16px;
+    font-size: var(--dx-text-base);
   }
 }

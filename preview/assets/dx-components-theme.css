@@ -1,5 +1,12 @@
 /* This file contains the theme variables for the styled dioxus-components components. You only
  * need to import this file once in your project root.
+ *
+ * Color-contrast rule (docs/backlog.md row 39): every text/background
+ * color-token pair defined in this file must resolve to >= 4.5:1 (WCAG AA,
+ * normal text). This is checked by execution, not by hand math here -- the
+ * axe `color-contrast` rule run across every preview route
+ * (`playwright/axe.ts`). If you add or change a color token, re-run that
+ * scan before landing.
  */
 
 html[data-theme="dark"] {
@@ -53,6 +60,7 @@ html[data-theme="light"] [class~="dxc-system"] {
   --secondary-color-2: var(--dark, #e6e6e6) var(--light, #0d0d0d);
   --secondary-color-3: var(--dark, #dcdcdc) var(--light, #2b2b2b);
   --secondary-color-4: var(--dark, #d4d4d4) var(--light, #111);
+
   /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03): the
    * light value was #848484, 3.74:1 on white -- below WCAG's 4.5:1
    * threshold for normal text, and this token is the "muted"/secondary
@@ -78,4 +86,238 @@ html[data-theme="light"] [class~="dxc-system"] {
   --contrast-error-color: var(--dark, var(--secondary-color-3)) var(--light, var(--primary-color));
   --primary-info-color: var(--dark, var(--primary-color-5)) var(--light, var(--primary-color));
   --secondary-info-color: var(--dark, var(--primary-color-7)) var(--light, var(--secondary-color-3));
+
+  /* Type scale (docs/backlog.md row 31a). Grounded in the `font-size`
+   * literals already used across the 46 themed components' `style.css` +
+   * `preview/assets/*.css` (session report has the full value -> frequency
+   * survey). Converted to px, the values cluster tightly around the eight
+   * steps below; the literals in between (0.85rem, 0.9rem, 0.92rem, ...)
+   * are near-misses of these steps -- migrating them is row 31b's job, not
+   * this one's.
+   *
+   * `--dx-text-base` doubles as the touch text-entry floor (row 30):
+   * WebKit auto-zooms a focused text field under 16px on a coarse pointer,
+   * so 1rem/16px is both the typographic "body text" size and the
+   * accessibility floor -- one token, not two. The floor's enforcement
+   * sites (the `@media (pointer: coarse)` rules in this app's `main.css`
+   * and in `combobox`/`date_picker`/`input`/`textarea`/`calendar`'s own
+   * `style.css`) now read this token instead of a bare `16px` literal. */
+  --dx-text-xs: 0.75rem;   /* 12px */
+  --dx-text-sm: 0.875rem;  /* 14px -- the most common size in the survey */
+  --dx-text-base: 1rem;    /* 16px -- touch floor, row 30 */
+  --dx-text-lg: 1.125rem;  /* 18px */
+  --dx-text-xl: 1.25rem;   /* 20px */
+  --dx-text-2xl: 1.5rem;   /* 24px */
+  --dx-text-3xl: 1.75rem;  /* 28px */
+  --dx-text-4xl: 2.5rem;   /* 40px -- display sizes (section headings, stat numbers) */
+  --dx-text-5xl: 3.5rem;   /* 56px -- the homepage hero headline, the single largest literal found */
+
+  /* Spacing scale -- padding, margin, gap. The survey (395 non-zero
+   * literals) lands almost entirely on a 4px/0.25rem grid already; this
+   * scale *is* that grid. Steps are named after Tailwind v4's own spacing
+   * scale (`--spacing * N`) because they resolve to the same values for
+   * every step below -- deliberate, since row 32 keeps the door open to
+   * Tailwind's `@theme` block, which is CSS custom properties. Only steps
+   * with real evidence are defined; gaps (11, 13, 14, ...) have none. */
+  --dx-space-1: 0.25rem;  /* 4px */
+  --dx-space-2: 0.5rem;   /* 8px -- the single most common spacing literal in the app */
+  --dx-space-3: 0.75rem;  /* 12px */
+  --dx-space-4: 1rem;     /* 16px */
+  --dx-space-5: 1.25rem;  /* 20px */
+  --dx-space-6: 1.5rem;   /* 24px */
+  --dx-space-7: 1.75rem;  /* 28px */
+  --dx-space-8: 2rem;     /* 32px */
+  --dx-space-9: 2.25rem;  /* 36px */
+  --dx-space-10: 2.5rem;  /* 40px */
+  --dx-space-12: 3rem;    /* 48px */
+  --dx-space-16: 4rem;    /* 64px */
+  --dx-space-18: 4.5rem;  /* 72px */
+  --dx-space-20: 5rem;    /* 80px */
+  --dx-space-24: 6rem;    /* 96px */
+  --dx-space-32: 8rem;    /* 128px */
+
+  /* Radius scale. `--dx-radius-lg` (8px) is the dominant literal by a wide
+   * margin (52 of 137 `border-radius` declarations survey-wide); the other
+   * steps are the next most common values actually present.
+   * `--dx-radius-full` covers both `9999px` and `999px` (pill/circle caps
+   * -- no layout depends on the exact number). `50%` (avatar circles) is
+   * left off this scale on purpose -- it isn't a length. */
+  --dx-radius-xs: 0.125rem;  /* 2px -- also covers the popover/tooltip arrow's 0.1rem corner as a near-miss */
+  --dx-radius-sm: 0.25rem;   /* 4px */
+  --dx-radius-md: 0.375rem;  /* 6px */
+  --dx-radius-lg: 0.5rem;    /* 8px -- dominant default */
+  --dx-radius-xl: 0.75rem;   /* 12px */
+  --dx-radius-2xl: 1rem;     /* 16px */
+  --dx-radius-3xl: 1.5rem;   /* 24px */
+  --dx-radius-full: 9999px;  /* pill / circle caps */
+
+  /* Elevation (box-shadow). `box-shadow` is also used for two things that
+   * are NOT elevation -- a 1px inset "border replacement" technique, and
+   * the focus-ring family below -- neither belongs on this scale. What's
+   * left clusters into five real drop-shadow values. All five follow this
+   * app's existing dark-mode convention (already used by `tabs` and
+   * `hover_card` independently): a drop shadow is a depth cue that reads
+   * as noise on a dark surface, so it turns off (`none`) in dark mode
+   * rather than getting a dark-tuned replacement. */
+  --dx-shadow-sm: var(--dark, none) var(--light, 0 1px 2px rgb(0 0 0 / 18%));
+  --dx-shadow-md: var(--dark, none) var(--light, 0 2px 10px rgb(0 0 0 / 18%));
+  --dx-shadow-lg: var(--dark, none) var(--light, 0 4px 12px rgb(0 0 0 / 15%));
+  --dx-shadow-xl: var(--dark, none) var(--light, 0 4px 20px rgb(0 0 0 / 20%));
+  --dx-shadow-2xl: var(--dark, none) var(--light, 0 12px 32px -20px rgb(0 0 0 / 35%));
+
+  /* Motion -- durations and easings. The transition/animation survey
+   * clusters on four durations and three keyword easings, plus one
+   * bespoke curve already reused twice for the icon-rotate
+   * micro-interaction (dropdown/select chevrons). `--dx-motion-duration-
+   * reduced` is the `prefers-reduced-motion` override used by the
+   * interaction layer below -- not `0ms`, since a zero-duration
+   * transition can still misfire `transitionend` listeners in some
+   * engines, where a near-zero one does not. */
+  --dx-motion-duration-fast: 100ms;
+  --dx-motion-duration-base: 150ms;
+  --dx-motion-duration-slow: 200ms;
+  --dx-motion-duration-slower: 300ms;
+  --dx-motion-duration-reduced: 0.01ms;
+  --dx-motion-ease: ease;
+  --dx-motion-ease-in: ease-in;
+  --dx-motion-ease-out: ease-out;
+  --dx-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* icon rotate */
+
+  /* Breakpoints. CSS custom properties cannot be substituted into an
+   * `@media` condition (no browser resolves `var()` there -- a media
+   * query is evaluated before the cascade has an element to resolve
+   * against), so these are reference values, not literally pluggable
+   * into a media query. A component's own `@media (width >= 40rem)`
+   * still has to write the raw value; these tokens are the source of
+   * truth that value is copied from, and what a future literal-value
+   * lint (row 31b, mirroring `scripts/check-preview-composition.sh`)
+   * would check media-query literals against. */
+  --dx-breakpoint-sm: 40rem;     /* 640px -- alert_dialog, dialog, popover, pagination */
+  --dx-breakpoint-md: 48rem;     /* 768px -- sidebar's dominant collapse breakpoint */
+  --dx-breakpoint-lg: 68.75rem;  /* 1100px -- main.css's site-chrome breakpoint */
+
+  /* Z-index. Every z-index literal found in the survey maps onto exactly
+   * one of these nine steps already. Two distinct tiers exist: a "local"
+   * ladder (10/20/30/50) a component uses to order its own internal
+   * layers relative to each other, and a shared "overlay" ladder (1000+)
+   * for content that must sit above ordinary page flow app-wide --
+   * dialogs, popovers, menus, the sticky navbar, toast. */
+  --dx-z-raise: 1;              /* nudge above immediate siblings, e.g. a focused item in a grouped row */
+  --dx-z-local-sm: 10;
+  --dx-z-local-md: 20;
+  --dx-z-local-lg: 30;
+  --dx-z-local-xl: 50;
+  --dx-z-overlay: 1000;         /* dialogs, popovers, menus, tooltip, sheet, sticky navbar */
+  --dx-z-overlay-raised: 1001;  /* an element that must clear its own component's overlay content */
+  --dx-z-chrome: 1100;
+  --dx-z-chrome-raised: 1200;
+  --dx-z-top: 9999;             /* toast, top_layer's absolute ceiling */
+
+  /* Shared interaction affordances -- feeds the `[data-dx-interactive]`
+   * layer below. `--dx-opacity-disabled` is a straight read of the
+   * existing convention: 21 components already write `opacity: 0.5` on
+   * their own disabled state. There is no equivalent existing convention
+   * for hover opacity (no component in the survey dims on hover today),
+   * so `--dx-opacity-hover` is a new value, not a survey result -- a
+   * conventional subtle default, easy to retune globally later. */
+  --dx-opacity-hover: 0.8;
+  --dx-opacity-disabled: 0.5;
+  --dx-ring-color: var(--focused-border-color);
+  --dx-ring-width: 2px;
+  --dx-ring: 0 0 0 var(--dx-ring-width) var(--dx-ring-color);
+}
+
+/* ============================================================================
+ * Shared interaction-rules layer (docs/backlog.md row 31a).
+ *
+ * One place for the hover/focus/disabled/reduced-motion affordances that
+ * used to be copied -- slightly differently, component to component --
+ * into ~28 `style.css` files. `:where(...)` keeps every rule here at zero
+ * specificity, so any component class selector overrides it outright, even
+ * a bare `.dx-foo:hover`; a component only needs to write the one property
+ * it actually wants to differ, not the whole rule.
+ *
+ * How `[data-dx-interactive]` gets onto an element: it doesn't yet. The
+ * attribute is meant to be attached by whichever primitive/component
+ * renders an interactive root, which is `primitives/src`/`component.rs`
+ * work -- out of this round's `preview/assets` + `style.css` lane (see the
+ * session report). Until that lands, the rules below that key ONLY off
+ * `[data-dx-interactive]` (hover opacity, disabled opacity) are defined
+ * but inert.
+ *
+ * A class-name bridge was tried here and REMOVED: naming component classes
+ * (`.dx-checkbox:focus-visible`, ...) in this file cannot work while
+ * `#[css_module]` is in use. It hashes each class in both the DOM and the
+ * component's own stylesheet (`.dx-x` -> `.dx-x-<hash>`, see
+ * docs/issues/css-module-supports-scoping.md), so an unhashed selector here
+ * never matches the rendered element -- confirmed against the built artifact
+ * (the wasm carries `dx-alert-dialog-cancel-e59ac016`, this file would have
+ * said `.dx-alert-dialog-cancel`). Consolidating the per-component focus
+ * rings into this layer therefore has to wait for either `data-dx-interactive`
+ * being wired onto interactive roots, or row 32 dropping css_module hashing;
+ * until then each component keeps its own `:focus-visible` rule, written
+ * against the `--dx-ring` token so the values are still shared.
+ *
+ * What follows below is therefore scaffolding, deliberately inert. Note that
+ * even once `data-dx-interactive` exists, a blanket tag/role sweep of the kind
+ * `main.css`'s `touch-action: manipulation` rule (row 42) uses would NOT be a
+ * safe way to apply a ring: that works for touch-action because it has no
+ * visual output, whereas several components deliberately draw their ring a
+ * different way (`radio_group` rings a `::before` circle, not the row it sits
+ * in; `button`/`switch`/`item`/`color_picker`/`drag_and_drop_list` use a wider,
+ * softer 3px `color-mix` ring for filled controls; `accordion`/`collapsible`
+ * ring inset; `calendar`'s grid cell/`toggle`/`toggle_group` and both remove
+ * buttons ring via `outline`). Those must keep their own rules regardless.
+ *
+ * Selectors are written as flat, top-level comma lists rather than nested
+ * inside a `:where()`/`:not()` argument list -- this app's CSS asset
+ * pipeline has been observed to silently drop a rule using a
+ * selector-list-inside-`:not()` shape (see `main.css`'s touch-action rule
+ * comment for the fuller story); the same flat construction sidesteps the
+ * same risk here rather than assuming `:where()` is exempt from it.
+ */
+:where([data-dx-interactive]):hover {
+  opacity: var(--dx-opacity-hover);
+}
+
+:where([data-dx-interactive]):focus-visible {
+  box-shadow: var(--dx-ring);
+}
+
+:where([data-dx-interactive]):disabled,
+:where([data-dx-interactive])[disabled],
+:where([data-dx-interactive])[aria-disabled="true"],
+:where([data-dx-interactive])[data-disabled="true"] {
+  opacity: var(--dx-opacity-disabled);
+  pointer-events: none;
+}
+
+/* Reduced motion is safe to apply with the same flat tag/role list
+ * touch-action uses (mirrored exactly) -- unlike a focus ring, cutting a
+ * transition/animation down to near-zero duration can't visually clash
+ * with any component's own construction, it can only ever reduce motion
+ * a user has already asked their OS to reduce. This does not reach
+ * animated CONTENT that isn't itself an interactive root (a dialog's or
+ * accordion panel's entrance transition, `skeleton`'s pulse) -- broadening
+ * this to cover that is a reasonable follow-up, left to a future round. */
+@media (prefers-reduced-motion: reduce) {
+  :where([data-dx-interactive]),
+  button,
+  [role="button"],
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"]),
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  [role="slider"] {
+    animation-duration: var(--dx-motion-duration-reduced) !important;
+    transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
 }

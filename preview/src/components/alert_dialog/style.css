@@ -94,8 +94,6 @@
 }
 
 .dx-alert-dialog-cancel {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   padding: 8px 18px;
   border: 1px solid var(--primary-color-6);
   border-radius: 0.5rem;
@@ -104,6 +102,9 @@
   color: var(--secondary-color-4);
   cursor: pointer;
   font-size: 1rem;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   transition: background-color 0.2s ease;
 }
 
@@ -111,13 +112,19 @@
   background-color: var(--primary-color-4);
 }
 
+/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
+   but the RULE stays here rather than in the shared interaction layer.
+   `#[css_module]` hashes this class in both the DOM and this stylesheet
+   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
+   an unhashed selector in the global theme sheet can never match the rendered
+   element -- confirmed against the built artifact, where the wasm carries the
+   hashed name. Once row 32 drops css_module hashing, this can collapse into
+   the shared layer for real. */
 .dx-alert-dialog-cancel:focus-visible {
-  box-shadow: 0 0 0 2px var(--focused-border-color);
+  box-shadow: var(--dx-ring);
 }
 
 .dx-alert-dialog-action {
-  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
-  touch-action: manipulation;
   padding: 8px 18px;
   border: 1px solid var(--primary-error-color);
   border-radius: 0.5rem;
@@ -125,6 +132,9 @@
   color: var(--contrast-error-color);
   cursor: pointer;
   font-size: 1rem;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
   transition: background-color 0.2s ease;
 }
 
@@ -132,6 +142,14 @@
   background-color: var(--secondary-error-color);
 }
 
+/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
+   but the RULE stays here rather than in the shared interaction layer.
+   `#[css_module]` hashes this class in both the DOM and this stylesheet
+   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
+   an unhashed selector in the global theme sheet can never match the rendered
+   element -- confirmed against the built artifact, where the wasm carries the
+   hashed name. Once row 32 drops css_module hashing, this can collapse into
+   the shared layer for real. */
 .dx-alert-dialog-action:focus-visible {
-  box-shadow: 0 0 0 2px var(--focused-border-color);
+  box-shadow: var(--dx-ring);
 }
