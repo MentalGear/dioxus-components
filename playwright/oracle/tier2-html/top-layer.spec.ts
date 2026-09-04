@@ -1129,6 +1129,30 @@ const KEYBOARD_VIEWPORT = { width: 390, height: 460 };
  * `KEYBOARD_VIEWPORT` regardless of where this section falls in page flow.
  */
 async function pinNearTop(page: Page, locator: import("@playwright/test").Locator): Promise<void> {
+  // A viewport-pinned trigger cannot be scrolled anywhere, so "pin it near the
+  // top" is meaningless for one -- and worse than meaningless: `rect.top` for a
+  // `position: fixed` element is always its fixed on-screen position, so the
+  // scroll below computes a large, arbitrary offset (+659px measured for
+  // `#edge-bottom-popover-trigger`, whose row is `position: fixed; bottom: 4px`)
+  // that scrolls the *rest* of the page under the stationary trigger. That drags
+  // the fixture's unrelated `#stack-sibling` (`position: absolute; z-index: 9999`,
+  // belonging to the light-dismiss/stacking section) into the same on-screen
+  // rectangle, where it intercepts the click and sends Playwright into a
+  // scroll-and-retry loop until the 5-minute test timeout.
+  //
+  // Found by execution 2026-09-04, the first run of this file in a container that
+  // actually had Playwright browsers -- Rule 11(c)'s Popover case had never once
+  // opened its popover. Fixed here rather than in that one case because the
+  // hazard belongs to this helper's own assumption (that a trigger sits in normal
+  // document flow), so any future fixed-position trigger would hit it again.
+  const isViewportPinned = await locator.evaluate((el) => {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      if (getComputedStyle(node).position === "fixed") return true;
+    }
+    return false;
+  });
+  if (isViewportPinned) return;
+
   // Centre the trigger horizontally inside its own scroll container first:
   // on the 390px mobile viewport the fixture's clip box is wider than the
   // page, and a trigger hanging past the right edge collides with the
