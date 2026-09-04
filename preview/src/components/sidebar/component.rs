@@ -274,9 +274,22 @@ pub fn Sidebar(
     let open_mobile = ctx.open_mobile;
 
     if collapsible == SidebarCollapsible::None {
+        // axe `region` (docs/backlog.md row 38): this was a plain `<div>`
+        // with no landmark role at all, so its content (menu items,
+        // footer) sat outside every landmark on the page -- surfaced both
+        // by the block-route direct-visit case (`ComponentBlockDemo`,
+        // `preview/src/main.rs`) and, independently, by the dashboard
+        // email client's own embedded sidebar (`dashboard/views/
+        // email_client/sidebar.rs`), which renders `Sidebar` directly and
+        // was never routed through the block preview at all. `role:
+        // "complementary"` (the `<aside>` landmark) fixes both call sites
+        // at their one shared source; labelled so it stays unambiguous if
+        // a future page ever has more than one.
         let base = attributes!(div {
             class: Styles::dx_sidebar_static,
             "data-slot": "sidebar",
+            role: "complementary",
+            aria_label: "Sidebar",
         });
         let merged = merge_attributes(vec![base, attributes]);
 
@@ -330,6 +343,15 @@ pub fn Sidebar(
             "data-variant": variant.as_str(),
             "data-side": side.as_str(),
             "data-slot": "sidebar",
+            // axe `region` (docs/backlog.md row 38) -- see the identical
+            // comment on the `collapsible == SidebarCollapsible::None`
+            // branch above; this is the desktop-expanded/-collapsed
+            // branch actually rendered by both known affected call sites
+            // (the block route's `sidebar` demo and the dashboard email
+            // client's sidebar), so it's the one that mattered for the
+            // reported gap.
+            role: "complementary",
+            aria_label: "Sidebar",
             div { class: Styles::dx_sidebar_gap, "data-slot": "sidebar-gap" }
             div {
                 ..container_attrs,

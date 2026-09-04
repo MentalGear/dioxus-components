@@ -1124,11 +1124,23 @@ fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
     }
 }
 
+// Visually-hidden clip-rect, for `ComponentBlockDemo`'s heading below. The
+// same construction already exists, duplicated per css_module, in this repo
+// (e.g. `preview/src/components/sidebar/style.css`'s `.dx-sr-only`, with its
+// own "TODO: abstract as Utility class" note) -- inlined here as a style
+// string instead of a shared class because `main.rs` has no css_module of
+// its own (it links `preview/assets/main.css` as a plain global stylesheet
+// instead), and this fix's own file lane does not include any stylesheet.
+const SR_ONLY_STYLE: &str = "position: absolute; overflow: hidden; width: 1px; height: 1px; padding: 0; border: 0; margin: -1px; clip-path: inset(50%); white-space: nowrap;";
+
 #[component]
 fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<bool>) -> Element {
     let Some(demo) = components::DEMOS.iter().find(|d| d.name == name).cloned() else {
         return rsx! {
-            div { "Block component not found" }
+            GlobalHead {}
+            main {
+                h1 { "Block component not found" }
+            }
         };
     };
 
@@ -1137,9 +1149,10 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
             Some(v) => v,
             None => {
                 return rsx! {
-                    div {
+                    GlobalHead {}
+                    main {
                         style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
-                        "Variant content not found: {wanted}"
+                        h1 { "Variant content not found: {wanted}" }
                     }
                 };
             }
@@ -1149,8 +1162,40 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
 
     let Comp = variant.component;
 
+    // axe `page-has-heading-one`/`region` (docs/backlog.md row 38): visited
+    // directly -- rather than embedded in the main preview page's
+    // `<iframe>`, where a separate document root makes the absence a
+    // non-issue, see `sidebar.spec.ts`'s "preview page renders block" test
+    // -- this route rendered no page-level heading or landmark of its own
+    // at all. A visually-hidden `<h1>` below names the block for that
+    // direct-visit case; it's wrapped in its own `<header>` (an implicit
+    // "banner" landmark here, since it isn't nested inside any sectioning
+    // element) rather than added as an outer `<main>` around the whole
+    // route: every current block demo (`sidebar`'s `main`/`floating`/
+    // `inset` variants) already renders its own `<main>` via
+    // `SidebarInset`, so a second, outer `<main>` here would nest one
+    // `<main>` inside another (`landmark-no-duplicate-main`/
+    // `landmark-main-is-top-level` -- the same defect row 34 already had
+    // to fix in the dashboard). This way the block's own landmarks stay
+    // untouched and nothing is duplicated; see `Sidebar`'s own component
+    // (`components/sidebar/component.rs`) for the matching fix that gives
+    // the block's *sidebar* content itself a landmark, so `region` has no
+    // remaining orphan content between the two.
+    let block_label = demo.name.replace('_', " ");
+    let heading = if variant.name == "main" {
+        format!("{block_label} block preview")
+    } else {
+        format!(
+            "{block_label} block preview ({} variant)",
+            variant.name.replace('_', " ")
+        )
+    };
+
     rsx! {
         GlobalHead {}
+        header {
+            h1 { style: "{SR_ONLY_STYLE}", "{heading}" }
+        }
         div { style: "min-height: 100vh;", Comp {} }
     }
 }
