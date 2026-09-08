@@ -1959,3 +1959,144 @@ test.describe("Rule 14 — aria-labelledby resolves to the caller-overridden tri
     });
   }
 });
+
+/**
+ * Rule 15 — vertical shift + size clamp (docs/backlog.md row 10 residual
+ * scope: "shift/size clamping", closed 2026-09-04).
+ *
+ * Citation: same as Rules 11/12 above -- this repo's own anchored-overlay
+ * placement contract (`use_anchor_position_fallback`,
+ * `primitives/src/top_layer.rs`), not a normative WHATWG/W3C MUST. See that
+ * function's doc, "Vertical shift + size clamp (2026-09-04)", for the full
+ * construction this rule guards: CSS Anchor Positioning's own
+ * collision-avoidance family (`position-try-fallbacks`) has no primitive
+ * for either half of it -- no shift-along-an-axis keyword (the same gap
+ * Rule 12 already documents for the horizontal axis) and no size-clamp
+ * primitive at all (nothing W3C-shipped shrinks an anchored box to fit a
+ * short viewport the way Floating UI's `size()` middleware does in
+ * userland JS) -- so both stay JS-fallback-only, mirroring Rule 12's own
+ * engine simulation (`stripAnchorSupportsBlock`) with a *short*, not
+ * narrow, custom viewport: this rule is about the vertical axis, not the
+ * horizontal one Rule 12 already covers.
+ *
+ * Fixture: the "Light dismiss, Escape, and stacking" section's
+ * `stack-popover-trigger`/`stack-popover-content` pair (Rules 2-4 above),
+ * deliberately NOT the `clip-*-content` family Rules 1/11/13/14 reuse:
+ * every one of those carries an inline `min-height: 100px` for Rule 1's own
+ * purposes, and a `min-height` on the SAME element this rule's
+ * `max-height` clamp also targets would win the CSS min/max conflict
+ * outright (CSS2.1 §10.7: a larger `min-height` overrides a smaller
+ * `max-height` on the same box) -- silently defeating the very clamp this
+ * rule exists to check, not a false pass but a wrong one. `stack-popover-
+ * content` carries no `min-height` of its own (confirmed by inspection,
+ * `preview/src/components/popover/style.css`), so nothing here competes
+ * with the engine's own inline override.
+ *
+ * A synthetic 500px-tall child is appended to the content *after* it opens
+ * -- well past what the short custom viewport below can hold either way it
+ * might be positioned, and deterministic regardless of this fixture's own
+ * text/padding metrics, unlike relying on a fixed `min-height` (as the
+ * `clip-*` fixtures do for Rule 1) to just barely exceed a computed
+ * available-height figure derived from font/padding sizes this test does
+ * not control.
+ *
+ * Re-measurement: `use_anchor_position_fallback`'s tracking listeners
+ * (`window`'s `resize`/`scroll`, "Scroll/resize tracking" in that
+ * function's doc) re-run `reposition()` on *any* fired event, synthetic or
+ * real, and `usingFallback` is sticky once `stripAnchorSupportsBlock` has
+ * forced the very first `reposition()` call onto the fallback path (Rules
+ * 11/12's own precedent) -- so a plain
+ * `window.dispatchEvent(new Event('resize'))`, fired after appending the
+ * filler child, is enough to force a fresh measurement that sees the new
+ * (now much taller) content, with no real second viewport resize needed.
+ */
+test.describe("Rule 15 — vertical shift + size clamp: an overlay taller than the viewport is clamped to fit and made scrollable, not left to overflow off-screen", () => {
+  test("Popover content taller than a short viewport is capped, made scrollable, and stays within the viewport vertically", async ({
+    page,
+  }) => {
+    // Short, not narrow (unlike Rule 12's MOBILE_VIEWPORT) -- this rule is
+    // about the vertical axis. Wide enough that this fixture's normal
+    // width-driven layout (flex-wrap rows, `#clip-box`, etc.) is
+    // unaffected; the exact width is otherwise unconstrained by anything
+    // this rule checks.
+    const SHORT_VIEWPORT = { width: 390, height: 400 };
+    await page.setViewportSize(SHORT_VIEWPORT);
+    await gotoFixture(page);
+    await stripAnchorSupportsBlock(page);
+
+    // `.evaluate((el) => el.click())`, not Playwright's own `.click()` --
+    // same technique this file already uses for a fixed-position trigger a
+    // small custom viewport might otherwise intercept behind the sticky
+    // nav (see the `edge-bottom-popover-trigger` case above) -- bypasses
+    // that actionability/visibility concern entirely, which matters here
+    // since `SHORT_VIEWPORT` leaves little headroom below the nav.
+    await page.locator("#stack-popover-trigger").evaluate((el) => (el as HTMLElement).click());
+    const content = page.locator("#stack-popover-content");
+    await expect(content).toBeVisible();
+
+    // Grow the content well past what SHORT_VIEWPORT can hold (392px of
+    // room once the engine's own 4px EDGE_MARGIN is subtracted from both
+    // edges -- see this rule's header doc for why a plain child, not
+    // `min-height` on the content element itself, is used here).
+    // `flexShrink: "0"` matters, not decoration: `.dx-popover-content` is
+    // `display: flex; flex-direction: column` (`popover/style.css`), and a
+    // flex item's default `flex-shrink: 1` would otherwise let the
+    // flexbox layout algorithm shrink this filler back down to fit inside
+    // the engine's own `max-height` clamp -- exactly defeating the
+    // overflow this test needs to exist for `scrollHeight >
+    // clientHeight` to hold below.
+    await content.evaluate((el) => {
+      const filler = document.createElement("div");
+      filler.id = "rule15-filler";
+      filler.style.height = "500px";
+      filler.style.flexShrink = "0";
+      el.appendChild(filler);
+    });
+    // Force a fresh `reposition()` measurement -- see header doc,
+    // "Re-measurement."
+    await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+    // rAF-throttled, same wait shape as Rule 8/11's identical tracking waits.
+    await page.waitForTimeout(300);
+
+    const rect = await rectOf(page, "#stack-popover-content");
+    const metrics = await content.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        offsetHeight: (el as HTMLElement).offsetHeight,
+        clientHeight: (el as HTMLElement).clientHeight,
+        scrollHeight: (el as HTMLElement).scrollHeight,
+        overflowY: style.overflowY,
+      };
+    });
+    const viewport = await viewportSize(page);
+    // Mirrors `use_anchor_position_fallback`'s own `EDGE_MARGIN` constant
+    // (`primitives/src/top_layer.rs`) -- kept as a literal here, not
+    // imported, since this file has no access to that Rust module's
+    // constants and duplicating a single small number is clearer than
+    // scraping it out at runtime.
+    const EDGE_MARGIN = 4;
+    const expectedAvailableHeight = SHORT_VIEWPORT.height - 2 * EDGE_MARGIN;
+    const debug = JSON.stringify({ rect, metrics, viewport, expectedAvailableHeight });
+
+    // Position clamp (gap 1): fully within the viewport vertically -- not
+    // run off either edge the way an unclamped 500px-tall box, positioned
+    // relative to the trigger's own (unrelated, in-flow) location, would
+    // be on a 400px-tall viewport.
+    expect(rect.top, debug).toBeGreaterThanOrEqual(-EDGE_TOLERANCE);
+    expect(rect.bottom, debug).toBeLessThanOrEqual(viewport.height + EDGE_TOLERANCE);
+
+    // Size clamp (gap 2): the rendered box itself is capped at the engine's
+    // computed available height, not merely "happens to end up on-screen"
+    // by some other coincidence.
+    expect(metrics.offsetHeight, debug).toBeLessThanOrEqual(expectedAvailableHeight + EDGE_TOLERANCE);
+    expect(metrics.offsetHeight, debug).toBeGreaterThan(0);
+    // -- AND made scrollable, not merely truncated/hidden: `overflow-y`
+    // actually engaged, and there is genuinely more content
+    // (`scrollHeight`, the filler's full 500px plus the original text) than
+    // the visible, capped box (`clientHeight`) can show -- the literal
+    // "clamped and made scrollable, not left to overflow off-screen"
+    // contract this rule's title states.
+    expect(metrics.overflowY, debug).toBe("auto");
+    expect(metrics.scrollHeight, debug).toBeGreaterThan(metrics.clientHeight);
+  });
+});
