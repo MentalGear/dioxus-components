@@ -46,6 +46,15 @@
     "preview/src/components/color_picker",
     "preview/src/components/combobox",
     "preview/src/components/item",
-    "preview/src/components/tag_group"
+    "preview/src/components/tag_group",
+    "preview/src/components/alert",
+    "preview/src/components/breadcrumb",
+    "preview/src/components/button_group",
+    "preview/src/components/empty",
+    "preview/src/components/field",
+    "preview/src/components/input_group",
+    "preview/src/components/kbd",
+    "preview/src/components/spinner",
+    "preview/src/components/native_select"
   ]
 }

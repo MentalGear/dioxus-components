@@ -1,0 +1,108 @@
+.dx-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-space-6);
+}
+
+.dx-field-set {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: none;
+  margin: 0;
+  gap: var(--dx-space-6);
+}
+
+.dx-field-legend {
+  padding: 0;
+  color: var(--secondary-color-1);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+}
+
+.dx-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-space-2);
+}
+
+.dx-field[data-orientation="horizontal"] {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--dx-space-3);
+}
+
+.dx-field[data-orientation="responsive"] {
+  flex-direction: column;
+}
+
+@media (width >= 640px) {
+  .dx-field[data-orientation="responsive"] {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--dx-space-3);
+  }
+}
+
+.dx-field-label {
+  color: var(--secondary-color-1);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+/*
+ * `> button`/`> input` (element selectors, not classes) rather than naming
+ * `Checkbox`/`Switch`/`RadioItem`'s own `dx-*` classes directly -- all
+ * three render as `<button>` (docs/preview-composition.md), and `Input`/
+ * `NativeSelect` as `<input>`/`<select>`, so this reaches every control
+ * `Field` is meant to hold without this stylesheet ever selecting outside
+ * its own `dx-field-*` namespace (scripts/check-dx-class-prefix.sh).
+ */
+.dx-field[data-orientation="horizontal"] > .dx-field-label,
+.dx-field[data-orientation="horizontal"] > input,
+.dx-field[data-orientation="horizontal"] > select,
+.dx-field[data-orientation="horizontal"] > button {
+  margin-top: 0.125rem;
+}
+
+.dx-field-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--dx-space-1);
+}
+
+.dx-field-description {
+  margin: 0;
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  line-height: 1.5;
+}
+
+.dx-field-error {
+  margin: 0;
+  color: var(--primary-error-color);
+  font-size: var(--dx-text-sm);
+  line-height: 1.5;
+}
+
+.dx-field[data-invalid="true"] .dx-field-label {
+  color: var(--primary-error-color);
+}
+
+.dx-field-separator {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dx-field-separator-label {
+  position: absolute;
+  padding: 0 var(--dx-space-2);
+  border-radius: var(--dx-radius-sm);
+  background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-xs);
+}

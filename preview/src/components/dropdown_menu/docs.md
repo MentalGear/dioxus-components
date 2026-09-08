@@ -26,3 +26,37 @@ DropdownMenu {
     }
 }
 ```
+
+## Nested submenus
+
+A `DropdownMenuContent` (or another submenu's own `DropdownMenuSubContent`)
+may nest a submenu with `DropdownMenuSub`/`DropdownMenuSubTrigger`/
+`DropdownMenuSubContent`/`DropdownMenuSubItem`, implementing the APG "Menu
+and Menubar" pattern's submenu contract (ArrowRight/Enter/Space opens and
+moves focus to the first item; Escape/ArrowLeft closes and returns focus to
+the sub-trigger; the parent menu stays open). A submenu may hold plain
+items but not a further nested submenu of its own (one level of nesting).
+
+```rust
+DropdownMenuContent {
+    DropdownMenuSub {
+        // The sub-trigger is itself an item of the enclosing menu, so it
+        // takes an `index` the same way `DropdownMenuItem` does.
+        DropdownMenuSubTrigger {
+            index: 0,
+            "More tools"
+        }
+        // Only rendered while the submenu is open.
+        DropdownMenuSubContent {
+            DropdownMenuSubItem {
+                index: 0,
+                value: "duplicate",
+                on_select: |value: String| {
+                    // Selecting a sub-item closes the entire menu tree,
+                    // not just this submenu.
+                },
+            }
+        }
+    }
+}
+```

@@ -1,0 +1,56 @@
+.dx-native-select-wrapper {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+}
+
+.dx-native-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--dx-space-2) var(--dx-space-8) var(--dx-space-2) var(--dx-space-3);
+  border: none;
+  border-radius: var(--dx-radius-lg);
+  appearance: none;
+  background: none;
+  background-color: var(--light, var(--primary-color)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
+  box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  color: var(--secondary-color-4);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--dx-text-sm);
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
+}
+
+.dx-native-select:hover:not(:disabled),
+.dx-native-select:focus-visible {
+  background: var(--light, var(--primary-color-4)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
+  color: var(--secondary-color-1);
+  outline: none;
+}
+
+.dx-native-select:focus-visible {
+  box-shadow: var(--dx-ring);
+}
+
+.dx-native-select:disabled {
+  color: var(--secondary-color-5);
+  cursor: not-allowed;
+  opacity: var(--dx-opacity-disabled);
+}
+
+.dx-native-select-icon {
+  position: absolute;
+  top: 50%;
+  right: var(--dx-space-3);
+  width: 1rem;
+  height: 1rem;
+  color: var(--secondary-color-5);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+@media (pointer: coarse) {
+  .dx-native-select {
+    font-size: var(--dx-text-base);
+  }
+}

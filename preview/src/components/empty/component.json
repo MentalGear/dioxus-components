@@ -1,0 +1,7 @@
+{
+  "name": "empty",
+  "description": "A placeholder for content that hasn't loaded, doesn't exist, or was filtered to nothing.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

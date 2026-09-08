@@ -45,22 +45,8 @@ test('test', async ({ page }) => {
   // Reopen the menu
   await menuElement.click();
   await expect(menuElement).toHaveAttribute('data-state', 'open');
-  // Clicking an item should close the menu. Scoped to the open menu
-  // specifically (rather than a bare page-wide `getByRole('menuitem', ...)`)
-  // because the preceding outside-click step above (`body` at (0, 0)) lands
-  // on the site's own top-left nav-brand link and triggers an unrelated,
-  // pre-existing SPA-navigation defect in `preview/src/main.rs`: the
-  // previous route's DOM (this exact DropdownMenu content included) is not
-  // unmounted when the client-side router navigates, so another page's own
-  // "Edit"-labeled control (e.g. a leaked Menubar/Navbar demo, both of which
-  // also use role="menuitem") can end up in the accessibility tree
-  // alongside this one, colliding on name+role. Filed as a fresh backlog
-  // candidate (found verifying `docs/backlog.md` row 24's fix) rather than
-  // fixed here -- out of scope for an ARIA-role migration.
-  await page
-    .locator('[role="menu"][data-state="open"]')
-    .getByRole('menuitem', { name: 'Edit' })
-    .click();
+  // Clicking an item should close the menu.
+  await page.getByRole('menuitem', { name: 'Edit' }).click();
   await expect(menuElement).toHaveAttribute('data-state', 'closed');
 });
 

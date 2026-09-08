@@ -1,0 +1,75 @@
+.dx-alert {
+  position: relative;
+  display: grid;
+  width: 100%;
+  align-items: start;
+  padding: var(--dx-space-4);
+  border-radius: var(--dx-radius-lg);
+  background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  color: var(--secondary-color-4);
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-1) var(--dx-space-3);
+  grid-template-columns: 1fr;
+}
+
+.dx-alert:has(> svg) {
+  column-gap: var(--dx-space-3);
+  grid-template-columns: var(--dx-space-4) 1fr;
+}
+
+.dx-alert > svg {
+  width: var(--dx-space-4);
+  height: var(--dx-space-4);
+  margin-top: 0.125rem;
+  color: currentcolor;
+}
+
+.dx-alert-title {
+  min-height: var(--dx-space-4);
+  color: var(--secondary-color-1);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  grid-column-start: 2;
+  line-height: 1;
+}
+
+.dx-alert:not(:has(> svg)) .dx-alert-title {
+  grid-column-start: 1;
+}
+
+.dx-alert-description {
+  display: grid;
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  grid-column-start: 2;
+  line-height: 1.5;
+}
+
+.dx-alert:not(:has(> svg)) .dx-alert-description {
+  grid-column-start: 1;
+}
+
+.dx-alert[data-style="destructive"] {
+  background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  box-shadow: inset 0 0 0 1px var(--primary-error-color);
+  color: var(--primary-error-color);
+}
+
+.dx-alert[data-style="destructive"] .dx-alert-title {
+  color: var(--primary-error-color);
+}
+
+.dx-alert[data-style="destructive"] .dx-alert-description {
+  /* --primary-error-color, not --secondary-error-color: the latter is #ef4444,
+     which is 3.76:1 on this alert's light background and fails the >= 4.5:1
+     rule this theme carries (docs/backlog.md row 39, checked by the axe
+     color-contrast scans). --primary-error-color (#dc2626) is 4.83:1 and is
+     already what the title above uses. Caught by alert.spec.ts's own axe pass
+     on this component's first run. */
+  color: var(--primary-error-color);
+}
+
+.dx-alert[data-style="destructive"] > svg {
+  color: var(--primary-error-color);
+}

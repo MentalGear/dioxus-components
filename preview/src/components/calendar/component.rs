@@ -150,7 +150,6 @@ pub fn Calendar(props: CalendarProps) -> Element {
     let month_count = props.month_count.max(1);
 
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         CalendarRoot {
             selected_date: props.selected_date,
             on_date_change: props.on_date_change,
@@ -177,7 +176,6 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
     let month_count = props.month_count.max(1);
 
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         RangeCalendarRoot {
             selected_range: props.selected_range,
             on_range_change: props.on_range_change,
@@ -199,6 +197,26 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
     }
 }
 
+// docs/backlog.md row 51: the stylesheet `Link` lives HERE, on the
+// `pub(crate)` root each of this module's real entry points funnels
+// through, not on `Calendar`/`RangeCalendar` above -- `date_picker`
+// (`../date_picker/component.rs`) composes `CalendarRoot`/
+// `RangeCalendarRoot` directly (`super::super::calendar::*`), bypassing
+// `Calendar`/`RangeCalendar` entirely, since `DatePickerCalendar`'s
+// `calendar: fn(T) -> Element` prop needs a bare component function to call,
+// not a wrapper that also takes a `month_count` prop. Before this fix the
+// Link sat only on `Calendar`/`RangeCalendar`, so that composition path
+// never rendered it and the calendar's CSS silently never reached
+// `/component/?name=date_picker&` -- root-caused by comparing `Calendar`'s
+// own route (styled) against `date_picker`'s composition of it (unstyled).
+// Putting it here instead -- matching `popover/component.rs`'s pattern of a
+// `Link` on every one of ITS composable entry points, not just its "main"
+// one -- means every path that ends up rendering the primitive (this
+// module's own `Calendar`/`RangeCalendar`, and any other themed component
+// that composes `CalendarRoot`/`RangeCalendarRoot` the way `date_picker`
+// does) gets the stylesheet for free, by construction; `document::Link`'s
+// `(href, rel)` dedup makes the now-redundant render from `Calendar`'s own
+// `document::Link` (removed above) unnecessary rather than merely harmless.
 #[component]
 pub(crate) fn CalendarRoot(props: calendar::CalendarProps) -> Element {
     let base = attributes!(div {
@@ -207,6 +225,7 @@ pub(crate) fn CalendarRoot(props: calendar::CalendarProps) -> Element {
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         calendar::Calendar {
             selected_date: props.selected_date,
             on_date_change: props.on_date_change,
@@ -226,6 +245,8 @@ pub(crate) fn CalendarRoot(props: calendar::CalendarProps) -> Element {
     }
 }
 
+// See the comment on `CalendarRoot` above -- identical reasoning, for the
+// range-calendar arm `date_picker::DateRangePickerCalendar` composes.
 #[component]
 pub(crate) fn RangeCalendarRoot(props: calendar::RangeCalendarProps) -> Element {
     let base = attributes!(div {
@@ -234,6 +255,7 @@ pub(crate) fn RangeCalendarRoot(props: calendar::RangeCalendarProps) -> Element 
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         calendar::RangeCalendar {
             selected_range: props.selected_range,
             on_range_change: props.on_range_change,

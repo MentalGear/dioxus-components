@@ -144,3 +144,51 @@
     var(--light, var(--primary-color-4));
   color: var(--secondary-color-1);
 }
+
+/* Nested submenu (docs/component-backlog.md row 68). `.dx-dropdown-menu-sub-trigger`
+   is layered on top of `.dx-dropdown-menu-item` (see `component.rs` --
+   both classes are always applied together), so it only needs to add
+   room for the trailing chevron icon and the "submenu is open" highlight;
+   every other item property (padding, hover/focus, disabled) is already
+   inherited. */
+.dx-dropdown-menu-sub-trigger {
+  justify-content: space-between;
+}
+
+/* The `ChevronRight` icon `component.rs` appends after the trigger's own
+   content -- a real (decorative, name-free) SVG icon element, the same
+   "submenu opens to the side" affordance `select/component.rs`'s
+   `SelectTrigger` uses `ChevronDown` for, not CSS-generated `content:`
+   text (which risks becoming part of the trigger's own accessible name --
+   see `component.rs`'s doc on this class for why that distinction
+   mattered here). */
+.dx-dropdown-menu-sub-trigger-icon {
+  flex-shrink: 0;
+  margin-left: var(--dx-space-2);
+  opacity: 0.7;
+}
+
+.dx-dropdown-menu-sub-trigger[data-state="open"] {
+  background: var(--dark, var(--primary-color-7))
+    var(--light, var(--primary-color-4));
+  color: var(--secondary-color-1);
+}
+
+/* `.dx-dropdown-menu-content`'s own `top: 100%; left: 0` fallback
+   positioning is right for a top-level menu opening *below* its trigger
+   button, but wrong for a submenu, which opens to the *side* of its
+   trigger item (`primitives/src/dropdown_menu.rs`'s
+   `DropdownMenuSubContentRendered` anchors `ContentSide::Right`). Two
+   classes (`.dx-dropdown-menu-content.dx-dropdown-menu-sub-content`, both
+   always applied together -- see `component.rs`) keep this override
+   deterministic regardless of declaration order, rather than relying on
+   this rule appearing later in the file. As with the top-level content,
+   this static rule is only what paints before `use_anchor_position_fallback`'s
+   JS measurement (or native CSS anchor positioning) takes over -- see that
+   component's own doc.
+   */
+.dx-dropdown-menu-content.dx-dropdown-menu-sub-content {
+  top: 0;
+  left: 100%;
+  margin-top: 0;
+}

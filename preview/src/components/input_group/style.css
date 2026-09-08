@@ -1,0 +1,62 @@
+.dx-input-group {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  border-radius: var(--dx-radius-lg);
+  background-color: var(--light, var(--primary-color)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
+  box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
+}
+
+.dx-input-group:has(.dx-input-group-control:focus-visible) {
+  background: var(--light, var(--primary-color-4)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
+  box-shadow: var(--dx-ring);
+}
+
+.dx-input-group .dx-input-group-control {
+  flex: 1 1 auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.dx-input-group .dx-input-group-control:hover:not(:disabled),
+.dx-input-group .dx-input-group-control:focus-visible {
+  background: none;
+  box-shadow: none;
+}
+
+.dx-input-group-addon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 var(--dx-space-2);
+  color: var(--secondary-color-5);
+  gap: var(--dx-space-1);
+}
+
+.dx-input-group-addon[data-align="start"] {
+  padding-inline-end: 0;
+}
+
+.dx-input-group-addon[data-align="end"] {
+  padding-inline-start: 0;
+}
+
+.dx-input-group-addon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* `button` element selector, not `Button`'s own `.dx-button` class -- see
+ * button_group/style.css's header comment for why. */
+.dx-input-group-addon button {
+  height: 1.5rem;
+  padding: 0 var(--dx-space-2);
+}
+
+.dx-input-group-text {
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+}

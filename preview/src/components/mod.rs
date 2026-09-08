@@ -36,12 +36,16 @@ pub fn category_of(name: &str) -> ComponentCategory {
     match name {
         "button" | "input" | "textarea" | "label" | "checkbox" | "switch" | "radio_group"
         | "toggle" | "toggle_group" | "select" | "slider" | "calendar" | "date_picker"
-        | "color_picker" | "form" => ComponentCategory::Forms,
+        | "color_picker" | "form" | "button_group" | "field" | "input_group" | "native_select" => {
+            ComponentCategory::Forms
+        }
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
-        | "dropdown_menu" => ComponentCategory::Navigation,
+        | "dropdown_menu" | "breadcrumb" => ComponentCategory::Navigation,
         "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
         | "top_layer" => ComponentCategory::Overlays,
-        "toast" | "progress" | "skeleton" | "badge" => ComponentCategory::Feedback,
+        "toast" | "progress" | "skeleton" | "badge" | "alert" | "empty" | "spinner" => {
+            ComponentCategory::Feedback
+        }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
         | "virtual_list" | "scroll_area" | "tag_group" => ComponentCategory::DataDisplay,
@@ -170,11 +174,14 @@ macro_rules! examples {
 
 examples!(
     accordion,
+    alert,
     alert_dialog,
     aspect_ratio,
     avatar,
     badge,
+    breadcrumb,
     button[size, icon],
+    button_group,
     calendar[simple, internationalized, range, multi_month, unavailable_dates],
     card,
     checkbox,
@@ -186,12 +193,17 @@ examples!(
     dialog,
     drag_and_drop_list[removable],
     dropdown_menu,
+    empty,
+    field,
     form,
     hover_card,
     input,
+    input_group,
     item[variant, size, image, group],
+    kbd,
     label,
     menubar,
+    native_select,
     navbar,
     pagination,
     popover,
@@ -204,6 +216,7 @@ examples!(
     sidebar(block)[floating, inset],
     skeleton,
     slider[dynamic_range, range],
+    spinner,
     switch,
     tabs,
     tag_group[multi, states],

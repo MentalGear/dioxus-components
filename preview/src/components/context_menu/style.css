@@ -102,3 +102,47 @@
   color: var(--light, var(--secondary-color-1))
     var(--dark, var(--secondary-color-4));
 }
+
+/* Nested submenu (docs/component-backlog.md row 68) -- mirrors
+   `../dropdown_menu/style.css`'s identical rules; see that file's comments
+   for the full rationale. `.dx-context-menu-sub-trigger` layers onto
+   `.dx-context-menu-item` (always applied together, see `component.rs`). */
+.dx-context-menu-sub-trigger {
+  justify-content: space-between;
+}
+
+/* `ChevronRight` icon element, appended after the trigger's own content by
+   `component.rs` -- see `../dropdown_menu/style.css`'s identical rule and
+   `component.rs`'s doc for why this is a real (decorative, name-free) SVG
+   icon rather than CSS-generated `content:` text. */
+.dx-context-menu-sub-trigger-icon {
+  flex-shrink: 0;
+  margin-left: var(--dx-space-2);
+  opacity: 0.7;
+}
+
+.dx-context-menu-sub-trigger[data-state="open"] {
+  background: var(--light, var(--primary-color-4))
+    var(--dark, var(--primary-color-7));
+  color: var(--light, var(--secondary-color-1))
+    var(--dark, var(--secondary-color-4));
+}
+
+/* Unlike `.dx-context-menu-content` (pinned to a raw click point via inline
+   `position: fixed; left/top` -- see `primitives/src/context_menu.rs`'s
+   `ContextMenuContentRendered` doc), this submenu's own content *is*
+   anchored to its trigger item, on the side (`ContentSide::Right`) --
+   `ContextMenuSubContentRendered` anchors it the same way
+   `DropdownMenuSubContentRendered` does. `position: absolute` (not
+   `fixed`) is the right static fallback here specifically because this
+   submenu is a normal in-flow descendant of the already `position: fixed`
+   root content, so an `absolute` box positions relative to that ancestor
+   -- exactly what "to the right of this trigger item" means before
+   `use_anchor_position_fallback`'s JS measurement (or native CSS anchor
+   positioning) takes over. */
+.dx-context-menu-content.dx-context-menu-sub-content {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin: 0;
+}

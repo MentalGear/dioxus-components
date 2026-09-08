@@ -540,6 +540,39 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 /// `Dialog`/`AlertDialog`/`Sheet` never takes the anchored-overlay path at
 /// all, so it never calls [`use_anchor_position_fallback`] -- putting this
 /// rule only there would leave every native-`<dialog>` consumer unfixed.
+///
+/// ## First-paint window (docs/backlog.md row 50 residue, closed)
+///
+/// Calling this from a `use_effect` at each hook above is a **best-effort
+/// early install** only -- exactly the same relationship
+/// [`ensure_anchor_positioning_styles`] has to
+/// [`use_anchor_position_fallback`]'s own measurement eval (see that
+/// function's own "Best-effort early install for repeat opens" comment). It
+/// is not, by itself, what makes the very first cold-load open correct: two
+/// *separate* `document::eval()` calls -- one dispatched from this
+/// function's own `use_effect`, another from a *different* effect's
+/// `document::eval()` that flips `showPopover()`/`showModal()` -- have no
+/// guaranteed relative ordering against each other from Rust's point of
+/// view, even when both effects are declared, in that order, in the same
+/// function. [`anchor_positioning_inject_js`]'s own doc found and fixed the
+/// identical defect class by execution (a fresh page load ran the
+/// *dependent* eval before the *injecting* one, despite matching
+/// declaration order) by prepending the injection statement directly into
+/// the dependent eval's own script, so both run as one synchronous JS
+/// program with no cross-eval ordering assumption left to make. This
+/// function's own three call sites had the same shape and, per
+/// docs/backlog.md row 50, the same residue in execution (a surface
+/// measured mid-window, twice across repeated runs of
+/// `top-layer-ink.spec.ts`) -- so [`TOP_LAYER_INK_STYLES_INJECT_JS`] is
+/// prepended the identical way, into the "signal -> browser" show scripts
+/// in [`use_popover_sync`], [`use_popover_shown_while_mounted`], and
+/// `lib.rs`'s `use_dialog_open_driver` (the same three exhaustive call
+/// sites listed above) -- see each one's own comment. This function and its
+/// `use_effect` call sites stay in place regardless: once genuinely
+/// installed (the common case -- most pages open more than one top-layer
+/// surface), every later prepend is a same-tick, JS-side
+/// `getElementById` no-op, cheaper than re-deriving whether it is needed
+/// from Rust.
 #[cfg(feature = "web")]
 pub(crate) fn ensure_top_layer_ink_styles() {
     if TOP_LAYER_INK_STYLES_INSTALLED.with(|installed| installed.replace(true)) {
@@ -551,10 +584,19 @@ pub(crate) fn ensure_top_layer_ink_styles() {
 
 /// The idempotent (JS-side `getElementById` guarded, so safe to run more
 /// than once) style-tag-injection script [`ensure_top_layer_ink_styles`]
-/// dispatches -- same two-guard shape as `anchor_positioning_inject_js`
-/// above and `toast.rs`'s `TOAST_BASE_STYLES_INJECT_JS`.
+/// dispatches on its own, and [`use_popover_sync`]/
+/// [`use_popover_shown_while_mounted`]/`lib.rs`'s `use_dialog_open_driver`
+/// each *also* prepend verbatim onto the front of their own "signal ->
+/// browser" show script -- same two-guard shape as
+/// `anchor_positioning_inject_js` above and `toast.rs`'s
+/// `TOAST_BASE_STYLES_INJECT_JS`, and the same prepend-don't-sequence
+/// reason [`anchor_positioning_inject_js`]'s own doc gives (see
+/// [`ensure_top_layer_ink_styles`]'s doc, "First-paint window," for the
+/// full account). `pub(crate)`, not private to this module, so `lib.rs`'s
+/// `use_dialog_open_driver` -- the third of this fix's three exhaustive
+/// call sites, and the only one outside this file -- can prepend it too.
 #[cfg(feature = "web")]
-const TOP_LAYER_INK_STYLES_INJECT_JS: &str = r#"
+pub(crate) const TOP_LAYER_INK_STYLES_INJECT_JS: &str = r#"
 if (!document.getElementById('dx-top-layer-ink-styles')) {
     const style = document.createElement('style');
     style.id = 'dx-top-layer-ink-styles';
@@ -729,8 +771,17 @@ pub(crate) fn use_popover_sync(
     use_effect(move || {
         let want_open = open.cloned();
         let id = id.clone();
+        // `inject` is prepended into this exact script, not left to the
+        // separate `use_effect(ensure_top_layer_ink_styles)` above --
+        // see `ensure_top_layer_ink_styles`'s doc, "First-paint window,"
+        // for why relying on that other effect's `document::eval()` having
+        // already run by the time *this* one calls `showPopover()` is not
+        // safe to assume, and why prepending (one synchronous script, not
+        // two separately-ordered ones) is what actually closes the gap.
+        let inject = TOP_LAYER_INK_STYLES_INJECT_JS;
         document::eval(&format!(
-            "const el = document.getElementById('{id}');
+            "{inject}
+            const el = document.getElementById('{id}');
             if (!el) return;
             const isOpen = el.matches(':popover-open');
             if ({want_open} && !isOpen) el.showPopover();
@@ -873,8 +924,14 @@ pub(crate) fn use_popover_shown_while_mounted(
             return;
         }
         let id = id.clone();
+        // See `use_popover_sync`'s matching comment / `ensure_top_layer_
+        // ink_styles`'s doc, "First-paint window": prepended into this
+        // exact script rather than left to the separate `use_effect(
+        // ensure_top_layer_ink_styles)` above, for the same reason.
+        let inject = TOP_LAYER_INK_STYLES_INJECT_JS;
         document::eval(&format!(
-            "const el = document.getElementById('{id}');
+            "{inject}
+            const el = document.getElementById('{id}');
             if (el && !el.matches(':popover-open')) el.showPopover();"
         ));
     });
@@ -944,9 +1001,17 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// if the primary placement would overflow the relevant viewport edge, it
 /// uses the flipped placement instead. This closes the "legacy engines get
 /// no flip at all" gap docs/backlog.md row 10 notes alongside the CSS
-/// addition. Resizing to fit stays out of scope (that remainder of Phase 5
-/// is still open) -- but see "Inline-axis shift (2026-09-03)" below for the
-/// one piece of shift this function *does* now do.
+/// addition. Resizing WIDTH to fit stays out of scope (a too-wide overlay
+/// is rare, and this crate's own themed listboxes/menus already cap their
+/// own width independently, e.g. `select/style.css`'s `max-width:
+/// calc(100vw - 2rem)`) -- but see "Inline-axis shift (2026-09-03)" below
+/// for the one piece of horizontal shift this function *does* now do, and
+/// "Vertical shift + size clamp (2026-09-04)" further below for the same
+/// treatment on the other axis, HEIGHT included this time: unlike width, a
+/// too-*tall* overlay is the ordinary case for this crate's own listboxes/
+/// menus (more options than a short viewport can hold), so resizing --
+/// capping height, with the content scrolling inside that cap -- is in
+/// scope there.
 ///
 /// ## Inline-axis shift (2026-09-03, user device report)
 ///
@@ -997,6 +1062,116 @@ pub(crate) fn use_popover_shown_while_mounted(
 /// always takes this exact fallback path regardless. `top-layer.spec.ts`
 /// Rule 12 is the regression oracle, reusing Rule 11's own no-anchor-engine
 /// simulation.
+///
+/// ## Vertical shift + size clamp (2026-09-04, `docs/backlog.md` row 10
+/// residual scope: "shift/size clamping")
+///
+/// The 2026-09-03 fix directly above closed the horizontal half of this gap
+/// only -- deliberately, matching the one user report that motivated it
+/// (iOS Safari, no CSS Anchor Positioning at all). Two related gaps remain
+/// on the other axis, closed together here, still mirroring this function's
+/// existing construction rather than adding a second positioning path:
+///
+/// 1. **Vertical position shift.** The identical bug class the 2026-09-03
+///    fix closed for the inline axis, mirrored onto the block axis: flip
+///    only ever swaps `side` to its own axis's opposite (the `opposite` map
+///    above), so a `side="left"`/`side="right"` placement's *vertical*
+///    position -- like a `side="top"`/`side="bottom"` placement's
+///    *horizontal* one -- comes entirely from `align`, computed once
+///    against the trigger in `place()` above, and was never checked against
+///    the viewport either. It also backstops a `side="top"`/`side="bottom"`
+///    placement itself: flip picks whichever of `primary`/`flipped` the
+///    existing `if`/`else if` ladder judges to fit *the axis it swaps*, but
+///    neither branch ever confirmed the *chosen* one actually lands
+///    on-screen -- only possible to miss when the content is taller than
+///    the room on both sides of the trigger, i.e. gap 2's own condition.
+///    Clamped into `[EDGE_MARGIN, vh - EDGE_MARGIN - ch]`, the same
+///    construction as the horizontal clamp above, `Math.max` for the
+///    identical reason (a viewport too short for the content at all -- the
+///    *top* edge wins here, matching "the left edge wins" for the
+///    horizontal case; gap 2 just below is what actually keeps that
+///    overflow from reaching the screen, unlike the horizontal case, which
+///    leaves it in place by design).
+///
+/// 2. **Size clamp.** Unlike width (resizing stays out of scope -- see the
+///    note on the flip-contract paragraph above, and this crate's own
+///    per-component width caps), a too-*tall* overlay is the ordinary case
+///    for every listbox/menu here (`Select`, `Combobox`, `DropdownMenu`,
+///    `Menubar`) once its option/item count outgrows a short viewport --
+///    simply letting it "run past the edge" the way the horizontal clamp
+///    does would mean losing access to every option below the fold with no
+///    way to reach it. So: when the content's own natural height (`ch`,
+///    already reflecting whatever `max-height` a component's own
+///    stylesheet already applies -- `combobox/style.css`'s
+///    `.dx-combobox-list` declares `max-height: 300px; overflow: hidden
+///    auto;` today, and `content.offsetHeight` is read *after* that CSS has
+///    already taken effect) exceeds the room gap 1's clamp just settled for
+///    (`vh - 2 * EDGE_MARGIN`, `Math.max(0, ...)`-floored for a viewport
+///    shorter than `2 * EDGE_MARGIN` itself), this caps `content.style.
+///    maxHeight` there and sets `overflowY: 'auto'` so the overlay's own
+///    content scrolls instead of continuing to overflow the viewport edge.
+///
+///    Never fights a component's own sizing (this module's own governing
+///    rule -- see [`ensure_anchor_positioning_styles`]'s doc): `ch` already
+///    reflects any smaller cap a component's own stylesheet imposed, so
+///    this branch only ever engages -- and only ever shrinks further --
+///    when even that self-imposed cap still doesn't fit the room this
+///    specific open actually has; a component whose own sizing already fits
+///    never takes this branch at all. `box-sizing: border-box` is forced
+///    alongside `maxHeight`, for a reason confirmed by execution against
+///    `top-layer.spec.ts` Rule 15's own fixture content (which, it turned
+///    out, carries no `.dx-popover-content` styling at all on that page --
+///    a raw, unthemed `primitives::popover::PopoverContent`): `ch` is
+///    `content.offsetHeight`, always the *border-box* height regardless of
+///    the element's own `box-sizing`, but `max-height` the CSS property is
+///    defined relative to `box-sizing` -- under the initial `content-box`
+///    value, a `max-height` caps only the content box, and padding/border
+///    then add back on *top* of that for the rendered `offsetHeight`,
+///    silently under-clamping by however much padding/border the element
+///    happens to carry (measured: ~14px past `availableHeight` on the
+///    unstyled Rule 15 fixture, from the UA `[popover]` stylesheet's own
+///    default padding/border). See the `reposition()` code's own comment on
+///    this line for the full account, including why this is a real gap for
+///    any themed consumer that doesn't independently declare `border-box`
+///    itself (or whose declaration doesn't reach the element), not an
+///    artifact of that one fixture. Set as a plain inline style, unlike
+///    the width contract (`--dx-anchor-width`, `docs/backlog.md` row 47,
+///    below) which publishes a custom property instead -- deliberately, not
+///    an inconsistency: an inline style always wins the cascade over *any*
+///    author-stylesheet declaration regardless of specificity (CSS
+///    Cascading and Inheritance's origin/importance ordering), which is
+///    required here and not merely convenient. `select/style.css`'s
+///    `.dx-select-list` declares `overflow: visible` today, by its own
+///    comment "never scrolls (no max-height here) ... collision-aware ...
+///    positioning belongs upstream" -- this *is* that upstream, and a real
+///    class selector this crate's zero-specificity `:where(...)` engine
+///    convention (`ensure_anchor_positioning_styles`'s doc) could never
+///    out-specificity-fight without abandoning that convention for every
+///    anchored overlay, not just this one -- exactly why the width
+///    contract's own opt-in-via-`var()` approach was not reused here: this
+///    clamp must apply whether or not a component asked for it, so it needs
+///    the one thing in the cascade nothing but `!important` can beat.
+///    Cleared, not merely left alone, once no longer needed: this function
+///    re-runs on every tracked scroll/resize/`visualViewport` event for the
+///    life of the open overlay ("Scroll/resize tracking" above), and a
+///    viewport that grows back (an iOS keyboard closing, a window
+///    un-shrinking) must let a component's own sizing govern again rather
+///    than staying pinned to a stale cap from a smaller moment.
+///
+/// Both gaps stay JS-fallback-only, deliberately, for the same reason the
+/// 2026-09-03 horizontal fix does (see that section's own reasoning): a
+/// genuinely CSS-Anchor-Positioning-conforming engine (this sandbox's
+/// Chromium among them) has the identical latent gap for *position* --
+/// `position-try-fallbacks` declares no shift-along-an-axis primitive
+/// either engine could use, nothing here is Firefox/WebKit-specific -- and
+/// its `@supports` block gains no size-clamp coverage from CSS at all
+/// either (no W3C-shipped primitive shrinks an anchored box to fit the way
+/// Floating UI's `size()` middleware does in userland JS). That is a real,
+/// acknowledged residual on the conforming engine, not something this round
+/// closes: it stays scoped to the JS-fallback gap `docs/backlog.md` row 10
+/// explicitly names, matching gap 1's own horizontal precedent rather than
+/// an unrequested rewrite of a working engine's untouched code path.
+/// Regression oracle: `top-layer.spec.ts` Rule 15.
 ///
 /// ## Anchor width contract (2026-09-04, `docs/backlog.md` row 47)
 ///
@@ -1463,6 +1638,113 @@ pub(crate) fn use_anchor_position_fallback(
                     // left edge wins and the content simply runs past the
                     // right edge rather than past both.
                     target = {{ top: target.top, left: Math.max(EDGE_MARGIN, vw - EDGE_MARGIN - cw) }};
+                }}
+
+                // 2026-09-04 vertical shift: mirrors the horizontal clamp
+                // just above onto the block axis -- see this function's
+                // doc, "Vertical shift + size clamp (2026-09-04)", gap 1,
+                // for the full reasoning (the same align-driven bug the
+                // 2026-09-03 fix closed for side="top"/"bottom", now closed
+                // for side="left"/"right"'s own vertical position, and a
+                // backstop for a side="top"/"bottom" placement whose
+                // flip-picked candidate still doesn't fit).
+                if (target.top < EDGE_MARGIN) {{
+                    target = {{ top: EDGE_MARGIN, left: target.left }};
+                }} else if (target.top + ch > vh - EDGE_MARGIN) {{
+                    // Same `Math.max` reasoning as the horizontal clamp's
+                    // own comment above: on a viewport too short for the
+                    // content at all, the top edge wins here rather than
+                    // the two branches disagreeing about which edge to
+                    // honor -- gap 2 (size clamp) right below is what
+                    // actually prevents the resulting overflow from
+                    // reaching the screen at all, unlike the horizontal
+                    // case, which leaves that overflow in place by design
+                    // (see the flip-contract paragraph's note on why width
+                    // stays out of scope while height doesn't).
+                    target = {{ top: Math.max(EDGE_MARGIN, vh - EDGE_MARGIN - ch), left: target.left }};
+                }}
+
+                // 2026-09-04 size clamp: gap 2 of the same doc section --
+                // when the content's own natural height still doesn't fit
+                // the full viewport (minus both edge margins) even after
+                // the clamp just above already gave it every pixel of
+                // vertical room this viewport has, shifting further cannot
+                // help; only shrinking the box -- and letting its own
+                // content scroll -- can. `Math.max(0, ...)` floors this at
+                // zero rather than a negative height on a viewport shorter
+                // than `2 * EDGE_MARGIN` itself.
+                const availableHeight = Math.max(0, vh - 2 * EDGE_MARGIN);
+                if (ch > availableHeight) {{
+                    // `box-sizing: border-box` is forced here too, alongside
+                    // `maxHeight` -- not merely tidy, required for the clamp
+                    // to mean what this function's own math assumes it means.
+                    // `ch` above is `content.offsetHeight`, which the
+                    // platform always reports as the *border box* height
+                    // regardless of the `box-sizing` property (a stable,
+                    // box-sizing-independent fact); `availableHeight` is
+                    // sized to match that same border-box quantity (compared
+                    // directly against `ch` on the line above, and against
+                    // it again in the vertical-shift clamp just above this
+                    // one). But `max-height` the CSS property is defined
+                    // *relative to `box-sizing`* -- under the initial
+                    // `content-box` value (never itself overridden by this
+                    // clamp, unlike this repo's few components that opt into
+                    // `border-box` in their own stylesheet, e.g.
+                    // `popover/style.css`'s `.dx-popover-content`), a
+                    // `max-height` caps only the content box, and the
+                    // element's padding and border then add on *top* of that
+                    // cap for its rendered/offset height -- so writing
+                    // `availableHeight` straight into `max-height` without
+                    // also pinning `box-sizing` under-clamps `ch` by however
+                    // much padding/border the element happens to carry,
+                    // silently reopening this same gap depending on box
+                    // model. Confirmed by execution, not merely reasoned:
+                    // `top-layer.spec.ts` Rule 15's own fixture content
+                    // (`stack-popover-content`) carries no `.dx-popover-content`
+                    // rule at all -- it renders through this crate's raw
+                    // `primitives::popover::PopoverContent` with no themed
+                    // class wired up on that page, so it measured the
+                    // browser's own UA `[popover]` padding/border (~14px
+                    // combined top+bottom in this sandbox's Chromium) with
+                    // `box-sizing` at its `content-box` initial value the
+                    // whole time -- `offsetHeight` landed 14px past
+                    // `availableHeight` before this fix, a real, measured
+                    // instance of the exact defect this paragraph describes,
+                    // not a rig artifact: any themed consumer that doesn't
+                    // separately declare `box-sizing: border-box` on its own
+                    // content (or whose declaration doesn't reach the
+                    // element, the same "component CSS didn't reach this
+                    // element" class of gap this module's own `:where(...)`
+                    // engine-stylesheet doc already documents) would hit this
+                    // identically for real. Forcing it here -- an inline
+                    // style, so it always wins the cascade over whatever the
+                    // component's own stylesheet does or doesn't declare,
+                    // the identical reasoning `maxHeight` itself is already
+                    // set this way for (see this doc section's own
+                    // "Never fights a component's own sizing" paragraph) --
+                    // makes the clamp correct by construction, independent
+                    // of any component's box-sizing choice, rather than
+                    // correct only for the subset of consumers that happen
+                    // to already declare `border-box` themselves. `border-box`
+                    // changes nothing about how padding/border are drawn,
+                    // only how the `height`/`max-height` properties are
+                    // measured against them, so this has no other visual
+                    // effect.
+                    content.style.boxSizing = 'border-box';
+                    content.style.maxHeight = availableHeight + 'px';
+                    content.style.overflowY = 'auto';
+                }} else {{
+                    // Cleared, not left alone: this re-runs on every
+                    // tracked scroll/resize/visualViewport event for the
+                    // life of the open overlay, and a viewport that grows
+                    // back (an iOS keyboard closing, a window
+                    // un-shrinking) must let a component's own sizing
+                    // govern again rather than staying pinned to a stale
+                    // cap from a smaller moment -- `boxSizing` included, the
+                    // same reasoning as `maxHeight`/`overflowY` just below.
+                    content.style.maxHeight = '';
+                    content.style.overflowY = '';
+                    content.style.boxSizing = '';
                 }}
 
                 content.style.position = 'fixed';

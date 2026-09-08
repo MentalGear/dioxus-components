@@ -1,0 +1,14 @@
+{
+  "name": "field",
+  "description": "Lays out a label, control, and description/error text together for a form field.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["label", "separator"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

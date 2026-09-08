@@ -1,0 +1,13 @@
+{
+  "name": "breadcrumb",
+  "description": "A trail of links showing the current page's place in a hierarchy.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
