@@ -1,0 +1,14 @@
+{
+  "name": "button_group",
+  "description": "Groups a row (or column) of buttons so their borders merge into one control.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["separator"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

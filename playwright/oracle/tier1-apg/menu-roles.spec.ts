@@ -220,7 +220,10 @@ test.describe("APG Menu Button pattern — DropdownMenu", () => {
         '"option"/aria-selected contract never applied here.',
     ).toBeVisible();
     const count = await items.count();
-    expect(count, "this demo has 4 items (Edit/Undo/Duplicate/Delete)").toBe(4);
+    expect(
+      count,
+      "this demo has 5 items: Edit/Undo/Duplicate/Delete plus the 'More tools' sub-trigger, which is itself a menuitem per APG",
+    ).toBe(5);
     for (const item of await items.all()) {
       expect(
         await item.getAttribute("aria-selected"),
@@ -255,7 +258,10 @@ test.describe("APG Menu pattern (context-menu invocation) — ContextMenu", () =
     await expect(menu).toHaveAttribute("data-state", "open");
 
     const items = page.getByRole("menuitem");
-    expect(await items.count(), "this demo has 4 items").toBe(4);
+    expect(
+      await items.count(),
+      "this demo has 5 items: 4 plus the 'More tools' sub-trigger, itself a menuitem",
+    ).toBe(5);
     for (const item of await items.all()) {
       expect(
         await item.getAttribute("aria-selected"),

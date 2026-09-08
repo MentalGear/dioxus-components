@@ -1,0 +1,13 @@
+{
+  "name": "native_select",
+  "description": "A styled native <select>, for when the platform's own picker is preferable to a custom listbox.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

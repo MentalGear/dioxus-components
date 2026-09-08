@@ -1,0 +1,7 @@
+{
+  "name": "kbd",
+  "description": "Displays a keyboard key or shortcut.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

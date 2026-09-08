@@ -1,0 +1,14 @@
+{
+  "name": "input_group",
+  "description": "Wraps an input with leading/trailing icons, buttons, or static text inside one bordered control.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["input"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

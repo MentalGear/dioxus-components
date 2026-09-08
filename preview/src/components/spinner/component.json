@@ -1,0 +1,13 @@
+{
+  "name": "spinner",
+  "description": "A continuously rotating loading indicator.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
