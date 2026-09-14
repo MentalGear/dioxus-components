@@ -751,11 +751,24 @@ pub struct CommandDialogProps {
 ///
 /// ## Example
 ///
+/// Whatever the caller composes inside [`CommandDialog`] should include a
+/// [`crate::dialog::DialogTitle`] -- [`crate::dialog::DialogRoot`] always
+/// wires the dialog's `aria-labelledby` to a `DialogTitle` id (see
+/// `dialog.rs`'s `dialog_labelledby`) whether or not one is rendered, so
+/// omitting it leaves a broken `aria-labelledby` reference (an
+/// `aria-dialog-name` a11y violation) rather than simply an unnamed
+/// dialog. A command palette conventionally has no *visible* heading
+/// above its search input, so a themed layer would typically render this
+/// visually hidden (e.g. an `sr-only` class), the same way every other
+/// `*Dialog`-family consumer in this repo supplies one -- see the
+/// `preview` crate's `command`/`dialog`/`sidebar` demos.
+///
 /// ```rust
 /// use dioxus::prelude::*;
 /// use dioxus_primitives::command::{
 ///     Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
 /// };
+/// use dioxus_primitives::dialog::DialogTitle;
 ///
 /// #[component]
 /// fn Demo() -> Element {
@@ -765,6 +778,7 @@ pub struct CommandDialogProps {
 ///     rsx! {
 ///         button { onclick: move |_| open.set(true), "Open Command Palette" }
 ///         CommandDialog { open: open(), on_open_change: move |v| open.set(v),
+///             DialogTitle { "Command Palette" }
 ///             Command::<String> {
 ///                 query: Some(query()),
 ///                 on_query_change: move |next| query.set(next),

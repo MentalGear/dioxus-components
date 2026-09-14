@@ -1,3 +1,29 @@
+/* Visually-hidden accessible name for `CommandDialog`. A command palette
+ * conventionally shows no visible heading above its search input (unlike
+ * `Dialog`/`AlertDialog`, whose demos always render a *visible*
+ * `DialogTitle`/`AlertDialogTitle`) -- but `dialog.rs`'s `DialogRoot`
+ * always wires the dialog's `aria-labelledby` to a `DialogTitle` id
+ * regardless (see `dialog.rs`'s `dialog_labelledby`), so an accessible
+ * name is still required, just not a sighted one. Sidebar's mobile `Sheet`
+ * (`sidebar/style.css`'s `.dx-sidebar-sr-only`) already solves this exact
+ * "needs a real title element, not a visible heading" shape for the same
+ * reason -- this is that same rule, copied under this component's own
+ * namespace rather than shared, for the same `#[css_module]`-hash-removed
+ * reason `.dx-sidebar-sr-only`'s own header comment gives (docs/backlog.md
+ * row 32). TODO(row 31a): collapses into one shared `dx-sr-only` utility
+ * once that lands. */
+.dx-command-sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Backdrop -- mirrors ../dialog/style.css's `.dx-dialog-backdrop` shape
  * (fixed, full-viewport, dimmed, fade in/out with the animated-open hold),
  * under its own `dx-command-dialog-*` namespace (docs/backlog.md row 32)
