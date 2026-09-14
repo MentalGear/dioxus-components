@@ -3,6 +3,7 @@ use crate::components::kbd::component::{Kbd, KbdGroup};
 
 use super::super::component::{Command, CommandDialog, CommandEmpty, CommandGroup, CommandGroupLabel, CommandItem};
 use dioxus::prelude::*;
+use dioxus_primitives::dialog::DialogTitle;
 
 // docs/backlog.md row 32: no `#[css_module]` of its own here, and no
 // `document::Link` needed either -- the `CommandDialog`/`Command` themed
@@ -41,6 +42,16 @@ pub fn Demo() -> Element {
                     query.set(String::new());
                 }
             },
+            // `DialogRoot` always wires the dialog's `aria-labelledby` to a
+            // `DialogTitle` id (dialog.rs), so every `*Dialog`-family demo
+            // in this repo renders one -- see `dialog`/`alert_dialog`'s own
+            // demos. A command palette conventionally has no *visible*
+            // heading above its search input, so this one is visually
+            // hidden instead of omitted, the same "real title element, not
+            // a sighted heading" shape Sidebar's mobile `Sheet` already
+            // uses for its own `SheetTitle` (see `style.css`'s
+            // `.dx-command-sr-only`).
+            DialogTitle { class: "dx-command-sr-only", "Command Palette" }
             Command::<String> {
                 query: Some(query()),
                 on_query_change: move |next| query.set(next),
