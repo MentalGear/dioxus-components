@@ -14,6 +14,11 @@ name: Pages
 # this) and may be dispatched manually.
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to publish the latest successful Web build from"
+        required: false
+        default: main
   workflow_run:
     workflows: ["Web"]
     types: [completed]
@@ -37,18 +42,23 @@ jobs:
       pages-url-base: https://dioxuslabs.github.io
 
   # Manual path while automatic CI is off: publish the newest successful
-  # Web build on main (dispatched builds included) straight to gh-pages.
+  # Web build on the chosen branch (default main; dispatched builds
+  # included) straight to gh-pages. Pass `branch` to publish a non-main
+  # branch's latest successful Web run instead — the workflow file only
+  # needs to exist on whatever ref you dispatch *this* workflow against,
+  # the `branch` input is independent and just scopes the Web-run lookup.
   publish-manual:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Download latest successful Web artifact from main
+      - name: Download latest successful Web artifact from the chosen branch
         env:
           GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch || 'main' }}
         run: |
           set -euo pipefail
-          run_id=$(gh api "repos/${{ github.repository }}/actions/workflows/web.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')
+          run_id=$(gh api "repos/${{ github.repository }}/actions/workflows/web.yml/runs?branch=${BRANCH}&status=success&per_page=1" --jq '.workflow_runs[0].id')
           test -n "$run_id"
           echo "Publishing Web run $run_id"
           gh run download "$run_id" -R "${{ github.repository }}" -D artifact
@@ -60,6 +70,7 @@ jobs:
       - name: Push site to gh-pages
         env:
           GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch || 'main' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" pages
@@ -69,5 +80,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Deploy site from latest Web build (manual dispatch)" || echo "nothing to deploy"
+          git commit -m "Deploy site from latest Web build on ${BRANCH} (manual dispatch)" || echo "nothing to deploy"
           git push origin gh-pages
