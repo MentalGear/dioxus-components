@@ -20,7 +20,7 @@ The table below is ranked by take-order already; this block is a **recommendatio
 
 4. **The three-band menu extraction from row 53** — the open-index container, the content lifecycle/positioning pipeline, and the trigger id-plumbing, per that row's scoped recommendation; separately, the Menubar-refocuses-on-Escape-but-Navbar-doesn't divergence row 53 flagged is worth its own look before any shared extraction assumes it away.
 5. **Row 10's remaining point-anchor clamp** (`ContextMenu`, 5.2) — the one piece of the Phase 5 residual that didn't land this round, now that the vertical/size clamp is done.
-6. **The cheap primitives wave** — Command, then Input OTP, then Drawer/Navigation Menu/Resizable, per the re-rated effort table in [`component-backlog.md`](./component-backlog.md).
+6. **The cheap primitives wave** — **Input OTP landed 2026-09-14** (`docs/component-backlog.md`'s own row has the full account — original composition on `Checkbox`'s `BubbleInput` *shape*, not a port; upstream PR #255 re-confirmed still draft/blocked). Command, Drawer, Navigation Menu, Resizable remain next in this wave, per the re-rated effort table in [`component-backlog.md`](./component-backlog.md).
 7. **CI reactivation items** — rows 4, 22, 33, whenever the user lifts the CI freeze. These are **user-gated, not sequenced**: they don't wait their turn behind 4–6, they wait on a decision outside this ranking entirely, and can land whenever that decision changes regardless of where the rest of this list stands.
 
 Row numbers above are not renumbered — this is a reading order layered on the table, not a new ranking of it.

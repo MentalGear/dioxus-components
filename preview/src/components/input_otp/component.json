@@ -1,0 +1,13 @@
+{
+  "name": "input_otp",
+  "description": "A one-time-passcode entry control: single-character boxes backed by one real input.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
