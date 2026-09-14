@@ -32,6 +32,7 @@ pub mod dropdown_menu;
 pub mod hover_card;
 pub mod label;
 mod listbox;
+mod menu_root;
 mod menu_semantics;
 mod menu_sub;
 pub mod menubar;

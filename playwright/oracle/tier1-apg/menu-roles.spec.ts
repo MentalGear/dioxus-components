@@ -252,10 +252,20 @@ test.describe("APG Menu pattern (context-menu invocation) — ContextMenu", () =
   test('popup is role="menu", every item is role="menuitem", none carries aria-selected', async ({
     page,
   }) => {
-    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    const trigger = page.getByRole("button", { name: "right click here" });
+    await trigger.click({ button: "right" });
 
     const menu = page.getByRole("menu");
     await expect(menu).toHaveAttribute("data-state", "open");
+    // docs/backlog.md row 53: `ContextMenuContentRendered`'s aria-labelledby
+    // now comes from the shared `menu_root::content_labelledby_attributes`
+    // helper (same construction as DropdownMenu's identical assertion
+    // above) -- asserted here so a future drift between the two hosts'
+    // shared plumbing shows up as a red test, not a silent divergence.
+    await expect(menu, "popup's aria-labelledby resolves to the trigger's id").toHaveAttribute(
+      "aria-labelledby",
+      (await trigger.getAttribute("id")) ?? "",
+    );
 
     const items = page.getByRole("menuitem");
     expect(
@@ -291,6 +301,15 @@ test.describe("APG Menu and Menubar pattern — Menubar submenus", () => {
       .filter({ has: page.getByRole("menuitem", { name: "New" }) })
       .last();
     await expect(fileMenu).toHaveAttribute("data-state", "open");
+    // docs/backlog.md row 53: `MenubarContentRendered`'s aria-labelledby
+    // now comes from the shared `menu_root::content_labelledby_attributes`
+    // helper too (same construction as DropdownMenu's/ContextMenu's
+    // identical assertions above) -- asserted here so a future drift
+    // between the three hosts' shared plumbing shows up as a red test.
+    await expect(
+      fileMenu,
+      "submenu's aria-labelledby resolves to the trigger's id",
+    ).toHaveAttribute("aria-labelledby", (await fileTrigger.getAttribute("id")) ?? "");
 
     const items = fileMenu.getByRole("menuitem");
     expect(await items.count(), "File submenu has 3 items (New/Open/Save)").toBe(3);
