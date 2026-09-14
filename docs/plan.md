@@ -79,7 +79,7 @@ No overlay did any as of Phase 4. Placement was static CSS keyed off `data-side`
 | # | Item | Note | Status |
 |---|---|---|---|
 | 5.1 | **Dependency decision** — `sr floating.rs` (269 ln, external crates) vs `dq`'s vendored port (18 files, 3,262 ln) | Superseded for FLIP by the CSS-native `position-try-fallbacks` approach above; the dependency question survives only if shift/size clamping ends up needing a JS collision-detection library | **FLIP done** (PR #17); shift/size clamping **not started** |
-| 5.2 | `ContextMenu` viewport clamping | Neither fork covers it; **not solvable by CSS anchors** — `ContextMenu` is positioned at click coordinates, needs the virtual-anchor JS path | **Not started** — `backlog.md` row 10 |
+| 5.2 | `ContextMenu` viewport clamping | Neither fork covers it; **not solvable by CSS anchors** — `ContextMenu` is positioned at click coordinates, needs the virtual-anchor JS path | **Landed 2026-09-14** — `top_layer::use_point_anchor_clamp`, a small parallel hook (not a branch inside `use_anchor_position_fallback`); see `backlog.md` row 10's 2026-09-14 addendum for the full account |
 | 5.3 | Keep the CSS clamp on `fix/preview-a11y-ux` as defence-in-depth | Costs nothing; still helps non-wasm targets | **Not started** — that branch is still unmerged (verified: not an ancestor of `main`) |
 
 ## Phase 6 — Deferred but real

@@ -58,6 +58,97 @@ test('menu lands at the tap coordinates on touch long-press', async ({ page }) =
   expect(Math.abs(menuBox.y - tapY)).toBeLessThan(2);
 });
 
+// docs/backlog.md row 10, item 5.2 ("ContextMenu viewport clamping"): unlike
+// every anchored overlay in this crate (Select/Combobox/DropdownMenu/
+// Menubar/etc, whose shift/size clamp against the viewport is covered by
+// `playwright/oracle/tier2-html/top-layer.spec.ts`'s rules 11-15), that
+// file's own header doc explicitly disclaims this exact case -- ContextMenu
+// opens at a raw click point with no anchor element for
+// `use_anchor_position_fallback` to key off of, so its own regression
+// coverage lives here instead, alongside this file's other point-anchor
+// tests, rather than in that anchor-keyed spec. Both of `ContextMenuTrigger`'s
+// two `position.set(...)` call sites (the native `contextmenu` mouse handler,
+// and the manual long-press timer for touch/pen) are exercised below, using
+// the exact same synthetic-event technique the "menu lands at the tap
+// coordinates" test above already uses to control click coordinates
+// independent of the trigger element's own on-screen position.
+test('clamps the menu into the viewport for a mouse right-click near a corner', async ({ page }) => {
+  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  const trigger = page.getByRole('button', { name: 'right click here' });
+  const contextMenu = page.getByRole('menu');
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport size');
+
+  // A synthetic `contextmenu` event dispatched directly on the trigger
+  // reaches `ContextMenuTrigger`'s `oncontextmenu` handler exactly like a
+  // real right-click would, with `clientX`/`clientY` set to whatever this
+  // test wants regardless of where the trigger itself actually renders --
+  // here, a couple of pixels inside the viewport's bottom-right corner, far
+  // enough into the corner that an unclamped menu of any reasonable size
+  // would overflow both edges.
+  const x = viewport.width - 2;
+  const y = viewport.height - 2;
+  await trigger.evaluate((el, { x, y }) => {
+    el.dispatchEvent(new MouseEvent('contextmenu', {
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, { x, y });
+
+  await expect(contextMenu).toHaveAttribute('data-state', 'open');
+  const box = await contextMenu.boundingBox();
+  if (!box) throw new Error('menu has no bounding box');
+
+  // EDGE_MARGIN (top_layer.rs's `use_point_anchor_clamp`) is 4px; allow 1px
+  // of rounding slack on each side of the assertion.
+  const EDGE_MARGIN = 4;
+  expect(box.x).toBeGreaterThanOrEqual(EDGE_MARGIN - 1);
+  expect(box.y).toBeGreaterThanOrEqual(EDGE_MARGIN - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - EDGE_MARGIN + 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - EDGE_MARGIN + 1);
+});
+
+test('clamps the menu into the viewport for a touch long-press near a corner', async ({ page }) => {
+  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  const trigger = page.getByRole('button', { name: 'right click here' });
+  const contextMenu = page.getByRole('menu');
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport size');
+
+  // Same technique as "menu lands at the tap coordinates" above, but
+  // pointed at the top-left corner instead -- the long-press timer fires
+  // ~500ms after this `pointerdown`, with no `pointerup` needed (see
+  // `context_menu.rs`'s `ContextMenuTrigger::handle_pointer_down`).
+  const x = 2;
+  const y = 2;
+  const pointerId = 8181;
+  await trigger.evaluate((el, { x, y, pointerId }) => {
+    el.dispatchEvent(new PointerEvent('pointerdown', {
+      pointerId,
+      pointerType: 'touch',
+      isPrimary: true,
+      clientX: x,
+      clientY: y,
+      button: 0,
+      buttons: 1,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, { x, y, pointerId });
+
+  await expect(contextMenu).toHaveAttribute('data-state', 'open');
+  const box = await contextMenu.boundingBox();
+  if (!box) throw new Error('menu has no bounding box');
+
+  const EDGE_MARGIN = 4;
+  expect(box.x).toBeGreaterThanOrEqual(EDGE_MARGIN - 1);
+  expect(box.y).toBeGreaterThanOrEqual(EDGE_MARGIN - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - EDGE_MARGIN + 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - EDGE_MARGIN + 1);
+});
+
 
 test('touch long-press opens the context menu', async ({ page }) => {
   // iOS Safari does not fire `contextmenu` on long press, so the menu must

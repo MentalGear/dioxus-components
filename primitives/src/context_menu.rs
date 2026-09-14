@@ -631,6 +631,32 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
 /// `use_outside_dismiss`/the root `Escape` handler below stay the *only*
 /// dismissal path, unchanged from pre-migration -- exactly per this
 /// slice's instruction to keep them.
+///
+/// ## Viewport clamping (`docs/backlog.md` row 10, item 5.2)
+///
+/// The click/long-press coordinates this content is positioned at
+/// (`ContextMenuCtx::position`, set by `ContextMenuTrigger`'s mouse and
+/// touch handlers) are never clamped at the point they're captured -- a
+/// right-click or long-press near a viewport edge places this content's
+/// `left`/`top` off-screen with nothing to correct it. Every *other*
+/// overlay in this crate gets exactly this kind of correction from
+/// `top_layer::use_anchor_position_fallback`'s shift/size clamp
+/// (`docs/backlog.md` row 10's own residual scope), but that function is
+/// keyed on an anchor element -- it resolves a trigger via
+/// `document.querySelector('[style*="anchor-name: ..."]')` and every one of
+/// its flip/shift/size-clamp branches reasons in terms of that trigger's
+/// rect. This content has no such element (see the `manual`-vs-`auto`
+/// section above: no `anchor-name` is ever wired up for it), so that path
+/// is structurally unreachable here -- not a gap in that function, a
+/// different shape of overlay entirely. `top_layer::use_point_anchor_clamp`
+/// (called below, right after `use_popover_sync`) is the "virtual-anchor"
+/// construction `docs/backlog.md` row 10 calls out for exactly this case:
+/// it measures this content's own rendered size once it's promoted to the
+/// top layer and clamps the raw `(x, y)` point into the viewport with the
+/// same `EDGE_MARGIN`/max-height-clamp semantics, rather than an anchor
+/// rect. See that function's own doc for why it is a small, parallel
+/// script rather than a branch threaded through
+/// `use_anchor_position_fallback` itself.
 #[cfg(feature = "web")]
 #[component]
 fn ContextMenuContentRendered(
@@ -664,6 +690,16 @@ fn ContextMenuContentRendered(
             ctx.set_open.call(is_open);
         }),
     );
+
+    // docs/backlog.md row 10, item 5.2: this content has no anchor element
+    // for `use_anchor_position_fallback` to key off of (see this
+    // component's own doc above) -- clamp the raw `(x, y)` click point into
+    // the viewport instead, the "virtual-anchor" construction that row
+    // calls for. Must run after `use_popover_sync`'s own effect just above
+    // (same ordering requirement `use_anchor_position_fallback` documents
+    // for itself at its own call sites), so the content is already promoted
+    // to the top layer and has a real rendered size to measure.
+    crate::top_layer::use_point_anchor_clamp(id.clone(), x, y, open);
 
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
