@@ -157,7 +157,39 @@ pub fn Navbar(props: NavbarProps) -> Element {
                 },
                 onkeydown: move |event: Event<KeyboardData>| {
                     match event.key() {
-                        Key::Escape => ctx.set_open_nav.call(None),
+                        Key::Escape => {
+                            // docs/backlog.md row 53's own Escape-refocus
+                            // finding: root-caused as a genuine oversight,
+                            // not a deliberate hover-model exemption --
+                            // `Navbar` fully supports keyboard-driven
+                            // opening (`NavbarNav`'s ArrowDown/ArrowUp move
+                            // focus into the open content exactly the way
+                            // `MenubarMenu`'s do), so it needs the same
+                            // "return focus to the trigger the open menu
+                            // belongs to" contract `MenubarMenu`'s own
+                            // Escape arm already implements
+                            // (`menubar.rs`). Read the open index BEFORE
+                            // closing (`set_open_nav.call(None)` below
+                            // clears it), then re-focus that trigger via
+                            // the collection -- `ctx.focus` never actually
+                            // left that trigger's own index while keyboard
+                            // focus roamed *within* the open nav's own
+                            // content (`nav_ctx.focus`, a separate
+                            // collection, tracks that), so a plain
+                            // `set_focus` would be a same-value no-op that
+                            // never re-runs `control_mount_focus` -- clear
+                            // first to force a real transition, mirroring
+                            // `MenubarMenu`'s identical comment. A no-op
+                            // when nothing was open (Escape pressed with no
+                            // nav open), matching this handler's prior
+                            // behavior exactly for that case.
+                            let open_index = *ctx.open_nav.peek();
+                            ctx.set_open_nav.call(None);
+                            if let Some(index) = open_index {
+                                ctx.focus.clear_focus();
+                                ctx.focus.set_focus(Some(index));
+                            }
+                        }
                         Key::ArrowLeft => ctx.focus.focus_prev(),
                         Key::ArrowRight => ctx.focus.focus_next(),
                         Key::Home => ctx.focus.focus_first(),

@@ -3,14 +3,14 @@
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
 
+use crate::merge_attributes;
 use crate::{
     collection::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
-    use_animated_open, use_id_or, use_unique_id,
+    use_id_or, use_unique_id,
 };
-use crate::{has_own_accessible_name, merge_attributes};
 
 #[derive(Clone, Copy)]
 struct MenubarContext {
@@ -620,8 +620,11 @@ pub struct MenubarContentProps {
 pub fn MenubarContent(props: MenubarContentProps) -> Element {
     let mut menu_ctx: MenubarMenuContext = use_context();
 
-    let unique_id = use_unique_id();
-    let id = use_id_or(unique_id, props.id);
+    // docs/backlog.md row 53 (the "content lifecycle/positioning pipeline"
+    // band): id resolution + `use_animated_open`'s render gate, identical
+    // across all three menu-family hosts' `*Content` components -- see
+    // `menu_root::use_menu_content_lifecycle`'s own doc.
+    let (id, render) = crate::menu_root::use_menu_content_lifecycle(props.id, menu_ctx.is_open);
 
     // Keep `menu_ctx.content_id` in sync with this content's actual id --
     // see `MenubarMenuContext::content_id`'s doc. Mirrors
@@ -629,7 +632,6 @@ pub fn MenubarContent(props: MenubarContentProps) -> Element {
     // (`dropdown_menu.rs`).
     use_effect(move || menu_ctx.content_id.set(id()));
 
-    let render = use_animated_open(id, menu_ctx.is_open);
     use_deferred_collection_focus(menu_ctx.focus, menu_ctx.initial_focus, render);
 
     rsx! {
@@ -749,14 +751,12 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     // empty/`AttributeValue::None` value, and two entries for one
     // attribute name is exactly the duplicate-attribute hazard
     // `merge_attributes` exists to prevent (`docs/conformance-harness.md`
-    // hydration-parity Rule 4).
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{menu_ctx.trigger_id}"
-        })
-    };
+    // hydration-parity Rule 4). docs/backlog.md row 53 (the "trigger
+    // id-plumbing" band): this exact block is now
+    // `menu_root::content_labelledby_attributes`, shared with
+    // `DropdownMenu`/`ContextMenu`'s identical construction.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &menu_ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
@@ -792,15 +792,11 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     let menu_ctx: MenubarMenuContext = use_context();
 
     // See the web arm's identical construction above (docs/backlog.md row
-    // 25) for why this is conditional and routed through `merge_attributes`
-    // rather than a bare literal alongside `..attributes`.
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{menu_ctx.trigger_id}"
-        })
-    };
+    // 25/53) for why this is conditional and routed through
+    // `menu_root::content_labelledby_attributes` rather than a bare literal
+    // alongside `..attributes`.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &menu_ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {

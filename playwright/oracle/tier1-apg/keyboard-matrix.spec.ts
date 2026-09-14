@@ -371,6 +371,56 @@ test.describe("APG Menu and Menubar pattern — Menubar", () => {
 });
 
 // ============================================================================
+// Navbar nav dropdowns -- graded against Menubar's own Escape contract
+// (menu-and-menubar-pattern.html#keyboard_interaction), the same pattern
+// class both implement (see menu-roles.spec.ts's "APG Menu and Menubar
+// pattern — Navbar nav dropdowns" describe block and menu_semantics.rs's
+// module doc). `Navbar` implements the identical keyboard contract Menubar
+// does (Enter/ArrowDown/ArrowUp opening with focus, Escape closing) but
+// SPLITS it three ways (docs/backlog.md row 53): `Navbar` itself owns
+// Escape/ArrowLeft/ArrowRight/Home/End, `NavbarNav` owns Enter/ArrowDown/
+// ArrowUp. This is the Escape-refocus divergence row 53 flagged for
+// separate investigation ("Menubar explicitly refocuses its trigger on
+// Escape and Navbar does not") and root-caused as a genuine oversight, not
+// an intentional hover-driven-model exemption: Navbar fully supports
+// keyboard-driven opening (ArrowDown/ArrowUp move focus into the open
+// content exactly the way Menubar's do), so a keyboard user who arrows into
+// an open nav and presses Escape faces exactly the same "where does focus
+// go" question Menubar already answers -- and no test asserted either
+// behavior before this fix (checked: no Escape case existed in this file or
+// in navbar.spec.ts).
+// ============================================================================
+test.describe("APG Menu and Menubar pattern — Navbar nav dropdowns", () => {
+  test.beforeEach(async ({ page }) => {
+    await goto(page, "navbar");
+  });
+
+  test("NavbarNav — Escape: \"Close the menu ... and return focus to the element ... from which the menu was opened\" (graded against MenubarMenu's identical contract)", async ({
+    page,
+  }) => {
+    const inputsTrigger = page.getByRole("menuitem", { name: "Inputs" });
+    await inputsTrigger.focus();
+    await page.keyboard.press("ArrowDown");
+
+    const inputsMenu = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "Calendar" }) })
+      .last();
+    await expect(inputsMenu).toHaveAttribute("data-state", "open");
+    await expect(inputsMenu.getByRole("menuitem", { name: "Calendar" })).toBeFocused();
+
+    await page.keyboard.press("Escape");
+
+    await expect(inputsMenu).toHaveCount(0);
+    await expect(
+      inputsTrigger,
+      "Escape must return focus to this nav's own trigger, matching " +
+        "MenubarMenu's identical contract (docs/backlog.md row 53)",
+    ).toBeFocused();
+  });
+});
+
+// ============================================================================
 // Select-only combobox (Select trigger)
 // Source (general keyboard interaction, applies to select-only since it is
 // non-editable): content/patterns/combobox/combobox-pattern.html

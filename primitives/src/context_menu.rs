@@ -204,15 +204,12 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
         submenu_open_count,
     });
 
-    use_effect(move || {
-        let focused = focus.any_focused();
-        // See `ContextMenuCtx::submenu_open_count`'s doc -- `.peek()`, not a
-        // reactive read, for the same reason `DropdownMenu`'s identical
-        // effect peeks it (`dropdown_menu.rs`).
-        if *ctx.open.peek() != focused && *ctx.submenu_open_count.peek() == 0 {
-            (ctx.set_open)(focused);
-        }
-    });
+    // docs/backlog.md row 53 (the "open-index container" band): this effect
+    // was byte-identical to `DropdownMenu`'s own root effect
+    // (`dropdown_menu.rs`) -- see `menu_root::use_open_focus_sync`'s own doc
+    // for the shared construction and for why `Menubar`'s analogous
+    // (index-keyed) effect stays out of it.
+    crate::menu_root::use_open_focus_sync(focus, open, set_open, submenu_open_count);
 
     // A fresh open shouldn't inherit an `interacted_outside` flag left over
     // from a previous close.
@@ -565,10 +562,11 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
     let ctx: ContextMenuCtx = use_context();
     let open = ctx.open;
 
-    let unique_id = use_unique_id();
-    let id = use_id_or(unique_id, props.id);
-
-    let render = use_animated_open(id, open);
+    // docs/backlog.md row 53 (the "content lifecycle/positioning pipeline"
+    // band): id resolution + `use_animated_open`'s render gate, identical
+    // across all three menu-family hosts' `*Content` components -- see
+    // `menu_root::use_menu_content_lifecycle`'s own doc.
+    let (id, render) = crate::menu_root::use_menu_content_lifecycle(props.id, open);
 
     // Lock page scroll while the menu is open and modal, matching Radix's
     // default. See docs/plan.md Phase 3.2. `ContextMenuContent` itself
@@ -782,14 +780,12 @@ fn ContextMenuContentRendered(
     // `aria-label` with an empty/`AttributeValue::None` value, and two
     // entries for one attribute name is exactly the duplicate-attribute
     // hazard `merge_attributes` exists to prevent
-    // (`docs/conformance-harness.md` hydration-parity Rule 4).
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // (`docs/conformance-harness.md` hydration-parity Rule 4). docs/backlog.md
+    // row 53 (the "trigger id-plumbing" band): this exact block is now
+    // `menu_root::content_labelledby_attributes`, shared with
+    // `DropdownMenu`/`Menubar`'s identical construction.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
@@ -901,15 +897,11 @@ fn ContextMenuContentRendered(
     });
 
     // See the web arm's identical construction above (docs/backlog.md row
-    // 25) for why this is conditional and routed through `merge_attributes`
-    // rather than a bare literal alongside `..attributes`.
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // 25/53) for why this is conditional and routed through
+    // `menu_root::content_labelledby_attributes` rather than a bare literal
+    // alongside `..attributes`.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {

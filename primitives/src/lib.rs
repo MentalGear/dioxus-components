@@ -34,6 +34,7 @@ pub mod hover_card;
 pub mod input_otp;
 pub mod label;
 mod listbox;
+mod menu_root;
 mod menu_semantics;
 mod menu_sub;
 pub mod menubar;
