@@ -376,6 +376,77 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
     });
 });
 
+/*
+ * Trigger minimum width (`.dx-select-trigger`'s `min-width`) -- regression
+ * guard for a real bug found and fixed 2026-09-14: with no width/min-width
+ * of its own, a trigger that never sets one (e.g. the `form` conformance
+ * fixture's "Fruit, required" library-select field, which has no
+ * `trigger_class`/explicit width) shrinks to fit whatever text is
+ * currently selected -- as little as 85px for "apple". Since `SelectList`
+ * itself is width-locked to the trigger's rendered width
+ * (`--dx-anchor-width`, row 47's own contract, tested above), that left
+ * almost no slack for a selected `.dx-select-option`'s
+ * `justify-content: space-between` to distribute between the option's
+ * label and its check indicator -- a *correctly* laid-out flex row that
+ * nonetheless visually read as a bug (the checkmark appearing to hug the
+ * label instead of sitting at the row's own far edge). Root-caused by
+ * direct DOM/computed-style measurement (a debug Playwright script, not
+ * guesswork) before landing the fix; this test is that measurement made
+ * permanent. Deliberately targets the `form` fixture's field rather than
+ * this file's own component-page demo: that demo's trigger may end up
+ * wide for unrelated reasons (its own layout), which would let a
+ * regression of the trigger's own CSS `min-width` go unnoticed here.
+ */
+test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026-09-14)", () => {
+    test("a selected option's checkmark reaches the row's own right edge, not just the label", async ({ page }) => {
+        await page.goto("http://127.0.0.1:8080/component/?name=form&", { waitUntil: "networkidle" });
+        const trigger = page.getByRole("button", { name: "Fruit, required (library)" });
+        await trigger.click();
+        const listbox = page.getByRole("listbox", { name: "Fruit options, required (library)" });
+        await expect(listbox).toHaveAttribute("data-state", "open");
+        await listbox.getByRole("option", { name: "Apple" }).click();
+
+        // The trigger itself must have real width -- the actual regression
+        // this guards (no min-width at all, shrink-to-fit "apple").
+        const triggerBox = await trigger.boundingBox();
+        if (!triggerBox) throw new Error("trigger has no bounding box");
+        expect(triggerBox.width, `trigger width ${triggerBox.width}px`).toBeGreaterThanOrEqual(100);
+
+        await trigger.click();
+        await expect(listbox).toHaveAttribute("data-state", "open");
+        const option = listbox.getByRole("option", { name: "Apple" });
+        const check = option.locator("svg");
+
+        const optionBox = await option.boundingBox();
+        const checkBox = await check.boundingBox();
+        if (!optionBox || !checkBox) throw new Error("expected option and its check icon to both have a bounding box");
+        const debug = `option=${JSON.stringify(optionBox)} check=${JSON.stringify(checkBox)}`;
+
+        // The check icon sits at the row's own far edge (space-between
+        // actually had room to push it there), not merely somewhere to
+        // the right of the label. Threshold is the row's own right
+        // padding (`--dx-space-3`, 12px) plus a couple of px of rounding
+        // slack -- the check is flush against the padding boundary, not
+        // literally touching the row's outer edge.
+        expect(optionBox.x + optionBox.width - (checkBox.x + checkBox.width), debug).toBeLessThanOrEqual(14);
+        // And there's real, visible daylight between the label's text and
+        // the check -- the exact thing a too-narrow row collapses to ~0.
+        // Measured via a Range around the option's own text node (not
+        // `getByText`, which would resolve back to the option element
+        // itself here, since the label is a bare text node rather than
+        // its own wrapping element).
+        const labelRight = await option.evaluate((el) => {
+            const textNode = Array.from(el.childNodes).find((n) => n.nodeType === 3);
+            if (!textNode) return null;
+            const range = document.createRange();
+            range.selectNodeContents(textNode);
+            return range.getBoundingClientRect().right;
+        });
+        if (labelRight === null) throw new Error("expected the option to have a text-node label");
+        expect(checkBox.x - labelRight, debug).toBeGreaterThan(10);
+    });
+});
+
 test.describe("Axe automated scan", () => {
     test("loaded (listbox closed) has no automatically detectable a11y issues", async ({ page }) => {
         await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
