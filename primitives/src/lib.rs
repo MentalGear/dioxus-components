@@ -24,6 +24,7 @@ pub mod collapsible;
 mod collection;
 pub mod color_picker;
 pub mod combobox;
+pub mod command;
 pub mod context_menu;
 pub mod date_picker;
 pub mod dialog;

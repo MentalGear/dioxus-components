@@ -42,7 +42,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
         | "dropdown_menu" | "breadcrumb" => ComponentCategory::Navigation,
         "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
-        | "top_layer" => ComponentCategory::Overlays,
+        | "top_layer" | "command" => ComponentCategory::Overlays,
         "toast" | "progress" | "skeleton" | "badge" | "alert" | "empty" | "spinner" => {
             ComponentCategory::Feedback
         }
@@ -188,6 +188,7 @@ examples!(
     collapsible,
     color_picker,
     combobox[controlled, disabled, dynamic],
+    command,
     context_menu,
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
