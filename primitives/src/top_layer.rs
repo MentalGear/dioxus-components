@@ -1919,6 +1919,165 @@ pub(crate) fn use_anchor_position_fallback(
 // no-op stub here would never be called and is dead code by construction,
 // like `PopoverKind` and `position_anchor_style` above.
 
+/// Clamps a **point-anchored** overlay -- one positioned at a raw `(x, y)`
+/// coordinate with no anchor element at all -- into the viewport.
+/// `docs/backlog.md` row 10, item 5.2: the one piece of that row's
+/// collision-detection scope [`use_anchor_position_fallback`] above cannot
+/// cover, because that function is keyed on an *anchor element*: it resolves
+/// a trigger via `document.querySelector('[style*="anchor-name: ..."]')` and
+/// every one of its flip/shift/size-clamp branches reasons in terms of that
+/// trigger's own rect (`place()`'s `side`/`align` formulas) and a CSS
+/// Anchor Positioning conformance check it can defer to
+/// (`matches()`/`usingFallback`). `ContextMenu`'s content has none of that
+/// -- it opens at a raw click/long-press point with no persistent trigger
+/// element to anchor off of at all (see
+/// `context_menu::ContextMenuContentRendered`'s own doc for why `anchor-
+/// name`/`position-anchor` are never wired up for it) -- so there is no
+/// anchor rect to measure, no flip to compute, and no conforming-engine
+/// case to defer to (a raw point is never something the platform's
+/// `anchor()` could have placed in the first place). This hook is the
+/// "virtual-anchor" construction that row explicitly calls for: the point
+/// itself stands in for the anchor.
+///
+/// **A parallel, smaller construction, not a branch inside
+/// [`use_anchor_position_fallback`]**: that function's script is already a
+/// long, heavily cross-referenced, execution-verified sequence (flip
+/// decision, inline/vertical shift, size clamp, `--dx-anchor-width`
+/// publication, scroll/resize/`visualViewport` tracking, a multi-frame
+/// settle loop) built and tested entirely around resolving and measuring an
+/// anchor element. Threading a no-anchor special case through it would mean
+/// either an anchor-shaped no-op path through every one of those stages
+/// (`place()` has nothing to compute from, `matches()` has nothing to
+/// compare against, `usingFallback` protects a conformance check that never
+/// applies here) or an early branch that skips most of the function's body
+/// for this one caller -- both add real risk to that function's own
+/// passing oracle coverage (`top-layer.spec.ts` rules 5-7, 9, 11-15) for a
+/// case that shares only the final clamp *arithmetic*, not the surrounding
+/// machinery. This hook instead reuses just that shared arithmetic --
+/// the same `EDGE_MARGIN` (4px) convention, the same `Math.max` viewport-
+/// too-small-to-fit-at-all fallback, the same `border-box`-forced max-height
+/// clamp -- as its own small, independent script, mirroring
+/// [`use_anchor_position_fallback`]'s "Vertical shift + size clamp
+/// (2026-09-04)" doc section's construction rather than its code.
+///
+/// `x`/`y` are `ContextMenuTrigger`'s own already visual-viewport-corrected
+/// click coordinates (see that file's `visual_viewport_offset` doc) --
+/// i.e. already layout-viewport-relative, exactly matching this content's
+/// `position: fixed; left/top` inline styles. Re-expressed here relative to
+/// `visualViewport`'s own origin before clamping (mirroring
+/// [`use_anchor_position_fallback`]'s `viewportMetrics()`/`tTop`/`tLeft`
+/// treatment) so the point being clamped and the bounds it's clamped
+/// against are in the same coordinate space, then shifted back before the
+/// final inline-style write, since `position: fixed` is relative to the
+/// *layout* viewport, not the visual one.
+///
+/// Measured and clamped once, synchronously, right after the popover is
+/// promoted to the top layer -- must be called after [`use_popover_sync`]'s
+/// own effect at the call site, the same ordering requirement
+/// [`use_anchor_position_fallback`] documents for itself (Dioxus's normal
+/// same-component effect-ordering guarantee: this hook's own `use_effect`
+/// call must be the later one). Unlike that function, no scroll/resize
+/// tracking and no multi-frame settle loop: `ContextMenuContent`'s items
+/// are ordinary, synchronously-rendered children (not
+/// `DatePickerPopover`'s asynchronously-growing calendar grid --
+/// [`use_anchor_position_fallback`]'s own "settle loop" doc), and the menu
+/// already suppresses page scroll while open
+/// (`ContextMenuContentRendered`'s own wheel/touchmove effect) rather than
+/// following it, so there is nothing this hook would need to re-measure
+/// against after the initial open.
+#[cfg(feature = "web")]
+pub(crate) fn use_point_anchor_clamp(
+    id: String,
+    x: i32,
+    y: i32,
+    open: impl Readable<Target = bool> + Copy + 'static,
+) {
+    use_effect(move || {
+        if !open.cloned() {
+            return;
+        }
+        let id = id.clone();
+        let _ = document::eval(&format!(
+            r#"
+            const content = document.getElementById('{id}');
+            if (content) {{
+                const vv = window.visualViewport;
+                const vw = vv ? vv.width : window.innerWidth;
+                const vh = vv ? vv.height : window.innerHeight;
+                const offsetLeft = vv ? vv.offsetLeft : 0;
+                const offsetTop = vv ? vv.offsetTop : 0;
+                const cw = content.offsetWidth;
+                const ch = content.offsetHeight;
+
+                // Same EDGE_MARGIN convention as `use_anchor_position_fallback`'s
+                // own shift clamp (`docs/backlog.md` row 10) -- see this
+                // function's own doc for the full construction this mirrors.
+                // `x`/`y` re-expressed relative to `visualViewport`'s own
+                // origin so the point and the bounds it's clamped against
+                // share one coordinate space; shifted back before the final
+                // write below.
+                const EDGE_MARGIN = 4;
+                let left = {x} - offsetLeft;
+                let top = {y} - offsetTop;
+                if (left < EDGE_MARGIN) {{
+                    left = EDGE_MARGIN;
+                }} else if (left + cw > vw - EDGE_MARGIN) {{
+                    // `Math.max`: on a viewport too narrow for the content
+                    // at all, the left edge wins rather than the two
+                    // branches disagreeing about which edge to honor --
+                    // matches `use_anchor_position_fallback`'s identical
+                    // horizontal clamp exactly (width stays out of scope,
+                    // same as there).
+                    left = Math.max(EDGE_MARGIN, vw - EDGE_MARGIN - cw);
+                }}
+                if (top < EDGE_MARGIN) {{
+                    top = EDGE_MARGIN;
+                }} else if (top + ch > vh - EDGE_MARGIN) {{
+                    top = Math.max(EDGE_MARGIN, vh - EDGE_MARGIN - ch);
+                }}
+
+                // Size clamp: same construction as `use_anchor_position_
+                // fallback`'s own gap 2 ("Vertical shift + size clamp
+                // (2026-09-04)") -- once even a fully top-clamped position
+                // still can't fit the content in the viewport's remaining
+                // height, shrink instead of shifting further, and let the
+                // menu's own items scroll instead of running off the
+                // bottom of the screen. `box-sizing: border-box` forced
+                // alongside `maxHeight` for the identical reason that
+                // function's own doc gives (an inline style, so it always
+                // wins the cascade over whatever a themed menu stylesheet
+                // does or doesn't declare for `box-sizing`).
+                const availableHeight = Math.max(0, vh - 2 * EDGE_MARGIN);
+                if (ch > availableHeight) {{
+                    content.style.boxSizing = 'border-box';
+                    content.style.maxHeight = availableHeight + 'px';
+                    content.style.overflowY = 'auto';
+                }} else {{
+                    content.style.maxHeight = '';
+                    content.style.overflowY = '';
+                    content.style.boxSizing = '';
+                }}
+
+                content.style.left = (left + offsetLeft) + 'px';
+                content.style.top = (top + offsetTop) + 'px';
+            }}
+            "#,
+            id = id,
+            x = x,
+            y = y,
+        ));
+    });
+}
+
+// No native (Blitz) counterpart: `ContextMenuContentRendered`'s native
+// (Blitz) arm (`context_menu.rs`) renders the raw click point with no
+// clamping at all, unchanged from before this fix -- the same functional
+// floor every other web-only construction in this file leaves that arm at
+// (see the identical note just above, for `use_anchor_position_fallback`).
+// Blitz has no popover-API/top-layer support to promote the content into in
+// the first place, so this is consistent with the rest of that arm rather
+// than a new gap.
+
 /// CSS Anchor Positioning wiring — *not* part of the Popover API itself, but
 /// required for it to be usable at all here, and included in this slice for
 /// that reason rather than as extra scope.
