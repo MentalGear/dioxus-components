@@ -1,9 +1,9 @@
 use crate::components::button::component::Button;
+use crate::components::dialog::DialogTitle;
 use crate::components::kbd::component::{Kbd, KbdGroup};
 
 use super::super::component::{Command, CommandDialog, CommandEmpty, CommandGroup, CommandGroupLabel, CommandItem};
 use dioxus::prelude::*;
-use dioxus_primitives::dialog::DialogTitle;
 
 // docs/backlog.md row 32: no `#[css_module]` of its own here, and no
 // `document::Link` needed either -- the `CommandDialog`/`Command` themed
