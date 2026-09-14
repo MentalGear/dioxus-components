@@ -54,6 +54,7 @@
     "preview/src/components/empty",
     "preview/src/components/field",
     "preview/src/components/input_group",
+    "preview/src/components/input_otp",
     "preview/src/components/kbd",
     "preview/src/components/spinner",
     "preview/src/components/native_select"

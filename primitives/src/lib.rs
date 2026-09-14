@@ -31,6 +31,7 @@ pub mod dialog;
 pub mod drag_and_drop_list;
 pub mod dropdown_menu;
 pub mod hover_card;
+pub mod input_otp;
 pub mod label;
 mod listbox;
 mod menu_semantics;
