@@ -18,16 +18,44 @@ test('pointer navigation', async ({ page }) => {
 
 test('menu lands at the tap coordinates on touch long-press', async ({ page }) => {
   await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
-  // Push the trigger down so the tap point isn't at viewport (0, 0) — any
-  // misalignment will then have a non-zero direction to detect.
-  await page.evaluate(() => {
-    const main = document.querySelector('main') ?? document.body;
-    (main as HTMLElement).style.paddingTop = '300px';
-    (main as HTMLElement).style.paddingLeft = '120px';
-  });
 
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
+
+  // Pin the trigger to a fixed on-screen position instead of pushing it
+  // down with padding on <main>/<body>. This test's whole point is a tap
+  // point guaranteed to be nowhere near any viewport edge (so
+  // `use_point_anchor_clamp`, top_layer.rs, never has a reason to act and
+  // this test stays a clean "no clamping" baseline) -- but padding only
+  // *adds* to whatever height the surrounding page content already has,
+  // and that height isn't this test's to control or assume. It was 300px
+  // of padding-top here, unchanged since this test was written; on this
+  // component's actual current preview-page chrome, that pushed the
+  // trigger's own center to y ~= 735 against a 720px-tall default
+  // viewport -- 15px *past* the bottom edge, not "away from it" as the
+  // comment this replaces claimed. That was already true on this branch's
+  // parent commit (124c4d5, before use_point_anchor_clamp existed at all)
+  // -- it simply had nothing to act on it yet, so a menu positioned
+  // exactly at that tap point silently rendered a hundred-plus px past
+  // the fold and this test never noticed (it only checks the menu's
+  // top-left against the tap point, never full on-screen visibility).
+  // use_point_anchor_clamp landing gave the clamp something to correct
+  // for the first time, and correctly pulled the menu back on-screen --
+  // a real behavior change, but the intended one, not a bug in the clamp
+  // itself (confirmed by execution: instrumented logging on this exact
+  // run showed a genuinely non-zero, already-`:popover-open` content size
+  // measured before the clamp ran, and viewport/tap numbers -- vh=720,
+  // tapY=734.97, content height=168 -- for which
+  // `top + ch > vh - EDGE_MARGIN` is correctly true). Anchoring the
+  // trigger's position directly, rather than adding to an unmeasured
+  // ambient height, makes the "nowhere near an edge" premise true by
+  // construction instead of by an increasingly-stale coincidence.
+  await trigger.evaluate((el) => {
+    (el as HTMLElement).style.position = 'fixed';
+    (el as HTMLElement).style.top = '120px';
+    (el as HTMLElement).style.left = '160px';
+  });
+
   const box = await trigger.boundingBox();
   if (!box) throw new Error('trigger has no bounding box');
   const tapX = box.x + box.width / 2;
