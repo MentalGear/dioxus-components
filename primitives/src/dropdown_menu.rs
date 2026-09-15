@@ -1130,8 +1130,13 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    let mut hover_open = crate::menu_sub::use_delayed_action();
-    let mut hover_close = crate::menu_sub::use_delayed_action();
+    // Shared with this submenu's own content (`DropdownMenuSubContentRendered`)
+    // via `SubMenuState`, not private locals -- see
+    // `SubMenuState::hover_close`'s doc for why hovering the content itself
+    // must be able to cancel/reschedule the same close timer the trigger's
+    // own `onmouseleave` below schedules.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let id = use_id_or(sub.trigger_id, props.id);
 
@@ -1309,6 +1314,12 @@ fn DropdownMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this submenu's own content
+    // shares its trigger's hover timers so hovering *either* half keeps the
+    // submenu open, and only leaving both (without re-entering either)
+    // within the grace window actually closes it.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1430,6 +1441,19 @@ fn DropdownMenuSubContentRendered(
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            // See `SubMenuState::hover_close`'s doc: mirrors
+            // `DropdownMenuSubTrigger`'s identical pair on the same shared
+            // timers, so hovering this submenu's own content is exactly as
+            // good as hovering its trigger for keeping it open.
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 // Same rationale as `DropdownMenuContentRendered`'s
                 // identical guard: keep this submenu open across the
@@ -1458,6 +1482,11 @@ fn DropdownMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this arm still gets the same
+    // shared-timer fix as the web arm, for parity even though Blitz mouse
+    // events are lower-priority here.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
         Vec::new()
@@ -1495,6 +1524,15 @@ fn DropdownMenuSubContentRendered(
             role: crate::menu_semantics::MENU_ROLE,
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();

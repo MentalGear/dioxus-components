@@ -327,6 +327,88 @@ test.describe("APG Menu and Menubar pattern — DropdownMenu.Sub", () => {
         "delay, crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY)",
     ).toHaveAttribute("aria-expanded", "false");
   });
+
+  // REGRESSION (bug report: "on sub-menu mouse hover, the sub-menu
+  // disappears / submenus not selectable/usable"). Root cause: the
+  // close-grace timer `*SubTrigger`'s own `onmouseleave` schedules used to
+  // be private state (`use_delayed_action()` called directly inside
+  // `*SubTrigger`), so only the trigger's own `onmouseenter` could cancel
+  // it -- `*SubContent`/`*SubContentRendered` had no `onmouseenter`/
+  // `onmouseleave` handlers at all. A pointer that left the trigger and
+  // moved into the submenu's own content (the expected way to reach a
+  // submenu item) never touched the trigger again, so the close scheduled
+  // on the way out fired unconditionally ~200ms later and closed the
+  // submenu out from under the pointer, regardless of it still hovering
+  // the content. Fixed by hoisting the hover timers onto the shared
+  // `SubMenuState` (`primitives/src/menu_sub.rs`) so `*SubContentRendered`
+  // can cancel/reschedule the same timer from its own `onmouseenter`/
+  // `onmouseleave`. This test drives real intermediate `mousemove` events
+  // (via `page.mouse.move(..., { steps })`) from the trigger, across the
+  // trigger/content boundary, and onto a submenu item -- `.hover()` alone
+  // can synthesize a single jump that skips the boundary this bug lives at.
+  test("hover: moving the pointer off the trigger and into the submenu content keeps it open and its item clickable", async ({
+    page,
+  }) => {
+    const subTrigger = page.getByRole("menuitem", { name: "More tools" });
+    const submenu = page.getByRole("menu", { name: "More tools" });
+    const renameItem = page.getByRole("menuitem", { name: "Rename" });
+
+    const triggerBox = await subTrigger.boundingBox();
+    if (!triggerBox) throw new Error("sub-trigger has no bounding box");
+
+    // Move the pointer onto the trigger with real intermediate mousemove
+    // events, then wait past the hover-intent delay for the submenu to
+    // open.
+    await page.mouse.move(triggerBox.x + 5, triggerBox.y + triggerBox.height / 2);
+    await page.mouse.move(
+      triggerBox.x + triggerBox.width / 2,
+      triggerBox.y + triggerBox.height / 2,
+      { steps: 10 },
+    );
+    await page.waitForTimeout(PAST_INTENT_DELAY_MS);
+    await expect(subTrigger, "submenu opens on hover-intent").toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(submenu).toBeVisible();
+
+    const renameBox = await renameItem.boundingBox();
+    if (!renameBox) throw new Error("Rename item has no bounding box");
+
+    // Cross from the trigger into the submenu content with several
+    // intermediate steps -- the exact "diagonal move toward the submenu"
+    // path a real user's pointer takes, landing on the submenu's own first
+    // item rather than back on the trigger.
+    await page.mouse.move(
+      renameBox.x + renameBox.width / 2,
+      renameBox.y + renameBox.height / 2,
+      { steps: 15 },
+    );
+
+    // Wait past the close-grace delay. Before the fix, this is exactly
+    // when the trigger's stale close timer fired and closed the submenu
+    // out from under the pointer even though it is now resting on the
+    // submenu's own item.
+    await page.waitForTimeout(PAST_INTENT_DELAY_MS);
+    await expect(
+      subTrigger,
+      "hovering the submenu's own content must keep it open past the " +
+        "close-grace delay, not just the trigger",
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(submenu, "the submenu itself must still be visible").toBeVisible();
+    await expect(
+      renameItem,
+      "and its item must still be in the DOM/visible, i.e. actually usable",
+    ).toBeVisible();
+
+    // The submenu must still be genuinely usable: clicking the item it's
+    // resting on should select it.
+    await renameItem.click();
+    await expect(
+      page.getByText("Selected: Rename"),
+      "the item hovered inside the submenu content is actually clickable/selectable",
+    ).toBeVisible();
+  });
 });
 
 test.describe("APG Menu and Menubar pattern — ContextMenu.Sub", () => {
@@ -426,5 +508,60 @@ test.describe("APG Menu and Menubar pattern — ContextMenu.Sub", () => {
 
     await page.getByRole("menuitem", { name: "Edit" }).hover();
     await expect(subTrigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // REGRESSION -- see the identical `DropdownMenu.Sub` test above for the
+  // full root-cause writeup (`primitives/src/menu_sub.rs`'s
+  // `SubMenuState::hover_close`, `primitives/src/context_menu.rs`'s
+  // `ContextMenuSubContentRendered`); this is the same defect and the same
+  // fix, exercised against `ContextMenu.Sub` instead, since the two hosts
+  // duplicate this hover-timer wiring independently (not one shared code
+  // path) and both needed the same fix.
+  test("hover: moving the pointer off the trigger and into the submenu content keeps it open and its item clickable", async ({
+    page,
+  }) => {
+    const subTrigger = page.getByRole("menuitem", { name: "More tools" });
+    const submenu = page.getByRole("menu", { name: "More tools" });
+    const renameItem = page.getByRole("menuitem", { name: "Rename" });
+
+    const triggerBox = await subTrigger.boundingBox();
+    if (!triggerBox) throw new Error("sub-trigger has no bounding box");
+
+    await page.mouse.move(triggerBox.x + 5, triggerBox.y + triggerBox.height / 2);
+    await page.mouse.move(
+      triggerBox.x + triggerBox.width / 2,
+      triggerBox.y + triggerBox.height / 2,
+      { steps: 10 },
+    );
+    await page.waitForTimeout(PAST_INTENT_DELAY_MS);
+    await expect(subTrigger, "submenu opens on hover-intent").toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(submenu).toBeVisible();
+
+    const renameBox = await renameItem.boundingBox();
+    if (!renameBox) throw new Error("Rename item has no bounding box");
+
+    await page.mouse.move(
+      renameBox.x + renameBox.width / 2,
+      renameBox.y + renameBox.height / 2,
+      { steps: 15 },
+    );
+
+    await page.waitForTimeout(PAST_INTENT_DELAY_MS);
+    await expect(
+      subTrigger,
+      "hovering the submenu's own content must keep it open past the " +
+        "close-grace delay, not just the trigger",
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(submenu, "the submenu itself must still be visible").toBeVisible();
+    await expect(renameItem, "and its item must still be visible").toBeVisible();
+
+    await renameItem.click();
+    await expect(
+      page.getByText("Selected: rename"),
+      "the item hovered inside the submenu content is actually clickable/selectable",
+    ).toBeVisible();
   });
 });

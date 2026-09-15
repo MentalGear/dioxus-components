@@ -1268,8 +1268,13 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    let mut hover_open = crate::menu_sub::use_delayed_action();
-    let mut hover_close = crate::menu_sub::use_delayed_action();
+    // Shared with this submenu's own content (`ContextMenuSubContentRendered`)
+    // via `SubMenuState`, not private locals -- see
+    // `SubMenuState::hover_close`'s doc for why hovering the content itself
+    // must be able to cancel/reschedule the same close timer the trigger's
+    // own `onmouseleave` below schedules.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let id = use_id_or(sub.trigger_id, props.id);
 
@@ -1419,6 +1424,12 @@ fn ContextMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this submenu's own content
+    // shares its trigger's hover timers so hovering *either* half keeps the
+    // submenu open, and only leaving both (without re-entering either)
+    // within the grace window actually closes it.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1503,8 +1514,43 @@ fn ContextMenuSubContentRendered(
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            // Mirrors `ContextMenuContentRendered`'s identical inline
+            // override (this file, above): `.dx-context-menu-content`
+            // (`preview/src/components/context_menu/style.css`) sets
+            // `pointer-events: none` unconditionally on its BASE rule (not
+            // scoped to `[data-state="closed"]` the way
+            // `.dx-dropdown-menu-content`'s identical-looking reset is --
+            // see that file's own comment), relying on each renderer of
+            // that class to flip it back to `auto` once open, in Rust,
+            // rather than in CSS. `ContextMenuSubContentRendered`'s own
+            // rendered `div` carries this SAME class
+            // (`dx-context-menu-content dx-context-menu-sub-content`,
+            // `preview/src/components/context_menu/component.rs`) but,
+            // before this fix, never set this override -- so a genuinely
+            // open submenu was invisible to pointer hit-testing the entire
+            // time: not just "closes on hover" (`SubMenuState::hover_close`
+            // above fixes that half), but non-interactive outright, motion
+            // and all events (hover, click) passing straight through it to
+            // whatever page content sits behind. Confirmed live: before
+            // this fix, `document.elementFromPoint()` over a fully open,
+            // `:popover-open`, `opacity:1` submenu resolved to unrelated
+            // page content behind it, not the submenu itself.
+            pointer_events: open().then_some("auto"),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            // See `SubMenuState::hover_close`'s doc: mirrors
+            // `ContextMenuSubTrigger`'s identical pair on the same shared
+            // timers, so hovering this submenu's own content is exactly as
+            // good as hovering its trigger for keeping it open.
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();
@@ -1537,6 +1583,12 @@ fn ContextMenuSubContentRendered(
     };
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
+    // See `SubMenuState::hover_close`'s doc: this arm still gets the same
+    // shared-timer fix as the web arm, for parity even though Blitz mouse
+    // events are lower-priority here.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
+
     let trigger_id = sub.trigger_id;
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
@@ -1562,8 +1614,22 @@ fn ContextMenuSubContentRendered(
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
+            // See the web arm's identical `pointer_events` doc above -- this
+            // arm's CSS never loads (Blitz doesn't load `style.css`), but
+            // set for parity with `ContextMenuContentRendered`'s own native
+            // arm, which sets the same override.
+            pointer_events: open().then_some("auto"),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();
