@@ -223,17 +223,14 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         submenu_open_count,
     });
 
-    use_effect(move || {
-        let focused = focus.any_focused();
-        // See `DropdownMenuContext::submenu_open_count`'s doc: a `.peek()`,
-        // not a reactive read -- this effect's one reactive dependency
-        // stays `focus.any_focused()` alone, matching `ctx.open.peek()`
-        // just below it; the count only needs to be checked at the instant
-        // focus-emptiness changes, not on every count change of its own.
-        if *ctx.open.peek() != focused && *ctx.submenu_open_count.peek() == 0 {
-            (ctx.set_open)(focused);
-        }
-    });
+    // docs/backlog.md row 53 (the "open-index container" band): this effect
+    // -- keep `open` in sync with whether `focus` currently holds DOM focus,
+    // skipped while a descendant submenu is open -- is byte-identical to
+    // `ContextMenu`'s own root effect (`context_menu.rs`), so both now share
+    // `menu_root::use_open_focus_sync` rather than carrying two copies. See
+    // that function's own doc for why `Menubar`'s analogous (index-keyed)
+    // effect stays out of this shared construction.
+    crate::menu_root::use_open_focus_sync(focus, open, set_open, submenu_open_count);
 
     // A fresh open shouldn't inherit an `interacted_outside` flag set by a
     // previous close -- otherwise an internal close (Escape, item select)
@@ -550,15 +547,16 @@ pub struct DropdownMenuContentProps {
 pub fn DropdownMenuContent(props: DropdownMenuContentProps) -> Element {
     let mut ctx: DropdownMenuContext = use_context();
 
-    let unique_id = use_unique_id();
-    let id = use_id_or(unique_id, props.id);
+    // docs/backlog.md row 53 (the "content lifecycle/positioning pipeline"
+    // band): id resolution + `use_animated_open`'s render gate, identical
+    // across all three menu-family hosts' `*Content` components -- see
+    // `menu_root::use_menu_content_lifecycle`'s own doc.
+    let (id, render) = crate::menu_root::use_menu_content_lifecycle(props.id, ctx.open);
 
     // Keep `ctx.content_id` in sync with this content's actual id -- see
     // `DropdownMenuContext::content_id`'s doc. Mirrors `PopoverContent`'s
     // identical `ctx.content_id.set(id())` in `popover.rs`.
     use_effect(move || ctx.content_id.set(id()));
-
-    let render = use_animated_open(id, ctx.open);
 
     // Apply the focus placement `open_with_focus` (`DropdownMenuContext`)
     // recorded when the menu was opened by keyboard, as soon as the
@@ -680,14 +678,12 @@ fn DropdownMenuContentRendered(
     // carried a same-named, empty-valued `aria-label`/`aria-labelledby`;
     // see `has_own_accessible_name`'s own doc). Only contributed when the
     // caller hasn't already named this content some other way, and as its
-    // own `merge_attributes` input rather than a literal.
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // own `merge_attributes` input rather than a literal. docs/backlog.md
+    // row 53 (the "trigger id-plumbing" band): this exact block is now
+    // `menu_root::content_labelledby_attributes`, shared with
+    // `ContextMenu`/`Menubar`'s identical construction.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
@@ -740,15 +736,11 @@ fn DropdownMenuContentRendered(
     let ctx: DropdownMenuContext = use_context();
 
     // See the web arm's identical construction above (docs/backlog.md row
-    // 25) for why this is conditional and routed through `merge_attributes`
-    // rather than a bare literal alongside `..attributes`.
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // 25/53) for why this is conditional and routed through
+    // `menu_root::content_labelledby_attributes` rather than a bare literal
+    // alongside `..attributes`.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
@@ -1138,8 +1130,13 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    let mut hover_open = crate::menu_sub::use_delayed_action();
-    let mut hover_close = crate::menu_sub::use_delayed_action();
+    // Shared with this submenu's own content (`DropdownMenuSubContentRendered`)
+    // via `SubMenuState`, not private locals -- see
+    // `SubMenuState::hover_close`'s doc for why hovering the content itself
+    // must be able to cancel/reschedule the same close timer the trigger's
+    // own `onmouseleave` below schedules.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let id = use_id_or(sub.trigger_id, props.id);
 
@@ -1317,6 +1314,12 @@ fn DropdownMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this submenu's own content
+    // shares its trigger's hover timers so hovering *either* half keeps the
+    // submenu open, and only leaving both (without re-entering either)
+    // within the grace window actually closes it.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1438,6 +1441,19 @@ fn DropdownMenuSubContentRendered(
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            // See `SubMenuState::hover_close`'s doc: mirrors
+            // `DropdownMenuSubTrigger`'s identical pair on the same shared
+            // timers, so hovering this submenu's own content is exactly as
+            // good as hovering its trigger for keeping it open.
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 // Same rationale as `DropdownMenuContentRendered`'s
                 // identical guard: keep this submenu open across the
@@ -1466,6 +1482,11 @@ fn DropdownMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this arm still gets the same
+    // shared-timer fix as the web arm, for parity even though Blitz mouse
+    // events are lower-priority here.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
         Vec::new()
@@ -1503,6 +1524,15 @@ fn DropdownMenuSubContentRendered(
             role: crate::menu_semantics::MENU_ROLE,
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();

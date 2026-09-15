@@ -2,7 +2,7 @@
 #
 # check-dx-class-prefix.sh
 #
-# Enforces the class-collision-safety rule docs/backlog.md row 32 replaces
+# Enforces the class-collision-safety rule dev-docs/backlog.md row 32 replaces
 # `#[css_module]`'s hashing with, now that the hashing is gone:
 #
 #   Every class selector defined in a themed component's own stylesheet
@@ -28,7 +28,7 @@
 # (so `@media (...) { .dx-checkbox { ... } }`'s inner `.dx-checkbox` IS
 # checked -- unlike `#[css_module]`'s own `manganis-core::css_module_parser`,
 # which famously does NOT recurse into `@supports` bodies
-# (docs/issues/css-module-supports-scoping.md), this lint recurses into
+# (dev-docs/issues/css-module-supports-scoping.md), this lint recurses into
 # *every* at-rule uniformly, since there is no longer any hashing pass to
 # have that same blind spot). Declaration bodies (the `color: dx-red;`-shaped
 # text between a `{` and its matching `}`) are never scanned, so a
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             continue
         bad += 1
         print(f"{path}:{ln}: .{cls} does not start with `{prefix}-` "
-              f"(expected dx-<component>-... naming, docs/backlog.md row 32)")
+              f"(expected dx-<component>-... naming, dev-docs/backlog.md row 32)")
     sys.exit(1 if bad else 0)
 PYEOF
 
@@ -160,7 +160,7 @@ PYEOF
 #     silently restyle whichever component's sheet loses the load order.
 #   * `.dx-sr-only` -- `pagination` and `sidebar`, byte-identical, so merging
 #     them is harmless; both carry a "TODO: abstract as Utility class" note
-#     and belong in the generated utility sheet (docs/backlog.md row 31a).
+#     and belong in the generated utility sheet (dev-docs/backlog.md row 31a).
 violating_components=0
 warned_components=0
 
@@ -185,7 +185,7 @@ for dir in "$components_dir"/*/; do
         warned_components=$((warned_components + 1))
         echo "$output" | sed 's/^/warning: /'
         echo "warning: ^-- $name still has #[css_module], so its hash still prevents collisions;"
-        echo "warning:     namespace these classes BEFORE dropping its hashing (docs/backlog.md row 32)."
+        echo "warning:     namespace these classes BEFORE dropping its hashing (dev-docs/backlog.md row 32)."
     else
         fail=1
         violating_components=$((violating_components + 1))
@@ -195,13 +195,13 @@ done
 
 if [[ "$fail" -ne 0 ]]; then
     echo
-    echo "check-dx-class-prefix: FAILED -- $violating_components component(s) define a class outside their own dx-<component>-... namespace. See docs/backlog.md row 32."
+    echo "check-dx-class-prefix: FAILED -- $violating_components component(s) define a class outside their own dx-<component>-... namespace. See dev-docs/backlog.md row 32."
     exit 1
 fi
 
 if [[ "$warned_components" -ne 0 ]]; then
     echo
-    echo "check-dx-class-prefix: OK -- $warned_components component(s) still rely on #[css_module] hashing to stay collision-free; each must be namespaced before its hashing is dropped (docs/backlog.md row 32)."
+    echo "check-dx-class-prefix: OK -- $warned_components component(s) still rely on #[css_module] hashing to stay collision-free; each must be namespaced before its hashing is dropped (dev-docs/backlog.md row 32)."
     exit 0
 fi
 

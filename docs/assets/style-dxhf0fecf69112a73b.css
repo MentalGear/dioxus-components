@@ -1,0 +1,1 @@
+.dx-spinner{color:var(--secondary-color-5);justify-content:center;align-items:center;display:inline-flex}.dx-spinner svg{width:1rem;height:1rem;animation:1s linear infinite dx-spinner-spin}@keyframes dx-spinner-spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.dx-spinner svg{animation-duration:var(--dx-motion-duration-reduced)}}

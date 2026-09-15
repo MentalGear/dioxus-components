@@ -38,7 +38,17 @@
 }
 
 @media (width >=768px) {
-  .dx-sidebar-wrapper:has(.dx-sidebar-desktop[data-side="right"]) {
+  /* Keyed on `[data-slot="sidebar"][data-side="right"]` (not
+   * `.dx-sidebar-desktop[data-side="right"]`) so this mirrors for every
+   * `Sidebar` render path that carries `data-side`, not just the
+   * expanded/collapsible desktop one -- see `component.rs`'s
+   * `SidebarCollapsible::None` branch (`.dx-sidebar-static`), which used
+   * to omit `data-side` entirely and so never reversed for
+   * `side: SidebarSide::Right` (dev-docs/backlog.md: sidebar right-side
+   * alignment bug). Both branches share the `data-slot="sidebar"`
+   * attribute, so one selector covers both by construction instead of
+   * needing a second copy of this rule per branch. */
+  .dx-sidebar-wrapper:has([data-slot="sidebar"][data-side="right"]) {
     flex-direction: row-reverse;
   }
 
@@ -160,6 +170,7 @@
 }
 
 .dx-sidebar-static {
+  position: relative;
   display: flex;
   width: var(--dx-sidebar-width);
   height: 100%;
@@ -167,6 +178,18 @@
   background: var(--dx-sidebar-background);
   color: var(--dx-sidebar-foreground);
 }
+
+/* `position: relative` above (not just a stray addition -- it fixes a
+ * second symptom of the same root cause as the `data-side` fix in
+ * `component.rs`'s `SidebarCollapsible::None` branch): without any
+ * `position` here, `.dx-sidebar-rail` (`position: absolute`, sized via
+ * `[data-side="…"] .dx-sidebar-rail { left/right: … }` below) had no
+ * positioned ancestor to anchor to short of the initial containing
+ * block, so it rendered pinned to a corner of the whole page instead of
+ * the sidebar's own edge -- for EITHER side, not just `right`. This
+ * gives `SidebarRail` the same containing block the collapsible desktop
+ * branch already gets for free from `.dx-sidebar-container`'s
+ * `position: fixed`. */
 
 .dx-sidebar-sheet {
   width: var(--dx-sidebar-width-mobile) !important;

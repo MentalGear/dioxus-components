@@ -204,15 +204,12 @@ pub fn ContextMenu(props: ContextMenuProps) -> Element {
         submenu_open_count,
     });
 
-    use_effect(move || {
-        let focused = focus.any_focused();
-        // See `ContextMenuCtx::submenu_open_count`'s doc -- `.peek()`, not a
-        // reactive read, for the same reason `DropdownMenu`'s identical
-        // effect peeks it (`dropdown_menu.rs`).
-        if *ctx.open.peek() != focused && *ctx.submenu_open_count.peek() == 0 {
-            (ctx.set_open)(focused);
-        }
-    });
+    // docs/backlog.md row 53 (the "open-index container" band): this effect
+    // was byte-identical to `DropdownMenu`'s own root effect
+    // (`dropdown_menu.rs`) -- see `menu_root::use_open_focus_sync`'s own doc
+    // for the shared construction and for why `Menubar`'s analogous
+    // (index-keyed) effect stays out of it.
+    crate::menu_root::use_open_focus_sync(focus, open, set_open, submenu_open_count);
 
     // A fresh open shouldn't inherit an `interacted_outside` flag left over
     // from a previous close.
@@ -565,10 +562,11 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
     let ctx: ContextMenuCtx = use_context();
     let open = ctx.open;
 
-    let unique_id = use_unique_id();
-    let id = use_id_or(unique_id, props.id);
-
-    let render = use_animated_open(id, open);
+    // docs/backlog.md row 53 (the "content lifecycle/positioning pipeline"
+    // band): id resolution + `use_animated_open`'s render gate, identical
+    // across all three menu-family hosts' `*Content` components -- see
+    // `menu_root::use_menu_content_lifecycle`'s own doc.
+    let (id, render) = crate::menu_root::use_menu_content_lifecycle(props.id, open);
 
     // Lock page scroll while the menu is open and modal, matching Radix's
     // default. See docs/plan.md Phase 3.2. `ContextMenuContent` itself
@@ -631,6 +629,32 @@ pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
 /// `use_outside_dismiss`/the root `Escape` handler below stay the *only*
 /// dismissal path, unchanged from pre-migration -- exactly per this
 /// slice's instruction to keep them.
+///
+/// ## Viewport clamping (`docs/backlog.md` row 10, item 5.2)
+///
+/// The click/long-press coordinates this content is positioned at
+/// (`ContextMenuCtx::position`, set by `ContextMenuTrigger`'s mouse and
+/// touch handlers) are never clamped at the point they're captured -- a
+/// right-click or long-press near a viewport edge places this content's
+/// `left`/`top` off-screen with nothing to correct it. Every *other*
+/// overlay in this crate gets exactly this kind of correction from
+/// `top_layer::use_anchor_position_fallback`'s shift/size clamp
+/// (`docs/backlog.md` row 10's own residual scope), but that function is
+/// keyed on an anchor element -- it resolves a trigger via
+/// `document.querySelector('[style*="anchor-name: ..."]')` and every one of
+/// its flip/shift/size-clamp branches reasons in terms of that trigger's
+/// rect. This content has no such element (see the `manual`-vs-`auto`
+/// section above: no `anchor-name` is ever wired up for it), so that path
+/// is structurally unreachable here -- not a gap in that function, a
+/// different shape of overlay entirely. `top_layer::use_point_anchor_clamp`
+/// (called below, right after `use_popover_sync`) is the "virtual-anchor"
+/// construction `docs/backlog.md` row 10 calls out for exactly this case:
+/// it measures this content's own rendered size once it's promoted to the
+/// top layer and clamps the raw `(x, y)` point into the viewport with the
+/// same `EDGE_MARGIN`/max-height-clamp semantics, rather than an anchor
+/// rect. See that function's own doc for why it is a small, parallel
+/// script rather than a branch threaded through
+/// `use_anchor_position_fallback` itself.
 #[cfg(feature = "web")]
 #[component]
 fn ContextMenuContentRendered(
@@ -664,6 +688,16 @@ fn ContextMenuContentRendered(
             ctx.set_open.call(is_open);
         }),
     );
+
+    // docs/backlog.md row 10, item 5.2: this content has no anchor element
+    // for `use_anchor_position_fallback` to key off of (see this
+    // component's own doc above) -- clamp the raw `(x, y)` click point into
+    // the viewport instead, the "virtual-anchor" construction that row
+    // calls for. Must run after `use_popover_sync`'s own effect just above
+    // (same ordering requirement `use_anchor_position_fallback` documents
+    // for itself at its own call sites), so the content is already promoted
+    // to the top layer and has a real rendered size to measure.
+    crate::top_layer::use_point_anchor_clamp(id.clone(), x, y, open);
 
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
@@ -746,14 +780,12 @@ fn ContextMenuContentRendered(
     // `aria-label` with an empty/`AttributeValue::None` value, and two
     // entries for one attribute name is exactly the duplicate-attribute
     // hazard `merge_attributes` exists to prevent
-    // (`docs/conformance-harness.md` hydration-parity Rule 4).
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // (`docs/conformance-harness.md` hydration-parity Rule 4). docs/backlog.md
+    // row 53 (the "trigger id-plumbing" band): this exact block is now
+    // `menu_root::content_labelledby_attributes`, shared with
+    // `DropdownMenu`/`Menubar`'s identical construction.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
@@ -865,15 +897,11 @@ fn ContextMenuContentRendered(
     });
 
     // See the web arm's identical construction above (docs/backlog.md row
-    // 25) for why this is conditional and routed through `merge_attributes`
-    // rather than a bare literal alongside `..attributes`.
-    let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
-        Vec::new()
-    } else {
-        attributes!(div {
-            aria_labelledby: "{ctx.trigger_id}"
-        })
-    };
+    // 25/53) for why this is conditional and routed through
+    // `menu_root::content_labelledby_attributes` rather than a bare literal
+    // alongside `..attributes`.
+    let labelledby =
+        crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     rsx! {
@@ -1240,8 +1268,13 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    let mut hover_open = crate::menu_sub::use_delayed_action();
-    let mut hover_close = crate::menu_sub::use_delayed_action();
+    // Shared with this submenu's own content (`ContextMenuSubContentRendered`)
+    // via `SubMenuState`, not private locals -- see
+    // `SubMenuState::hover_close`'s doc for why hovering the content itself
+    // must be able to cancel/reschedule the same close timer the trigger's
+    // own `onmouseleave` below schedules.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     let id = use_id_or(sub.trigger_id, props.id);
 
@@ -1391,6 +1424,12 @@ fn ContextMenuSubContentRendered(
 ) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+    // See `SubMenuState::hover_close`'s doc: this submenu's own content
+    // shares its trigger's hover timers so hovering *either* half keeps the
+    // submenu open, and only leaving both (without re-entering either)
+    // within the grace window actually closes it.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1475,8 +1514,43 @@ fn ContextMenuSubContentRendered(
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            // Mirrors `ContextMenuContentRendered`'s identical inline
+            // override (this file, above): `.dx-context-menu-content`
+            // (`preview/src/components/context_menu/style.css`) sets
+            // `pointer-events: none` unconditionally on its BASE rule (not
+            // scoped to `[data-state="closed"]` the way
+            // `.dx-dropdown-menu-content`'s identical-looking reset is --
+            // see that file's own comment), relying on each renderer of
+            // that class to flip it back to `auto` once open, in Rust,
+            // rather than in CSS. `ContextMenuSubContentRendered`'s own
+            // rendered `div` carries this SAME class
+            // (`dx-context-menu-content dx-context-menu-sub-content`,
+            // `preview/src/components/context_menu/component.rs`) but,
+            // before this fix, never set this override -- so a genuinely
+            // open submenu was invisible to pointer hit-testing the entire
+            // time: not just "closes on hover" (`SubMenuState::hover_close`
+            // above fixes that half), but non-interactive outright, motion
+            // and all events (hover, click) passing straight through it to
+            // whatever page content sits behind. Confirmed live: before
+            // this fix, `document.elementFromPoint()` over a fully open,
+            // `:popover-open`, `opacity:1` submenu resolved to unrelated
+            // page content behind it, not the submenu itself.
+            pointer_events: open().then_some("auto"),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            // See `SubMenuState::hover_close`'s doc: mirrors
+            // `ContextMenuSubTrigger`'s identical pair on the same shared
+            // timers, so hovering this submenu's own content is exactly as
+            // good as hovering its trigger for keeping it open.
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();
@@ -1509,6 +1583,12 @@ fn ContextMenuSubContentRendered(
     };
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
+    // See `SubMenuState::hover_close`'s doc: this arm still gets the same
+    // shared-timer fix as the web arm, for parity even though Blitz mouse
+    // events are lower-priority here.
+    let mut hover_open = sub.hover_open;
+    let mut hover_close = sub.hover_close;
+
     let trigger_id = sub.trigger_id;
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
@@ -1534,8 +1614,22 @@ fn ContextMenuSubContentRendered(
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
+            // See the web arm's identical `pointer_events` doc above -- this
+            // arm's CSS never loads (Blitz doesn't load `style.css`), but
+            // set for parity with `ContextMenuContentRendered`'s own native
+            // arm, which sets the same override.
+            pointer_events: open().then_some("auto"),
             "data-state": if open() { "open" } else { "closed" },
             onkeydown,
+            onmouseenter: move |_| {
+                hover_open.cancel();
+                hover_close.cancel();
+            },
+            onmouseleave: move |_| {
+                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
+                    sub.set_open.call(false);
+                });
+            },
             onpointerdown: move |event| {
                 event.prevent_default();
                 event.stop_propagation();

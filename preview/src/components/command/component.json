@@ -1,0 +1,17 @@
+{
+  "name": "command",
+  "description": "A filterable command palette, typically opened in a modal dialog, for quickly finding and running actions.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    },
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

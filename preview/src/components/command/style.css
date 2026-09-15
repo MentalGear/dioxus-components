@@ -1,0 +1,195 @@
+/* Visually-hidden accessible name for `CommandDialog`. A command palette
+ * conventionally shows no visible heading above its search input (unlike
+ * `Dialog`/`AlertDialog`, whose demos always render a *visible*
+ * `DialogTitle`/`AlertDialogTitle`) -- but `dialog.rs`'s `DialogRoot`
+ * always wires the dialog's `aria-labelledby` to a `DialogTitle` id
+ * regardless (see `dialog.rs`'s `dialog_labelledby`), so an accessible
+ * name is still required, just not a sighted one. Sidebar's mobile `Sheet`
+ * (`sidebar/style.css`'s `.dx-sidebar-sr-only`) already solves this exact
+ * "needs a real title element, not a visible heading" shape for the same
+ * reason -- this is that same rule, copied under this component's own
+ * namespace rather than shared, for the same `#[css_module]`-hash-removed
+ * reason `.dx-sidebar-sr-only`'s own header comment gives (docs/backlog.md
+ * row 32). TODO(row 31a): collapses into one shared `dx-sr-only` utility
+ * once that lands. */
+.dx-command-sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Backdrop -- mirrors ../dialog/style.css's `.dx-dialog-backdrop` shape
+ * (fixed, full-viewport, dimmed, fade in/out with the animated-open hold),
+ * under its own `dx-command-dialog-*` namespace (docs/backlog.md row 32)
+ * since sharing `.dx-dialog-backdrop` itself would require linking
+ * `dialog/style.css` too -- see `component.rs`'s doc for why the primitive
+ * carries this class as its own literal default. */
+.dx-command-dialog-backdrop {
+  position: fixed;
+  z-index: var(--dx-z-overlay);
+  background: rgb(0 0 0 / 30%);
+  inset: 0;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.dx-command-dialog-backdrop[data-state="closed"] {
+  animation: dx-command-dialog-backdrop-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  pointer-events: none;
+}
+
+@keyframes dx-command-dialog-backdrop-out {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.dx-command-dialog-backdrop[data-state="open"] {
+  animation: dx-command-dialog-backdrop-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+}
+
+@keyframes dx-command-dialog-backdrop-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Content box -- positioned near the top third of the viewport (the
+ * conventional command-palette placement), rather than dead-centre like
+ * `.dx-dialog`: the list below the input grows downward, so centring
+ * vertically would make the whole palette jump as filtered results
+ * shrink/grow the box height. */
+.dx-command-dialog {
+  position: fixed;
+  z-index: var(--dx-z-overlay-raised);
+  top: 20%;
+  left: 50%;
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  max-width: calc(100% - var(--dx-space-8));
+  box-sizing: border-box;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--primary-color-6);
+  border-radius: var(--dx-radius-xl);
+  margin: 0;
+  background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  box-shadow: var(--dx-shadow-2xl);
+  color: var(--secondary-color-1);
+  transform: translateX(-50%);
+}
+
+@media (width >= 40rem) {
+  .dx-command-dialog {
+    max-width: 32rem;
+  }
+}
+
+.dx-command {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.dx-command-input-wrapper {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 var(--dx-space-4);
+  box-shadow: inset 0 -1px 0 0 var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  gap: var(--dx-space-2);
+}
+
+.dx-command-search-icon {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.dx-command-input {
+  width: 100%;
+  padding: var(--dx-space-3) 0;
+  border: none;
+  background: transparent;
+  color: var(--secondary-color-1);
+  font-family: inherit;
+  font-size: var(--dx-text-base);
+  outline: none;
+
+  /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
+  touch-action: manipulation;
+}
+
+.dx-command-input::placeholder {
+  color: var(--secondary-color-5);
+}
+
+.dx-command-list {
+  overflow: hidden auto;
+  max-height: 18rem;
+  padding: var(--dx-space-2);
+}
+
+.dx-command-empty {
+  padding: var(--dx-space-6) 0;
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  text-align: center;
+}
+
+.dx-command-group-label {
+  padding: var(--dx-space-2) var(--dx-space-3) var(--dx-space-1);
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-xs);
+}
+
+.dx-command-item {
+  display: flex;
+  align-items: center;
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border-radius: var(--dx-radius-md);
+  cursor: default;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+  outline: none;
+
+  /* touch-action: manipulation -- see .dx-command-input's identical comment above. */
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.dx-command-item[data-highlighted="true"] {
+  background: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7));
+  color: var(--secondary-color-1);
+}
+
+.dx-command-item[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--dx-opacity-disabled);
+  pointer-events: none;
+}
+
+/* Pushes the shortcut slot to the item's trailing edge. Targets the
+ * primitive's own `data-*` marker (`command.rs`'s `CommandItem` doc), not
+ * a class -- so this rule works for any element the caller passes as
+ * `shortcut`, not just the themed `Kbd`/`KbdGroup` pair, and never
+ * references a class outside this stylesheet's own `dx-command-...`
+ * namespace (docs/backlog.md row 32 / scripts/check-dx-class-prefix.sh). */
+.dx-command-item [data-command-item-shortcut] {
+  margin-left: auto;
+}

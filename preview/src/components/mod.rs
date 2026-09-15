@@ -36,13 +36,12 @@ pub fn category_of(name: &str) -> ComponentCategory {
     match name {
         "button" | "input" | "textarea" | "label" | "checkbox" | "switch" | "radio_group"
         | "toggle" | "toggle_group" | "select" | "slider" | "calendar" | "date_picker"
-        | "color_picker" | "form" | "button_group" | "field" | "input_group" | "native_select" => {
-            ComponentCategory::Forms
-        }
+        | "color_picker" | "form" | "button_group" | "field" | "input_group" | "input_otp"
+        | "native_select" => ComponentCategory::Forms,
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
         | "dropdown_menu" | "breadcrumb" => ComponentCategory::Navigation,
         "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
-        | "top_layer" => ComponentCategory::Overlays,
+        | "top_layer" | "command" => ComponentCategory::Overlays,
         "toast" | "progress" | "skeleton" | "badge" | "alert" | "empty" | "spinner" => {
             ComponentCategory::Feedback
         }
@@ -188,6 +187,7 @@ examples!(
     collapsible,
     color_picker,
     combobox[controlled, disabled, dynamic],
+    command,
     context_menu,
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
@@ -199,6 +199,7 @@ examples!(
     hover_card,
     input,
     input_group,
+    input_otp,
     item[variant, size, image, group],
     kbd,
     label,

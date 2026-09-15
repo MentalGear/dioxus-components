@@ -187,6 +187,36 @@ pub(crate) struct SubMenuState {
     /// `aria-controls` must both key off *this* signal, not
     /// `trigger_id` above).
     pub(crate) content_id: Signal<String>,
+    /// Hover-intent open timer for this submenu -- shared between
+    /// `*SubTrigger` and `*SubContent` (see [`Self::hover_close`]'s doc for
+    /// why a `Sub`'s hover timers must live here, on the state both halves
+    /// already share via context, rather than as `*SubTrigger`'s own
+    /// private `use_delayed_action()` locals).
+    pub(crate) hover_open: DelayedAction,
+    /// Close-grace timer for this submenu's hover-intent contract
+    /// ([`SUBMENU_CLOSE_GRACE_DELAY`]). Lives on `SubMenuState`, not as
+    /// `*SubTrigger`'s own private state, so that BOTH halves of a `Sub` --
+    /// its trigger and its own content -- can cancel and reschedule the
+    /// *same* timer from their own `onmouseenter`/`onmouseleave`.
+    ///
+    /// This is the fix for the "hovering the submenu closes it" defect: the
+    /// trigger's `onmouseleave` schedules this close, on the assumption
+    /// that the pointer either lands back on the trigger or inside this
+    /// submenu's own content before the grace delay elapses -- but if the
+    /// timer is private to the trigger, only the trigger's own
+    /// `onmouseenter` can cancel it, and `*SubContent`/`*SubContentRendered`
+    /// never called anything of the kind. A pointer that leaves the trigger
+    /// and moves into the submenu content (the *expected* path to select an
+    /// item) never touched the trigger again, so the close the trigger
+    /// scheduled on its way out fired unconditionally ~200ms later and
+    /// closed the submenu out from under a pointer legitimately hovering
+    /// it, making its items unselectable by mouse. Sharing this one
+    /// `DelayedAction` and having `*SubContentRendered` cancel it on its
+    /// own `onmouseenter` (and reschedule it on its own `onmouseleave`, the
+    /// same contract the trigger already has) closes that gap: the submenu
+    /// now only closes once the pointer has left *both* the trigger and its
+    /// content without re-entering either within the grace window.
+    pub(crate) hover_close: DelayedAction,
 }
 
 impl SubMenuState {
@@ -220,5 +250,7 @@ pub(crate) fn use_sub_menu_state(
         initial_focus: use_signal(|| None),
         trigger_id: use_unique_id(),
         content_id: use_unique_id(),
+        hover_open: use_delayed_action(),
+        hover_close: use_delayed_action(),
     }
 }

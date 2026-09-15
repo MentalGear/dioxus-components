@@ -313,6 +313,7 @@ pub fn Sidebar(
         let base = attributes!(div {
             class: "dx-sidebar-static",
             "data-slot": "sidebar",
+            "data-side": side.as_str(),
             role: "complementary",
             aria_label: "Sidebar",
         });

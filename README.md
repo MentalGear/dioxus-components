@@ -88,7 +88,7 @@ npm install
 npx playwright test
 ```
 
-Most specs also run an [axe-core](https://github.com/dequelabs/axe-core) static accessibility scan (valid ARIA, accessible names, unique landmarks, contrast, heading order, …) via the shared `playwright/axe.ts` helper — see [`docs/conformance-harness.md`](./docs/conformance-harness.md), "axe (static rules)", for what it covers versus the behaviour oracles and its exclusion policy.
+Most specs also run an [axe-core](https://github.com/dequelabs/axe-core) static accessibility scan (valid ARIA, accessible names, unique landmarks, contrast, heading order, …) via the shared `playwright/axe.ts` helper — see [`dev-docs/conformance-harness.md`](./dev-docs/conformance-harness.md), "axe (static rules)", for what it covers versus the behaviour oracles and its exclusion policy.
 
 Local-only Playwright configs, for driving the suite against an
 already-running `dx serve`/`dx run` server instead of letting Playwright's
@@ -97,7 +97,7 @@ runs), `xvfb.local.config.ts` (headed Chromium under a virtual X server, for
 tests that need a real, space-reserving scrollbar rather than headless
 Chromium's 0-width one), and `ssg.local.config.ts` (points at a plain static
 file server serving the fullstack-SSG-prerendered build rather than the dev
-server — see [`docs/conformance-harness.md`](./docs/conformance-harness.md),
+server — see [`dev-docs/conformance-harness.md`](./dev-docs/conformance-harness.md),
 "Hydration/deployment parity", for the full build-and-serve recipe this
 covers, including `oracle/hydration-parity.spec.ts`). When running any of
 these under `root` (as in a container), the touch/mobile-emulation oracle
@@ -110,12 +110,12 @@ every relevant change locally:
 ```sh
 # preview/ markup composes only themed wrappers (crate::components::*),
 # never a raw dioxus_primitives:: component directly -- see
-# docs/preview-composition.md for why this matters.
+# dev-docs/preview-composition.md for why this matters.
 scripts/check-preview-composition.sh
 
 # rendered markup/component structure/attribute choice splits on the `web`
 # Cargo feature, never on `target_family = "wasm"` -- see
-# docs/recommended-implementations.md, Caveat 1, for the production
+# dev-docs/recommended-implementations.md, Caveat 1, for the production
 # incident this guards against.
 scripts/check-cfg-axis.sh
 ```
@@ -133,6 +133,19 @@ or for the web build:
 ```sh
 dx serve -p preview --web
 ```
+
+### Deploying the preview / docs site
+
+GitHub Pages is configured to serve straight from `main`'s `/docs` folder
+— there is no CI build step. To publish a new preview build:
+
+```sh
+scripts/deploy-preview.sh
+```
+
+This builds the `preview` app in release mode and overwrites `/docs` with
+the output. Review the result (`git status`, `git diff --stat -- docs`),
+then commit and push to `main`.
 
 ## License
 
