@@ -67,6 +67,50 @@ test.describe("sidebar: block route", () => {
     await expect(sidebar).toHaveAttribute("data-side", "left");
   });
 
+  // Fixed 2026-09-15: `collapsible: SidebarCollapsible::None` rendered a
+  // parallel `.dx-sidebar-static` element that never set `data-side`, so the
+  // side-mirroring CSS rule (`.dx-sidebar-wrapper:has([data-slot="sidebar"]
+  // [data-side="right"]) { flex-direction: row-reverse; }`) never matched --
+  // the "Right" control had no visible effect while "None" was selected, the
+  // sidebar always rendered flush against the left edge. Geometry-based per
+  // this repo's convention (see select.spec.ts's "Trigger minimum width").
+  test("desktop: side switch mirrors sidebar with collapsible=none", async ({ page }) => {
+    await gotoSidebarBlock(page);
+
+    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
+    const sidebar = page.locator('[data-slot="sidebar"]:not([data-mobile="true"])');
+    const inset = page.locator('[data-slot="sidebar-inset"]');
+
+    await page.getByRole("button", { name: "None" }).click();
+    await expect(sidebar).toHaveAttribute("data-side", "left");
+
+    const leftBox = await sidebar.boundingBox();
+    expect(leftBox).not.toBeNull();
+    expect(leftBox!.x).toBeCloseTo(0, 0);
+
+    await page.getByRole("button", { name: "Right" }).click();
+    await expect(sidebar).toHaveAttribute("data-side", "right");
+
+    const rightBox = await sidebar.boundingBox();
+    const insetBox = await inset.boundingBox();
+    expect(rightBox).not.toBeNull();
+    expect(insetBox).not.toBeNull();
+    // Sidebar must have moved to the right edge of ITS OWN wrapper (not
+    // page.viewportSize() / documentElement.clientWidth -- this route's
+    // <body> renders a few px narrower than the outer viewport for
+    // unrelated reasons, so the wrapper is the only trustworthy width
+    // reference), and the main content (inset) must now occupy the left
+    // side, starting at 0 -- i.e. the two must have swapped, not stayed put.
+    const wrapperBox = await wrapper.boundingBox();
+    expect(wrapperBox).not.toBeNull();
+    expect(rightBox!.x + rightBox!.width).toBeCloseTo(wrapperBox!.x + wrapperBox!.width, 0);
+    expect(insetBox!.x).toBeCloseTo(wrapperBox!.x, 0);
+    expect(insetBox!.x + insetBox!.width).toBeCloseTo(rightBox!.x, 0);
+
+    await page.getByRole("button", { name: "Left" }).click();
+    await expect(sidebar).toHaveAttribute("data-side", "left");
+  });
+
   test("desktop: icon collapse shows tooltip on focus and preserves accessible names", async ({
     page,
   }) => {
