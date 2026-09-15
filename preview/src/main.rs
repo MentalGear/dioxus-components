@@ -13,6 +13,10 @@ use crate::components::{
     label::Label,
     progress::Progress,
     radio_group::{RadioGroup, RadioItem},
+    sidebar::{
+        Sidebar, SidebarCollapsible, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarInset,
+        SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
+    },
     slider::Slider,
     switch::Switch,
     tabs::{TabContent, TabList, TabTrigger, Tabs, TabsVariant},
@@ -24,8 +28,8 @@ use dioxus::prelude::{dioxus_router::LinkProps, *};
 use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
 use dioxus_i18n::prelude::{use_init_i18n, I18nConfig};
 use dioxus_icons::lucide::{
-    ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, Copy, ExternalLink, Mail, Menu,
-    Pause, Play, SkipBack, SkipForward, X,
+    ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, Copy, ExternalLink, Mail, Pause,
+    Play, SkipBack, SkipForward,
 };
 use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -616,8 +620,7 @@ fn ComponentCode(
 #[component]
 fn Docs(dark_mode: Option<bool>) -> Element {
     rsx! {
-        main { class: "dx-docs-layout",
-            DocsSidebar { active_component: None }
+        DocsLayout { active: DocsNavActive::Overview,
             article { class: "dx-docs-page dx-docs-prose",
                 header { class: "dx-docs-page-header",
                     p { class: "dx-docs-eyebrow", "Docs" }
@@ -688,62 +691,76 @@ fn Docs(dark_mode: Option<bool>) -> Element {
     }
 }
 
+/// Which sidebar nav entry (if any) corresponds to the page currently being
+/// rendered inside `DocsLayout`, for active-link highlighting.
+#[derive(Clone, Copy, PartialEq)]
+enum DocsNavActive {
+    /// The `/docs` written-guide page ("Start" > "Overview").
+    Overview,
+    /// A `/component/?name=...` page, keyed by the component's raw name.
+    Component(&'static str),
+    /// The homepage (`/`) -- part of this same nav now, but distinct from
+    /// `Overview`: before the homepage had a sidebar at all, `None` here
+    /// meant "on Docs", so a bare `Option<&'static str>` would have wrongly
+    /// lit up "Overview" while browsing the gallery too.
+    Home,
+}
+
+/// The site's real navigation shell: `SidebarProvider`/`Sidebar`/
+/// `SidebarInset` composed the same way `sidebar/variants/main/mod.rs`'s own
+/// demo (`Demo()`) composes them -- a `SidebarContent` of `SidebarGroup`s
+/// holding `SidebarMenu`/`SidebarMenuItem`/`SidebarMenuButton`s, and a
+/// `SidebarInset` whose own leading `header` holds just the `SidebarTrigger`
+/// (mirrors both that demo's `Demo()` and the email-client dashboard's
+/// `EmailClient()`, `dashboard/views/email_client/mod.rs`). `page` content
+/// renders as the inset's children -- callers no longer wrap it in a `<main>`
+/// themselves, since `SidebarInset` already renders the page's one `<main>`
+/// landmark (see `EmailClient()`'s own comment on that same point).
 #[component]
-fn DocsSidebar(active_component: Option<&'static str>) -> Element {
-    let mut open = use_signal(|| false);
-    let close = move |_| open.set(false);
+fn DocsLayout(active: DocsNavActive, children: Element) -> Element {
     rsx! {
-        button {
-            class: "dx-docs-sidebar-toggle",
-            r#type: "button",
-            aria_label: "Open navigation",
-            aria_expanded: open(),
-            aria_controls: "dx-docs-sidebar-nav",
-            onclick: move |_| open.set(true),
-            Menu { size: "18" }
-            span { "Menu" }
-        }
-        div {
-            class: if open() { "dx-docs-sidebar-backdrop dx-docs-sidebar-backdrop-open" } else { "dx-docs-sidebar-backdrop" },
-            aria_hidden: "true",
-            onclick: close,
-        }
-        aside {
-            id: "dx-docs-sidebar-nav",
-            class: if open() { "dx-docs-sidebar dx-docs-sidebar-open" } else { "dx-docs-sidebar" },
-            aria_label: "Docs navigation",
-            button {
-                class: "dx-docs-sidebar-close",
-                r#type: "button",
-                aria_label: "Close navigation",
-                onclick: close,
-                X { size: "18" }
-            }
-            div { class: "dx-docs-sidebar-scroll",
-                nav {
-                    aria_label: "Components",
-                    onclick: close,
-                    div { class: "dx-docs-sidebar-section",
-                        p { class: "dx-docs-sidebar-heading", "Start" }
-                        Link {
-                            to: Route::docs(),
-                            class: if active_component.is_none() { "dx-docs-sidebar-link dx-docs-sidebar-link-active" } else { "dx-docs-sidebar-link" },
-                            "Overview"
+        SidebarProvider { class: "dx-docs-shell",
+            Sidebar { collapsible: SidebarCollapsible::Offcanvas,
+                SidebarContent {
+                    SidebarGroup {
+                        SidebarGroupLabel { "Start" }
+                        SidebarMenu {
+                            SidebarMenuItem {
+                                SidebarMenuButton {
+                                    is_active: active == DocsNavActive::Overview,
+                                    as: move |attributes: Vec<Attribute>| rsx! {
+                                        Link { to: Route::docs(), attributes, "Overview" }
+                                    },
+                                }
+                            }
                         }
                     }
                     for cat in components::ComponentCategory::ALL.iter().copied() {
-                        div { class: "dx-docs-sidebar-section",
-                            p { class: "dx-docs-sidebar-heading", "{cat.label()}" }
-                            for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
-                                Link {
-                                    to: Route::component(component.name),
-                                    class: if active_component == Some(component.name) { "dx-docs-sidebar-link dx-docs-sidebar-link-active" } else { "dx-docs-sidebar-link" },
-                                    {component.name.replace("_", " ")}
+                        SidebarGroup { key: "{cat.label()}",
+                            SidebarGroupLabel { "{cat.label()}" }
+                            SidebarMenu {
+                                for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
+                                    SidebarMenuItem { key: "{component.name}",
+                                        SidebarMenuButton {
+                                            is_active: active == DocsNavActive::Component(component.name),
+                                            as: move |attributes: Vec<Attribute>| rsx! {
+                                                Link {
+                                                    to: Route::component(component.name),
+                                                    attributes,
+                                                    {component.name.replace("_", " ")}
+                                                }
+                                            },
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+            SidebarInset {
+                header { class: "dx-docs-inset-topbar", SidebarTrigger {} }
+                {children}
             }
         }
     }
@@ -849,8 +866,7 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
     };
 
     rsx! {
-        main { class: "dx-docs-layout",
-            DocsSidebar { active_component: Some(raw_name) }
+        DocsLayout { active: DocsNavActive::Component(raw_name),
             article { class: "dx-component-page",
                 header { class: "dx-component-page-header",
                     p { class: "dx-docs-eyebrow", "Component" }
@@ -1203,41 +1219,46 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
 #[component]
 fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
     rsx! {
-        main { class: "dx-home-page", role: "main",
-            div { id: "hero",
-                div { class: "dx-hero-shell",
-                    h1 { class: "dx-hero-heading",
-                        span { class: "dx-hero-title", "dioxus-components" }
-                        span { class: "dx-hero-subtitle",
-                            "beautiful, accessible, responsive components for dioxus apps"
+        DocsLayout { active: DocsNavActive::Home,
+            // No `role: "main"` here -- `DocsLayout`'s `SidebarInset` already
+            // renders the page's one `<main>` landmark (axe
+            // `landmark-no-duplicate-main`, see `DocsLayout`'s own comment).
+            div { class: "dx-home-page",
+                div { id: "hero",
+                    div { class: "dx-hero-shell",
+                        h1 { class: "dx-hero-heading",
+                            span { class: "dx-hero-title", "dioxus-components" }
+                            span { class: "dx-hero-subtitle",
+                                "beautiful, accessible, responsive components for dioxus apps"
+                            }
                         }
-                    }
-                    p { class: "dx-hero-summary",
-                        "Dioxus components by the Dioxus team. Browse the catalog, copy the CLI command, and pull only what you need into your project. Thoughtfully designed with powerful accessibility features."
-                    }
-                    div { class: "dx-hero-cta",
-                        Link { to: Route::docs(), class: "dx-hero-cta-primary",
-                            "get started"
-                            ArrowRight { size: "18", stroke_width: "1.8" }
+                        p { class: "dx-hero-summary",
+                            "Dioxus components by the Dioxus team. Browse the catalog, copy the CLI command, and pull only what you need into your project. Thoughtfully designed with powerful accessibility features."
                         }
-                        div { class: "dx-hero-command",
-                            span { class: "dx-hero-prompt", "$" }
-                            code { "dx components list" }
-                            CopyCommandButton { command: "dx components list".to_string() }
+                        div { class: "dx-hero-cta",
+                            Link { to: Route::docs(), class: "dx-hero-cta-primary",
+                                "get started"
+                                ArrowRight { size: "18", stroke_width: "1.8" }
+                            }
+                            div { class: "dx-hero-command",
+                                span { class: "dx-hero-prompt", "$" }
+                                code { "dx components list" }
+                                CopyCommandButton { command: "dx components list".to_string() }
+                            }
                         }
                     }
                 }
-            }
-            WidgetMasonry {}
-            section { class: "dx-home-section dx-catalog-section",
-                header { class: "dx-section-header",
-                    span { class: "dx-section-eyebrow", "Catalog" }
-                    h2 { class: "dx-section-title", "All components" }
-                    p { class: "dx-section-summary",
-                        "Every primitive in the library, with live previews and a copy-paste install command for each one."
+                WidgetMasonry {}
+                section { class: "dx-home-section dx-catalog-section",
+                    header { class: "dx-section-header",
+                        span { class: "dx-section-eyebrow", "Catalog" }
+                        h2 { class: "dx-section-title", "All components" }
+                        p { class: "dx-section-summary",
+                            "Every primitive in the library, with live previews and a copy-paste install command for each one."
+                        }
                     }
+                    ComponentGallery {}
                 }
-                ComponentGallery {}
             }
         }
     }

@@ -360,74 +360,85 @@ summary,
   color: var(--secondary-success-color);
 }
 
-/* Docs and component pages */
-.dx-docs-layout {
-  display: grid;
+/* Docs, component and home pages: real site nav via the themed `Sidebar`
+ * system (`preview/src/components/sidebar/component.rs`), composed by
+ * `DocsLayout` in `main.rs`. `sidebar/style.css`'s desktop rendering is
+ * built assuming the WHOLE page is the sidebar's shell -- a fixed-position
+ * column over a reserved flex gap, `100svh` tall -- which holds for its
+ * other two call sites (the block-route demo, the email-client dashboard)
+ * because both render with no site Navbar/Footer above or below (see
+ * `Route`'s layout comment in `main.rs`: `ComponentBlockDemo` and
+ * `EmailClientDashboard` sit outside `NavigationLayout`). `DocsLayout`
+ * shares the page with the sticky site `.dx-preview-navbar` above and the
+ * `Footer` below, so a `position: fixed` column would keep floating over
+ * the footer once the page scrolls past the nav's own height. `.dx-docs-shell`
+ * re-scopes just that: a plain sticky in-flow column (mirrors the old
+ * hand-rolled `.dx-docs-sidebar`'s `position: sticky; top: 3.25rem`) with a
+ * width collapse instead of the fixed-position slide (same transition
+ * token, same "content reflows to fill the freed width" effect, no
+ * viewport-relative positioning to conflict with page chrome). Everything
+ * else about the sidebar (mobile Sheet drawer, menu/group styling, the
+ * trigger) is the unmodified shared component.
+ *
+ * Selectors below double up as `.dx-sidebar-wrapper.dx-docs-shell` (not
+ * bare `.dx-docs-shell`) purely for specificity: `sidebar/style.css`'s own
+ * `document::Link` can land before or after this stylesheet's in the
+ * document head (each `Sidebar*` component mounts its own `document::Link`
+ * to the same href, deduped on first mount -- there is no guaranteed
+ * ordering against `main.css`'s own `<link>`), so a same-specificity
+ * override here would only win by accident of load order. The extra class
+ * keeps every rule strictly higher-specificity than the base component
+ * rule it overrides, regardless of link order. */
+.dx-sidebar-wrapper.dx-docs-shell {
   width: min(var(--dx-content-width), calc(100vw - 2rem));
-  min-height: calc(100vh - 3.25rem);
-  box-sizing: border-box;
-  padding-right: 1.5rem;
-  padding-left: 4.5rem;
+  height: auto;
+  min-height: calc(100vh - var(--dx-navbar-height));
+  overflow: visible;
   border-right: 1px solid var(--primary-color-6);
   border-left: 1px solid var(--primary-color-6);
   margin: 0 auto;
-  grid-template-columns: 14rem minmax(0, 1fr);
 }
 
-.dx-docs-sidebar {
+.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-gap {
+  display: none;
+}
+
+.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-container {
   position: sticky;
-  top: 3.25rem;
-  display: flex;
-  max-height: calc(100vh - 3.25rem);
-  box-sizing: border-box;
-  flex-direction: column;
-  align-self: start;
-  padding: 2.25rem 1rem 0 0;
-  border-right: 1px solid var(--primary-color-6);
+  top: var(--dx-navbar-height);
+  left: auto;
+  right: auto;
+  width: var(--dx-sidebar-width);
+  height: calc(100vh - var(--dx-navbar-height));
+  transition: width var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
-.dx-docs-sidebar-scroll {
-  min-height: 0;
-  flex: 1 1 auto;
-  padding-bottom: 2rem;
-  overflow-y: auto;
+.dx-sidebar-wrapper.dx-docs-shell [data-collapsible="offcanvas"] .dx-sidebar-container {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: none;
+}
+
+.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-content {
   overscroll-behavior: contain;
 }
 
-.dx-docs-sidebar-section + .dx-docs-sidebar-section {
-  margin-top: 1.5rem;
-}
-
-.dx-docs-sidebar-heading {
-  margin: 0 0 0.5rem;
-  color: var(--secondary-color-5);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.dx-docs-sidebar-link {
-  display: block;
-  padding: 0.35rem 0.5rem;
-  border-radius: 0.25rem;
-  color: var(--secondary-color-5);
-  font-size: 0.9rem;
-  line-height: 1.25;
-  text-decoration: none;
-  text-transform: capitalize;
-}
-
-.dx-docs-sidebar-link:hover,
-.dx-docs-sidebar-link-active {
-  background-color: var(--primary-color-1);
-  color: var(--secondary-color-3);
-}
-
-/* Mobile drawer affordances — hidden by default, shown via media query below */
-.dx-docs-sidebar-toggle,
-.dx-docs-sidebar-backdrop,
-.dx-docs-sidebar-close {
-  display: none;
+/* Always visible (not just once collapsed): it is the only way to open the
+ * mobile Sheet drawer, and it must also stay reachable while the desktop
+ * sidebar is still expanded -- that is the only control that can collapse
+ * it in the first place. Found by execution: an earlier version hid this
+ * until `[data-collapsible="offcanvas"]` was already set, which meant
+ * nothing could ever set it. */
+.dx-docs-inset-topbar {
+  position: sticky;
+  top: var(--dx-navbar-height);
+  z-index: 10;
+  display: flex;
+  box-sizing: border-box;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--primary-color-6);
+  background-color: var(--primary-color);
 }
 
 .dx-docs-page,
@@ -435,7 +446,7 @@ summary,
   min-width: 0;
   max-width: 840px;
   box-sizing: border-box;
-  padding: 3rem 0 5rem 4.25rem;
+  padding: 3rem 1.5rem 5rem 4.25rem;
 }
 
 .dx-docs-page-header,
@@ -926,15 +937,14 @@ summary,
   text-transform: capitalize;
 }
 
-/* Homepage component catalog */
+/* Homepage component catalog. Width/border/centering now live on
+ * `.dx-docs-shell` (the sidebar+content shell this renders inside, via
+ * `DocsLayout`) -- this only needs to fill the sidebar inset's own
+ * remaining width, not independently re-center against the viewport. */
 .dx-home-page {
-  width: min(var(--dx-content-width), calc(100vw - 2rem));
   box-sizing: border-box;
   padding-right: 4.5rem;
-  padding-left: 4.5rem;
-  border-right: 1px solid var(--primary-color-6);
-  border-left: 1px solid var(--primary-color-6);
-  margin: 0 auto;
+  padding-left: 4.25rem;
 }
 
 /* Section scaffolding shared between showcase and catalog */
@@ -1370,101 +1380,18 @@ summary,
     flex-wrap: wrap;
   }
 
-  .dx-docs-layout {
+  /* The mobile drawer itself (sidebar-wrapper -> Sheet, `data-mobile="true"`)
+   * is the shared `Sidebar` component's own responsibility below 768px --
+   * nothing to re-implement here. Just the shell's own centering/border,
+   * which otherwise stays sized for desktop. Same `.dx-sidebar-wrapper.
+   * dx-docs-shell` double-class as the desktop rule above -- this media
+   * query still needs to out-specificity that same rule, not just the
+   * shared component's base one. */
+  .dx-sidebar-wrapper.dx-docs-shell {
     width: 100%;
-    padding-right: 1rem;
-    padding-left: 1rem;
-    grid-template-columns: 1fr;
-  }
-
-  .dx-docs-sidebar-toggle {
-    position: sticky;
-    z-index: 30;
-    top: 3.75rem;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--primary-color-6);
-    border-radius: 0.4rem;
-    margin: 1rem 0 0;
-    background-color: var(--primary-color);
-    color: var(--secondary-color-3);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 0.85rem;
-    gap: 0.45rem;
-    justify-self: start;
-  }
-
-  .dx-docs-sidebar-toggle:hover {
-    background-color: var(--primary-color-1);
-  }
-
-  .dx-docs-sidebar-backdrop {
-    position: fixed;
-    z-index: 1100;
-    display: block;
-    background-color: rgb(0 0 0 / 35%);
-    inset: 0;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.18s ease;
-  }
-
-  .dx-docs-sidebar-backdrop-open {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .dx-docs-sidebar {
-    position: fixed;
-    z-index: 1200;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    width: min(20rem, 84vw);
-    height: 100vh;
-    max-height: none;
-    flex-direction: column;
-    padding: 1rem 1rem 0;
-    border-right: 1px solid var(--primary-color-6);
-    border-bottom: none;
-    background-color: var(--primary-color);
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-  }
-
-  .dx-docs-sidebar-scroll {
-    padding-bottom: 2rem;
-  }
-
-  .dx-docs-sidebar-open {
-    transform: translateX(0);
-  }
-
-  /* Lock background scroll while the drawer is open */
-  html:has(.dx-docs-sidebar-open),
-  body:has(.dx-docs-sidebar-open) {
-    overflow: hidden;
-  }
-
-  .dx-docs-sidebar-close {
-    display: inline-flex;
-    width: 2rem;
-    height: 2rem;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    border-radius: 0.3rem;
-    margin-bottom: 0.5rem;
-    background-color: transparent;
-    color: var(--secondary-color-3);
-    cursor: pointer;
-  }
-
-  .dx-docs-sidebar-close:hover {
-    background-color: var(--primary-color-1);
+    min-height: 0;
+    border-right: none;
+    border-left: none;
   }
 
   .dx-docs-page,
