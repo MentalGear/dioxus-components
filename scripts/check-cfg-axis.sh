@@ -3,7 +3,7 @@
 # check-cfg-axis.sh
 #
 # Enforces the corrected cfg axis documented in
-# docs/recommended-implementations.md, Caveat 1 (2026-09-01 update):
+# dev-docs/recommended-implementations.md, Caveat 1 (2026-09-01 update):
 #
 #   Rendered markup, component structure, and attribute choice must split
 #   on the `web` Cargo feature (`#[cfg(feature = "web")]` /
@@ -91,7 +91,7 @@ if [[ -n "$VIOLATIONS" ]]; then
   echo "$VIOLATIONS" >&2
   echo >&2
   echo "Markup/structure/attribute cfgs must split on feature = \"web\", not" >&2
-  echo "target_family = \"wasm\" -- see docs/recommended-implementations.md" >&2
+  echo "target_family = \"wasm\" -- see dev-docs/recommended-implementations.md" >&2
   echo "Caveat 1 for the corrected axis rule and the 2026-09-01 incident" >&2
   echo "that proved it." >&2
   exit 1

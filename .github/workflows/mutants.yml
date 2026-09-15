@@ -1,6 +1,6 @@
 name: Mutation testing (manual)
 
-# Manual-only by design — see docs/mutants-baseline.md: the gap this
+# Manual-only by design — see dev-docs/mutants-baseline.md: the gap this
 # measures is test content, not monitoring cadence. Run before releases
 # or after touching the scoped algorithmic files.
 on: workflow_dispatch

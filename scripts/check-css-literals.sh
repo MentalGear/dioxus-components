@@ -2,8 +2,8 @@
 #
 # check-css-literals.sh
 #
-# Enforces docs/backlog.md row 31b: a themed component stylesheet must not
-# hard-code a value that the design-token set (docs/backlog.md row 31a,
+# Enforces dev-docs/backlog.md row 31b: a themed component stylesheet must not
+# hard-code a value that the design-token set (dev-docs/backlog.md row 31a,
 # `preview/assets/dx-components-theme.css`) already names.
 #
 #   padding: 0.5rem;              -> padding: var(--dx-space-2);
@@ -134,7 +134,7 @@ for path in sorted(glob.glob("preview/src/components/*/style.css")):
                 errors.append(
                     f"{path}:{lineno}: `{prop}: {value.strip()}` hard-codes "
                     f"{frag}, which is {hit} "
-                    f"(docs/backlog.md row 31b)"
+                    f"(dev-docs/backlog.md row 31b)"
                 )
             else:
                 px = re.fullmatch(r"(\d+(?:\.\d+)?)px", frag)
@@ -159,7 +159,7 @@ for e in errors:
 if errors:
     print()
     print(f"check-css-literals: FAILED -- {len(errors)} hard-coded value(s) "
-          f"duplicate a design token. See docs/backlog.md row 31b.")
+          f"duplicate a design token. See dev-docs/backlog.md row 31b.")
     sys.exit(1)
 
 print("check-css-literals: OK")

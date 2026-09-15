@@ -5,7 +5,7 @@
 // Generates `preview/assets/dx-utilities.css` -- a small, static set of
 // `dx-`-prefixed utility classes (spacing, gap, flex/grid basics, text
 // sizes, radius, shadow) -- FROM the tokens defined in
-// `preview/assets/dx-components-theme.css` (docs/backlog.md row 31a).
+// `preview/assets/dx-components-theme.css` (dev-docs/backlog.md row 31a).
 //
 // Why generated rather than hand-written: a hand-written utility sheet
 // drifts from the token file the moment either one is edited alone (the
@@ -32,7 +32,7 @@
 //   - Shadow: `box-shadow` off the `--dx-shadow-*` scale, plus a
 //     hand-written `none` step.
 //
-// What this deliberately does NOT generate (docs/backlog.md row 31a is
+// What this deliberately does NOT generate (dev-docs/backlog.md row 31a is
 // explicit about this): no variants. No `hover:`, `md:`, `data-[state]:`,
 // no responsive/state prefixes of any kind, and no JIT/on-demand
 // scanning of markup for class usage -- every class below is emitted
@@ -280,7 +280,7 @@ const HEADER = `/* GENERATED FILE -- DO NOT EDIT BY HAND.
  *
  * Produced by \`node scripts/generate-dx-utilities.js\` from the token
  * declarations in \`preview/assets/dx-components-theme.css\`
- * (docs/backlog.md row 31a). Re-run that script to regenerate after
+ * (dev-docs/backlog.md row 31a). Re-run that script to regenerate after
  * changing the token file; \`node scripts/generate-dx-utilities.js
  * --check\` fails if this file is stale.
  *

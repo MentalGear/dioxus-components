@@ -2,7 +2,7 @@
 #
 # check-preview-composition.sh
 #
-# Enforces the preview app's composition rule (docs/preview-composition.md):
+# Enforces the preview app's composition rule (dev-docs/preview-composition.md):
 #
 #   Preview markup composes ONLY themed wrappers from `crate::components::*`.
 #   A raw `dioxus_primitives::` import is legitimate in exactly two places:
@@ -25,7 +25,7 @@
 #   that pulls in a whole family of such components -- must come from
 #   `crate::components::*` instead. Composing the raw primitive directly
 #   skips the theme wrapper's `css_module` class, which is exactly the bug
-#   this script exists to catch (see docs/preview-composition.md for the
+#   this script exists to catch (see dev-docs/preview-composition.md for the
 #   two real incidents that motivated it).
 #
 # Usage: scripts/check-preview-composition.sh
@@ -55,7 +55,7 @@ fail=0
 #
 #   - preview/src/components/form/component.rs is NOT a themed wrapper --
 #     there is no `dioxus_primitives::form` primitive. It is a fixture page
-#     (docs/conformance-harness.md tier 2) whose job is to compose *other*
+#     (dev-docs/conformance-harness.md tier 2) whose job is to compose *other*
 #     components' THEMED wrappers, per its own header comment. This is the
 #     file the reported bug (collapsed library Switch/Select in the form
 #     fixture) lives in, so it is explicitly re-included in the scan below
@@ -256,7 +256,7 @@ done
 
 if [[ "$fail" -ne 0 ]]; then
     echo
-    echo "check-preview-composition: FAILED -- see docs/preview-composition.md for the rule."
+    echo "check-preview-composition: FAILED -- see dev-docs/preview-composition.md for the rule."
     exit 1
 fi
 
