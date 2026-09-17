@@ -356,6 +356,40 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
 /// rect covers (e.g. a separator) is left alone -- returns `None`, so the
 /// caller makes no change and the browser's own (harmless there, since
 /// there's no slot grid to misalign with) placement stands.
+///
+/// Selection, not just a collapsed caret (2026-09-17 production report:
+/// "I'm in the selected field then typing a number right [and it doesn't
+/// correct]"): when the clamped index falls on an *existing* character
+/// (`clamped < value_len`), this selects that one character --
+/// `setSelectionRange(clamped, clamped + 1, ...)` -- instead of collapsing
+/// to `(clamped, clamped)`. A collapsed caret makes native typing *insert*
+/// at that position rather than overwrite, which produced two confirmed
+/// symptoms: on a full value (already at `maxlength`), the browser silently
+/// refuses the keystroke outright (inserting would exceed `maxlength`), and
+/// on a partial value, typing a digit shifts every character after the
+/// caret one slot right instead of correcting the clicked one. Typing over
+/// an actual selection *replaces* it -- the standard `<input>` semantics for
+/// "correct this character" -- and, because a replacement never grows the
+/// string, it also can't hit the `maxlength` insert-block. When `clamped ==
+/// value_len` (clicked past the last real character, nothing there to
+/// select), the collapsed-caret behavior stays: there is no character at
+/// that position for a range to cover.
+///
+/// Direction: `"forward"` (anchor at `clamped`, focus/caret at `clamped +
+/// 1`), not the default `"none"` or `"backward"`. This matches the
+/// left-to-right reading order every other caret movement in this component
+/// already assumes (`ArrowRight` moving to a higher index, `Delete` acting
+/// on the character *at* the caret going forward) and makes
+/// Shift+`ArrowRight`/Shift+`ArrowLeft` extend/shrink from the natural end
+/// if a caller ever drives this with a real keyboard selection. It has no
+/// effect on the unshifted nav already covered by this module's tests:
+/// unshifted `ArrowLeft`/`ArrowRight` on any non-collapsed selection collapse
+/// to that selection's left/right edge regardless of direction (confirmed
+/// live and re-verified by the keyboard-nav test below, which still passes
+/// unmodified), so a single-character selection here behaves exactly like a
+/// collapsed caret already would for every keyboard interaction this
+/// component exercises -- the only user-visible change is that *typing*
+/// over it now replaces instead of inserting.
 async fn snap_caret_to_slot(
     id: String,
     value_len: usize,
@@ -381,7 +415,15 @@ async fn snap_caret_to_slot(
         }
         if (target !== null && input) {
             const clamped = Math.min(target, valueLen);
-            input.setSelectionRange(clamped, clamped);
+            if (clamped < valueLen) {
+                // An existing character sits here -- select it so typing
+                // replaces it instead of inserting before it.
+                input.setSelectionRange(clamped, clamped + 1, 'forward');
+            } else {
+                // Past the last real character -- nothing to select, same
+                // "click to continue typing" collapsed caret as before.
+                input.setSelectionRange(clamped, clamped, 'forward');
+            }
             dioxus.send(clamped);
         } else {
             dioxus.send(null);

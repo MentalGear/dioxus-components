@@ -305,6 +305,107 @@ test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-targ
   });
 });
 
+/**
+ * Click-then-type replace (2026-09-17 production report, found using the
+ * app normally: "clicking just any field should be able to correct that
+ * number. I'm in the selected field then typing a number right [and it
+ * doesn't correct]"). Root cause: the previous round's click-to-caret fix
+ * (`snap_caret_to_slot`, see the "Click-to-caret positioning" describe block
+ * above) moved the caret with a *collapsed* selection
+ * (`setSelectionRange(idx, idx)`), and native `<input>` typing *inserts* at
+ * a collapsed caret rather than overwriting -- confirmed live before this
+ * fix: on a full 6-digit value, clicking slot 2 and typing "9" left the
+ * value completely unchanged (inserting would exceed `maxlength`, so the
+ * browser silently refused the keystroke), and on a partial value "123",
+ * clicking slot 1 and typing "9" produced "1923" (inserted before "2",
+ * shifting "23" right) instead of correcting that one digit. Fixed by
+ * selecting the clicked character (`setSelectionRange(idx, idx + 1,
+ * 'forward')`) whenever one exists at that index, so typing over the
+ * selection replaces it -- see `primitives/src/input_otp.rs`'s
+ * `snap_caret_to_slot` doc for the full rationale, including why
+ * `'forward'` was chosen for the selection direction.
+ */
+test.describe("Click-then-type replace (2026-09-17 -- selection-vs-collapsed-caret regression)", () => {
+  const slotCenter = async (page: import("@playwright/test").Page, prefix: string, index: number) => {
+    const box = await page.locator(`${prefix} + div [data-slot-index="${index}"]`).boundingBox();
+    if (!box) throw new Error(`slot ${index} has no bounding box`);
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  test("clicking a slot in a full value selects that one character, so typing replaces it instead of being blocked by maxlength", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    await input.click();
+    await page.keyboard.type("123456");
+    await expect(input).toHaveValue("123456");
+
+    const p = await slotCenter(page, "#otp-main", 2);
+    await page.mouse.click(p.x, p.y);
+    // A one-character selection, not a collapsed caret -- this is what makes
+    // the following keystroke replace instead of insert-and-get-blocked.
+    await expect(input).toHaveJSProperty("selectionStart", 2);
+    await expect(input).toHaveJSProperty("selectionEnd", 3);
+
+    await page.keyboard.type("9");
+    // Before the fix: stayed "123456" (maxlength silently blocked the insert).
+    await expect(input).toHaveValue("129456");
+  });
+
+  test("clicking a slot in a partial value selects that one character, so typing replaces it instead of shifting the rest right", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    await input.click();
+    await page.keyboard.type("123");
+    await expect(input).toHaveValue("123");
+
+    const p = await slotCenter(page, "#otp-main", 1);
+    await page.mouse.click(p.x, p.y);
+    await expect(input).toHaveJSProperty("selectionStart", 1);
+    await expect(input).toHaveJSProperty("selectionEnd", 2);
+
+    await page.keyboard.type("9");
+    // Before the fix: became "1923" (inserted before "2" instead of
+    // replacing it).
+    await expect(input).toHaveValue("193");
+  });
+
+  test("clicking the last filled character replaces just that character, not an insert past maxlength", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    await input.click();
+    await page.keyboard.type("12345");
+    await expect(input).toHaveValue("12345");
+
+    const p = await slotCenter(page, "#otp-main", 4);
+    await page.mouse.click(p.x, p.y);
+    await expect(input).toHaveJSProperty("selectionStart", 4);
+    await expect(input).toHaveJSProperty("selectionEnd", 5);
+
+    await page.keyboard.type("9");
+    await expect(input).toHaveValue("12349");
+  });
+
+  test("clicking past the end of an empty value still collapses to a plain caret at 0 -- nothing exists there to select", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    const p = await slotCenter(page, "#otp-main", 3);
+    await page.mouse.click(p.x, p.y);
+    await expect(input).toHaveJSProperty("selectionStart", 0);
+    await expect(input).toHaveJSProperty("selectionEnd", 0);
+
+    await page.keyboard.type("9");
+    await expect(input).toHaveValue("9");
+  });
+});
+
 test.describe("Axe automated scan", () => {
   // Input OTP has no overlay/expand/select interaction -- like Input/Input
   // Group, one state to scan (docs/conformance-harness.md).
