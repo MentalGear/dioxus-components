@@ -266,9 +266,28 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
             // text-input requirements). `display: contents` so this wrapper
             // adds no layout box of its own between the caller's
             // `InputOtpGroup`(s) and this root.
+            //
+            // `pointer-events: none` (inherited by every descendant --
+            // `InputOtpGroup`/`InputOtpSlot`/`InputOtpSeparator` set none of
+            // their own) is the actual hit-target fix: this overlay paints
+            // *after*, and therefore on top of, the real input above in the
+            // same stacking context, and its `InputOtpSlot` boxes visually
+            // cover almost the entire row. Without this, every click/tap
+            // lands on a decorative, non-interactive box instead of the real
+            // input beneath it -- confirmed via `elementFromPoint` on a
+            // running instance: clicking dead-center of a visible slot
+            // resolved to that slot's own `<div>`, not `#otp-main`, and only
+            // the few-pixel gaps *between* slots (untouched by any box)
+            // reached the input at all. `pointer-events: none` makes this
+            // layer transparent to hit-testing, same as it already is
+            // visually (`opacity: 0` on the real input, this module's doc),
+            // so every click/tap across the full visible row -- slots,
+            // separators, and the gaps between them -- reaches the real
+            // input instead of stopping at its decorative overlay.
             div {
                 aria_hidden: "true",
                 display: "contents",
+                pointer_events: "none",
                 {props.children}
             }
         }
