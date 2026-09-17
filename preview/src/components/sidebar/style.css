@@ -399,6 +399,12 @@
   color: var(--dx-sidebar-foreground);
   font-size: var(--dx-text-xs);
   font-weight: 500;
+  /* gap: matches `.dx-sidebar-menu-button[data-sidebar="menu-button"]`'s own
+     icon+label spacing (this file, ~line 568) -- this label started as a
+     text-only child, so it had no gap of its own until a leading icon
+     (e.g. `Docs`'s "Start"/each `ComponentCategory` group) needed the same
+     icon+text pairing that button already supports. */
+  gap: var(--dx-space-2);
   opacity: 0.7;
   outline: none;
   transition: margin var(--dx-motion-duration-slow) var(--dx-motion-ease-out), opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out);

@@ -193,7 +193,7 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
         }
     });
 
-    let selection_start = use_signal(|| 0usize);
+    let mut selection_start = use_signal(|| 0usize);
     let mut has_focus = use_signal(|| false);
     use_caret_sync(id, selection_start);
 
@@ -258,6 +258,40 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
                 onblur: move |_| has_focus.set(false),
                 oninput: move |e: FormEvent| set_value.call(e.value()),
 
+                // Overrides the browser's own click-to-caret placement,
+                // which is wrong here (see `snap_caret_to_slot` and this
+                // module's doc): the real input is `opacity: 0` with no
+                // `letter-spacing` tuned to the visual slot grid
+                // (`preview/src/components/input_otp/style.css`'s
+                // `.dx-input-otp-input` sets none), so the browser maps a
+                // click's x-coordinate to a caret index using invisible
+                // glyph positions that were never aligned to the 40px-wide
+                // slot boxes -- confirmed live: on an empty field, clicking
+                // slot 0, 3, or 5 all placed the caret at index 0; on a
+                // field filled with "123", clicking slot 0 landed at index
+                // 2 while slots 1/4/5 all landed at index 3. This handler
+                // recomputes the intended slot from geometry instead (the
+                // slots are `pointer-events: none`, so `elementFromPoint`
+                // can't be used -- see this module's doc on the earlier hit
+                // -target fix) and explicitly moves the caret there,
+                // matching upstream `input-otp`'s own approach of not
+                // trusting native click-to-glyph mapping at all.
+                onclick: move |e: MouseEvent| {
+                    if disabled() {
+                        return;
+                    }
+                    let input_id = id.cloned();
+                    let value_len = value().chars().count();
+                    let point = e.client_coordinates();
+                    spawn(async move {
+                        if let Some(idx) =
+                            snap_caret_to_slot(input_id, value_len, point.x, point.y).await
+                        {
+                            selection_start.set(idx);
+                        }
+                    });
+                },
+
                 ..props.attributes,
             }
 
@@ -292,6 +326,73 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
             }
         }
     }
+}
+
+/// Computes which [`InputOtpSlot`] a click at `(client_x, client_y)` landed
+/// in by geometry, then explicitly moves the real `<input>`'s native caret
+/// there -- overriding the browser's own (wrong, see [`InputOtp`]'s
+/// `onclick`) click-to-glyph caret placement.
+///
+/// The slot boxes are `pointer-events: none` (the earlier "almost no hit
+/// target" fix, this module's doc), so `elementFromPoint` would just return
+/// the real input itself, never the slot underneath. Instead this reads
+/// every slot's own `getBoundingClientRect()` directly and does a plain
+/// point-in-rect test -- a fixed, non-scrolling layout, so this is exact.
+/// Slots are queried from `id`'s own `aria-hidden` overlay sibling (its
+/// `next_element_sibling` in the DOM, matching this module's own `input {
+/// ... } div { aria_hidden: ... }` structure) rather than `document`-wide,
+/// so this stays correct with more than one [`InputOtp`] on the same page.
+/// Grouping ([`InputOtpGroup`]/[`InputOtpSeparator`]) needs no special
+/// handling: every rendered slot carries its own `data-slot-index` and its
+/// own rect regardless of which group it's in, so iterating all of them
+/// flattens any grouping automatically.
+///
+/// Clamping rule: the target slot's index is clamped to `min(slot_index,
+/// value_len)` -- clicking on or before an existing character goes to that
+/// exact position (ordinary text-input UX), while clicking past the last
+/// character (an empty, untyped slot) goes to `value_len`, i.e. right after
+/// the last real character, the same place any plain text input puts the
+/// caret when you click past its end. A click that lands in a gap no slot's
+/// rect covers (e.g. a separator) is left alone -- returns `None`, so the
+/// caller makes no change and the browser's own (harmless there, since
+/// there's no slot grid to misalign with) placement stands.
+async fn snap_caret_to_slot(
+    id: String,
+    value_len: usize,
+    client_x: f64,
+    client_y: f64,
+) -> Option<usize> {
+    let mut eval = document::eval(
+        r#"
+        const id = await dioxus.recv();
+        const valueLen = await dioxus.recv();
+        const x = await dioxus.recv();
+        const y = await dioxus.recv();
+        const input = document.getElementById(id);
+        const overlay = input ? input.nextElementSibling : null;
+        const slots = overlay ? Array.from(overlay.querySelectorAll('[data-slot-index]')) : [];
+        let target = null;
+        for (const slot of slots) {
+            const r = slot.getBoundingClientRect();
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+                target = Number(slot.getAttribute('data-slot-index'));
+                break;
+            }
+        }
+        if (target !== null && input) {
+            const clamped = Math.min(target, valueLen);
+            input.setSelectionRange(clamped, clamped);
+            dioxus.send(clamped);
+        } else {
+            dioxus.send(null);
+        }
+        "#,
+    );
+    let _ = eval.send(id);
+    let _ = eval.send(value_len);
+    let _ = eval.send(client_x);
+    let _ = eval.send(client_y);
+    eval.recv::<Option<usize>>().await.ok().flatten()
 }
 
 /// Keeps a Rust signal in sync with the real `<input>`'s live caret

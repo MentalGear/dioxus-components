@@ -43,6 +43,15 @@ html {
      top. See `docs/conformance-harness.md`'s hydration-parity section for
      the specific regression this closes. */
   scroll-padding-top: var(--dx-navbar-height);
+
+  /* `/docs`'s new "Start" sub-items (`DocsLayout`'s `docs_sections`,
+     `preview/src/main.rs`) jump to an in-page `#`-anchor heading via a
+     plain `a { href: "#..." }`, not a route change -- without this, that
+     jump is an instant cut rather than a scroll a user can follow. Scoped
+     to the whole document rather than just `.dx-docs-prose` since any
+     future same-page anchor jump elsewhere in the app should behave the
+     same way. */
+  scroll-behavior: smooth;
 }
 
 html,
