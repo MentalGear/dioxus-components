@@ -730,6 +730,16 @@ fn DocsLayout(
     // leak in from whatever the homepage's own sidebar was last set to.
     #[props(default)] side: Option<Signal<SidebarSide>>,
     #[props(default)] collapsible: Option<Signal<SidebarCollapsible>>,
+    // Only `Home()` passes `Some(false)`, so the homepage's real site nav
+    // starts closed/out-of-the-way behind its hero + gallery content (that
+    // page already has its own primary draw, and the same `SidebarTrigger`
+    // in the topbar still opens it). Every other call site (`/docs`,
+    // component pages) leaves this `None` and keeps the previous, open-by-
+    // default behavior -- those pages need the nav immediately usable.
+    // `SidebarProvider`'s own `default_open` (`components/sidebar/
+    // component.rs`) already exists for exactly this and just needed
+    // threading through here.
+    #[props(default)] default_open: Option<bool>,
     children: Element,
 ) -> Element {
     // Always call both hooks (rather than only inside an `unwrap_or_else`
@@ -742,7 +752,7 @@ fn DocsLayout(
     let collapsible = collapsible.unwrap_or(default_collapsible);
 
     rsx! {
-        SidebarProvider { class: "dx-docs-shell",
+        SidebarProvider { class: "dx-docs-shell", default_open: default_open.unwrap_or(true),
             Sidebar { side: side(), collapsible: collapsible(),
                 SidebarContent {
                     SidebarGroup {
@@ -1108,8 +1118,9 @@ fn BlockComponentVariantHighlight(
                     // than the space this page happens to leave it would
                     // otherwise just get silently clipped, not pushed into
                     // a scrollbar. This local `auto` opts *this* frame back
-                    // into scrolling on its own, so the `min_width` below
-                    // stays reachable instead of being cut off.
+                    // into scrolling on its own, so `.dx-block-demo-iframe`'s
+                    // desktop-only `min-width` (`assets/main.css`) stays
+                    // reachable instead of being cut off.
                     overflow_x: "auto",
                     iframe {
                         src: "{iframe_src}",
@@ -1127,14 +1138,49 @@ fn BlockComponentVariantHighlight(
                         // preview: its own `window.innerWidth` is this
                         // iframe's content width, not the outer page's, so
                         // it has no way to know it's being squeezed rather
-                        // than genuinely viewed on a narrow screen. Forcing
-                        // a comfortable margin above the common breakpoint
-                        // keeps every current and future block demo's
-                        // *default* preview desktop-sized regardless of
-                        // where this page embeds it; `overflow-x: auto`
-                        // above makes the rest reachable by scrolling on
-                        // narrower pages instead of clipping it away.
-                        min_width: "820px",
+                        // than genuinely viewed on a narrow screen.
+                        //
+                        // A PREVIOUS fix forced a flat, always-on
+                        // `min-width: 820px` here to keep the preview
+                        // desktop-sized -- but that ALSO fired for a
+                        // genuinely narrow real device/window, forcing an
+                        // 820px-wide iframe into e.g. a 390px mobile
+                        // viewport (confirmed live + locally: the iframe's
+                        // own `getBoundingClientRect()` reported `width:
+                        // 822` inside a 390px viewport, clipped/garbled
+                        // rather than scrolled to, since `overflow-x: clip`
+                        // on `html`/`body` hides the escape without giving
+                        // a scrollbar). A real mobile visitor SHOULD see
+                        // this block's own mobile rendering (e.g.
+                        // `Sidebar`'s Sheet-trigger button) -- forcing
+                        // desktop width there is wrong, not just ugly.
+                        //
+                        // The fix is `.dx-block-demo-iframe` in
+                        // `assets/main.css`: the `min-width: 820px` rule
+                        // lives behind `@media (min-width: 768px)` in THAT
+                        // file, not this iframe's own document. A media
+                        // query written inside the iframe's own stylesheet
+                        // would evaluate against the iframe's own (possibly
+                        // squeezed) viewport -- the exact ambiguous signal
+                        // at the heart of this bug -- but `main.css` is
+                        // loaded by the OUTER top-level page, so its media
+                        // query evaluates against the outer page's real
+                        // `window.innerWidth`, i.e. the actual visitor
+                        // viewport/device width. That correctly tells apart
+                        // "the outer desktop page's own sidebar nav is
+                        // squeezing an otherwise-plenty-wide viewport"
+                        // (outer viewport >= 768: force the comfortable
+                        // desktop min-width; `overflow-x: auto` above makes
+                        // the extra width reachable by scrolling within
+                        // this card instead of overflowing the page) from
+                        // "this actually is a narrow device/window" (outer
+                        // viewport < 768: no forced min-width, so the
+                        // iframe sizes to its real, narrow container and
+                        // the embedded block component's own breakpoint
+                        // check sees a genuinely narrow width and renders
+                        // its real mobile layout, matching what a mobile
+                        // visitor should see).
+                        class: "dx-block-demo-iframe",
                         height: "600px",
                         border: "1px solid var(--primary-color-6)",
                         border_radius: "0.5em",
@@ -1292,7 +1338,7 @@ fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
     use_context_provider(|| HomeSidebarControls { side, collapsible });
 
     rsx! {
-        DocsLayout { active: DocsNavActive::Home, side: Some(side), collapsible: Some(collapsible),
+        DocsLayout { active: DocsNavActive::Home, side: Some(side), collapsible: Some(collapsible), default_open: Some(false),
             // No `role: "main"` here -- `DocsLayout`'s `SidebarInset` already
             // renders the page's one `<main>` landmark (axe
             // `landmark-no-duplicate-main`, see `DocsLayout`'s own comment).
@@ -1739,7 +1785,16 @@ fn BlockFilters() -> Element {
                 }
                 div { style: "display: grid; gap: 0.4rem;",
                     for tag in [("ft-design", "Design", true), ("ft-eng", "Engineering", false), ("ft-research", "Research", false)] {
-                        div { style: "display: flex; align-items: center; gap: 0.55rem;",
+                        // `var(--dx-space-3)` (12px), not the `0.55rem`
+                        // (8.8px) every other unrelated gap in this
+                        // dashboard mockup still uses -- this is the one
+                        // row that actually pairs a `Checkbox` with its
+                        // label text, so it should match the same
+                        // checkbox+label spacing convention every other
+                        // composed checkbox/radio pairing in this codebase
+                        // (Field's horizontal layout, RadioGroup) already
+                        // uses.
+                        div { style: "display: flex; align-items: center; gap: var(--dx-space-3);",
                             Checkbox {
                                 id: tag.0,
                                 name: tag.0,

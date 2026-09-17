@@ -718,6 +718,36 @@ summary,
   gap: 1rem;
 }
 
+/* `BlockComponentVariantHighlight` (`preview/src/main.rs`)'s live-preview
+ * iframe for a `ComponentType::Block` demo. See that iframe's own comment
+ * for the full incident writeup; the short version: the `min-width: 820px`
+ * below must be gated on THIS file's `@media` query rather than baked into
+ * the iframe's inline style or a stylesheet loaded inside the iframe's own
+ * document, because this file is loaded by the OUTER top-level page --
+ * so `@media (min-width: 768px)` here evaluates against the outer page's
+ * real, actual visitor viewport width, not the iframe's own (which can be
+ * squeezed well under 768px by this same page's site-nav `Sidebar` on a
+ * perfectly normal desktop window -- the original bug this rule fixes --
+ * with no way for anything inside the iframe to tell that apart from a
+ * genuinely narrow mobile viewport, since a media query written in the
+ * iframe's own stylesheet would evaluate against the iframe's own,
+ * possibly-squeezed width and reintroduce the same ambiguity). Below the
+ * outer breakpoint this rule simply doesn't apply, so the iframe sizes to
+ * whatever narrow width its real container leaves it, and the embedded
+ * block component's own breakpoint check (e.g. `Sidebar`'s
+ * `MOBILE_BREAKPOINT`, `components/sidebar/component.rs`) sees a genuinely
+ * narrow width and renders its real mobile layout instead of a hybrid,
+ * clipped desktop one. */
+.dx-block-demo-iframe {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .dx-block-demo-iframe {
+    min-width: 820px;
+  }
+}
+
 .dx-component-inline-command {
   display: inline-flex;
   max-width: 100%;
