@@ -15,7 +15,8 @@ use crate::components::{
     radio_group::{RadioGroup, RadioItem},
     sidebar::{
         Sidebar, SidebarCollapsible, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarInset,
-        SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
+        SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSide,
+        SidebarTrigger,
     },
     slider::Slider,
     switch::Switch,
@@ -717,10 +718,32 @@ enum DocsNavActive {
 /// themselves, since `SidebarInset` already renders the page's one `<main>`
 /// landmark (see `EmailClient()`'s own comment on that same point).
 #[component]
-fn DocsLayout(active: DocsNavActive, children: Element) -> Element {
+fn DocsLayout(
+    active: DocsNavActive,
+    // Only the homepage passes these (`Home()`, via its own `Signal`s that
+    // its `ComponentGalleryPreview`'s Sidebar card also writes to) so its
+    // card's Side/Collapse buttons can reconfigure this same, real nav
+    // in place. Every other call site (`/docs`, component pages) leaves
+    // both `None` and gets its own fresh, fixed-default `Sidebar` state
+    // here -- Dioxus already unmounts/remounts this whole layout on route
+    // change (a new component instance per route), so that default can't
+    // leak in from whatever the homepage's own sidebar was last set to.
+    #[props(default)] side: Option<Signal<SidebarSide>>,
+    #[props(default)] collapsible: Option<Signal<SidebarCollapsible>>,
+    children: Element,
+) -> Element {
+    // Always call both hooks (rather than only inside an `unwrap_or_else`
+    // closure) so hook order never depends on whether the caller passed
+    // `side`/`collapsible` -- these locals are simply unused/discarded
+    // when a real signal was supplied.
+    let default_side = use_signal(|| SidebarSide::Left);
+    let default_collapsible = use_signal(|| SidebarCollapsible::Offcanvas);
+    let side = side.unwrap_or(default_side);
+    let collapsible = collapsible.unwrap_or(default_collapsible);
+
     rsx! {
         SidebarProvider { class: "dx-docs-shell",
-            Sidebar { collapsible: SidebarCollapsible::Offcanvas,
+            Sidebar { side: side(), collapsible: collapsible(),
                 SidebarContent {
                     SidebarGroup {
                         SidebarGroupLabel { "Start" }
@@ -1079,9 +1102,39 @@ fn BlockComponentVariantHighlight(
                     value: "Preview",
                     width: "100%",
                     position: "relative",
+                    // `overflow-x: clip` is set globally on `html`/`body`
+                    // (`assets/main.css`) to keep the page itself from ever
+                    // growing a horizontal scrollbar -- so an iframe wider
+                    // than the space this page happens to leave it would
+                    // otherwise just get silently clipped, not pushed into
+                    // a scrollbar. This local `auto` opts *this* frame back
+                    // into scrolling on its own, so the `min_width` below
+                    // stays reachable instead of being cut off.
+                    overflow_x: "auto",
                     iframe {
                         src: "{iframe_src}",
                         width: "100%",
+                        // Block demos embed here at whatever width this
+                        // page's own layout leaves them -- since the site
+                        // nav itself became a real `Sidebar` (`DocsLayout`,
+                        // this file), that can now be under 768px on a
+                        // normal desktop viewport (e.g. ~684px measured on
+                        // the live `sidebar` demo). Any block component
+                        // that (like `Sidebar` itself, `components/sidebar/
+                        // component.rs`'s `MOBILE_BREAKPOINT`) switches to
+                        // a different, closed-by-default layout below that
+                        // breakpoint would silently render nothing in the
+                        // preview: its own `window.innerWidth` is this
+                        // iframe's content width, not the outer page's, so
+                        // it has no way to know it's being squeezed rather
+                        // than genuinely viewed on a narrow screen. Forcing
+                        // a comfortable margin above the common breakpoint
+                        // keeps every current and future block demo's
+                        // *default* preview desktop-sized regardless of
+                        // where this page embeds it; `overflow-x: auto`
+                        // above makes the rest reachable by scrolling on
+                        // narrower pages instead of clipping it away.
+                        min_width: "820px",
                         height: "600px",
                         border: "1px solid var(--primary-color-6)",
                         border_radius: "0.5em",
@@ -1216,10 +1269,30 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
     }
 }
 
+/// Lets the homepage's own `ComponentGalleryPreview` (deep inside
+/// `DocsLayout`'s `children`, via `ComponentGallery`) reach the same
+/// `side`/`collapsible` signals `Home()` hands to `DocsLayout` itself, so
+/// the Sidebar gallery card's Side/Collapse buttons reconfigure the real,
+/// on-page nav live rather than a separate demo instance. Provided once
+/// here and read with `try_consume_context` (not `consume_context`) by
+/// `ComponentGalleryPreview`, since that component has no other reason to
+/// require a `Home()` ancestor -- reading it defensively keeps it reusable
+/// on a future page that doesn't provide this context, where its Sidebar
+/// card then just falls back to the plain "Open full preview" link.
+#[derive(Clone, Copy, PartialEq)]
+struct HomeSidebarControls {
+    side: Signal<SidebarSide>,
+    collapsible: Signal<SidebarCollapsible>,
+}
+
 #[component]
 fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
+    let side = use_signal(|| SidebarSide::Left);
+    let collapsible = use_signal(|| SidebarCollapsible::Offcanvas);
+    use_context_provider(|| HomeSidebarControls { side, collapsible });
+
     rsx! {
-        DocsLayout { active: DocsNavActive::Home,
+        DocsLayout { active: DocsNavActive::Home, side: Some(side), collapsible: Some(collapsible),
             // No `role: "main"` here -- `DocsLayout`'s `SidebarInset` already
             // renders the page's one `<main>` landmark (axe
             // `landmark-no-duplicate-main`, see `DocsLayout`'s own comment).
@@ -2020,11 +2093,26 @@ fn ComponentGalleryPreview(component: ComponentDemoData) -> Element {
     let display_name = name.replace("_", " ");
     let install_command = format!("dx components add {name}");
 
-    let preview = match r#type {
-        ComponentType::Normal => rsx! {
+    // Only the `sidebar` card, and only when rendered under `Home()` (which
+    // is the sole provider of this context -- see `HomeSidebarControls`'s
+    // own doc comment), gets live controls instead of the plain
+    // "Open full preview" link every other `ComponentType::Block` entry
+    // still falls back to. `try_consume_context` (not `consume_context`)
+    // is what makes that fallback safe rather than a panic: this same
+    // component would otherwise need every future caller to remember to
+    // provide the context, for a card that doesn't use it.
+    let home_sidebar_controls = (name == "sidebar")
+        .then(try_consume_context::<HomeSidebarControls>)
+        .flatten();
+
+    let preview = match (r#type, home_sidebar_controls) {
+        (ComponentType::Normal, _) => rsx! {
             Comp {}
         },
-        ComponentType::Block => rsx! {
+        (ComponentType::Block, Some(controls)) => rsx! {
+            SidebarGalleryCardControls { controls }
+        },
+        (ComponentType::Block, None) => rsx! {
             Link {
                 to: Route::component(name),
                 class: "dx-component-card-block-link",
@@ -2054,6 +2142,68 @@ fn ComponentGalleryPreview(component: ComponentDemoData) -> Element {
                 }
             }
             div { class: "dx-component-card-preview", {preview} }
+        }
+    }
+}
+
+/// The homepage's Sidebar gallery card's own controls -- Side/Collapse
+/// buttons in the same shape as `sidebar/variants/main/mod.rs`'s
+/// `DemoSettingControls` (that file's own demo page), but writing to
+/// `Home()`'s signals instead of a demo-local pair, so they reconfigure
+/// the real, on-page site nav (`DocsLayout`'s `Sidebar`) live.
+#[component]
+fn SidebarGalleryCardControls(controls: HomeSidebarControls) -> Element {
+    let HomeSidebarControls {
+        mut side,
+        mut collapsible,
+    } = controls;
+
+    rsx! {
+        div { style: "display: flex; flex-direction: column; gap: 0.75rem; width: 100%;",
+            div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                    "Side"
+                }
+                div { style: "display: inline-flex; gap: 0.5rem;",
+                    Button {
+                        variant: if side() == SidebarSide::Left { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                        onclick: move |_| side.set(SidebarSide::Left),
+                        style: "padding: 0.4rem 0.6rem; font-size: 0.75rem;",
+                        "Left"
+                    }
+                    Button {
+                        variant: if side() == SidebarSide::Right { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                        onclick: move |_| side.set(SidebarSide::Right),
+                        style: "padding: 0.4rem 0.6rem; font-size: 0.75rem;",
+                        "Right"
+                    }
+                }
+            }
+            div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                    "Collapse"
+                }
+                div { style: "display: inline-flex; gap: 0.5rem; flex-wrap: wrap;",
+                    Button {
+                        variant: if collapsible() == SidebarCollapsible::Offcanvas { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                        onclick: move |_| collapsible.set(SidebarCollapsible::Offcanvas),
+                        style: "padding: 0.4rem 0.6rem; font-size: 0.75rem;",
+                        "Offcanvas"
+                    }
+                    Button {
+                        variant: if collapsible() == SidebarCollapsible::Icon { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                        onclick: move |_| collapsible.set(SidebarCollapsible::Icon),
+                        style: "padding: 0.4rem 0.6rem; font-size: 0.75rem;",
+                        "Icon"
+                    }
+                    Button {
+                        variant: if collapsible() == SidebarCollapsible::None { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                        onclick: move |_| collapsible.set(SidebarCollapsible::None),
+                        style: "padding: 0.4rem 0.6rem; font-size: 0.75rem;",
+                        "None"
+                    }
+                }
+            }
         }
     }
 }

@@ -306,6 +306,25 @@
   display: flex;
   width: 100%;
   flex: 1 1 0%;
+  /* Without this, a flex item's automatic minimum width is its content's
+   * min-content size (CSS Flexbox spec, "automatic minimum size"), not 0 --
+   * `flex: 1 1 0%` alone does not override that. Most pages' content never
+   * reaches that min-content width in practice, so this stayed invisible
+   * since the site-nav dogfooding that first made `.dx-sidebar-wrapper` a
+   * flex row with real sidebar content as this item's sibling -- until the
+   * homepage's `WidgetMasonry` widget grid (unrelated to any one card) hit
+   * it: this inset refused to shrink below that content's min-content
+   * width and overflowed `.dx-sidebar-wrapper` by 250px+ at a plain
+   * 1280px viewport, silently clipped rather than scrolled (`overflow-x:
+   * clip` on `html`/`body`, `assets/main.css`) -- which in turn widened
+   * every sibling section sharing this inset's `width: 100%`, including
+   * the component gallery grid below it, so any gallery card whose own
+   * content reaches flush to its card's true (now off-screen) edge became
+   * genuinely unreachable, not just visually cramped. Fixing the one flex
+   * item that needs to shrink, rather than re-constraining whichever
+   * content happens to expose it, covers today's `WidgetMasonry` case and
+   * any future one by construction. */
+  min-width: 0;
   flex-direction: column;
   background: var(--primary-color-1);
 }
