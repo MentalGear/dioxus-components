@@ -186,6 +186,125 @@ test.describe("Hit-target coverage (2026-09-17 -- almost no hit target regressio
   });
 });
 
+/**
+ * Click-to-caret positioning (2026-09-17 production report: "first box has
+ * normal hit target, but none of the others"). Root cause: the real
+ * `<input>` is `opacity: 0` with `font-family: inherit` and no
+ * `letter-spacing` tuned to the visual slot grid
+ * (`preview/src/components/input_otp/style.css`'s `.dx-input-otp-input`
+ * sets none) -- clicking a native text input places the caret based on
+ * where the browser thinks the *actual rendered glyphs* are, and since
+ * those invisible glyphs' positions were never aligned to the 40px-wide
+ * slot boxes, a click's x-coordinate doesn't map to the "correct" character
+ * index at all. Confirmed live before this fix: on an empty field, clicking
+ * slot 0, 3, or 5 all placed the caret at index 0; on a field filled with
+ * "123", clicking slot 0 landed at index 2 while slots 1/4/5 all landed at
+ * index 3. Fixed by computing the clicked slot from geometry (point-in-rect
+ * against each `[data-slot-index]`'s own `getBoundingClientRect()`, since
+ * the slots are `pointer-events: none` and unreachable via
+ * `elementFromPoint`) and explicitly calling `setSelectionRange` --
+ * `primitives/src/input_otp.rs`'s `InputOtp` `onclick` handler and
+ * `snap_caret_to_slot`.
+ *
+ * Clamping rule: a clicked slot's index is clamped to `min(slot_index,
+ * value.length)`. This is not just "a" reasonable rule -- it's the only one
+ * a real `<input>` can honor: `setSelectionRange` itself clamps its
+ * arguments to `[0, value.length]`, so a genuinely empty field can *only*
+ * ever have `selectionStart === 0`, for any slot clicked (there is no
+ * character position to place a caret at for slot 3 when the value is
+ * "" -- the caret has nowhere else valid to go). That is expected,
+ * necessary behavior, not a regression: the tests below cover the concrete,
+ * fixable case (a partially/fully filled value, where clicks used to
+ * collapse to the wrong, uniform position) and separately document the
+ * empty-field case landing at 0 for every slot on purpose.
+ */
+test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-target regression)", () => {
+  const slotCenter = async (page: import("@playwright/test").Page, prefix: string, index: number) => {
+    const box = await page.locator(`${prefix} + div [data-slot-index="${index}"]`).boundingBox();
+    if (!box) throw new Error(`slot ${index} has no bounding box`);
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  test("clicking distinct empty slots each clamp to index 0 -- the only valid caret position on an empty value", async ({
+    page,
+  }) => {
+    // A real `<input>`'s `selectionStart` cannot exceed `value.length`
+    // (`setSelectionRange` clamps its arguments), so every slot's click
+    // must land at 0 here -- for an empty value, 0 is the *only* valid
+    // caret position, not a leftover bug. What must differ from before the
+    // fix is which slot is shown active: only slot 0 (the slot the caret
+    // can actually be at), never 3 or 5.
+    for (const idx of [0, 3, 5]) {
+      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      const input = page.locator("#otp-main");
+      const p = await slotCenter(page, "#otp-main", idx);
+      await page.mouse.click(p.x, p.y);
+      await expect(input, `clicking empty slot ${idx}`).toHaveJSProperty("selectionStart", 0);
+      await expect(page.locator(`#otp-main + div [data-slot-index="0"]`)).toHaveAttribute("data-active", "true");
+      if (idx !== 0) {
+        await expect(page.locator(`#otp-main + div [data-slot-index="${idx}"]`)).toHaveAttribute(
+          "data-active",
+          "false",
+        );
+      }
+    }
+  });
+
+  test("clicking a partially-filled input's slots lands at that slot's own index, clamped to the value's length", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    await input.click();
+    await page.keyboard.type("123");
+
+    // Before the fix, every one of these landed at either 2 (slot 0) or 3
+    // (slots 1/4/5) -- clicking slot 0 never gave 0, and slots 1/4/5 were
+    // indistinguishable from each other despite being different slots.
+    const cases: Array<[number, number]> = [
+      [0, 0],
+      [1, 1],
+      [2, 2],
+      [3, 3], // past the last character ("3" doesn't exist) -> clamps to the end
+      [4, 3], // same clamp -- distinct slot, same (correct) end position
+      [5, 3],
+    ];
+    for (const [slotIndex, expectedSelectionStart] of cases) {
+      const p = await slotCenter(page, "#otp-main", slotIndex);
+      await page.mouse.click(p.x, p.y);
+      await expect(input, `clicking slot ${slotIndex} on value "123"`).toHaveJSProperty(
+        "selectionStart",
+        expectedSelectionStart,
+      );
+    }
+  });
+
+  test("clicking a fully-filled input's slots lands exactly at that slot's own index, no clamping needed", async ({
+    page,
+  }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-main");
+    await input.click();
+    await page.keyboard.type("123456");
+
+    for (const idx of [0, 1, 2, 3, 4, 5]) {
+      const p = await slotCenter(page, "#otp-main", idx);
+      await page.mouse.click(p.x, p.y);
+      await expect(input, `clicking slot ${idx} on a full value`).toHaveJSProperty("selectionStart", idx);
+      await expect(page.locator(`#otp-main + div [data-slot-index="${idx}"]`)).toHaveAttribute("data-active", "true");
+    }
+  });
+
+  test("disabled state still blocks click-to-caret positioning", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    const input = page.locator("#otp-disabled");
+    const p = await slotCenter(page, "#otp-disabled", 1);
+    await page.mouse.click(p.x, p.y);
+    await expect(input).not.toBeFocused();
+    await expect(input).toHaveValue("12");
+  });
+});
+
 test.describe("Axe automated scan", () => {
   // Input OTP has no overlay/expand/select interaction -- like Input/Input
   // Group, one state to scan (docs/conformance-harness.md).
