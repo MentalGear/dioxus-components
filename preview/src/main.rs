@@ -15,8 +15,8 @@ use crate::components::{
     radio_group::{RadioGroup, RadioItem},
     sidebar::{
         Sidebar, SidebarCollapsible, SidebarContent, SidebarCtx, SidebarGroup, SidebarGroupLabel,
-        SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider,
-        SidebarSide, SidebarTrigger,
+        SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
+        SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarSide, SidebarTrigger,
     },
     slider::Slider,
     switch::Switch,
@@ -29,8 +29,9 @@ use dioxus::prelude::{dioxus_router::LinkProps, *};
 use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
 use dioxus_i18n::prelude::{use_init_i18n, I18nConfig};
 use dioxus_icons::lucide::{
-    ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, Copy, ExternalLink, Mail, Pause,
-    Play, SkipBack, SkipForward,
+    ArrowRight, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronLeft, ChevronsUpDown,
+    Compass, Copy, ExternalLink, FileText, Hash, Layers, LayoutGrid, Mail, Pause, Play, SkipBack,
+    SkipForward, SquareCheck,
 };
 use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -638,10 +639,41 @@ fn ComponentCode(
     }
 }
 
+/// The `/docs` "Overview" page's own section headings, in the order
+/// `Docs()` renders them. Single-sourced here so `Docs()`'s `h2`s and
+/// `DocsLayout`'s "Start" sidebar sub-items (rendered off the
+/// `docs_sections` prop `Docs()` passes it, see `DocsLayout`) can never
+/// drift out of sync with each other -- each `h2`'s visible text and the
+/// matching sub-link's label both read from this one array, and
+/// `docs_section_slug` derives both the `h2`'s `id` and the sub-link's
+/// `href` from that same text rather than a hand-typed anchor.
+const DOCS_SECTIONS: &[&str] = &["How it works", "Add a component", "Recommended workflow"];
+
+/// Turns a heading's visible text into a same-page anchor id: lowercased,
+/// with every run of non-alphanumeric characters (spaces included)
+/// collapsed to a single hyphen and none left dangling at either end.
+/// "How it works" -> "how-it-works".
+fn docs_section_slug(title: &str) -> String {
+    let mut slug = String::with_capacity(title.len());
+    let mut pending_hyphen = false;
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_hyphen && !slug.is_empty() {
+                slug.push('-');
+            }
+            slug.push(ch.to_ascii_lowercase());
+            pending_hyphen = false;
+        } else {
+            pending_hyphen = true;
+        }
+    }
+    slug
+}
+
 #[component]
 fn Docs(dark_mode: Option<bool>) -> Element {
     rsx! {
-        DocsLayout { active: DocsNavActive::Overview,
+        DocsLayout { active: DocsNavActive::Overview, docs_sections: Some(DOCS_SECTIONS),
             article { class: "dx-docs-page dx-docs-prose",
                 header { class: "dx-docs-page-header",
                     p { class: "dx-docs-eyebrow", "Docs" }
@@ -651,7 +683,7 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                     }
                 }
                 section { class: "dx-docs-section",
-                    h2 { "How it works" }
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[0])}", "{DOCS_SECTIONS[0]}" }
                     p {
                         "dioxus-components is not yet on crates.io. For now, components ship from this Git repository — you point your app at the primitives library here, then pull individual styled components into your source tree with the Dioxus CLI."
                     }
@@ -688,7 +720,7 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                     }
                 }
                 section { class: "dx-docs-section",
-                    h2 { "Add a component" }
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[1])}", "{DOCS_SECTIONS[1]}" }
                     p { "Run the add command from your Dioxus app. Swap the final name for any component in the sidebar." }
                     div { class: "dx-docs-command",
                         code { "dx components add button" }
@@ -699,7 +731,7 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                     }
                 }
                 section { class: "dx-docs-section",
-                    h2 { "Recommended workflow" }
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[2])}", "{DOCS_SECTIONS[2]}" }
                     ol {
                         li { "Pick a component from the sidebar or catalog." }
                         li { "Preview the default example and variants." }
@@ -760,6 +792,13 @@ fn DocsLayout(
     // component.rs`) already exists for exactly this and just needed
     // threading through here.
     #[props(default)] default_open: Option<bool>,
+    // Only `Docs()` passes this (its own `DOCS_SECTIONS`), so its "Start"
+    // sidebar item alone grows a heading-derived sub-list of in-page jump
+    // links. Every other call site (`Home()`, `ComponentHighlight()`)
+    // leaves this `None` and keeps rendering the plain, sub-item-less
+    // "Overview" entry from before -- those pages have no section
+    // headings of their own for this to reflect.
+    #[props(default)] docs_sections: Option<&'static [&'static str]>,
     children: Element,
 ) -> Element {
     // Always call both hooks (rather than only inside an `unwrap_or_else`
@@ -789,21 +828,73 @@ fn DocsLayout(
                 Sidebar { side: side(), collapsible: collapsible(),
                     SidebarContent {
                         SidebarGroup {
-                            SidebarGroupLabel { "Start" }
+                            SidebarGroupLabel {
+                                BookOpen { size: "1rem", "aria-hidden": "true" }
+                                span { "Start" }
+                            }
                             SidebarMenu {
                                 SidebarMenuItem {
                                     SidebarMenuButton {
                                         is_active: active == DocsNavActive::Overview,
                                         as: move |attributes: Vec<Attribute>| rsx! {
-                                            Link { to: Route::docs(), attributes, "Overview" }
+                                            Link { to: Route::docs(), attributes,
+                                                FileText { size: "1rem", "aria-hidden": "true" }
+                                                span { "Overview" }
+                                            }
                                         },
+                                    }
+                                    // Only `Docs()` passes `docs_sections` -- see this
+                                    // component's own prop doc comment. `Home()`/
+                                    // `ComponentHighlight()` leave it `None`, so this whole
+                                    // `SidebarMenuSub` (and the heading-derived sub-items in
+                                    // it) simply doesn't render there, matching the
+                                    // pre-existing "Overview" item exactly.
+                                    if let Some(sections) = docs_sections {
+                                        SidebarMenuSub {
+                                            for title in sections.iter().copied() {
+                                                SidebarMenuSubItem { key: "{title}",
+                                                    SidebarMenuSubButton {
+                                                        as: move |attributes: Vec<Attribute>| rsx! {
+                                                            a {
+                                                                href: "#{docs_section_slug(title)}",
+                                                                ..attributes,
+                                                                Hash { size: "0.875rem", "aria-hidden": "true" }
+                                                                span { "{title}" }
+                                                            }
+                                                        },
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                         for cat in components::ComponentCategory::ALL.iter().copied() {
                             SidebarGroup { key: "{cat.label()}",
-                                SidebarGroupLabel { "{cat.label()}" }
+                                SidebarGroupLabel {
+                                    match cat {
+                                        components::ComponentCategory::Forms => rsx! {
+                                            SquareCheck { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::Navigation => rsx! {
+                                            Compass { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::Overlays => rsx! {
+                                            Layers { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::Feedback => rsx! {
+                                            Bell { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::Disclosure => rsx! {
+                                            ChevronsUpDown { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::DataDisplay => rsx! {
+                                            LayoutGrid { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                    }
+                                    span { "{cat.label()}" }
+                                }
                                 SidebarMenu {
                                     for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
                                         SidebarMenuItem { key: "{component.name}",
