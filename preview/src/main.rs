@@ -14,9 +14,9 @@ use crate::components::{
     progress::Progress,
     radio_group::{RadioGroup, RadioItem},
     sidebar::{
-        Sidebar, SidebarCollapsible, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarInset,
-        SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSide,
-        SidebarTrigger,
+        Sidebar, SidebarCollapsible, SidebarContent, SidebarCtx, SidebarGroup, SidebarGroupLabel,
+        SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider,
+        SidebarSide, SidebarTrigger,
     },
     slider::Slider,
     switch::Switch,
@@ -261,16 +261,30 @@ fn NavigationLayout() -> Element {
     rsx! {
         GlobalHead {}
         document::Link { rel: "stylesheet", href: asset!("/assets/hero.css") }
-        Navbar {}
         Outlet::<Route> {}
         Footer {}
     }
 }
 
+/// The site's persistent top nav. Rendered as a descendant of `DocsLayout`'s
+/// `SidebarProvider` on every route that has a sidebar (`Docs`, `Home`,
+/// `ComponentDemo`/`ComponentHighlight`) so its leading `SidebarTrigger` can
+/// sit inside this same row instead of a separate strip below it (the
+/// previous layout: `NavigationLayout` rendered `Navbar {}` as a sibling of,
+/// and before, `Outlet::<Route> {}`, so it was never a descendant of
+/// `DocsLayout`'s `SidebarProvider` -- `DocsLayout` instead rendered its own
+/// separate `header { class: "dx-docs-inset-topbar", SidebarTrigger {} }`
+/// strip). `Demos` has no sidebar and renders `Navbar {}` directly (as does
+/// `ComponentDemo`'s own "not found" branch, which also bypasses
+/// `DocsLayout`) -- `try_consume_context` (not `consume_context`, same
+/// defensive-read pattern as `HomeSidebarControls` above) is what makes
+/// omitting the trigger there safe rather than a panic, since neither page
+/// has a `SidebarProvider` ancestor.
 #[component]
 fn Navbar() -> Element {
     let in_iframe = Route::in_iframe().unwrap_or_default();
     let in_component = matches!(router().current(), Route::ComponentDemo { .. });
+    let has_sidebar = try_consume_context::<SidebarCtx>().is_some();
     if in_iframe {
         return rsx! {
             nav {
@@ -279,6 +293,9 @@ fn Navbar() -> Element {
                 border: "none",
                 padding: "1rem",
                 justify_content: "flex-start",
+                if has_sidebar {
+                    SidebarTrigger { class: "dx-navbar-sidebar-trigger" }
+                }
                 if in_component {
                     Link {
                         to: Route::home(),
@@ -298,6 +315,9 @@ fn Navbar() -> Element {
         nav { class: "dx-preview-navbar", aria_label: "Primary",
             div { class: "dx-navbar-inner",
                 div { class: "dx-navbar-primary",
+                    if has_sidebar {
+                        SidebarTrigger { class: "dx-navbar-sidebar-trigger" }
+                    }
                     Link { to: Route::home(), class: "dx-navbar-brand",
                         img {
                             src: asset!("/assets/dioxus_color.svg"),
@@ -753,36 +773,50 @@ fn DocsLayout(
 
     rsx! {
         SidebarProvider { class: "dx-docs-shell", default_open: default_open.unwrap_or(true),
-            Sidebar { side: side(), collapsible: collapsible(),
-                SidebarContent {
-                    SidebarGroup {
-                        SidebarGroupLabel { "Start" }
-                        SidebarMenu {
-                            SidebarMenuItem {
-                                SidebarMenuButton {
-                                    is_active: active == DocsNavActive::Overview,
-                                    as: move |attributes: Vec<Attribute>| rsx! {
-                                        Link { to: Route::docs(), attributes, "Overview" }
-                                    },
+            // `Navbar` renders first, as a direct child of this
+            // `SidebarProvider` (whose own render is just `div { class:
+            // "dx-sidebar-wrapper", {children} }` -- see `component.rs`) so
+            // its `SidebarTrigger` finds this provider's `SidebarCtx` via
+            // `use_context`. `Sidebar`/`SidebarInset` are grouped under
+            // their own `.dx-docs-shell-body` row beneath it rather than
+            // sitting as siblings of `Navbar` directly, because the base
+            // `.dx-sidebar-wrapper` rule (`sidebar/style.css`) is a flex ROW
+            // sized for exactly that pair -- a third flex child would sit
+            // beside them instead of stacking above (see `main.css`'s
+            // `.dx-docs-shell-body` comment for the full rationale).
+            Navbar {}
+            div { class: "dx-docs-shell-body",
+                Sidebar { side: side(), collapsible: collapsible(),
+                    SidebarContent {
+                        SidebarGroup {
+                            SidebarGroupLabel { "Start" }
+                            SidebarMenu {
+                                SidebarMenuItem {
+                                    SidebarMenuButton {
+                                        is_active: active == DocsNavActive::Overview,
+                                        as: move |attributes: Vec<Attribute>| rsx! {
+                                            Link { to: Route::docs(), attributes, "Overview" }
+                                        },
+                                    }
                                 }
                             }
                         }
-                    }
-                    for cat in components::ComponentCategory::ALL.iter().copied() {
-                        SidebarGroup { key: "{cat.label()}",
-                            SidebarGroupLabel { "{cat.label()}" }
-                            SidebarMenu {
-                                for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
-                                    SidebarMenuItem { key: "{component.name}",
-                                        SidebarMenuButton {
-                                            is_active: active == DocsNavActive::Component(component.name),
-                                            as: move |attributes: Vec<Attribute>| rsx! {
-                                                Link {
-                                                    to: Route::component(component.name),
-                                                    attributes,
-                                                    {component.name.replace("_", " ")}
-                                                }
-                                            },
+                        for cat in components::ComponentCategory::ALL.iter().copied() {
+                            SidebarGroup { key: "{cat.label()}",
+                                SidebarGroupLabel { "{cat.label()}" }
+                                SidebarMenu {
+                                    for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
+                                        SidebarMenuItem { key: "{component.name}",
+                                            SidebarMenuButton {
+                                                is_active: active == DocsNavActive::Component(component.name),
+                                                as: move |attributes: Vec<Attribute>| rsx! {
+                                                    Link {
+                                                        to: Route::component(component.name),
+                                                        attributes,
+                                                        {component.name.replace("_", " ")}
+                                                    }
+                                                },
+                                            }
                                         }
                                     }
                                 }
@@ -790,10 +824,7 @@ fn DocsLayout(
                         }
                     }
                 }
-            }
-            SidebarInset {
-                header { class: "dx-docs-inset-topbar", SidebarTrigger {} }
-                {children}
+                SidebarInset { {children} }
             }
         }
     }
@@ -827,6 +858,10 @@ const DEMO_ENTRIES: &[DemoEntry] = &[DemoEntry {
 #[component]
 fn Demos(dark_mode: Option<bool>) -> Element {
     rsx! {
+        // No sidebar on this page -- `Navbar`'s own `try_consume_context`
+        // check (see its doc comment) means the trigger just doesn't
+        // render here, rather than panicking on a missing `SidebarCtx`.
+        Navbar {}
         main { class: "dx-home-page", role: "main",
             section { class: "dx-home-section",
                 header { class: "dx-section-header",
@@ -870,7 +905,12 @@ fn ComponentDemo(iframe: Option<bool>, dark_mode: Option<bool>, name: String) ->
         .find(|demo| demo.name == name)
         .cloned()
     else {
+        // Bypasses `ComponentHighlight`/`DocsLayout` entirely, so -- like
+        // `Demos` -- there is no `SidebarProvider` ancestor here either;
+        // `Navbar {}` renders its trigger-less fallback (see its own doc
+        // comment) rather than being left off this page altogether.
         return rsx! {
+            Navbar {}
             main { class: "dx-component-demo-not-found",
                 h3 { "Component not found" }
                 p { "The requested component does not exist." }

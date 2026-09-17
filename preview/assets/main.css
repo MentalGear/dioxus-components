@@ -283,6 +283,16 @@ summary,
   text-decoration: none;
 }
 
+/* `SidebarTrigger`, rendered as the leading item of `.dx-navbar-primary` on
+ * routes that have a sidebar (`Navbar`'s own `try_consume_context` check in
+ * `main.rs` -- routes without one just don't render this at all). Its own
+ * `.dx-sidebar-trigger` (sidebar/style.css) is already a compact 1.75rem
+ * ghost button; `flex-shrink: 0` only guards it against being squeezed once
+ * `.dx-navbar-primary` wraps at the mobile breakpoint below. */
+.dx-navbar-sidebar-trigger {
+  flex-shrink: 0;
+}
+
 /* Code block styles */
 /* stylelint-disable-next-line selector-class-pattern */
 .dx-preview-code-theme {
@@ -380,6 +390,29 @@ summary,
  * else about the sidebar (mobile Sheet drawer, menu/group styling, the
  * trigger) is the unmodified shared component.
  *
+ * `Navbar` moved inside this same `SidebarProvider` (`DocsLayout` in
+ * `main.rs`) so its `SidebarTrigger` can sit in the navbar row instead of
+ * a separate strip below it (the removed `.dx-docs-inset-topbar`). But
+ * `SidebarProvider`'s own render is just `div { class: "dx-sidebar-wrapper",
+ * {children} }` (`component.rs`), and the base `.dx-sidebar-wrapper` rule
+ * (`sidebar/style.css`) is `display: flex` -- a ROW sized for exactly two
+ * children, `Sidebar` + `SidebarInset`. Dropping `Navbar {}` in as a third
+ * child of that same row would render it as a third flex item sitting
+ * beside them, not a full-width row stacked above -- so `DocsLayout` groups
+ * `Sidebar`+`SidebarInset` under one new wrapper, `.dx-docs-shell-body`,
+ * and `.dx-sidebar-wrapper.dx-docs-shell` itself becomes a `flex-direction:
+ * column` of exactly two children: `Navbar`, then that body row. Width/
+ * border/centering (previously on the outer wrapper, back when `Navbar`
+ * was a sibling above it rather than a child) move down to
+ * `.dx-docs-shell-body`, since it is now the box that must match the
+ * navbar's own centered, content-width inner row -- the outer wrapper
+ * itself just needs to span full width so `Navbar`'s sticky full-bleed
+ * background still reaches the viewport edges (its base `width: 100%` and
+ * `min-height: 100svh` already do that unmodified; only `height`/`overflow`
+ * need overriding, same reason as before: the base's fixed `height: 100svh`
+ * + `overflow: hidden` would clip content taller than one viewport instead
+ * of letting the page grow to it).
+ *
  * Selectors below double up as `.dx-sidebar-wrapper.dx-docs-shell` (not
  * bare `.dx-docs-shell`) purely for specificity: `sidebar/style.css`'s own
  * `document::Link` can land before or after this stylesheet's in the
@@ -390,8 +423,20 @@ summary,
  * keeps every rule strictly higher-specificity than the base component
  * rule it overrides, regardless of link order. */
 .dx-sidebar-wrapper.dx-docs-shell {
-  width: min(var(--dx-content-width), calc(100vw - 2rem));
+  flex-direction: column;
   height: auto;
+  overflow: visible;
+}
+
+/* The former `.dx-sidebar-wrapper.dx-docs-shell` geometry (width/border/
+ * centering/the sidebar-row min-height), now one level deeper since
+ * `Navbar` occupies that outer wrapper's first row instead. Needs its own
+ * `display: flex` -- unlike the outer wrapper, this is a plain new `div`,
+ * not `.dx-sidebar-wrapper`, so it does not inherit that from the base
+ * component rule. */
+.dx-docs-shell-body {
+  display: flex;
+  width: min(var(--dx-content-width), calc(100vw - 2rem));
   min-height: calc(100vh - var(--dx-navbar-height));
   overflow: visible;
   border-right: 1px solid var(--primary-color-6);
@@ -399,11 +444,11 @@ summary,
   margin: 0 auto;
 }
 
-.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-gap {
+.dx-docs-shell-body .dx-sidebar-gap {
   display: none;
 }
 
-.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-container {
+.dx-docs-shell-body .dx-sidebar-container {
   position: sticky;
   top: var(--dx-navbar-height);
   left: auto;
@@ -413,32 +458,36 @@ summary,
   transition: width var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
-.dx-sidebar-wrapper.dx-docs-shell [data-collapsible="offcanvas"] .dx-sidebar-container {
+.dx-docs-shell-body [data-collapsible="offcanvas"] .dx-sidebar-container {
   width: 0;
   min-width: 0;
   overflow: hidden;
   border: none;
 }
 
-.dx-sidebar-wrapper.dx-docs-shell .dx-sidebar-content {
+.dx-docs-shell-body .dx-sidebar-content {
   overscroll-behavior: contain;
 }
 
-/* Always visible (not just once collapsed): it is the only way to open the
- * mobile Sheet drawer, and it must also stay reachable while the desktop
- * sidebar is still expanded -- that is the only control that can collapse
- * it in the first place. Found by execution: an earlier version hid this
- * until `[data-collapsible="offcanvas"]` was already set, which meant
- * nothing could ever set it. */
-.dx-docs-inset-topbar {
-  position: sticky;
-  top: var(--dx-navbar-height);
-  z-index: 10;
-  display: flex;
-  box-sizing: border-box;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--primary-color-6);
-  background-color: var(--primary-color);
+@media (width >= 768px) {
+  /* Cancels `sidebar/style.css`'s own `.dx-sidebar-wrapper:has([data-side=
+   * "right"])` row-reverse for the docs-shell specifically: that base rule
+   * matches ANY `.dx-sidebar-wrapper` containing a right-sided `Sidebar`
+   * ANYWHERE inside it -- which, now that `Navbar` lives inside this same
+   * wrapper too, includes the outer `.dx-docs-shell` wrapper. Reversing at
+   * that level would swap `Navbar` and `.dx-docs-shell-body` (i.e. put the
+   * navbar row on the right and the sidebar+inset row on the left), not the
+   * sidebar/inset pair the base rule actually means to mirror. So the
+   * reversal is cancelled here (`Navbar` stays the top row, unreversed)
+   * and reapplied one level down on `.dx-docs-shell-body`, which really
+   * does hold just the `Sidebar`/`SidebarInset` pair. */
+  .dx-sidebar-wrapper.dx-docs-shell:has([data-slot="sidebar"][data-side="right"]) {
+    flex-direction: column;
+  }
+
+  .dx-docs-shell-body:has([data-slot="sidebar"][data-side="right"]) {
+    flex-direction: row-reverse;
+  }
 }
 
 .dx-docs-page,
@@ -1413,11 +1462,11 @@ summary,
   /* The mobile drawer itself (sidebar-wrapper -> Sheet, `data-mobile="true"`)
    * is the shared `Sidebar` component's own responsibility below 768px --
    * nothing to re-implement here. Just the shell's own centering/border,
-   * which otherwise stays sized for desktop. Same `.dx-sidebar-wrapper.
-   * dx-docs-shell` double-class as the desktop rule above -- this media
-   * query still needs to out-specificity that same rule, not just the
-   * shared component's base one. */
-  .dx-sidebar-wrapper.dx-docs-shell {
+   * which otherwise stays sized for desktop. Targets `.dx-docs-shell-body`
+   * (not the outer `.dx-sidebar-wrapper.dx-docs-shell`) since that is where
+   * this width/border/min-height now lives -- see that class's own comment
+   * above. */
+  .dx-docs-shell-body {
     width: 100%;
     min-height: 0;
     border-right: none;
