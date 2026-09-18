@@ -1,0 +1,328 @@
+/* Drawer Root (backdrop) -- mirrors .dx-sheet-root (preview/src/components/sheet/style.css). */
+.dx-drawer-root {
+  position: fixed;
+  z-index: var(--dx-z-overlay);
+  background: rgb(0 0 0 / 50%);
+  inset: 0;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.dx-drawer-root[data-state="closed"] {
+  animation: dx-drawer-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  pointer-events: none;
+}
+
+.dx-drawer-root[data-state="open"] {
+  animation: dx-drawer-root-in var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+}
+
+@keyframes dx-drawer-root-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dx-drawer-root-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* Drawer panel.
+ *
+ * Two independent motion systems share this element on purpose --
+ * `primitives/src/drawer.rs`'s module doc has the full reasoning:
+ *
+ * - `transform`, via the `@keyframes`/`data-state` pairs below, plays the
+ *   programmatic (button/Escape/backdrop) slide-in/out, exactly like
+ *   `.dx-sheet`'s equivalent rules.
+ * - `translate`, set inline by the primitive only while a drag has moved
+ *   the panel, tracks the live pointer offset. A CSS `animation`'s value
+ *   for a property overrides even a higher-specificity inline style on
+ *   that SAME property for as long as the animation applies -- so the
+ *   live drag has to live on a property the entrance/exit keyframes never
+ *   touch, or it would be invisibly overridden the entire time the
+ *   drawer is open (confirmed by execution: a `transform`-only first
+ *   attempt tracked the pointer in the Rust signal correctly, but the
+ *   panel never visibly moved). `translate` composes with `transform`
+ *   instead of competing for the same cascade slot, so both apply at
+ *   once with no extra timing coordination.
+ */
+.dx-drawer {
+  position: fixed;
+  z-index: var(--dx-z-overlay-raised);
+  display: flex;
+  overflow: auto;
+
+  /* Same UA `dialog:modal` max-width/max-height cap `.dx-sheet` documents
+   * and undoes (preview/src/components/sheet/style.css) -- the web arm's
+   * modal Dialog renders this as a real `<dialog>`, and a full-bleed
+   * drawer needs its own max-width/max-height to keep Chromium's default
+   * cap from shrinking it away from the edges it is meant to span. */
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  flex-direction: column;
+  border: none;
+  background: var(--primary-color-2);
+  box-shadow: var(--dx-shadow-xl);
+  color: var(--secondary-color-4);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  gap: var(--dx-space-4);
+
+  /* The live drag offset (see this file's own top comment); no transition
+   * while an active drag is in progress (below) so it tracks the pointer
+   * 1:1 with zero lag. */
+  transition: translate var(--dx-motion-duration-base) var(--dx-motion-ease);
+  will-change: transform, translate;
+}
+
+.dx-drawer[data-dragging="true"] {
+  transition: none;
+}
+
+/* Bottom (default): full-bleed width, rounded top corners. */
+.dx-drawer[data-side="bottom"] {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-height: 80%;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  border-top: 1px solid var(--primary-color-6);
+  border-top-left-radius: var(--dx-radius-2xl);
+  border-top-right-radius: var(--dx-radius-2xl);
+  touch-action: pan-x;
+  transform: translateY(100%);
+}
+
+/* Top: full-bleed width, rounded bottom corners. */
+.dx-drawer[data-side="top"] {
+  top: 0;
+  right: 0;
+  left: 0;
+  max-height: 80%;
+  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom-left-radius: var(--dx-radius-2xl);
+  border-bottom-right-radius: var(--dx-radius-2xl);
+  touch-action: pan-x;
+  transform: translateY(-100%);
+}
+
+/* Right: full-bleed height, rounded left corners. */
+.dx-drawer[data-side="right"] {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 24rem;
+  border-left: 1px solid var(--primary-color-6);
+  border-bottom-left-radius: var(--dx-radius-2xl);
+  border-top-left-radius: var(--dx-radius-2xl);
+  touch-action: pan-y;
+  transform: translateX(100%);
+}
+
+/* Left: full-bleed height, rounded right corners. */
+.dx-drawer[data-side="left"] {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-width: 24rem;
+  border-right: 1px solid var(--primary-color-6);
+  border-bottom-right-radius: var(--dx-radius-2xl);
+  border-top-right-radius: var(--dx-radius-2xl);
+  touch-action: pan-y;
+  transform: translateX(-100%);
+}
+
+.dx-drawer[data-state="open"][data-side="bottom"] {
+  animation: dx-drawer-slide-in-bottom var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+}
+
+.dx-drawer[data-state="open"][data-side="top"] {
+  animation: dx-drawer-slide-in-top var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+}
+
+.dx-drawer[data-state="open"][data-side="right"] {
+  animation: dx-drawer-slide-in-right var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+}
+
+.dx-drawer[data-state="open"][data-side="left"] {
+  animation: dx-drawer-slide-in-left var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+}
+
+/* KNOWN GAP (mirrors preview/src/components/sheet/style.css's own note for
+ * the identical tradeoff): a drag-triggered close animates purely through
+ * the primitive's own `translate` transition (this file's top comment) and
+ * never touches `data-state`/these exit keyframes at all until the drag's
+ * own transition has already finished, at which point the panel is fully
+ * off-screen either way -- so the two close paths (drag vs.
+ * Escape/backdrop/`DrawerClose`) are both correct, but they ease very
+ * slightly differently (the keyframe's `ease-in` vs. the drag settle's
+ * plain `ease`). Cosmetic only; not fixed in this slice for the same
+ * reason row 19/Sheet's equivalent gap wasn't -- true frame-for-frame
+ * parity would need coupling this transition's duration/easing to the
+ * exit keyframe's, out of scope here. */
+.dx-drawer[data-state="closed"][data-side="bottom"] {
+  animation: dx-drawer-slide-out-bottom var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+.dx-drawer[data-state="closed"][data-side="top"] {
+  animation: dx-drawer-slide-out-top var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+.dx-drawer[data-state="closed"][data-side="right"] {
+  animation: dx-drawer-slide-out-right var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+.dx-drawer[data-state="closed"][data-side="left"] {
+  animation: dx-drawer-slide-out-left var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+@keyframes dx-drawer-slide-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes dx-drawer-slide-out-bottom {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes dx-drawer-slide-in-top {
+  from {
+    transform: translateY(-100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes dx-drawer-slide-out-top {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes dx-drawer-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes dx-drawer-slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes dx-drawer-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes dx-drawer-slide-out-left {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Grab-bar handle -- decorative, aria-hidden (primitives/src/drawer.rs). */
+.dx-drawer-handle {
+  width: var(--dx-space-9);
+  height: var(--dx-space-1);
+  flex-shrink: 0;
+  border-radius: var(--dx-radius-full);
+  margin: var(--dx-space-3) auto 0;
+  background: var(--primary-color-7);
+
+  /* The one surface allowed to fully disable native touch gestures
+   * (primitives/src/drawer.rs's brief): it is never itself scrollable
+   * content, only a drag affordance. */
+  touch-action: none;
+}
+
+.dx-drawer-header {
+  display: flex;
+  flex-direction: column;
+  padding: var(--dx-space-4);
+  gap: 0.375rem;
+}
+
+.dx-drawer-footer {
+  display: flex;
+  flex-direction: column;
+  padding: var(--dx-space-4);
+  margin-top: auto;
+  gap: var(--dx-space-2);
+}
+
+.dx-drawer-title {
+  margin: 0;
+  color: var(--secondary-color-4);
+  font-size: var(--dx-text-lg);
+  font-weight: 600;
+}
+
+.dx-drawer-description {
+  margin: 0;
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+}
+
+/* Explicit requirement (primitives/src/drawer.rs's brief): this panel's
+ * own entrance/exit animation must respect prefers-reduced-motion, the
+ * same way the shared `[data-dx-interactive]` layer
+ * (preview/assets/dx-components-theme.css) already does for interactive
+ * controls -- that layer's own comment notes it does not reach animated
+ * CONTENT like this that isn't itself an interactive root, so this
+ * panel covers itself. */
+@media (prefers-reduced-motion: reduce) {
+  .dx-drawer-root,
+  .dx-drawer {
+    animation-duration: var(--dx-motion-duration-reduced) !important;
+    transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
+}

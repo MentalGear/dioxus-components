@@ -29,6 +29,7 @@ pub mod context_menu;
 pub mod date_picker;
 pub mod dialog;
 pub mod drag_and_drop_list;
+pub mod drawer;
 pub mod dropdown_menu;
 pub mod hover_card;
 pub mod input_otp;

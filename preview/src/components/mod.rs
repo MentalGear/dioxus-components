@@ -40,7 +40,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
         | "native_select" => ComponentCategory::Forms,
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
         | "dropdown_menu" | "breadcrumb" => ComponentCategory::Navigation,
-        "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
+        "dialog" | "alert_dialog" | "sheet" | "drawer" | "popover" | "tooltip" | "hover_card"
         | "top_layer" | "command" => ComponentCategory::Overlays,
         "toast" | "progress" | "skeleton" | "badge" | "alert" | "empty" | "spinner" => {
             ComponentCategory::Feedback
@@ -195,6 +195,7 @@ examples!(
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
     drag_and_drop_list[removable],
+    drawer,
     dropdown_menu,
     empty,
     field,

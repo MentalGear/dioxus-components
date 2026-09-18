@@ -1,0 +1,25 @@
+{
+  "name": "drawer",
+  "description": "A drawer component -- a Vaul-style sheet with drag-to-dismiss, sliding in from an edge of the screen",
+  "authors": [
+    "dioxus-components"
+  ],
+  "exclude": [
+    "variants",
+    "docs.md",
+    "component.json"
+  ],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    },
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": [
+    "../../../assets/dx-components-theme.css"
+  ]
+}

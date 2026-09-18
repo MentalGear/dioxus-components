@@ -59,6 +59,7 @@
     "preview/src/components/spinner",
     "preview/src/components/native_select",
     "preview/src/components/table",
-    "preview/src/components/data_table"
+    "preview/src/components/data_table",
+    "preview/src/components/drawer"
   ]
 }
