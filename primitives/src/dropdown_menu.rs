@@ -138,7 +138,7 @@ pub struct DropdownMenuProps {
 ///
 /// It implements the APG **menu button** pattern (`aria-haspopup="menu"` on
 /// the trigger, `role="menu"` on the content, `role="menuitem"` on each
-/// item -- see [`crate::menu_semantics`] for the shared role definitions and
+/// item -- see `crate::menu_semantics` for the shared role definitions and
 /// their APG citations). **Deliberate ARIA-contract change:** earlier
 /// versions of this component instead rendered the APG **listbox** pattern's
 /// roles (`aria-haspopup="listbox"` / `role="listbox"` / `role="option"`),

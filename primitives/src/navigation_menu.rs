@@ -73,7 +73,7 @@
 //! Opening on pointer hover (after a short delay) is, like `crate::menu_sub`'s
 //! submenu hover-intent, a widely-implemented convention (Radix, native OS
 //! menus) rather than an APG requirement -- this module's own choice of
-//! delay, not a citation. [`crate::menu_sub::DelayedAction`]/
+//! delay, not a citation. `crate::menu_sub::DelayedAction`/
 //! `crate::menu_sub::use_delayed_action` (already `pub(crate)`, already
 //! used by `DropdownMenuSub`/`ContextMenuSub`'s identical
 //! hover-open/hover-close-grace timers) is reused as-is rather than
@@ -98,13 +98,13 @@
 //! leaving the widget. That invariant does not hold here (every item is
 //! independently tabbable, on purpose -- see above), so this module
 //! instead debounces: every focusable element's `onblur` schedules a
-//! [`DelayedAction`] that closes the open panel, and every focusable
+//! `DelayedAction` that closes the open panel, and every focusable
 //! element's `onfocus` cancels it. A real browser dispatches a moving
 //! focus's `blur`/`focusout` on the old element and `focus`/`focusin` on
 //! the new one back-to-back in the same task, so a Tab/click that lands on
 //! *any* other element this module wires (a sibling trigger, a sibling
 //! link, or a link inside the panel that's opening) cancels the scheduled
-//! close before [`FOCUS_LEAVE_CLOSE_DELAY`] elapses; a Tab/click that
+//! close before `FOCUS_LEAVE_CLOSE_DELAY` elapses; a Tab/click that
 //! leaves the whole `nav` has nothing left to cancel it, so the close goes
 //! through.
 //!

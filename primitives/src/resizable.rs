@@ -268,7 +268,7 @@ pub struct ResizablePanelGroupProps {
 
     /// The default sizes when uncontrolled. Any panel this doesn't cover (including when this
     /// is `None` entirely) falls back to an equal share of whatever percentage is left over
-    /// after every panel with its own [`ResizablePanel::default_size`] is honored.
+    /// after every panel with its own [`ResizablePanelProps::default_size`] is honored.
     #[props(default)]
     pub default_sizes: Option<Vec<f64>>,
 

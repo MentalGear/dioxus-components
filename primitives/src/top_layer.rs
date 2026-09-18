@@ -810,7 +810,7 @@ pub(crate) fn use_popover_sync(
 
 /// Variant of [`use_popover_sync`] for content whose *own* `data-state`
 /// (Radix-style) animates through a "closed but still mounted" phase --
-/// [`use_animated_open`]-driven content, unlike every other
+/// `use_animated_open`-driven content, unlike every other
 /// `use_popover_sync` call site. Forwards native/browser closes to
 /// `on_native_close` exactly like [`use_popover_sync`]; the difference is
 /// entirely on the "signal -> browser" side: `showPopover()` still runs
@@ -831,7 +831,7 @@ pub(crate) fn use_popover_sync(
 /// through a CSS animate-out -- Radix-style `data-state="closed"`
 /// animations on those are cosmetic fades that finish well after the
 /// element would already be gone). `SelectList`/`ComboboxList` are
-/// different: both render through [`use_animated_open`], which
+/// different: both render through `use_animated_open`, which
 /// deliberately keeps the content mounted with `data-state="closed"` for
 /// its whole exit animation (plus a settle hold) before actually
 /// unmounting it -- `combobox.spec.ts`'s "keeps filtered options during
@@ -844,13 +844,13 @@ pub(crate) fn use_popover_sync(
 /// and that test went red -- `hidePopover()` fired on the same tick `open`
 /// went `false`, which (per the UA popover stylesheet's
 /// `[popover]:not(:popover-open) { display: none }`) sets `display: none`
-/// on the content *before* [`use_animated_open`]'s own rAF-deferred
+/// on the content *before* `use_animated_open`'s own rAF-deferred
 /// `getAnimations()` check ever ran, so it always observed zero running
 /// animations and finished the close cycle immediately -- the exit
 /// animation was skipped outright, and Playwright's `toBeVisible()` on the
 /// still-should-be-animating `data-state="closed"` element failed. Never
 /// calling `hidePopover()` from the closing path at all -- only from a real
-/// unmount, once [`use_animated_open`] itself has already decided the
+/// unmount, once `use_animated_open` itself has already decided the
 /// animation (and its settle hold) is done -- sidesteps this entirely: the
 /// exit animation plays out undisturbed on an element that is still very
 /// much `:popover-open` the whole time.
@@ -2203,7 +2203,7 @@ pub(crate) fn anchored_content_attributes(id: &str, attributes: Vec<Attribute>) 
 }
 
 /// No-op whenever this crate's `web` feature is off -- see
-/// [`anchor_name_style`]'s doc. Unlike [`position_anchor_style`], this one
+/// [`anchor_name_style`]'s doc. Unlike `position_anchor_style`, this one
 /// *is* called unconditionally (every trigger sets it, regardless of
 /// build), so it needs a real native stub rather than being `#[cfg]`-gated
 /// away entirely.

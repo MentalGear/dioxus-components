@@ -23,8 +23,8 @@
 //!
 //! Movement tracking reuses this crate's own house pattern for pointer
 //! drags -- [`crate::slider`]'s `onpointerdown` seeding
-//! [`crate::pointer::track_pointer_down`], then a reactive `use_effect`
-//! polling [`crate::pointer::pointer_position`] on every global
+//! `crate::pointer::track_pointer_down`, then a reactive `use_effect`
+//! polling `crate::pointer::pointer_position` on every global
 //! `pointermove` the crate-wide listener in `pointer.rs` already installs --
 //! rather than the DOM's native `setPointerCapture`, which is not reachable
 //! from Dioxus's synthetic event handlers without an escape to
@@ -37,15 +37,15 @@
 //!   away from the drag edge must not start a drawer drag. Neither is
 //!   discoverable from Dioxus's synthetic `PointerData` (no `event.target`
 //!   accessor -- see `dioxus-html`'s `HasPointerData` trait), so
-//!   [`use_drawer_drag_start_gate`] installs one real
+//!   `use_drawer_drag_start_gate` installs one real
 //!   `addEventListener('pointerdown', ...)` -- same `document::eval` idiom
 //!   `lib.rs`'s `use_outside_dismiss` already uses for its own real-DOM-target
 //!   need -- on [`DrawerContent`]'s own root element. A native `pointerdown`
 //!   bubbles, so this one listener also catches gestures started on
 //!   [`DrawerHandle`], a descendant; it forwards only an approved
-//!   `(pointer_id, x, y)` triple back to [`crate::pointer::track_pointer_down`].
+//!   `(pointer_id, x, y)` triple back to `crate::pointer::track_pointer_down`.
 //! - **A release *decision*.** `slider.rs` only ever clamps a continuous
-//!   value; [`should_close_on_release`]'s threshold/velocity math is new.
+//!   value; `should_close_on_release`'s threshold/velocity math is new.
 //!
 //! ## Why `translate`, not `transform`, carries the live drag offset
 //!
@@ -475,7 +475,7 @@ pub struct DrawerContentProps {
 /// for why `translate` and not `transform`) tracking the pointer.
 ///
 /// Owns the drag gesture for both itself and any [`DrawerHandle`] rendered
-/// inside it -- see [`use_drawer_drag_start_gate`]'s doc for why one
+/// inside it -- see `use_drawer_drag_start_gate`'s doc for why one
 /// listener on this component's own root element covers both surfaces.
 ///
 /// ## Example

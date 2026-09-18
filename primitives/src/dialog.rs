@@ -27,10 +27,10 @@
 //!   never bound as an attribute (Construction B's central finding: binding
 //!   it declaratively in the same build as a guarded `showModal()` call
 //!   doesn't crash, it silently skips the modal state entirely), driven by
-//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`] (the
+//!   `crate::use_dialog_open_driver`/`crate::use_dialog_close_sync` (the
 //!   fix for the historical stranded-signal defect,
 //!   `docs/recommended-implementations.md` Caveat 1) plus
-//!   [`crate::use_dialog_backdrop_dismiss`] (now shared with `popover.rs`'s
+//!   `crate::use_dialog_backdrop_dismiss` (now shared with `popover.rs`'s
 //!   modal web arm too) for the "click far outside the dialog" behaviour
 //!   `dialog.spec.ts` already covers -- `use_outside_dismiss`
 //!   itself is not reusable here, because a `showModal()` backdrop click's

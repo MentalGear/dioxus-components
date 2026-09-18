@@ -10,8 +10,8 @@
 //!   `div` + vendored `FocusTrap` path (unchanged).
 //! - `#[cfg(feature = "web")]`: a real `<dialog>` opened with
 //!   `showModal()`, driven by the exact same
-//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
-//!   [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
+//!   `crate::use_dialog_open_driver`/`crate::use_dialog_close_sync`/
+//!   `crate::use_dialog_backdrop_dismiss` trio `dialog.rs`'s web modal arm
 //!   uses -- no focus-trap eval and no `use_global_escape_listener`/
 //!   `use_outside_dismiss` on this arm; the browser's own `showModal()`
 //!   supplies the focus trap, focus restore, background inertness, and top
