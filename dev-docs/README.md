@@ -6,6 +6,8 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 
 **Point-in-time research index.** Everything below reflects the state of the codebase at the 2026-08-29 scan date, before any of this research was acted on. As of 2026-09-02, Phases 0–4 of [`plan.md`](./plan.md) have landed on `main` — start there for current status; the documents below remain the record of the research that led to them.
 
+**2026-09-18:** a fresh session evaluated `plan.md`/`backlog.md`'s queue and concurred, with three corrections (six idled "Ready" rows released into parallel lanes, an unstated row 7→19 dependency sequenced, the cheap-primitives wave's two cheapest members — Table, Data Table — added ahead of it). Ten parallel lanes then landed: Phase 6 rows 11 (typeahead) and 12 (`pub mod portal`, `Toggle`'s `class` prop, `CalendarDayState`); `backlog.md` rows 7, 8, 9 and 19 (the Wervice tooltip fade-out and its `use_popover_shown_while_mounted` dependency, the Select combobox role, and Select's scroll lock); the upstream cherry-pick (row 66); two harness fixes (axe scan readiness, a `top_layer` fixture z-index collision with the docs Sidebar); a scroll-animation regression fix; and five `component-backlog.md` catalog components (Table, Data Table, Drawer, Navigation Menu, Resizable). See `backlog.md`'s "2026-09-18 — queue evaluation and what was taken" for the full account and its "What a fresh session should pick up next" list for what remains open.
+
 | Document | Answers |
 |---|---|
 | [`plan.md`](./plan.md) | **The single authoritative sequence** — phases, dependencies, open decisions, and the definition of done. Start here. Where another document's ordering differs, the plan wins. |

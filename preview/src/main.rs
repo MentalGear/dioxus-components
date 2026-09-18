@@ -1183,6 +1183,31 @@ fn ComponentVariantHighlight(
         css_highlighted: _,
         component: Comp,
     } = variant;
+    // Every variant of a "Normal" component renders on the SAME page (the
+    // "Variants" section below loops over all of them, main included --
+    // see `ComponentHighlight` above), so a literal `"component-preview-
+    // frame"` id can't be shared across more than one of these `TabContent`s
+    // without producing duplicate ids -- confirmed by execution: adding
+    // `popover`'s `non_modal` variant (dev-docs/backlog.md rows 19/7) gave
+    // the popover page two, and `popover.spec.ts`'s basic test (`page.
+    // locator("#component-preview-frame")`, no `.first()`) failed with a
+    // strict-mode "2 elements" violation. Fixed by construction, not
+    // per-instance: `main_variant` (already the exact signal distinguishing
+    // the one call site above from every entry in the loop below) picks
+    // exactly `component-preview-frame` for `main` -- unchanged, so every
+    // existing single-variant component page and every spec that already
+    // targets that literal id keeps working untouched -- and
+    // `component-preview-frame-<name>` for every other variant, unique per
+    // variant name so two additional variants on the same page (e.g.
+    // `calendar[simple, internationalized, range, multi_month,
+    // unavailable_dates]`, already exposed to this same defect before this
+    // fix, silently tolerated via `.first()` in `calendar.spec.ts`) can
+    // never collide with each other either.
+    let frame_id = if main_variant {
+        "component-preview-frame".to_string()
+    } else {
+        format!("component-preview-frame-{name}")
+    };
     rsx! {
         if !main_variant {
             h3 { class: "dx-component-variant-title", "{name}" }
@@ -1213,7 +1238,7 @@ fn ComponentVariantHighlight(
                 TabContent {
                     index: 0usize,
                     class: "dx-component-preview-frame",
-                    id: "component-preview-frame",
+                    id: "{frame_id}",
                     value: "Demo",
                     width: "100%",
                     position: "relative",
@@ -1258,6 +1283,24 @@ fn BlockComponentVariantHighlight(
         None => route_path,
     };
 
+    // Same defect, same construction as `ComponentVariantHighlight`'s
+    // identical `frame_id` above (see its doc comment for the full
+    // rationale) -- this is the Block-kind sibling of that function, and
+    // every "Block" component with more than one variant (e.g. `sidebar(
+    // block)[floating, inset]`) renders all of them on this same
+    // `/component/?name=<name>&` page (`ComponentHighlight` above doesn't
+    // branch on kind for *that* -- only for which of these two functions
+    // renders each variant), so it was exposed to the identical duplicate-
+    // id defect, just not yet caught by a spec: `sidebar.spec.ts` only ever
+    // drives the single-variant `/component/block/?name=sidebar&variant=
+    // ...&` route (`ComponentBlockDemo`, a different function entirely,
+    // one variant per page by construction), never this one.
+    let frame_id = if main_variant {
+        "component-preview-frame".to_string()
+    } else {
+        format!("component-preview-frame-{name}")
+    };
+
     rsx! {
         if !main_variant {
             h3 { class: "dx-component-variant-title", "{name}" }
@@ -1287,7 +1330,7 @@ fn BlockComponentVariantHighlight(
                 align_items: "center",
                 TabContent {
                     index: 0usize,
-                    id: "component-preview-frame",
+                    id: "{frame_id}",
                     value: "Preview",
                     width: "100%",
                     position: "relative",
@@ -1660,17 +1703,31 @@ fn WidgetMasonry(heading_id: String) -> Element {
             }
             div { class: "dx-widget-masonry",
                 for entry in BLOCKS {
-                    MasonryCard { component: entry.component, popout: entry.popout }
+                    MasonryCard {
+                        component: move |()| (entry.component)(),
+                        popout: entry.popout,
+                    }
                 }
             }
         }
     }
 }
 
-#[allow(unpredictable_function_pointer_comparisons)]
+/// `component` takes `Callback<(), Element>` rather than a bare
+/// `fn() -> Element`: dioxus's `#[component]` macro derives `PartialEq` for
+/// this function's generated props struct by comparing every field with
+/// `==`, and a raw function-pointer field triggers rustc's
+/// `unpredictable_function_pointer_comparisons` lint from *inside* that
+/// macro-generated `impl PartialEq` -- a separate item the macro emits
+/// itself, so an `#[allow]` on this function (tried first; still present in
+/// history) cannot reach it. `Callback`'s own `PartialEq` compares a
+/// `GenerationalBox` pointer + `ScopeId` instead of a function pointer, so
+/// routing the prop through it (the crate's own idiom for this, used by
+/// every other dynamic-render/event prop in this codebase, e.g.
+/// `on_change: Callback<bool, ()>`) sidesteps the lint by construction
+/// instead of suppressing it.
 #[component]
-fn MasonryCard(component: fn() -> Element, #[props(default)] popout: bool) -> Element {
-    let Comp = component;
+fn MasonryCard(component: Callback<(), Element>, #[props(default)] popout: bool) -> Element {
     let class = if popout {
         "dx-widget-card dx-widget-card-popout"
     } else {
@@ -1678,7 +1735,7 @@ fn MasonryCard(component: fn() -> Element, #[props(default)] popout: bool) -> El
     };
     rsx! {
         div { class,
-            Comp {}
+            {component.call(())}
         }
     }
 }

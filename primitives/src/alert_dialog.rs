@@ -12,7 +12,7 @@
 //!   (the explicit `role` stays -- unlike a plain modal `Dialog`, this is a
 //!   genuine ARIA-subclass refinement of `<dialog>`'s implicit role,
 //!   <https://www.w3.org/TR/html-aria/#el-dialog>), driven by the same
-//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`] pair
+//!   `crate::use_dialog_open_driver`/`crate::use_dialog_close_sync` pair
 //!   `dialog.rs` uses. No backdrop-click dismiss: unlike `Dialog`,
 //!   `AlertDialogContent` has never called `use_outside_dismiss` (APG
 //!   discourages light-dismissing an alert dialog), and this slice does not

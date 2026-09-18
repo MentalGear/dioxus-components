@@ -298,6 +298,16 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
         }
     });
 
+    // docs/backlog.md row 11 (Phase 6, typeahead): one buffer per
+    // `MenubarMenu`, scoped to this menu's own items (`menu_ctx.focus`),
+    // never the menubar's row of triggers (`ctx.focus`) -- the APG rule
+    // this implements ("Move focus to the next item in the *current menu*
+    // whose label begins with that printable character") is about the open
+    // menu's own items, not the always-visible trigger row; see
+    // `DropdownMenu`'s identical call (`dropdown_menu.rs`) for the general
+    // rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
+
     rsx! {
         div {
             role: crate::menu_semantics::MENU_ROLE,
@@ -370,6 +380,22 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
                     },
                     Key::Home => ctx.focus.focus_first(),
                     Key::End => ctx.focus.focus_last(),
+                    // APG Menu and Menubar pattern, "Keyboard Interaction"
+                    // (h2), same pinned commit as this file's other APG
+                    // citations: "Any key that corresponds to a printable
+                    // character (Optional): Move focus to the next item in
+                    // the current menu whose label begins with that
+                    // printable character." Only while this menu is open
+                    // and not disabled, matching the ArrowDown/ArrowUp arms
+                    // just above -- `menu_ctx.focus` has no items to search
+                    // while closed (`MenubarContent` mounts items only
+                    // once `render()` is true).
+                    Key::Character(_) if !disabled() && is_open() => {
+                        let entries = menu_ctx.focus.text_entries();
+                        if !typeahead.handle_key(menu_ctx.focus, &entries, &event) {
+                            return;
+                        }
+                    }
                     _ => return,
                 }
                 event.prevent_default();
@@ -823,6 +849,12 @@ pub struct MenubarItemProps {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Explicit label text used for typeahead search (`docs/backlog.md`
+    /// row 11 -- APG's "Any key that corresponds to a printable character"
+    /// rule). When not set, falls back to [`Self::value`].
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// Callback fired when the item is selected. The [`Self::value`] will be passed as an argument.
     #[props(default)]
     pub on_select: Callback<String>,
@@ -910,7 +942,18 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
     let mut menu_ctx: MenubarMenuContext = use_context();
 
     let disabled = move || (ctx.disabled)() || (props.disabled)();
-    let item = use_item(collection_item(menu_ctx.focus, props.index).disabled(disabled));
+    // Cloned once up front (not moved), the same `props.value.clone()`
+    // pattern this component's own `onpointerdown`/`onkeydown` closures
+    // already use below -- `String` isn't `Copy`, so each closure needing
+    // it clones its own copy rather than fighting over one move.
+    let fallback_text_value = props.value.clone();
+    let item = use_item(
+        collection_item(menu_ctx.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || {
+                Some((props.text_value)().unwrap_or_else(|| fallback_text_value.clone()))
+            }),
+    );
     let focused = move || item.focused() && (menu_ctx.is_open)();
 
     let onmounted = item.onmounted();

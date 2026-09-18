@@ -314,8 +314,9 @@ pub fn TooltipContent(props: TooltipContentProps) -> Element {
     // Create the tooltip content. `TooltipContentRendered` is a real
     // component (not a plain fn) precisely so it can be mounted/unmounted
     // by `render()` here -- it, and the hooks it calls internally (this
-    // slice's `use_popover_sync` on the web arm), get a fresh scope each
-    // time, matching this element's actual DOM lifetime. A plain fn called
+    // slice's `use_popover_shown_while_mounted` on the web arm), get a
+    // fresh scope each time, matching this element's actual DOM lifetime.
+    // A plain fn called
     // conditionally from inside this `rsx!` would instead attribute those
     // hook calls to *this* component's own scope, where `render()` toggling
     // on every open/close would change the hook count/order across renders
@@ -348,10 +349,29 @@ pub fn TooltipContent(props: TooltipContentProps) -> Element {
 /// outside pointerdown that the browser used to (harmlessly) ignore would
 /// now race our own signal to close it, and there is no separate
 /// interaction this component wants Escape or click-outside to mean beyond
-/// what the trigger already does. `crate::top_layer::use_popover_sync`
-/// drives `showPopover()`/`hidePopover()` from `open` and mirrors the
-/// browser's own `toggle` event back into `set_open` in case anything ever
-/// hides it outside that signal.
+/// what the trigger already does.
+///
+/// Uses `crate::top_layer::use_popover_shown_while_mounted`, not
+/// `use_popover_sync` (docs/backlog.md row 19). This component is mounted
+/// by `render()` in `TooltipContent` above -- `use_animated_open` -- which
+/// keeps it in the DOM with `data-state="closed"` for its whole CSS close
+/// animation (plus a settle hold) before actually unmounting it.
+/// `use_popover_sync` calls `hidePopover()` the instant `open` (the real,
+/// non-animated signal) goes `false`, and the UA's
+/// `[popover]:not(:popover-open) { display: none }` rule then hides the
+/// element before its close animation ever gets a chance to play --
+/// exactly the "Bug 1 (animation race)"
+/// `use_popover_shown_while_mounted`'s own doc describes for
+/// `SelectList`/`ComboboxList` (`top_layer.rs`), reasoned through here the
+/// same way since a `manual` popover's close path is script-driven only,
+/// same as those two. `use_popover_shown_while_mounted` never calls
+/// `hidePopover()` on the closing path at all; only `render()` dropping to
+/// `false` and Dioxus actually removing this element from the DOM takes it
+/// out of the top layer, and by then the close animation has already
+/// finished. `set_open` still mirrors the browser's own `toggle` event back
+/// into the signal in case anything ever closes this natively -- it never
+/// does for `manual` (see `PopoverKind::Manual`'s doc), but the callback
+/// shape stays symmetric with every other call site.
 #[cfg(feature = "web")]
 #[component]
 fn TooltipContentRendered(
@@ -363,7 +383,7 @@ fn TooltipContentRendered(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+    crate::top_layer::use_popover_shown_while_mounted(id.clone(), open, set_open);
     // JS-measured static positioning fallback for Firefox/WebKit (no CSS
     // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
     // doc. `anchor_id` is this content's own `id`: `TooltipTrigger`'s

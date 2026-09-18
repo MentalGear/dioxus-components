@@ -33,6 +33,26 @@ file outside its watched globs, or a change made via `git stash`/`pop` landing
 in a window the watcher's debounce missed) — that's the moment to stop
 guessing and force a real rebuild (see "When in doubt" below).
 
+## A third trap: `Hotreloading:` with no rebuild
+
+Beyond not knowing *when* a rebuild finished, a structural Rust **logic** change (not a
+markup/style tweak) can sometimes make `dx serve` log only `Hotreloading: <file>` — with no
+`Build completed` line at all — and silently not take effect. Hot patching handles simple edits
+well; it does not reliably cover every structural change, and when it silently doesn't, there is
+no error, just a log line that looks like progress. If you've confirmed the file actually changed
+and the log still shows only `Hotreloading:` with no follow-up `Build completed` line after a
+reasonable wait, don't keep polling — do a full server restart (kill the process, `dx serve`
+again) to force an unambiguous full rebuild, then re-check. Found this way during 2026-09-18's
+integration round: a structural fix was reasoned correct, the log showed only `Hotreloading:`,
+and the old behavior was still being served until the server was restarted.
+
+**Two different completion strings, and they mean different things:** only a **cold start** logs
+`Build completed successfully in <N>s`; a **watch rebuild** (the normal hot-reload path after a
+file change, once one actually runs) logs `Build completed in <N>s` — no "successfully". Grepping
+for the cold-start string after an ordinary edit will find nothing even when the rebuild genuinely
+finished — match `Build completed` (without "successfully") for a watch rebuild, and know which
+kind of start you're polling for before concluding the log shows no completion at all.
+
 ## Testing methodology traps that *look* like a stale build
 
 Two mistakes this session produced symptoms indistinguishable from "the dev
@@ -106,3 +126,14 @@ cd /tmp/docs-root && python3 -m http.server 8099
 - Before concluding a fix caused a regression, rule out your own test
   methodology first — minified-CSS text grepping and `elementFromPoint` after
   a `pointer-events: none` fix are the two traps already caught here.
+- A structural Rust logic change can hot-reload silently without actually
+  rebuilding (`Hotreloading:` logged with no `Build completed` line) — if in
+  doubt, restart the server rather than trust the log. The two completion
+  strings mean different things: only a cold start says "successfully".
+
+**See also:** [`dev-loop.md`](./dev-loop.md) — measured rebuild latency per
+edit class, `dx serve --hot-patch` findings, a scripted trustworthy-signal
+wait (`scripts/dev-wait.sh`), a direct-inspection tool (`scripts/inspect.mjs`),
+and two more traps found while producing those (a hot-reload-only patch is
+invisible to any fresh page load/navigation, and rapid multi-file saves can
+produce a misleadingly-early "Build completed" line).

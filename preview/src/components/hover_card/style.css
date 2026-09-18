@@ -128,13 +128,59 @@
   }
 }
 
+/*
+ * dev-docs/backlog.md row 7: the symmetric close-fade counterpart to
+ * `dx-hover-card-fade-in` above, mirroring the same fix upstream PR #293
+ * (Wervice) landed for `../tooltip/style.css` -- `display: none` cannot
+ * play alongside `animation`/`transition` (the UA applies it immediately),
+ * so a `[data-state="closed"]` rule that wants to fade out has to replace
+ * `display: none` with `opacity`/`pointer-events` instead, same as
+ * `../tooltip/style.css` and `../popover/style.css` (which already had
+ * this shape). Only cosmetically visible on the web (popover) arm once
+ * `primitives/src/top_layer.rs`'s `use_popover_shown_while_mounted`
+ * keeps this content's popover shown for the animation's duration
+ * (docs/backlog.md row 19) -- without that fix `hidePopover()` hides the
+ * element via the UA's `display: none` rule before this animation gets a
+ * chance to play.
+ */
+@keyframes dx-hover-card-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 /* State styles */
 .dx-hover-card[data-disabled="true"] .dx-hover-card-trigger {
   color: var(--secondary-color-5);
 }
 
 .dx-hover-card-content[data-state="closed"] {
-  display: none;
+  /* Symmetric with this content's own fade-in above: same duration/easing,
+     reversed direction -- not `../tooltip/style.css`'s slower duration, so
+     each component's open and close feel equally fast/slow as each other. */
+  animation: dx-hover-card-fade-out var(--dx-motion-duration-fast) var(--dx-motion-ease-out) forwards;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
+ * Same reasoning as `../tooltip/style.css`'s identical block: row 31a's
+ * shared `prefers-reduced-motion` layer (dx-components-theme.css) only
+ * covers interactive roots, not animated content (see that file's own
+ * comment, and dev-docs/backlog.md row 31/27's `Spinner` note) -- this
+ * content's fade-in/fade-out are animated content, so they need their own
+ * override, matching the per-component convention `input_otp`/`spinner`
+ * already carry.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .dx-hover-card-content,
+  .dx-hover-card-content[data-state="closed"] {
+    animation-duration: var(--dx-motion-duration-reduced);
+  }
 }
 
 /*

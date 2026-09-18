@@ -26,7 +26,7 @@
 //!   `docs/conformance-harness.md`'s tier-2 HTML rules, the real, focusable,
 //!   labelled `<input>` is the accessible source of truth.
 //!
-//! The caret-position bridge ([`use_caret_sync`], DOM caret index -> Rust
+//! The caret-position bridge (`use_caret_sync`, DOM caret index -> Rust
 //! signal) is new code but the *shape* -- a small `document::eval` script that
 //! attaches DOM listeners and streams values back over the eval channel,
 //! cleaned up on drop -- mirrors this crate's other browser-to-signal bridges

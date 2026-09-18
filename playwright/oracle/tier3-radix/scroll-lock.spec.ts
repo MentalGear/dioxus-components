@@ -30,9 +30,17 @@
  * all until Phase 3.2 adds one (see the dialog demo's "Open Nested Dialog"
  * button, `preview/src/components/dialog/variants/main/mod.rs`).
  *
- * FOLLOW-UP NOT COVERED HERE: `Select`'s open listbox is not wired to any
- * scroll lock in this pass (docs/plan.md Phase 3.2 explicitly scopes it
- * out -- neither `dignifiedquire` nor `sarendipitee` covers it either).
+ * UPDATE 2026-09-18 (docs/backlog.md row 9): `Select`'s open listbox is now
+ * wired to this same scroll lock too -- see "Select locks and releases page
+ * scroll" below. It was deliberately left out of the original Phase 3.2 pass
+ * -- "Neither source fork covered it; noted in tier-3 oracle header"
+ * (docs/backlog.md row 9's own "Why" column -- THIS file, the paragraph just
+ * replaced by this update, was that "tier-3 oracle header" note) -- and this
+ * file's Select case is this repo's own construction, opt-out via a
+ * `scroll_lock` prop (default `true`, matching Radix) on `Select`/
+ * `SelectMulti` rather than the `modal` prop `DropdownMenu`/`ContextMenu`
+ * use -- a select-only combobox's listbox has no non-modal mode to gate
+ * this on.
  * `Menubar` is correctly excluded throughout -- it is never modal.
  *
  * KNOWN GAP, both in the dq base and here (see
@@ -324,6 +332,54 @@ test.describe("ContextMenu locks and releases page scroll", () => {
     await assertScrollIsUnlocked(page);
     await assertNoHorizontalShift(page, rightBefore, "after the context menu closes and scroll unlocks");
   });
+});
+
+/**
+ * docs/backlog.md row 9: `Select`'s open listbox now locks page scroll too,
+ * via the same `ScrollLockGuard`/`use_scroll_lock` mechanism as every other
+ * `test.describe` block above -- see this file's header doc, "UPDATE
+ * 2026-09-18", for why this was left out of the original pass and how it's
+ * wired (opt-out `scroll_lock` prop, default `true`, on `Select`/
+ * `SelectMulti`, mounted from `SelectListRendered`, `primitives/src/select/
+ * components/list.rs`).
+ */
+test.describe("Select locks and releases page scroll", () => {
+  test("scroll is locked while the listbox is open (default scroll_lock=true) and restored after Escape", async ({
+    page,
+  }) => {
+    await goto(page, "select");
+    await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
+
+    // Same role/locator convention as select.spec.ts's `singleSelectTrigger`
+    // -- docs/backlog.md row 8 gave the trigger role="combobox".
+    const trigger = page.getByRole("combobox").filter({ hasText: /Select an option|Apple|Banana/ });
+    await trigger.click();
+    const listbox = page.getByRole("listbox");
+    await expect(listbox).toHaveAttribute("data-state", "open");
+    await assertNoHorizontalShift(page, rightBefore, "while the select listbox is open");
+
+    // A wheel attempt while the listbox is open must not scroll the page,
+    // same contract as every other overlay above.
+    await assertScrollIsLocked(page);
+
+    await page.keyboard.press("Escape");
+    await expect(listbox).toHaveCount(0);
+
+    await assertScrollIsUnlocked(page);
+    await assertNoHorizontalShift(page, rightBefore, "after the select listbox closes and scroll unlocks");
+  });
+
+  // NOT COVERED HERE: the `scroll_lock=false` opt-out itself (the prop's
+  // default is `true`, exercised above). No fixture route currently wires a
+  // query param through to `Select`'s `scroll_lock` prop the way this file's
+  // other opt-outs aren't covered either (`DropdownMenu`/`ContextMenu`'s own
+  // `modal` prop has no dedicated opt-out case in this file). The prop is
+  // unit-level plumbing (`primitives/src/select/components/select.rs` ->
+  // `SelectContext::scroll_lock` -> `SelectListRendered`'s
+  // `scroll_lock_active` memo, `list.rs`) verified by `cargo check`/`cargo
+  // test`, not by a Playwright fixture; adding one is follow-up work if a
+  // real caller needs to exercise it end-to-end.
 });
 
 test.describe("Dialog does not leave the page permanently scrolled after a lock cycle", () => {

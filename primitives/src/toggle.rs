@@ -18,6 +18,13 @@ pub struct ToggleProps {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Optional class for the toggle element. This primitive is unstyled and
+    /// applies no class of its own -- a themed layer that wants a default
+    /// class (e.g. `"dx-toggle"`) should merge it with this prop rather than
+    /// replace it, the same way `preview/src/components/toggle/component.rs`
+    /// does, so a caller's own class is never silently dropped.
+    pub class: Option<String>,
+
     /// Callback fired when the pressed state changes.
     #[props(default)]
     pub on_pressed_change: Callback<bool>,
@@ -91,6 +98,7 @@ pub fn Toggle(props: ToggleProps) -> Element {
             onkeydown: props.onkeydown,
 
             type: "button",
+            class: props.class,
             disabled: props.disabled,
             aria_pressed: pressed,
             "data-state": if pressed() { "on" } else { "off" },
@@ -109,5 +117,50 @@ pub fn Toggle(props: ToggleProps) -> Element {
             ..props.attributes,
             {props.children}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[component]
+    fn ToggleWithClass() -> Element {
+        rsx! {
+            Toggle {
+                pressed: None,
+                class: "my-class".to_string(),
+                "B"
+            }
+        }
+    }
+
+    #[component]
+    fn ToggleWithoutClass() -> Element {
+        rsx! {
+            Toggle { pressed: None, "B" }
+        }
+    }
+
+    #[test]
+    fn class_prop_renders_on_the_button() {
+        let mut dom = VirtualDom::new(ToggleWithClass);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(html.contains(r#"class="my-class""#));
+    }
+
+    #[test]
+    fn omitted_class_renders_no_class_attribute() {
+        // The primitive is unstyled: unlike some other primitives (e.g.
+        // `alert_dialog.rs`'s `AlertDialogContent`), it must not fall back
+        // to a default class of its own when the caller doesn't set one --
+        // that's the themed layer's business (`preview/src/components/toggle/component.rs`).
+        let mut dom = VirtualDom::new(ToggleWithoutClass);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(!html.contains("class="));
     }
 }

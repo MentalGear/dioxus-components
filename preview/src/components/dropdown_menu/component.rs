@@ -70,6 +70,7 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
             disabled: props.disabled,
             value: props.value,
             index: props.index,
+            text_value: props.text_value,
             on_select: props.on_select,
             attributes: merged,
             {props.children}
@@ -122,6 +123,7 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
             index: props.index,
             id: props.id,
             disabled: props.disabled,
+            text_value: props.text_value,
             attributes: merged,
             {props.children}
             ChevronRight { class: "dx-dropdown-menu-sub-trigger-icon", size: "16px" }
@@ -165,6 +167,7 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
             disabled: props.disabled,
             value: props.value,
             index: props.index,
+            text_value: props.text_value,
             on_select: props.on_select,
             attributes: merged,
             {props.children}

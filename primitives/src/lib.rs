@@ -29,6 +29,7 @@ pub mod context_menu;
 pub mod date_picker;
 pub mod dialog;
 pub mod drag_and_drop_list;
+pub mod drawer;
 pub mod dropdown_menu;
 pub mod hover_card;
 pub mod input_otp;
@@ -41,11 +42,17 @@ pub mod menubar;
 mod move_interaction;
 #[cfg(feature = "router")]
 pub mod navbar;
+// Deliberately NOT gated on `feature = "router"`, unlike `navbar` above:
+// `NavigationMenuLink` renders a plain `a[href]` itself rather than
+// `dioxus_router::Link`, so this module has no router dependency -- see
+// its own module doc.
+pub mod navigation_menu;
 mod pointer;
 pub mod popover;
-mod portal;
+pub mod portal;
 pub mod progress;
 pub mod radio_group;
+pub mod resizable;
 pub mod scroll_area;
 mod scroll_lock;
 pub mod select;
@@ -62,6 +69,7 @@ pub mod toggle_group;
 pub mod toolbar;
 pub mod tooltip;
 mod top_layer;
+mod typeahead;
 pub(crate) mod r#virtual;
 pub mod virtual_list;
 

@@ -1,0 +1,89 @@
+/* Layout (display:flex/flex-direction on the group; flex-basis/grow/shrink on each panel) is
+   structural and lives on the primitive itself (primitives/src/resizable.rs), the same way
+   SliderThumb/SliderRange inline their own percentage-based position styles -- it has to work
+   with zero theme CSS applied. Everything below is purely visual. */
+
+.dx-resizable-panel-group {
+  width: 100%;
+  height: 100%;
+}
+
+.dx-resizable-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.dx-resizable-handle {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  background: var(--secondary-color-3);
+  outline: none;
+
+  /* Full-viewport drag tracking (primitives/src/move_interaction.rs) means the handle itself
+     never needs the browser's own touch gestures (pan/pinch) while a drag is in progress. */
+  touch-action: none;
+}
+
+.dx-resizable-handle[data-orientation="horizontal"] {
+  width: var(--dx-space-1);
+  cursor: col-resize;
+}
+
+.dx-resizable-handle[data-orientation="vertical"] {
+  width: 100%;
+  height: var(--dx-space-1);
+  cursor: row-resize;
+}
+
+.dx-resizable-handle:hover,
+.dx-resizable-handle[data-state="dragging"] {
+  background: var(--secondary-color-4);
+}
+
+.dx-resizable-handle:focus-visible {
+  box-shadow: var(--dx-ring);
+}
+
+.dx-resizable-handle[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.dx-resizable-handle-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: var(--dx-space-4);
+  height: var(--dx-space-6);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--secondary-color-3);
+  border-radius: var(--dx-radius-sm);
+  background: var(--primary-color-1);
+  color: var(--secondary-color-5);
+
+  /* Purely decorative -- the handle div itself (not the grip) carries the interactive
+     role/handlers, so a pointer landing on the grip must fall through to it. */
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.dx-resizable-handle[data-orientation="vertical"] .dx-resizable-handle-grip {
+  width: var(--dx-space-6);
+  height: var(--dx-space-4);
+}
+
+.dx-resizable-handle[data-orientation="vertical"] .dx-resizable-handle-grip svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dx-resizable-handle {
+    transition: background-color var(--dx-motion-duration-fast);
+  }
+}

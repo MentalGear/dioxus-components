@@ -1158,7 +1158,45 @@ async function pinNearTop(page: Page, locator: import("@playwright/test").Locato
   // page, and a trigger hanging past the right edge collides with the
   // fixture's fixed right-edge triggers, which then intercept the click and
   // send Playwright into its scroll-and-retry loop.
-  await locator.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "center" }));
+  //
+  // `behavior: "instant"` on both this call and the `window.scrollTo` below
+  // (2026-09-18, this session's root-cause finding for the Rule 11 self-
+  // overlap regression): `preview/assets/main.css` added a global
+  // `html { scroll-behavior: smooth }` (commit daebe40, for legitimate,
+  // unrelated in-page TOC-link navigation) after this helper was written,
+  // and neither call originally specified a `behavior`, so both silently
+  // started ANIMATING over several hundred ms instead of jumping instantly
+  // -- `pinNearTop`'s entire documented contract (see this function's own
+  // opening doc) is to deliver the trigger at a settled, known position
+  // BEFORE `overlay.open()` runs, precisely so this rule's self-overlap
+  // check isn't confounded by in-flight scroll. Confirmed by execution
+  // (standalone Playwright script, this session): with the un-qualified
+  // calls, the trigger's `getBoundingClientRect().top` kept changing for
+  // 400-600ms *after* `pinNearTop` had already resolved and `overlay.open()`
+  // had been called (e.g. Combobox: 643 -> 541 -> 93 -> 78, settling only
+  // ~400ms later) -- `use_anchor_position_fallback`'s JS-fallback tracking
+  // (`primitives/src/top_layer.rs`) reacts to each scroll frame via its own
+  // rAF-throttled listener, but that is necessarily one step behind a
+  // continuous CSS-driven scroll animation, especially under real
+  // scheduling load (this sandbox's concurrent WASM/Chromium contention).
+  // The content briefly reflects an already-superseded trigger reading
+  // while this rule's assertion reads the trigger's CURRENT position
+  // immediately after open -- a real mismatch, but between two moments of
+  // the SAME still-settling trigger, not a placement-formula defect in the
+  // fallback itself (see the commit message for the full account, including
+  // why this is fixed here rather than in `top_layer.rs`: every Rule 11
+  // sub-case for all eight covered overlays calls this same helper before
+  // opening, and the exact numeric signature -- content positioned exactly
+  // where `place()`/the vertical clamp would put it for an EARLIER trigger
+  // reading, not the one Playwright reads back -- was identical across
+  // every failing case inspected). `behavior: "instant"` is the standard,
+  // spec-defined way to opt a single scroll call out of an ancestor's CSS
+  // `scroll-behavior: smooth` (CSSOM View's `ScrollOptions`) without
+  // touching that legitimate, unrelated site-wide feature. Scroll-tracking
+  // fidelity during a genuine, in-flight scroll is Rule 8's own explicit,
+  // separately-tracked job (and already carries its own known, documented
+  // limitation, `dev-docs/backlog.md` row 21) -- not this rule's.
+  await locator.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" }));
   const rect = await rectOfLocator(locator);
   // "Near the top" means just below the sticky navbar, not 24px from the
   // viewport edge: the preview's `.dx-preview-navbar` is `position: sticky;
@@ -1172,7 +1210,7 @@ async function pinNearTop(page: Page, locator: import("@playwright/test").Locato
     return nav ? nav.getBoundingClientRect().bottom : 0;
   });
   await page.evaluate(
-    ([top, offset]) => window.scrollTo(0, window.scrollY + top - offset),
+    ([top, offset]) => window.scrollTo({ top: window.scrollY + top - offset, left: 0, behavior: "instant" }),
     [rect.top, navBottom + 24] as const,
   );
 }

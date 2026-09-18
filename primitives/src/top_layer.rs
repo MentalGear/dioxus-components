@@ -78,7 +78,8 @@ thread_local! {
 /// (`anchor_name_style`/`position_anchor_style` below) instead makes anchor
 /// positioning "just work" for `dx-anchor-tooltip`/`dx-anchor-hover-card`/
 /// `dx-anchor-popover`/`dx-anchor-dropdown-menu`/`dx-anchor-menubar`/
-/// `dx-anchor-navbar`/`dx-anchor-select`/`dx-anchor-combobox` (Migration A
+/// `dx-anchor-navbar`/`dx-anchor-navigation-menu`/`dx-anchor-select`/
+/// `dx-anchor-combobox` (Migration A
 /// slice 3/3, `select/components/list.rs`'s `SelectListRendered` and
 /// `combobox/components/list.rs`'s `ComboboxListRendered`; `dx-anchor-navbar`
 /// added 2026-09-03, finding C -- `navbar.rs`'s `NavbarContentRendered`)
@@ -185,7 +186,7 @@ fn anchor_positioning_inject_js() -> String {
 #[cfg(feature = "web")]
 const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
 :where(.dx-anchor-tooltip[popover], .dx-anchor-hover-card[popover], .dx-anchor-popover[popover], .dx-anchor-popover:modal, .dx-anchor-dropdown-menu[popover],
-  .dx-anchor-menubar[popover], .dx-anchor-navbar[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
+  .dx-anchor-menubar[popover], .dx-anchor-navbar[popover], .dx-anchor-navigation-menu[popover], .dx-anchor-select[popover], .dx-anchor-combobox[popover]) {
   margin: 0;
   inset: auto;
 }
@@ -197,6 +198,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover],
   .dx-anchor-menubar[popover],
   .dx-anchor-navbar[popover],
+  .dx-anchor-navigation-menu[popover],
   .dx-anchor-select[popover],
   .dx-anchor-combobox[popover] {
     position: fixed;
@@ -242,6 +244,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="top"],
   .dx-anchor-menubar[popover][data-side="top"],
   .dx-anchor-navbar[popover][data-side="top"],
+  .dx-anchor-navigation-menu[popover][data-side="top"],
   .dx-anchor-select[popover][data-side="top"],
   .dx-anchor-combobox[popover][data-side="top"] {
     bottom: anchor(top);
@@ -256,6 +259,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="right"],
   .dx-anchor-menubar[popover][data-side="right"],
   .dx-anchor-navbar[popover][data-side="right"],
+  .dx-anchor-navigation-menu[popover][data-side="right"],
   .dx-anchor-select[popover][data-side="right"],
   .dx-anchor-combobox[popover][data-side="right"] {
     top: anchor(center);
@@ -270,6 +274,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="bottom"],
   .dx-anchor-menubar[popover][data-side="bottom"],
   .dx-anchor-navbar[popover][data-side="bottom"],
+  .dx-anchor-navigation-menu[popover][data-side="bottom"],
   .dx-anchor-select[popover][data-side="bottom"],
   .dx-anchor-combobox[popover][data-side="bottom"] {
     top: anchor(bottom);
@@ -284,6 +289,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="left"],
   .dx-anchor-menubar[popover][data-side="left"],
   .dx-anchor-navbar[popover][data-side="left"],
+  .dx-anchor-navigation-menu[popover][data-side="left"],
   .dx-anchor-select[popover][data-side="left"],
   .dx-anchor-combobox[popover][data-side="left"] {
     top: anchor(center);
@@ -339,6 +345,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="start"],
   .dx-anchor-navbar[popover][data-side="top"][data-align="start"],
+  .dx-anchor-navigation-menu[popover][data-side="top"][data-align="start"],
   .dx-anchor-select[popover][data-side="top"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="start"],
@@ -348,6 +355,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-navbar[popover][data-side="bottom"][data-align="start"],
+  .dx-anchor-navigation-menu[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="start"] {
     left: anchor(left);
@@ -361,6 +369,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="center"],
   .dx-anchor-navbar[popover][data-side="top"][data-align="center"],
+  .dx-anchor-navigation-menu[popover][data-side="top"][data-align="center"],
   .dx-anchor-select[popover][data-side="top"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="center"],
@@ -370,6 +379,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-navbar[popover][data-side="bottom"][data-align="center"],
+  .dx-anchor-navigation-menu[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="center"] {
     left: anchor(center);
@@ -383,6 +393,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="top"][data-align="end"],
   .dx-anchor-navbar[popover][data-side="top"][data-align="end"],
+  .dx-anchor-navigation-menu[popover][data-side="top"][data-align="end"],
   .dx-anchor-select[popover][data-side="top"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="top"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="bottom"][data-align="end"],
@@ -392,6 +403,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-navbar[popover][data-side="bottom"][data-align="end"],
+  .dx-anchor-navigation-menu[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-select[popover][data-side="bottom"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="bottom"][data-align="end"] {
     left: anchor(right);
@@ -405,6 +417,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="start"],
   .dx-anchor-navbar[popover][data-side="left"][data-align="start"],
+  .dx-anchor-navigation-menu[popover][data-side="left"][data-align="start"],
   .dx-anchor-select[popover][data-side="left"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="start"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="start"],
@@ -414,6 +427,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="start"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="start"],
   .dx-anchor-navbar[popover][data-side="right"][data-align="start"],
+  .dx-anchor-navigation-menu[popover][data-side="right"][data-align="start"],
   .dx-anchor-select[popover][data-side="right"][data-align="start"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="start"] {
     top: anchor(top);
@@ -427,6 +441,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="center"],
   .dx-anchor-navbar[popover][data-side="left"][data-align="center"],
+  .dx-anchor-navigation-menu[popover][data-side="left"][data-align="center"],
   .dx-anchor-select[popover][data-side="left"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="center"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="center"],
@@ -436,6 +451,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="center"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="center"],
   .dx-anchor-navbar[popover][data-side="right"][data-align="center"],
+  .dx-anchor-navigation-menu[popover][data-side="right"][data-align="center"],
   .dx-anchor-select[popover][data-side="right"][data-align="center"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="center"] {
     top: anchor(center);
@@ -449,6 +465,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="left"][data-align="end"],
   .dx-anchor-navbar[popover][data-side="left"][data-align="end"],
+  .dx-anchor-navigation-menu[popover][data-side="left"][data-align="end"],
   .dx-anchor-select[popover][data-side="left"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="left"][data-align="end"],
   .dx-anchor-tooltip[popover][data-side="right"][data-align="end"],
@@ -458,6 +475,7 @@ const ANCHOR_POSITIONING_CSS_JS_LITERAL: &str = r#"`
   .dx-anchor-dropdown-menu[popover][data-side="right"][data-align="end"],
   .dx-anchor-menubar[popover][data-side="right"][data-align="end"],
   .dx-anchor-navbar[popover][data-side="right"][data-align="end"],
+  .dx-anchor-navigation-menu[popover][data-side="right"][data-align="end"],
   .dx-anchor-select[popover][data-side="right"][data-align="end"],
   .dx-anchor-combobox[popover][data-side="right"][data-align="end"] {
     top: anchor(bottom);
@@ -792,7 +810,7 @@ pub(crate) fn use_popover_sync(
 
 /// Variant of [`use_popover_sync`] for content whose *own* `data-state`
 /// (Radix-style) animates through a "closed but still mounted" phase --
-/// [`use_animated_open`]-driven content, unlike every other
+/// `use_animated_open`-driven content, unlike every other
 /// `use_popover_sync` call site. Forwards native/browser closes to
 /// `on_native_close` exactly like [`use_popover_sync`]; the difference is
 /// entirely on the "signal -> browser" side: `showPopover()` still runs
@@ -813,7 +831,7 @@ pub(crate) fn use_popover_sync(
 /// through a CSS animate-out -- Radix-style `data-state="closed"`
 /// animations on those are cosmetic fades that finish well after the
 /// element would already be gone). `SelectList`/`ComboboxList` are
-/// different: both render through [`use_animated_open`], which
+/// different: both render through `use_animated_open`, which
 /// deliberately keeps the content mounted with `data-state="closed"` for
 /// its whole exit animation (plus a settle hold) before actually
 /// unmounting it -- `combobox.spec.ts`'s "keeps filtered options during
@@ -826,13 +844,13 @@ pub(crate) fn use_popover_sync(
 /// and that test went red -- `hidePopover()` fired on the same tick `open`
 /// went `false`, which (per the UA popover stylesheet's
 /// `[popover]:not(:popover-open) { display: none }`) sets `display: none`
-/// on the content *before* [`use_animated_open`]'s own rAF-deferred
+/// on the content *before* `use_animated_open`'s own rAF-deferred
 /// `getAnimations()` check ever ran, so it always observed zero running
 /// animations and finished the close cycle immediately -- the exit
 /// animation was skipped outright, and Playwright's `toBeVisible()` on the
 /// still-should-be-animating `data-state="closed"` element failed. Never
 /// calling `hidePopover()` from the closing path at all -- only from a real
-/// unmount, once [`use_animated_open`] itself has already decided the
+/// unmount, once `use_animated_open` itself has already decided the
 /// animation (and its settle hold) is done -- sidesteps this entirely: the
 /// exit animation plays out undisturbed on an element that is still very
 /// much `:popover-open` the whole time.
@@ -2185,7 +2203,7 @@ pub(crate) fn anchored_content_attributes(id: &str, attributes: Vec<Attribute>) 
 }
 
 /// No-op whenever this crate's `web` feature is off -- see
-/// [`anchor_name_style`]'s doc. Unlike [`position_anchor_style`], this one
+/// [`anchor_name_style`]'s doc. Unlike `position_anchor_style`, this one
 /// *is* called unconditionally (every trigger sets it, regardless of
 /// build), so it needs a real native stub rather than being `#[cfg]`-gated
 /// away entirely.

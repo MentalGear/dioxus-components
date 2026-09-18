@@ -85,6 +85,19 @@
  * a *region* exclusion, skipping that one already-known, already-narrow
  * subtree entirely, not a page-wide `disableRules` -- so a component's own
  * contrast defect anywhere else on the same page still fails the scan.
+ *
+ * ## Readiness: every scan waits for the app's first paint
+ *
+ * `expectNoAxeViolations` waits (`waitForAppReady`, below) before it scans.
+ * `page.goto()` resolving only means the CSR shell loaded, not that
+ * Dioxus's wasm client has painted anything into it yet; scanning in that
+ * gap intermittently produced two false violations
+ * (`landmark-one-main`/`page-has-heading-one`, both against the bare
+ * `<html>` element) on whichever demo page happened to be fastest. See
+ * `waitForAppReady`'s own doc comment for the full mechanism and why two
+ * waits, not one. This lives in the shared helper, not each of the ~72
+ * call sites, per this repo's "same problem more than once -> fix the
+ * class" rule.
  */
 
 import { expect, type Page } from "@playwright/test";
@@ -170,17 +183,78 @@ function formatViolations(
 }
 
 /**
+ * How long `waitForAppReady` will wait for either readiness signal before
+ * giving up. Bounded well above every *passing* scan's observed duration
+ * in this suite (1.8-8.5s, see this file's header doc's Group-B analysis)
+ * but far below Playwright's own per-test ceiling (5min in this repo's
+ * config), so a page that genuinely never renders (a real defect, not a
+ * race) still fails fast with a clear "waiting for locator(...) to be
+ * attached" timeout instead of silently eating the whole test budget.
+ */
+const APP_READY_TIMEOUT_MS = 15_000;
+
+/**
+ * Wait for Dioxus's first client-side paint before axe scans `page`.
+ *
+ * `page.goto()` resolving (the `load` event) only proves the CSR shell
+ * (`preview/index.html`, an empty `<div id="main">` -- note: a `div`
+ * *carrying* the id `main`, not a `<main>` element, so it can never
+ * satisfy either wait below on its own) was fetched. It says nothing
+ * about whether the wasm client has run its first render pass yet, and
+ * for a CSR app the `load` event routinely fires before that paint.
+ * Scanning in that gap is exactly what produced the two false violations
+ * this wait fixes: `landmark-one-main`/`page-has-heading-one`, both
+ * targeting the bare `<html>` element, on whichever demo page's scan
+ * happened to run fastest (finished in ~1.3-2.0s -- well under every
+ * *passing* scan's 1.8-8.5s -- because there was almost nothing in the
+ * DOM yet to scan).
+ *
+ * Two waits, not one, because the race produces *two* violations and
+ * every route this suite scans (`preview/src/main.rs`'s `Home`, `Docs`,
+ * `Demos`, `ComponentHighlight`/`ComponentDemo`, the dashboard) renders
+ * both together as part of the same first paint -- confirmed by reading
+ * every route function in `preview/src/main.rs`, each either rendering
+ * its own top-level `main { .. }` + `h1` (`Home`, `Docs`, `Demos`) or
+ * composing `DocsLayout`, whose `SidebarInset` always renders the page's
+ * one `<main>` (`preview/src/components/sidebar/component.rs`), around
+ * content that always carries an `h1`:
+ *   1. the page's one `<main>` landmark, and
+ *   2. its level-one heading (an `h1`, or an ARIA `role="heading"` +
+ *      `aria-level="1"` equivalent -- `getByRole` matches either).
+ * Both checks use `state: "attached"` only (no visibility/animation
+ * wait, no `networkidle`), so this stays cheap and matches the exact two
+ * rules the race violates -- a direct fix for the observed failure mode,
+ * not a general "wait a bit longer."
+ */
+async function waitForAppReady(page: Page): Promise<void> {
+  await page
+    .locator("main")
+    .first()
+    .waitFor({ state: "attached", timeout: APP_READY_TIMEOUT_MS });
+  await page
+    .getByRole("heading", { level: 1 })
+    .first()
+    .waitFor({ state: "attached", timeout: APP_READY_TIMEOUT_MS });
+}
+
+/**
  * Run axe-core's full WCAG 2.0/2.1 A+AA + best-practice rule set against
  * `page` (or a subset of it, via `opts.include`) and fail with a readable
  * table (rule id, impact, help URL, every offending node's target + html)
  * if anything is found. `label` identifies the scan site in that message
  * (spec name + state, e.g. "context-menu: submenu open").
+ *
+ * Waits for the app's first paint first (`waitForAppReady`, above) -- see
+ * that function's doc comment and this file's header doc ("Readiness")
+ * for why.
  */
 export async function expectNoAxeViolations(
   page: Page,
   label: string,
   opts: AxeScanOptions = {},
 ): Promise<void> {
+  await waitForAppReady(page);
+
   let builder = new AxeBuilder({ page }).withTags(TAGS);
 
   if (opts.include) {

@@ -39,7 +39,7 @@
 //! the lower layer `ComboboxContext` is itself built from --
 //! `crate::selectable`/`crate::listbox`/`crate::collection` are private
 //! modules whose items are `pub(crate)`, i.e. visible crate-wide. `Command`
-//! therefore defines its own small [`CommandContext`], built on that same
+//! therefore defines its own small `CommandContext`, built on that same
 //! `pub(crate)` layer, rather than either vendoring `ComboboxContext`'s
 //! private shape or modifying `combobox/` to export it -- consistent with
 //! this module's other files being off limits to edit.

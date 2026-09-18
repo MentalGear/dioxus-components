@@ -10,6 +10,7 @@ use std::{
     rc::Rc,
 };
 
+use dioxus_core::AttributeValue::{Bool, Text};
 use time::{ext::NumericalDuration, macros::date, Date, Month, OffsetDateTime, Weekday};
 
 use crate::{date_picker::DefaultCalendarProps, use_effect_cleanup, LocalDateExt as _};
@@ -2291,6 +2292,10 @@ pub struct CalendarDayProps {
 /// - `data-selection-start`: Indicates if cell is the first date in a range selection. Possible values are `true` or `false`.
 /// - `data-selection-between`: Indicates if a date interval contains a cell. Possible values are `true` or `false`.
 /// - `data-selection-end`: Indicates if cell is the last date in a range selection. Possible values are `true` or `false`.
+///
+/// Building an entirely custom day cell instead of using [`CalendarDay`]?
+/// [`use_calendar_day_state`] and [`calendar_day_attributes`] expose the
+/// same state and attributes this component computes for itself.
 #[component]
 pub fn CalendarDay(props: CalendarDayProps) -> Element {
     let single_context = try_use_context::<CalendarContext>().is_some();
@@ -2308,6 +2313,214 @@ pub fn CalendarDay(props: CalendarDayProps) -> Element {
         rsx! {
             RangeCalendarDay { date, attributes, children }
         }
+    }
+}
+
+/// The computed interactive/visual state of one calendar day cell -- exactly
+/// what the built-in [`CalendarDay`] cell computes for itself, exposed so a
+/// custom day-cell UI built outside this crate can render the same states
+/// instead of duplicating this logic. Returned by [`use_calendar_day_state`]
+/// and turned into markup attributes by [`calendar_day_attributes`] --
+/// upstream `DioxusLabs/components#199` ("the APIs to build each component
+/// should be public").
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalendarDayState {
+    /// The date this state describes.
+    pub date: Date,
+    /// Whether this date is selected: the calendar's exact selected date in
+    /// a [`Calendar`], or contained in the highlighted range (inclusive of
+    /// its start/end) in a [`RangeCalendar`]. Always `false` in a
+    /// [`Calendar`] for any date other than the selected one.
+    pub selected: bool,
+    /// Whether this date is the first date of a range selection. Always
+    /// `false` inside a [`Calendar`] (there is no range there).
+    pub range_start: bool,
+    /// Whether this date is the last date of a range selection. Always
+    /// `false` inside a [`Calendar`].
+    pub range_end: bool,
+    /// Whether this date falls strictly between the start and end of a
+    /// range selection, excluding the start/end dates themselves (those are
+    /// `range_start`/`range_end` instead). Always `false` inside a
+    /// [`Calendar`].
+    pub in_range: bool,
+    /// Whether this date is the grid's current roving-tabindex/keyboard
+    /// focus target.
+    pub focused: bool,
+    /// Whether this date is today (the calendar's configured `today` prop,
+    /// which defaults to the real current date).
+    pub today: bool,
+    /// Whether this date is disabled: either the whole calendar is
+    /// disabled, or this date is `unavailable`.
+    pub disabled: bool,
+    /// Whether this date falls outside the calendar's configured available
+    /// date range (`min_date`/`max_date`/`disabled_ranges`).
+    pub unavailable: bool,
+    /// Whether this date is outside the month currently shown by the
+    /// calendar grid -- a leading or trailing day from an adjacent month.
+    pub outside_month: bool,
+    relative_month: RelativeMonth,
+}
+
+/// Compute one date's full [`CalendarDayState`] the same way the built-in
+/// [`CalendarDay`] cell does, for building a custom day-cell UI outside this
+/// crate that still matches the built-in cell's behavior exactly -- see
+/// upstream `DioxusLabs/components#199` ("the APIs to build each component
+/// should be public"). Pair it with [`calendar_day_attributes`] to also
+/// reproduce the built-in cell's `data-*`/`aria-*` attributes.
+///
+/// Must be called from a descendant of a [`Calendar`] or [`RangeCalendar`]
+/// that has also rendered a [`CalendarView`] (directly, or via
+/// [`CalendarGrid`], which requires one the same way [`use_calendar_grid`]
+/// does). Returns `None`, rather than panicking, when called anywhere else,
+/// so a misplaced call is a value to handle, not a crash.
+///
+/// ## Example
+///
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::calendar::{calendar_day_attributes, use_calendar_day_state};
+/// use time::Date;
+///
+/// #[component]
+/// fn CustomDay(date: Date) -> Element {
+///     let Some(state) = use_calendar_day_state(date) else {
+///         return rsx! {};
+///     };
+///     rsx! {
+///         button { ..calendar_day_attributes(&state), "{date.day()}" }
+///     }
+/// }
+/// ```
+pub fn use_calendar_day_state(date: Date) -> Option<CalendarDayState> {
+    let base_ctx = try_use_context::<BaseCalendarContext>()?;
+    let view_ctx = try_use_context::<CalendarViewContext>()?;
+    let view_date = view_ctx.offset_view_date();
+    let focused = base_ctx
+        .focused_date()
+        .is_some_and(|d| d == date && d.month() == view_date.month());
+
+    if let Some(ctx) = try_use_context::<CalendarContext>() {
+        let selected = (ctx.selected_date)().is_some_and(|d| d == date);
+        Some(day_state(
+            date,
+            &base_ctx,
+            view_date,
+            focused,
+            DaySelection {
+                selected,
+                range_start: false,
+                range_end: false,
+                in_range: false,
+            },
+        ))
+    } else if let Some(ctx) = try_use_context::<RangeCalendarContext>() {
+        let range = (ctx.highlighted_range)();
+        let selected = range.is_some_and(|r| r.contains(date));
+        Some(day_state(
+            date,
+            &base_ctx,
+            view_date,
+            focused,
+            DaySelection {
+                selected,
+                range_start: is_start(date, range),
+                range_end: is_end(date, range),
+                in_range: is_between(date, range),
+            },
+        ))
+    } else {
+        None
+    }
+}
+
+/// Build the `data-*`/`aria-*` attributes the built-in [`CalendarDay`] cell
+/// itself renders, from a [`CalendarDayState`] (e.g. from
+/// [`use_calendar_day_state`]). Spread the result onto a custom day cell's
+/// own element (`..calendar_day_attributes(&state)`) to match the built-in
+/// cell's styling hooks and accessible name exactly.
+///
+/// Does not include `tabindex`: unlike every attribute here, its value
+/// depends on every date in the grid (only the single "roving" date gets
+/// `tabindex="0"`), not just this one, so it can't be derived from a single
+/// date's own [`CalendarDayState`] -- nor any event handler.
+pub fn calendar_day_attributes(state: &CalendarDayState) -> Vec<Attribute> {
+    fn attr(name: &'static str, value: dioxus_core::AttributeValue) -> Attribute {
+        Attribute {
+            name,
+            namespace: None,
+            volatile: false,
+            value,
+        }
+    }
+
+    let mut attrs = vec![attr("aria-label", Text(aria_label(&state.date)))];
+    if state.today {
+        attrs.push(attr("data-today", Bool(true)));
+    }
+    attrs.push(attr("data-selected", Bool(state.selected)));
+    if state.unavailable {
+        attrs.push(attr("data-unavailable", Bool(true)));
+    }
+    attrs.push(attr("data-disabled", Bool(state.disabled)));
+    if state.range_start {
+        attrs.push(attr("data-selection-start", Bool(true)));
+    }
+    if state.in_range {
+        attrs.push(attr("data-selection-between", Bool(true)));
+    }
+    if state.range_end {
+        attrs.push(attr("data-selection-end", Bool(true)));
+    }
+    attrs.push(attr("data-month", Text(state.relative_month.to_string())));
+    attrs
+}
+
+/// The selection-related fields of [`CalendarDayState`], grouped into their
+/// own type so [`day_state`] takes one struct instead of four positional
+/// bools (clippy's `too_many_arguments`) -- each caller's own selection
+/// model differs (`Option<Date>` equality for `Calendar`, `DateRange`
+/// containment for `RangeCalendar`), so these are computed by the caller,
+/// not by `day_state` itself.
+#[derive(Default)]
+struct DaySelection {
+    selected: bool,
+    range_start: bool,
+    range_end: bool,
+    in_range: bool,
+}
+
+/// Shared state computation behind [`use_calendar_day_state`] and the
+/// built-in [`SingleCalendarDay`]/[`RangeCalendarDay`] cells -- the one
+/// place `today`/`disabled`/`unavailable`/`outside_month` get computed, so
+/// the built-in cell and a caller's own custom cell can't drift apart.
+/// `focused`/`selection` are taken as already-computed rather than
+/// recomputed here because the built-in cells need `focused` as a *live*,
+/// signal-reading closure (not this function's one-shot snapshot) to drive
+/// `use_day_mounted_ref`'s reactive auto-focus effect -- see those
+/// components' own call sites for exactly what each one passes.
+fn day_state(
+    date: Date,
+    base_ctx: &BaseCalendarContext,
+    view_date: Date,
+    focused: bool,
+    selection: DaySelection,
+) -> CalendarDayState {
+    let relative_month = relative_calendar_month(date, base_ctx, view_date.month());
+    let unavailable = base_ctx.is_unavailable(date);
+    let disabled = (base_ctx.disabled)() || unavailable;
+
+    CalendarDayState {
+        date,
+        selected: selection.selected,
+        range_start: selection.range_start,
+        range_end: selection.range_end,
+        in_range: selection.in_range,
+        focused,
+        today: date == base_ctx.today,
+        disabled,
+        unavailable,
+        outside_month: !relative_month.current_month(),
+        relative_month,
     }
 }
 
@@ -2369,27 +2582,34 @@ fn SingleCalendarDay(props: CalendarDayProps) -> Element {
     let day = date.day();
     let content = children.unwrap_or_else(|| rsx! { {day.to_string()} });
     let view_date = view_ctx.offset_view_date();
-    let month = relative_calendar_month(date, &base_ctx, view_date.month());
-    let in_current_month = month.current_month();
     let is_focused = move || {
         base_ctx
             .focused_date()
             .is_some_and(|d| d == date && d.month() == view_date.month())
     };
-    let is_today = date == base_ctx.today;
     let is_unavailable = base_ctx.is_unavailable(date);
-
-    let is_disabled = move || {
-        if (base_ctx.disabled)() {
-            return true;
-        }
-
-        is_unavailable
-    };
     let onmounted = use_day_mounted_ref(is_focused);
 
     let ctx: CalendarContext = use_context();
     let is_selected = move || (ctx.selected_date)().is_some_and(|d| d == date);
+
+    // Single source of truth for this cell's state (styling attributes
+    // below) and the built-in `CalendarDayState`/`use_calendar_day_state`
+    // public API -- see `day_state`'s own doc for why `focused`/`selected`
+    // are passed in already-computed rather than recomputed inside it.
+    let state = day_state(
+        date,
+        &base_ctx,
+        view_date,
+        is_focused(),
+        DaySelection {
+            selected: is_selected(),
+            range_start: false,
+            range_end: false,
+            in_range: false,
+        },
+    );
+    let in_current_month = !state.outside_month;
 
     // Handle day selection
     let mut handle_day_select = move |day: u8| {
@@ -2419,12 +2639,6 @@ fn SingleCalendarDay(props: CalendarDayProps) -> Element {
             } else {
                 "-1"
             },
-            aria_label: aria_label(&date),
-            "data-today": if is_today { true },
-            "data-selected": is_selected(),
-            "data-unavailable": if is_unavailable { true },
-            "data-disabled": is_disabled(),
-            "data-month": "{month}",
             onclick: move |e| {
                 e.prevent_default();
                 if in_current_month {
@@ -2437,6 +2651,7 @@ fn SingleCalendarDay(props: CalendarDayProps) -> Element {
                 }
             },
             onmounted,
+            ..calendar_day_attributes(&state),
             ..attributes,
             {content}
         }
@@ -2455,30 +2670,40 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
     let content = children.unwrap_or_else(|| rsx! { {day.to_string()} });
     let view_ctx: CalendarViewContext = use_context();
     let view_date = view_ctx.offset_view_date();
-    let month = relative_calendar_month(date, &base_ctx, view_date.month());
-    let in_current_month = month.current_month();
     let is_focused = move || {
         base_ctx
             .focused_date()
             .is_some_and(|d| d == date && d.month() == view_date.month())
     };
-    let is_today = date == base_ctx.today;
     let is_unavailable = base_ctx.is_unavailable(date);
-
-    let is_disabled = move || {
-        if (base_ctx.disabled)() {
-            return true;
-        }
-
-        is_unavailable
-    };
     let onmounted = use_day_mounted_ref(is_focused);
 
     let mut ctx: RangeCalendarContext = use_context();
-    let is_selected = move || (ctx.highlighted_range)().is_some_and(|r| r.contains(date));
-    let is_between = move || is_between(date, ctx.highlighted_range.cloned());
-    let is_start = move || is_start(date, ctx.highlighted_range.cloned());
-    let is_end = move || is_end(date, ctx.highlighted_range.cloned());
+    let range = ctx.highlighted_range.cloned();
+    let selected = range.is_some_and(|r| r.contains(date));
+
+    // Single source of truth for this cell's state (styling attributes
+    // below) and the built-in `CalendarDayState`/`use_calendar_day_state`
+    // public API -- see `day_state`'s own doc for why `focused`/`selected`/
+    // `range_*` are passed in already-computed rather than recomputed
+    // inside it. `selected` uses `DateRange::contains` (inclusive of the
+    // range's start/end) while `range_start`/`range_end`/`in_range` use
+    // `is_start`/`is_end`/`is_between` (which exclude them) -- these are
+    // deliberately different predicates for deliberately different
+    // attributes; see `DateRange::contains` vs `contained_in_interval`.
+    let state = day_state(
+        date,
+        &base_ctx,
+        view_date,
+        is_focused(),
+        DaySelection {
+            selected,
+            range_start: is_start(date, range),
+            range_end: is_end(date, range),
+            in_range: is_between(date, range),
+        },
+    );
+    let in_current_month = !state.outside_month;
 
     let clamp_date_to_available_range = move |date| {
         let available_range = base_ctx.available_range();
@@ -2487,7 +2712,7 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
 
     // Handle day selection
     let mut handle_day_select = move |day: u8| {
-        if is_disabled() || is_unavailable {
+        if (base_ctx.disabled)() || is_unavailable {
             return;
         }
 
@@ -2517,15 +2742,6 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
             } else {
                 "-1"
             },
-            aria_label: aria_label(&date),
-            "data-disabled": is_disabled(),
-            "data-today": if is_today { true },
-            "data-selected": is_selected(),
-            "data-unavailable": if is_unavailable { true },
-            "data-selection-start": if is_start() { true },
-            "data-selection-between": if is_between() { true },
-            "data-selection-end": if is_end() { true },
-            "data-month": "{month}",
             onclick: move |e| {
                 e.prevent_default();
                 if in_current_month {
@@ -2543,6 +2759,7 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
                 }
             },
             onmounted,
+            ..calendar_day_attributes(&state),
             ..attributes,
             {content}
         }
@@ -2632,6 +2849,427 @@ mod tests {
 
         assert!(html.contains("Custom range day"));
         assert!(!html.contains(">15</button>"));
+    }
+
+    // --- CalendarDayState / use_calendar_day_state / calendar_day_attributes
+    // (dev-docs/backlog.md row 12c, upstream DioxusLabs/components#199) ---
+
+    #[test]
+    fn day_state_computes_today_disabled_unavailable_and_relative_month() {
+        with_runtime(|| {
+            let disabled_ranges = [DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 20))];
+            let mut base_ctx = make_base_ctx_for_relative_month(DateRange::new(
+                date!(2024 - 01 - 01),
+                date!(2024 - 12 - 31),
+            ));
+            base_ctx.available_ranges = use_memo(move || AvailableRanges::new(&disabled_ranges));
+            let view_date = date!(2024 - 06 - 01); // base_ctx.today == 2024-06-15
+
+            // A plain, available, current-month day.
+            let state = day_state(
+                date!(2024 - 06 - 01),
+                &base_ctx,
+                view_date,
+                false,
+                DaySelection::default(),
+            );
+            assert!(!state.today);
+            assert!(!state.disabled);
+            assert!(!state.unavailable);
+            assert!(!state.outside_month);
+            assert_eq!(state.relative_month, RelativeMonth::Current);
+
+            // Today.
+            let state = day_state(
+                date!(2024 - 06 - 15),
+                &base_ctx,
+                view_date,
+                false,
+                DaySelection::default(),
+            );
+            assert!(state.today);
+
+            // Inside the disabled range: unavailable, and therefore disabled
+            // too even though the calendar itself is not.
+            let state = day_state(
+                date!(2024 - 06 - 12),
+                &base_ctx,
+                view_date,
+                false,
+                DaySelection::default(),
+            );
+            assert!(state.unavailable);
+            assert!(state.disabled);
+
+            // A day from the previous/next month shown in the grid.
+            let state = day_state(
+                date!(2024 - 05 - 28),
+                &base_ctx,
+                view_date,
+                false,
+                DaySelection::default(),
+            );
+            assert!(state.outside_month);
+            assert_eq!(state.relative_month, RelativeMonth::Last);
+            let state = day_state(
+                date!(2024 - 07 - 03),
+                &base_ctx,
+                view_date,
+                false,
+                DaySelection::default(),
+            );
+            assert!(state.outside_month);
+            assert_eq!(state.relative_month, RelativeMonth::Next);
+
+            // `focused`/`selected`/`range_*` pass through unchanged.
+            let state = day_state(
+                date!(2024 - 06 - 01),
+                &base_ctx,
+                view_date,
+                true,
+                DaySelection {
+                    selected: true,
+                    range_start: true,
+                    range_end: true,
+                    in_range: true,
+                },
+            );
+            assert!(state.focused);
+            assert!(state.selected);
+            assert!(state.range_start);
+            assert!(state.range_end);
+            assert!(state.in_range);
+        });
+    }
+
+    fn day_state_fixture(overrides: impl FnOnce(&mut CalendarDayState)) -> CalendarDayState {
+        let mut state = CalendarDayState {
+            date: date!(2024 - 06 - 15),
+            selected: false,
+            range_start: false,
+            range_end: false,
+            in_range: false,
+            focused: false,
+            today: false,
+            disabled: false,
+            unavailable: false,
+            outside_month: false,
+            relative_month: RelativeMonth::Current,
+        };
+        overrides(&mut state);
+        state
+    }
+
+    fn find_attr<'a>(attrs: &'a [Attribute], name: &str) -> Option<&'a Attribute> {
+        attrs.iter().find(|a| a.name == name)
+    }
+
+    #[test]
+    fn calendar_day_attributes_always_includes_aria_label_selected_and_disabled() {
+        let state = day_state_fixture(|_| {});
+        let attrs = calendar_day_attributes(&state);
+
+        assert_eq!(
+            find_attr(&attrs, "aria-label").unwrap().value,
+            Text(aria_label(&state.date))
+        );
+        assert_eq!(
+            find_attr(&attrs, "data-selected").unwrap().value,
+            Bool(false)
+        );
+        assert_eq!(
+            find_attr(&attrs, "data-disabled").unwrap().value,
+            Bool(false)
+        );
+        assert_eq!(
+            find_attr(&attrs, "data-month").unwrap().value,
+            Text("current".to_string())
+        );
+        // Booleans that are false today are omitted entirely, matching the
+        // built-in cell's `if cond { true }` (no-else) attributes.
+        assert!(find_attr(&attrs, "data-today").is_none());
+        assert!(find_attr(&attrs, "data-unavailable").is_none());
+        assert!(find_attr(&attrs, "data-selection-start").is_none());
+        assert!(find_attr(&attrs, "data-selection-between").is_none());
+        assert!(find_attr(&attrs, "data-selection-end").is_none());
+    }
+
+    #[test]
+    fn calendar_day_attributes_renders_true_valued_booleans_unquoted() {
+        // `AttributeValue::Bool` (not `Text`) renders unquoted
+        // (`dioxus-ssr`'s `write_attribute`) -- these must stay `Bool`, not
+        // a `Text("true")` lookalike, to keep the built-in cell's rendered
+        // HTML byte-identical.
+        let state = day_state_fixture(|s| {
+            s.today = true;
+            s.selected = true;
+            s.unavailable = true;
+            s.disabled = true;
+            s.range_start = true;
+            s.range_end = true;
+            s.in_range = true;
+        });
+        let attrs = calendar_day_attributes(&state);
+
+        for name in [
+            "data-today",
+            "data-selected",
+            "data-unavailable",
+            "data-disabled",
+            "data-selection-start",
+            "data-selection-between",
+            "data-selection-end",
+        ] {
+            assert_eq!(
+                find_attr(&attrs, name)
+                    .unwrap_or_else(|| panic!("missing {name}"))
+                    .value,
+                Bool(true),
+                "{name} must be present and true"
+            );
+        }
+    }
+
+    #[test]
+    fn calendar_day_attributes_reports_last_and_next_relative_month() {
+        let state = day_state_fixture(|s| {
+            s.outside_month = true;
+            s.relative_month = RelativeMonth::Last;
+        });
+        assert_eq!(
+            find_attr(&calendar_day_attributes(&state), "data-month")
+                .unwrap()
+                .value,
+            Text("last".to_string())
+        );
+
+        let state = day_state_fixture(|s| {
+            s.outside_month = true;
+            s.relative_month = RelativeMonth::Next;
+        });
+        assert_eq!(
+            find_attr(&calendar_day_attributes(&state), "data-month")
+                .unwrap()
+                .value,
+            Text("next".to_string())
+        );
+    }
+
+    #[component]
+    fn DayStateOutsideCalendar() -> Element {
+        let state = use_calendar_day_state(date!(2024 - 06 - 15));
+        rsx! {
+            div { id: "result", "{state.is_none()}" }
+        }
+    }
+
+    #[test]
+    fn use_calendar_day_state_returns_none_outside_a_calendar_context() {
+        let mut dom = VirtualDom::new(DayStateOutsideCalendar);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(html.contains(r#"<div id="result">true</div>"#));
+    }
+
+    #[component]
+    fn DayStateInsideCalendarView() -> Element {
+        // `CalendarGrid` isn't rendered -- proves `use_calendar_day_state`
+        // only needs a `CalendarView`, matching `use_calendar_grid`'s own
+        // context requirements (see `use_calendar_grid`).
+        let state = use_calendar_day_state(date!(2024 - 06 - 15));
+        rsx! {
+            div { id: "result", "{state.is_none()}" }
+        }
+    }
+
+    #[test]
+    fn use_calendar_day_state_is_some_inside_a_calendar_view() {
+        #[component]
+        fn Demo() -> Element {
+            rsx! {
+                Calendar {
+                    view_date: date!(2024 - 06 - 01),
+                    today: date!(2024 - 06 - 15),
+                    CalendarView { DayStateInsideCalendarView {} }
+                }
+            }
+        }
+
+        let mut dom = VirtualDom::new(Demo);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(html.contains(r#"<div id="result">false</div>"#));
+    }
+
+    #[test]
+    fn use_calendar_day_state_matches_day_state_for_a_single_calendar() {
+        // The hook must compute the *same* `CalendarDayState` `day_state`
+        // does for the built-in cell -- that's the "one source of truth"
+        // this refactor exists for.
+        with_runtime(|| {
+            let disabled_ranges = [DateRange::new(date!(2024 - 06 - 18), date!(2024 - 06 - 19))];
+            let mut base_ctx = make_base_ctx_for_relative_month(DateRange::new(
+                date!(2024 - 01 - 01),
+                date!(2024 - 12 - 31),
+            ));
+            base_ctx.available_ranges = use_memo(move || AvailableRanges::new(&disabled_ranges));
+            use_context_provider(|| base_ctx);
+            use_context_provider(|| CalendarViewContext { offset: 0 });
+            use_context_provider(|| CalendarContext {
+                selected_date: Signal::new(Some(date!(2024 - 06 - 15))).into(),
+                set_selected_date: Callback::new(|_: Option<Date>| {}),
+            });
+
+            let view_date = base_ctx.view_date();
+
+            let state = use_calendar_day_state(date!(2024 - 06 - 15))
+                .expect("inside a Calendar + CalendarView context");
+            let expected = day_state(
+                date!(2024 - 06 - 15),
+                &base_ctx,
+                view_date,
+                state.focused,
+                DaySelection {
+                    selected: true,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(state, expected);
+            assert!(state.selected);
+            assert!(state.today);
+            assert!(!state.range_start && !state.range_end && !state.in_range);
+
+            // An unavailable date outside the selection.
+            let state = use_calendar_day_state(date!(2024 - 06 - 18)).unwrap();
+            assert!(state.unavailable);
+            assert!(state.disabled);
+            assert!(!state.selected);
+        });
+    }
+
+    #[test]
+    fn use_calendar_day_state_matches_day_state_for_a_range_calendar() {
+        with_runtime(|| {
+            let base_ctx = make_base_ctx_for_relative_month(DateRange::new(
+                date!(2024 - 01 - 01),
+                date!(2024 - 12 - 31),
+            ));
+            use_context_provider(|| base_ctx);
+            use_context_provider(|| CalendarViewContext { offset: 0 });
+            let range = DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 20));
+            use_context_provider(|| RangeCalendarContext {
+                anchor_date: Signal::new(None),
+                highlighted_range: Signal::new(Some(range)),
+                set_selected_range: Callback::new(|_: Option<DateRange>| {}),
+            });
+
+            let start = use_calendar_day_state(date!(2024 - 06 - 10)).unwrap();
+            assert!(
+                start.selected,
+                "range endpoints are inclusive of `selected`"
+            );
+            assert!(start.range_start);
+            assert!(!start.in_range);
+            assert!(!start.range_end);
+
+            let middle = use_calendar_day_state(date!(2024 - 06 - 15)).unwrap();
+            assert!(middle.selected);
+            assert!(middle.in_range);
+            assert!(!middle.range_start && !middle.range_end);
+
+            let end = use_calendar_day_state(date!(2024 - 06 - 20)).unwrap();
+            assert!(end.selected);
+            assert!(end.range_end);
+            assert!(!end.in_range && !end.range_start);
+
+            let outside = use_calendar_day_state(date!(2024 - 06 - 25)).unwrap();
+            assert!(
+                !outside.selected
+                    && !outside.range_start
+                    && !outside.range_end
+                    && !outside.in_range
+            );
+
+            let view_date = base_ctx.view_date();
+            let expected_middle = day_state(
+                date!(2024 - 06 - 15),
+                &base_ctx,
+                view_date,
+                middle.focused,
+                DaySelection {
+                    selected: true,
+                    range_start: false,
+                    range_end: false,
+                    in_range: true,
+                },
+            );
+            assert_eq!(middle, expected_middle);
+        });
+    }
+
+    #[test]
+    fn single_calendar_day_renders_today_selected_and_month_attributes() {
+        #[component]
+        fn Demo() -> Element {
+            rsx! {
+                Calendar {
+                    view_date: date!(2024 - 06 - 01),
+                    today: date!(2024 - 06 - 15),
+                    selected_date: Some(date!(2024 - 06 - 15)),
+                    CalendarView {
+                        CalendarDay { date: date!(2024 - 06 - 15) }
+                    }
+                }
+            }
+        }
+
+        let mut dom = VirtualDom::new(Demo);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(html.contains(&format!(
+            r#"aria-label="{}""#,
+            aria_label(&date!(2024 - 06 - 15))
+        )));
+        assert!(html.contains("data-today=true"));
+        assert!(html.contains("data-selected=true"));
+        assert!(html.contains("data-disabled=false"));
+        assert!(html.contains(r#"data-month="current""#));
+        assert!(!html.contains("data-unavailable"));
+    }
+
+    #[test]
+    fn range_calendar_day_renders_selection_start_between_and_end_attributes() {
+        #[component]
+        fn Demo() -> Element {
+            rsx! {
+                RangeCalendar {
+                    view_date: date!(2024 - 06 - 01),
+                    today: date!(2024 - 06 - 01),
+                    selected_range: Some(DateRange::new(date!(2024 - 06 - 10), date!(2024 - 06 - 20))),
+                    CalendarView {
+                        CalendarDay { date: date!(2024 - 06 - 10) }
+                        CalendarDay { date: date!(2024 - 06 - 15) }
+                        CalendarDay { date: date!(2024 - 06 - 20) }
+                    }
+                }
+            }
+        }
+
+        let mut dom = VirtualDom::new(Demo);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(html.contains("data-selection-start=true"));
+        assert!(html.contains("data-selection-between=true"));
+        assert!(html.contains("data-selection-end=true"));
+        assert_eq!(
+            html.matches("data-selected=true").count(),
+            3,
+            "all three dates are within the inclusive selected range"
+        );
     }
 
     #[test]

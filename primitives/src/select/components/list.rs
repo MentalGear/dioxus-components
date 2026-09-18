@@ -253,6 +253,15 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
 
     let onkeydown = select_list_onkeydown(ctx);
 
+    // Lock page scroll while the listbox is open, matching Radix Select's
+    // default (docs/backlog.md row 9). Mirrors `DropdownMenuContentRendered`'s
+    // identical `scroll_lock_active`/`ScrollLockGuard` shape
+    // (`dropdown_menu.rs`) -- opt-out via `ctx.scroll_lock`
+    // (`Select`/`SelectMulti`'s `scroll_lock` prop) rather than `modal`,
+    // since a select-only combobox's listbox has no non-modal mode to gate
+    // this on.
+    let scroll_lock_active = use_memo(move || (ctx.scroll_lock)() && open());
+
     crate::top_layer::use_popover_shown_while_mounted(
         id.clone(),
         open,
@@ -363,15 +372,19 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             },
 
             ..attributes,
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
             {children}
         }
     }
 }
 
-/// Native (Blitz) arm: unchanged from before this slice -- Blitz has no
-/// popover-API support at all (`docs/recommended-implementations.md`
-/// Caveat 2), so this stays the functional floor, a plain, always-in-flow
-/// `div`.
+/// Native (Blitz) arm: Blitz has no popover-API support at all
+/// (`docs/recommended-implementations.md` Caveat 2), so this stays the
+/// functional floor, a plain, always-in-flow `div`. Scroll-lock is the one
+/// addition to this arm since docs/backlog.md row 9 -- mirrors
+/// `DropdownMenuContentRendered`'s identical native arm
+/// (`dropdown_menu.rs`), which mounts `ScrollLockGuard` unconditionally on
+/// both arms rather than only the web one.
 #[cfg(not(feature = "web"))]
 #[component]
 fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element) -> Element {
@@ -396,6 +409,8 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
     });
 
     let onkeydown = select_list_onkeydown(ctx);
+    // See the web arm's identical `scroll_lock_active` (docs/backlog.md row 9).
+    let scroll_lock_active = use_memo(move || (ctx.scroll_lock)() && open());
     // See the web arm's identical construction (docs/backlog.md row 34) for
     // why this is conditional and routed through `merge_attributes` rather
     // than a bare literal alongside `..attributes`.
@@ -428,6 +443,7 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             },
 
             ..attributes,
+            crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
             {children}
         }
     }

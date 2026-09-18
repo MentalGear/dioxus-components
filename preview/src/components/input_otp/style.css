@@ -25,11 +25,11 @@
 .dx-input-otp-slot {
   position: relative;
   display: flex;
+  width: 2.5rem;
+  height: 2.75rem;
   box-sizing: border-box;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.75rem;
   border-radius: var(--dx-radius-md);
   background-color: var(--light, var(--primary-color)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
@@ -49,14 +49,14 @@
    real input driving it is invisible (opacity: 0) by design (see
    primitives/src/input_otp.rs's module doc). */
 .dx-input-otp-slot[data-active="true"]::after {
-  content: "";
   position: absolute;
   top: 22%;
   bottom: 22%;
   left: 50%;
   width: 1px;
-  background-color: var(--secondary-color-4);
   animation: dx-input-otp-caret-blink 1s step-end infinite;
+  background-color: var(--secondary-color-4);
+  content: "";
 }
 
 @keyframes dx-input-otp-caret-blink {
@@ -64,6 +64,7 @@
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0;
   }

@@ -206,7 +206,9 @@ test.describe("Rule 1 — a named control contributes name=value to FormData on 
 
   test("Select: contributes its selected option's value", async ({ page }) => {
     await gotoForm(page);
-    const trigger = page.getByRole("button", { name: "Fruit (library)" });
+    // docs/backlog.md row 8: SelectTrigger's role is now "combobox" (APG
+    // select-only combobox pattern) rather than an implicit button.
+    const trigger = page.getByRole("combobox", { name: "Fruit (library)" });
     await trigger.click();
     await page.getByLabel("Fruit options (library)").getByRole("option", { name: "Banana" }).click();
     // SelectValue displays the selected option's underlying value (the raw
@@ -453,8 +455,9 @@ test.describe("Rule 4 extension — a blocked submit gives visible feedback on t
     // focuses/anchors on the first radio of an unsatisfied required group,
     // so this fixture's bridge follows the same convention.
     await expect(page.locator("#tier-lib-small")).toHaveAttribute("data-invalid", "true");
+    // docs/backlog.md row 8: SelectTrigger's role is now "combobox".
     await expect(
-      page.getByRole("button", { name: "Fruit, required (library)" }),
+      page.getByRole("combobox", { name: "Fruit, required (library)" }),
     ).toHaveAttribute("data-invalid", "true");
   });
 
@@ -611,7 +614,8 @@ test.describe("Rule 6 — form reset restores the initial value", () => {
     // (reset had no observable effect at all); see the file header's
     // "Post-Phase-1 harness updates".
     await gotoForm(page);
-    const trigger = page.getByRole("button", { name: "Fruit (library)" });
+    // docs/backlog.md row 8: SelectTrigger's role is now "combobox".
+    const trigger = page.getByRole("combobox", { name: "Fruit (library)" });
     await trigger.click();
     await page.getByLabel("Fruit options (library)").getByRole("option", { name: "Banana" }).click();
     // See the rule 1 Select test: SelectValue shows the raw value, not the label.

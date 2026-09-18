@@ -38,7 +38,7 @@ pub fn InputGroup(
 }
 
 /// The group's actual `<input>`, composing the themed
-/// [`Input`](crate::components::input::Input) so the group inherits its
+/// [`Input`] so the group inherits its
 /// event wiring and focus/placeholder styling; its own border/background
 /// are flattened by this component's stylesheet so only the group's outer
 /// edge shows a border.

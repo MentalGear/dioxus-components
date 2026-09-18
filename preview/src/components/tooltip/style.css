@@ -161,17 +161,47 @@
   }
 }
 
+@keyframes dx-tooltip-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 /* State styles */
 .dx-tooltip[data-disabled="true"] .dx-tooltip-trigger {
   cursor: default;
 }
 
 .dx-tooltip-content[data-state="closed"] {
-  display: none;
+  animation: dx-tooltip-fade-out var(--dx-motion-duration-slow) ease-in-out forwards;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .dx-tooltip-content[data-state="open"] {
   display: block;
+}
+
+/*
+ * row 31a's shared `prefers-reduced-motion` layer (dx-components-theme.css)
+ * only covers interactive roots, not animated content -- see that file's
+ * own comment and dev-docs/backlog.md row 31/27 ("Spinner carries its own
+ * `prefers-reduced-motion` override, since row 31a's shared reduced-motion
+ * layer covers interactive roots, not animated content"). This tooltip's
+ * content is animated content (the fade-in above, unconditional on the
+ * base class, and the fade-out this rule adds for docs/backlog.md row 7),
+ * so it needs the same per-component override `input_otp`/`spinner`'s
+ * stylesheets already carry, covering both animations this file defines.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .dx-tooltip-content,
+  .dx-tooltip-content[data-state="closed"] {
+    animation-duration: var(--dx-motion-duration-reduced);
+  }
 }
 
 /*

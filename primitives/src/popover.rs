@@ -10,8 +10,8 @@
 //!   `div` + vendored `FocusTrap` path (unchanged).
 //! - `#[cfg(feature = "web")]`: a real `<dialog>` opened with
 //!   `showModal()`, driven by the exact same
-//!   [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
-//!   [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
+//!   `crate::use_dialog_open_driver`/`crate::use_dialog_close_sync`/
+//!   `crate::use_dialog_backdrop_dismiss` trio `dialog.rs`'s web modal arm
 //!   uses -- no focus-trap eval and no `use_global_escape_listener`/
 //!   `use_outside_dismiss` on this arm; the browser's own `showModal()`
 //!   supplies the focus trap, focus restore, background inertness, and top
@@ -566,12 +566,33 @@ fn PopoverModalContent(
 /// Deliberately does *not* call `use_global_escape_listener`/
 /// `use_outside_dismiss` -- see `PopoverContentRendered`'s comment for why
 /// that is required for correctness, not just style, on this arm.
-/// `crate::top_layer::use_popover_sync` drives `showPopover()`/
-/// `hidePopover()` from `open` and mirrors the browser's own `toggle` event
-/// (fired on light dismiss, Escape, or any other close) back into
-/// `set_open`, so the Rust signal can never strand the way `docs/
+///
+/// Uses `crate::top_layer::use_popover_shown_while_mounted`, not
+/// `use_popover_sync` (docs/backlog.md row 19): this content is mounted by
+/// `render()` in `PopoverContent` above -- `use_animated_open` -- which
+/// keeps it in the DOM with `data-state="closed"` for its whole CSS close
+/// animation (plus a settle hold) before actually unmounting it.
+/// `use_popover_sync` calls `hidePopover()` the instant `open` (the real,
+/// non-animated signal) goes `false`, and the UA's
+/// `[popover]:not(:popover-open) { display: none }` rule then hides the
+/// element before its close animation ever gets a chance to play -- the
+/// same "Bug 1 (animation race)" `use_popover_shown_while_mounted`'s own
+/// doc describes for `SelectList` (`top_layer.rs`), which is `auto` like
+/// this content and already proves the construction holds for `auto`'s own
+/// light dismiss (Bug 2 there). `use_popover_shown_while_mounted`'s
+/// browser -> signal side still forwards *every* native `toggle` --
+/// light dismiss and Escape included -- back into `set_open`
+/// unconditionally, exactly like `use_popover_sync` did, so the Rust
+/// signal still can never strand the way `docs/
 /// recommended-implementations.md` Caveat 1 documents for `<dialog>`'s old
-/// one-way `showModal()`/`close()` binding.
+/// one-way `showModal()`/`close()` binding; only the signal -> browser
+/// *hide* path changed -- `hidePopover()` is never called from our own
+/// closing path at all, only a real DOM removal (once `render()` drops to
+/// `false`) ever takes this content out of the top layer. A native close
+/// still bypasses the exit animation on its own path (the browser's hide
+/// algorithm applies `display: none` synchronously, before Rust learns
+/// about it) -- an accepted limit of the plain Popover API, unchanged by
+/// this fix and matching `oracle/tier2-html/top-layer.spec.ts` Rules 2/3.
 #[cfg(feature = "web")]
 #[component]
 fn PopoverNonModalContent(
@@ -584,7 +605,7 @@ fn PopoverNonModalContent(
     is_open: bool,
 ) -> Element {
     let ctx: PopoverCtx = use_context();
-    crate::top_layer::use_popover_sync(id.clone(), ctx.open, ctx.set_open);
+    crate::top_layer::use_popover_shown_while_mounted(id.clone(), ctx.open, ctx.set_open);
     // JS-measured static positioning fallback for Firefox/WebKit (no CSS
     // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
     // doc. `anchor_id` is this content's own `id`: `PopoverTrigger`'s

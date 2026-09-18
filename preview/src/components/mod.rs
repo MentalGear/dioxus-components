@@ -39,15 +39,17 @@ pub fn category_of(name: &str) -> ComponentCategory {
         | "color_picker" | "form" | "button_group" | "field" | "input_group" | "input_otp"
         | "native_select" => ComponentCategory::Forms,
         "navbar" | "sidebar" | "tabs" | "pagination" | "menubar" | "toolbar" | "context_menu"
-        | "dropdown_menu" | "breadcrumb" => ComponentCategory::Navigation,
-        "dialog" | "alert_dialog" | "sheet" | "popover" | "tooltip" | "hover_card"
+        | "dropdown_menu" | "breadcrumb" | "navigation_menu" => ComponentCategory::Navigation,
+        "dialog" | "alert_dialog" | "sheet" | "drawer" | "popover" | "tooltip" | "hover_card"
         | "top_layer" | "command" => ComponentCategory::Overlays,
         "toast" | "progress" | "skeleton" | "badge" | "alert" | "empty" | "spinner" => {
             ComponentCategory::Feedback
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" => ComponentCategory::DataDisplay,
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable" => {
+            ComponentCategory::DataDisplay
+        }
         _ => ComponentCategory::DataDisplay,
     }
 }
@@ -189,9 +191,11 @@ examples!(
     combobox[controlled, disabled, dynamic],
     command,
     context_menu,
+    data_table,
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
     drag_and_drop_list[removable],
+    drawer,
     dropdown_menu,
     empty,
     field,
@@ -205,11 +209,13 @@ examples!(
     label,
     menubar,
     native_select,
+    navigation_menu,
     navbar,
     pagination,
-    popover,
+    popover[non_modal],
     progress,
     radio_group,
+    resizable,
     scroll_area,
     select[multi],
     separator,
@@ -219,6 +225,7 @@ examples!(
     slider[dynamic_range, range],
     spinner,
     switch,
+    table,
     tabs,
     tag_group[multi, states],
     textarea[outline, fade, ghost],

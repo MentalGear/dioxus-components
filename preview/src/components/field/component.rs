@@ -103,7 +103,7 @@ pub fn FieldLegend(
 }
 
 /// A [`Field`]'s label. Composes the themed
-/// [`Label`](crate::components::label::Label) -- which already renders the
+/// [`Label`] -- which already renders the
 /// real `<label>` element with a properly wired `html_for` -- so `Field`
 /// never has to reimplement label/control association.
 #[component]
@@ -164,7 +164,7 @@ pub fn FieldError(
 
 /// A horizontal rule between two [`Field`]s/[`FieldGroup`]s, with an
 /// optional centered label (e.g. "OR"). Composes the themed
-/// [`Separator`](crate::components::separator::Separator).
+/// [`Separator`].
 #[component]
 pub fn FieldSeparator(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,

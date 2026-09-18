@@ -1,0 +1,17 @@
+{
+  "name": "resizable",
+  "description": "Panel groups with draggable, keyboard-operable resize handles.",
+  "authors": [],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    },
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

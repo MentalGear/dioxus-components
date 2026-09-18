@@ -305,7 +305,7 @@
   position: relative;
   display: flex;
   width: 100%;
-  flex: 1 1 0%;
+
   /* Without this, a flex item's automatic minimum width is its content's
    * min-content size (CSS Flexbox spec, "automatic minimum size"), not 0 --
    * `flex: 1 1 0%` alone does not override that. Most pages' content never
@@ -325,6 +325,7 @@
    * content happens to expose it, covers today's `WidgetMasonry` case and
    * any future one by construction. */
   min-width: 0;
+  flex: 1 1 0%;
   flex-direction: column;
   background: var(--primary-color-1);
 }
@@ -399,6 +400,7 @@
   color: var(--dx-sidebar-foreground);
   font-size: var(--dx-text-xs);
   font-weight: 500;
+
   /* gap: matches `.dx-sidebar-menu-button[data-sidebar="menu-button"]`'s own
      icon+label spacing (this file, ~line 568) -- this label started as a
      text-only child, so it had no gap of its own until a leading icon

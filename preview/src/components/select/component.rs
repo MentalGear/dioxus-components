@@ -77,6 +77,11 @@ pub struct SelectProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(Duration::from_millis(1000))))]
     pub typeahead_timeout: ReadSignal<Duration>,
 
+    /// Whether opening the listbox locks page scroll (docs/backlog.md row
+    /// 9). See `dioxus_primitives::select::SelectProps::scroll_lock`.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub scroll_lock: ReadSignal<bool>,
+
     /// ARIA label applied to the trigger button. Ignored when `trigger` is
     /// supplied -- the caller's custom trigger content is then responsible
     /// for its own accessible name.
@@ -158,6 +163,11 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(Duration::from_millis(1000))))]
     pub typeahead_timeout: ReadSignal<Duration>,
 
+    /// Whether opening the listbox locks page scroll (docs/backlog.md row
+    /// 9). See `dioxus_primitives::select::SelectMultiProps::scroll_lock`.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub scroll_lock: ReadSignal<bool>,
+
     /// ARIA label applied to the trigger button. Ignored when `trigger` is
     /// supplied.
     #[props(default)]
@@ -225,6 +235,7 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
             required: props.required,
             roving_loop: props.roving_loop,
             typeahead_timeout: props.typeahead_timeout,
+            scroll_lock: props.scroll_lock,
             attributes: merged,
             select::SelectTrigger {
                 class: trigger_class,
@@ -275,6 +286,7 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
             name: props.name,
             roving_loop: props.roving_loop,
             typeahead_timeout: props.typeahead_timeout,
+            scroll_lock: props.scroll_lock,
             attributes: merged,
             select::SelectTrigger {
                 class: trigger_class,

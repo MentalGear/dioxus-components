@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
-const BASE_URL = "http://127.0.0.1:8080";
 const SIDEBAR_RENDER_TIMEOUT = 30 * 1000;
 
 async function gotoSidebarBlock(page: Page) {

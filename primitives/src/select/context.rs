@@ -31,6 +31,22 @@ pub(super) struct SelectContext {
     /// Reset to `false` whenever the popup closes (`select.rs`), so it can
     /// never leak into the next, differently-triggered open.
     pub keep_trigger_focus: Signal<bool>,
+
+    /// Mirrors [`super::components::select::SelectProps::required`] into the
+    /// context so `SelectTrigger` (`trigger.rs`) can expose it as
+    /// `aria-required` on the combobox-role trigger (docs/backlog.md row 8).
+    /// `SelectMulti` has no `required` prop of its own (see that prop's doc
+    /// in `select.rs`) -- `use_select_root` wires a constant `false` signal
+    /// in for it, so this field is always populated regardless of which of
+    /// the two root components provided this context.
+    pub required: ReadSignal<bool>,
+
+    /// Mirrors [`super::components::select::SelectProps::scroll_lock`] (and
+    /// `SelectMultiProps::scroll_lock`) into the context so
+    /// `SelectListRendered` (`list.rs`) can gate its `ScrollLockGuard` on it
+    /// (docs/backlog.md row 9). Defaults to `true` (Radix parity) via both
+    /// props' own `#[props(default = ...)]`.
+    pub scroll_lock: ReadSignal<bool>,
 }
 
 impl SelectContext {

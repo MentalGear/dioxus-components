@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=popover&");
@@ -163,5 +164,96 @@ test.describe("Axe automated scan", () => {
     await page.getByRole("button", { name: "Show Popover" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectNoAxeViolations(page, "popover: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+// dev-docs/backlog.md rows 19 and 7: on the web (popover) arm,
+// `use_popover_sync` used to call `hidePopover()` the instant `open` went
+// false, and the UA's `[popover]:not(:popover-open) { display: none }`
+// rule then hid the content before `dx-popover-fade-out`
+// (`../preview/src/components/popover/style.css`, which already had this
+// animation defined -- it just never got to play) ever got a chance to
+// run -- RED before both fixes landed (reasoned through, not executed,
+// since this lane cannot run Playwright: `display: none` from the very
+// first sample, so `assertFadesOutThenUnmounts` would fail both the "no
+// display:none while mounted" invariant and the "a few frames of
+// decreasing opacity" check immediately). GREEN once
+// `primitives/src/top_layer.rs`'s `use_popover_shown_while_mounted`
+// (row 19) keeps the popover shown through the animation that CSS already
+// defined (row 7).
+//
+// Targets the `non_modal` variant (`preview/src/components/popover/
+// variants/non_modal/mod.rs`, `is_modal: false`), not this file's own
+// `?name=popover&` *main*-variant demo above: that demo's `PopoverRoot`
+// never sets `is_modal`, so it defaults to `true`
+// (`primitives/src/popover.rs`) and renders as a real `<dialog>` +
+// `showModal()` -- a completely different code path
+// (`use_dialog_open_driver`/`use_dialog_close_sync`, no `popover`
+// attribute at all) that neither row 19 nor row 7 touches.
+//
+// This is *not* the `top_layer` oracle fixture's own `#stack-popover-*`
+// instance (an earlier version of this test used it, and that was wrong):
+// that fixture composes the raw `dioxus_primitives::popover` primitive
+// directly, on purpose (`scripts/check-preview-composition.sh`'s
+// documented exemption for it, for native-vs-library positioning/
+// interaction comparisons -- see that fixture's own header comment), so it
+// never loads `../preview/src/components/popover/style.css` and has no
+// close animation defined at all: `getAnimations()` is empty, so
+// `use_animated_open` correctly unmounts immediately -- a fixture-
+// composition gap, not a defect in rows 19/7's fix. `main`/`non_modal`
+// (this file's route) go through the themed `PopoverRoot` wrapper
+// (`preview/src/components/popover/component.rs`), which *does* load that
+// stylesheet via its own `document::Link`, the same way every other
+// themed component page does -- the same reason Tooltip's/HoverCard's
+// close-fade tests above (already on themed routes) don't have this
+// problem.
+//
+// Both `main` and `non_modal` render on this one page (`ComponentDemo`'s
+// "Normal" component layout puts every variant on the same route, not
+// behind a `?variant=` query param -- confirmed by reading
+// `preview/src/main.rs`'s `ComponentHighlight`/`ComponentVariantHighlight`;
+// `select.spec.ts`'s `?variant=multi&` etc. disambiguate by each variant's
+// own unique visible text for the same reason, not the URL), so this test
+// locates its trigger by the non-modal demo's own distinct label ("Open
+// popover", vs. the main/modal demo's "Show Popover") rather than by
+// `#component-preview-frame`, which both variants' `Tabs` share -- see
+// `preview/src/main.rs`'s `ComponentVariantHighlight`, which hard-codes
+// that id onto every variant's own "Demo" tab panel.
+//
+// The close is triggered via `.evaluate(el => el.click())`, not
+// Playwright's `.click()` (same as this file's own "test" above, for a
+// related reason): a real `.click()` dispatches a genuine `pointerdown`
+// first, which native `popover="auto"` light dismiss reacts to
+// synchronously -- closing the popover (and applying `display: none`)
+// *before* Rust's own `open` signal (and this content's close animation)
+// ever gets involved, exactly the "native close bypasses the exit
+// animation" limit `use_popover_shown_while_mounted`'s own doc describes
+// as accepted and out of scope. A JS-level `.click()` call dispatches only
+// a `click` event (no `pointerdown`), so it never engages light dismiss at
+// all -- only this trigger's own `onclick` handler
+// (`ctx.set_open.call(!(ctx.open)())`, `primitives/src/popover.rs`) runs,
+// a genuinely script-driven toggle, exactly the path row 19 fixes.
+test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)", () => {
+  test("content fades out (opacity -> 0, still popover-open) before unmounting", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=popover&variant=non_modal&", {
+      timeout: 20 * 60 * 1000,
+    });
+    const trigger = page.getByRole("button", { name: "Open popover" });
+    const content = page.getByRole("dialog");
+
+    await expect(trigger).toBeVisible();
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    await expect(content).toBeVisible();
+    const contentId = await content.getAttribute("id");
+    if (!contentId) throw new Error("non-modal popover content has no id to sample");
+
+    // Start sampling before triggering the close, so the first frames
+    // (still data-state="open") are never missed -- see
+    // assert-fade-out.ts's `startFadeSampling` doc.
+    const framesPromise = startFadeSampling(page, contentId);
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    const samples = await framesPromise;
+
+    assertFadesOutThenUnmounts(samples);
   });
 });

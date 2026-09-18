@@ -4,6 +4,8 @@ The single authoritative sequence. Detail for each item lives in the documents l
 
 **Status (2026-09-02): Phases 0–4 are done, merged to `main`.** All research is complete and merged; Phases 0–3 landed via PR #8, and Phase 4's architecture decision (native `<dialog>`/`popover=`), its two migrations (Migration A: DropdownMenu/ContextMenu/Menubar/Select/Combobox/Toast onto the top layer; Migration B: modal `Dialog`/`AlertDialog` onto native `<dialog>`), and a series of 2026-09-01/02 incident-response and hardening rounds (cfg-axis production incident, hydration-parity oracle, keyboard-open-contract fixes, menu-role-contract fix, anchored-overlay visualViewport tracking, touch text-entry zoom floor, global-stylesheet fix) have all since landed via PRs #10–#35. Phase 5 is partially done (the FLIP sub-problem landed via CSS `position-try-fallbacks`); Phase 6 has not been started. See each phase's table below for per-item status, and [`backlog.md`](./backlog.md) for what remains.
 
+**Status (2026-09-18): Phase 5 is complete** (5.1 FLIP + shift/size clamp, 5.2 point-anchor clamp — `backlog.md` row 10; 5.3 dropped, see its row), **Phase 6 is in progress** (rows 11 and 12 taken this session; RTL, row 13, still waits on a fixture decision), and the shadcn-parity component wave (`component-backlog.md`) continues: Command and Input OTP landed 2026-09-14; Table, Data Table, Drawer, Navigation Menu and Resizable were taken 2026-09-18 (status per row in that file). A queue evaluation on 2026-09-18 concurred with this plan's ordering and corrected three things — see `backlog.md`, "2026-09-18 — queue evaluation and what was taken".
+
 ---
 
 ## Definition of done, per item
@@ -48,7 +50,7 @@ Not new design: the pattern is already in-tree in `Checkbox`. Render uncondition
 | 2.1 | `RangeSlider` thumb identity at collision | `sarendipitee@42b56dd3` | **Done** 2026-08-29, clean cherry-pick |
 | 2.2 | `VirtualList` borrow held across the call that reads it | `sarendipitee@799a4ff3` | **Done** 2026-08-29, primitives hunk only |
 | 2.3 | Popover self-dismiss on internal click | `sarendipitee@f63ee07e` | **Done** 2026-08-29; fixed the shared `use_outside_dismiss`, Dialog re-tested |
-| 2.4 | `use_animated_open` unmount race | `jcgruenhage@6f0a69f0` **+ a generation counter neither fork has** | **Done** 2026-08-29/30 (both landed). The follow-on `Wervice@a704c517` tooltip fade this item gated is **not** landed — tracked as `backlog.md` row 7, "Unblocked" |
+| 2.4 | `use_animated_open` unmount race | `jcgruenhage@6f0a69f0` **+ a generation counter neither fork has** | **Done** 2026-08-29/30 (both landed). The follow-on `Wervice@a704c517` tooltip fade this item gated is now **landed 2026-09-18** — `backlog.md` row 7 (sequenced after row 19, its own dependency, in the same lane) |
 
 All four shipped with a regression test per the definition of done. Provenance ledger: `lifting-from-forks.md` §8.
 
@@ -80,13 +82,13 @@ No overlay did any as of Phase 4. Placement was static CSS keyed off `data-side`
 |---|---|---|---|
 | 5.1 | **Dependency decision** — `sr floating.rs` (269 ln, external crates) vs `dq`'s vendored port (18 files, 3,262 ln) | Superseded for FLIP by the CSS-native `position-try-fallbacks` approach above; the dependency question survives only if shift/size clamping ends up needing a JS collision-detection library | **FLIP done** (PR #17); shift/size clamping **not started** |
 | 5.2 | `ContextMenu` viewport clamping | Neither fork covers it; **not solvable by CSS anchors** — `ContextMenu` is positioned at click coordinates, needs the virtual-anchor JS path | **Landed 2026-09-14** — `top_layer::use_point_anchor_clamp`, a small parallel hook (not a branch inside `use_anchor_position_fallback`); see `backlog.md` row 10's 2026-09-14 addendum for the full account |
-| 5.3 | Keep the CSS clamp on `fix/preview-a11y-ux` as defence-in-depth | Costs nothing; still helps non-wasm targets | **Not started** — that branch is still unmerged (verified: not an ancestor of `main`) |
+| 5.3 | Keep the CSS clamp on `fix/preview-a11y-ux` as defence-in-depth | Costs nothing; still helps non-wasm targets | **Dropped 2026-09-18** — the branch exists neither in this clone nor on the fork remote (only `main` does, verified with `git ls-remote`), so there is nothing to keep; the JS fallback now clamps on every engine (`backlog.md` row 10), so a re-derivation would only matter for a native-target report, and none exists |
 
 ## Phase 6 — Deferred but real
 
 Typeahead for menus (`dq typeahead.rs`, 78 ln) — **do not touch `select/`**, whose matcher beats both alternatives. RTL (`dq direction.rs`, 83 ln, plus the key-flip *concept*, not the 708-line file). `pub mod portal`, `Toggle`'s `class` prop, and the public `CalendarDayState` API for upstream issue #199.
 
-**Status: not started.** All four items are still open — `backlog.md` rows 11 (typeahead), 13 (RTL), and 12 (portal/class prop/`CalendarDayState`).
+**Status (2026-09-18): rows 11 and 12 landed.** Typeahead (row 11 — `primitives/src/typeahead.rs`, a concept port of `dq typeahead.rs`'s prefix-matching idea, wired into DropdownMenu/ContextMenu/Menubar) and `pub mod portal`/`Toggle`'s `class` prop/public `CalendarDayState` (row 12, three from-scratch API-surface commits) both landed 2026-09-18 — see `backlog.md`'s "2026-09-18 — queue evaluation and what was taken" for the account. **Row 13 (RTL) is still open** — `dq direction.rs`'s key-flip *concept* has not been ported; still waits on a fixture decision (no RTL fixture exists yet, per `conformance-harness.md`'s queue item 8).
 
 ---
 
@@ -94,7 +96,7 @@ Typeahead for menus (`dq typeahead.rs`, 78 ln) — **do not touch `select/`**, w
 
 Owned by a person, not by this document. Status as of 2026-09-02:
 
-1. **Where fixes land** — upstream PRs, this fork, or both. **Still open.** Upstream `main` has not moved since 2026-06-29, so nothing here is blocked *on* upstream, but anything carried locally is a permanent rebase cost on files upstream actively changes. Tracked as `backlog.md` row 6.
+1. **Where fixes land** — upstream PRs, this fork, or both. **Still open.** Upstream `main` had not moved since 2026-06-29 when this was written; **it moved on 2026-09-07/08** (three commits — one cosmetic fix adopted, two `use_animated_open` fixes already subsumed here; `backlog.md` row 66), so the rebase cost below is real after all. Nothing here is blocked *on* upstream, but anything carried locally is a permanent rebase cost on files upstream actively changes. Tracked as `backlog.md` row 6.
 2. **Phase 4's native question** (4.1). **Resolved by taking 4.2** (native `<dialog>`) without waiting on an upstream answer — caveat 1 was investigated by execution instead and found not to block. Asking upstream *why* `797b343e` dropped `<dialog>` remains open as a courtesy/consolidation question, not a blocker.
 3. **Phase 5's dependency question** (5.1). **Reframed, not answered as originally posed** — see Phase 5 above: the FLIP sub-problem is solved CSS-natively, sidestepping the `sr`/`dq` fork-dependency choice entirely; that choice would only resurface if shift/size clamping ends up needing a JS collision library.
 4. **Whether to talk to the fork authors at all.** `dignifiedquire` and `sarendipitee` independently built scroll lock, focus coordination and collision detection while upstream sat still. **Still open** — consolidation is worth more than any cherry-pick sequence, and neither is an upstream contributor, so nobody is currently merging this work.
