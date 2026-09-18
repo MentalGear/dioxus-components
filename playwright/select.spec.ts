@@ -1,11 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
+// docs/backlog.md row 8: SelectTrigger's role is now "combobox" (APG
+// select-only combobox pattern), not an implicit button -- see
+// `oracle/tier1-apg/select-only-combobox.spec.ts` for the conformance rules
+// this restores. The underlying element is still a <button>; only the
+// accessible role query changes.
 const singleSelectTrigger = (page: Page) =>
-    page.getByRole("button").filter({ hasText: /Select an option|Apple|Banana/ });
+    page.getByRole("combobox").filter({ hasText: /Select an option|Apple|Banana/ });
 
 const multiSelectTrigger = (page: Page) =>
-    page.getByRole("button").filter({ hasText: /Pepperoni|Mushroom|Onion/ });
+    page.getByRole("combobox").filter({ hasText: /Pepperoni|Mushroom|Onion/ });
 
 test("test", async ({ page }) => {
     await page.goto("http://127.0.0.1:8080/component/?name=select&", {
@@ -368,7 +373,7 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
         // cards ("Choose a fruit" / "Select an option").
         await page.setViewportSize({ width: 1280, height: 800 });
         await page.goto("http://127.0.0.1:8080/", { waitUntil: 'networkidle' });
-        const trigger = page.getByRole("button").filter({ hasText: /^(Select an option|Choose a fruit)$/ }).first();
+        const trigger = page.getByRole("combobox").filter({ hasText: /^(Select an option|Choose a fruit)$/ }).first();
         await trigger.click();
         const listbox = page.getByRole("listbox");
         await expect(listbox).toHaveAttribute("data-state", "open");
@@ -400,7 +405,7 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
 test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026-09-14)", () => {
     test("a selected option's checkmark reaches the row's own right edge, not just the label", async ({ page }) => {
         await page.goto("http://127.0.0.1:8080/component/?name=form&", { waitUntil: "networkidle" });
-        const trigger = page.getByRole("button", { name: "Fruit, required (library)" });
+        const trigger = page.getByRole("combobox", { name: "Fruit, required (library)" });
         await trigger.click();
         const listbox = page.getByRole("listbox", { name: "Fruit options, required (library)" });
         await expect(listbox).toHaveAttribute("data-state", "open");

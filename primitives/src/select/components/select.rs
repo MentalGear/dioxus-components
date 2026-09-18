@@ -66,6 +66,15 @@ pub struct SelectProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(Duration::from_millis(1000))))]
     pub typeahead_timeout: ReadSignal<Duration>,
 
+    /// Whether opening the listbox locks page scroll, matching Radix
+    /// Select's default (docs/backlog.md row 9). Reuses this crate's shared
+    /// `scroll_lock` mechanism the same way `DropdownMenu`/`ContextMenu`'s
+    /// `modal` prop does -- see `SelectList`'s `SelectListRendered` for the
+    /// `ScrollLockGuard` mount. Opt-out, not opt-in: pass `false` to keep
+    /// the page scrollable behind an open listbox.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub scroll_lock: ReadSignal<bool>,
+
     /// Additional attributes for the select element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -117,6 +126,13 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(Duration::from_millis(1000))))]
     pub typeahead_timeout: ReadSignal<Duration>,
 
+    /// Whether opening the listbox locks page scroll, matching Radix
+    /// Select's default (docs/backlog.md row 9). See [`SelectProps::scroll_lock`]
+    /// -- `SelectMulti` shares `SelectList`/`SelectListRendered` with
+    /// [`Select`], so the same opt-out applies here.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub scroll_lock: ReadSignal<bool>,
+
     /// Additional attributes for the select element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -130,6 +146,11 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
 /// the function stays under clippy's argument-count lint.
 struct SelectRootConfig {
     typeahead_timeout: ReadSignal<Duration>,
+    /// See `SelectContext::required`'s doc -- `SelectMulti` (no `required`
+    /// prop of its own) wires a constant `false` signal in here.
+    required: ReadSignal<bool>,
+    /// See `SelectContext::scroll_lock`'s doc.
+    scroll_lock: ReadSignal<bool>,
 }
 
 /// Sets up the shared signals, focus, and context that both [`Select`] and
@@ -143,7 +164,11 @@ fn use_select_root(
     open: Controlled<bool>,
     config: SelectRootConfig,
 ) -> (SelectContext, Memo<bool>) {
-    let SelectRootConfig { typeahead_timeout } = config;
+    let SelectRootConfig {
+        typeahead_timeout,
+        required,
+        scroll_lock,
+    } = config;
     let selectable = use_selectable_root(
         values,
         set_value,
@@ -177,6 +202,8 @@ fn use_select_root(
         typeahead_clear_task,
         typeahead_timeout,
         keep_trigger_focus,
+        required,
+        scroll_lock,
     });
 
     (ctx, open)
@@ -234,6 +261,16 @@ fn use_select_root(
 /// - `data-state`: Indicates the current state of the select. Values are `open` or `closed`.
 #[component]
 pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element {
+    // See `DropdownMenu`'s identical call (`dropdown_menu.rs`) for why this
+    // must run from the *root* component rather than only inside
+    // `use_scroll_lock` (reached via `ScrollLockGuard`, which mounts lazily
+    // inside `SelectListRendered`'s own open guard, `list.rs`):
+    // `Select`/`SelectMulti` mount as soon as the component appears on the
+    // page at all, so installing the permanent baseline here -- rather than
+    // waiting for the very first open -- avoids that first open doubling as
+    // the moment the gutter reservation appears (docs/backlog.md row 9).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     // Snapshot before `use_single_selectable_value` consumes it: the hidden
     // mirror `<select>` below needs it to mark the option matching the
     // default value `initial_selected` (-> `.defaultSelected`), which is
@@ -259,6 +296,8 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
         },
         SelectRootConfig {
             typeahead_timeout: props.typeahead_timeout,
+            required: props.required,
+            scroll_lock: props.scroll_lock,
         },
     );
 
@@ -404,6 +443,10 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
 /// - `data-state`: Indicates the current state of the select. Values are `open` or `closed`.
 #[component]
 pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -> Element {
+    // See `Select`'s identical call, just above, for why this must run from
+    // the root component (docs/backlog.md row 9).
+    use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
+
     let (multi_values, set_multi_internal) =
         use_controlled(props.values, props.default_values, props.on_values_change);
 
@@ -444,6 +487,11 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
         },
         SelectRootConfig {
             typeahead_timeout: props.typeahead_timeout,
+            // See `SelectContext::required`'s doc: `SelectMulti` has no
+            // `required` prop, so this is a constant `false` rather than
+            // anything forwarded from `props`.
+            required: ReadSignal::new(Signal::new(false)),
+            scroll_lock: props.scroll_lock,
         },
     );
 

@@ -116,16 +116,50 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
             disabled: (ctx.selectable.disabled)(),
             type: "button",
             // ARIA attributes
+            //
+            // docs/backlog.md row 8: role="combobox", matching the APG
+            // select-only combobox pattern (vendored reference:
+            // playwright/oracle/reference/7e4034b/content/patterns/combobox/
+            // examples/combobox-select-only.html's #combo1 -- "role=combobox
+            // ... aria-controls=listbox1 aria-expanded=false
+            // aria-haspopup=listbox") -- and Radix's Select trigger, which
+            // does the same. This *replaces* the prior implicit-button role:
+            // a plain button cannot carry aria-required at all (axe flags
+            // it, per the NOTE this comment itself used to carry here), but
+            // a combobox can -- the pattern's own prose says so directly:
+            // "Comboboxes and listboxes can be marked as required with
+            // aria-required=true" (combobox-pattern.html, "About This
+            // Pattern"). `aria-controls`/`aria-expanded` were already
+            // correct for combobox's requirements; only the role,
+            // `aria-autocomplete`, and `aria-required` below are new.
+            role: "combobox",
             aria_haspopup: "listbox",
             aria_expanded: open(),
             aria_controls: ctx.selectable.list_id,
-            // NOTE: aria-required is deliberately NOT set here — it is not a
-            // supported property on an (implicit) button role, and axe flags
-            // it. Requiredness is enforced by the hidden native
-            // <select required> mirror; exposing it to AT properly means
-            // adopting the APG select-only-combobox trigger role
-            // (role="combobox"), which is a larger semantic change tracked as
-            // follow-up work.
+            // "The combobox element has aria-autocomplete set to a value
+            // that corresponds to its autocomplete behavior" -- "none" is
+            // correct for a select-only combobox, whose popup contents never
+            // change based on typed characters (combobox-pattern.html,
+            // "WAI-ARIA Roles, States, and Properties" /
+            // "aria-autocomplete"). NOTE: the vendored reference example
+            // above does not itself set this attribute (confirmed by reading
+            // both its static markup and select-only.js) -- it is not part
+            // of the tier-1 dual-subject calibration in
+            // select-only-combobox.spec.ts's R1 for exactly that reason.
+            // Matches Radix's trigger regardless, which does set it.
+            aria_autocomplete: "none",
+            // "Comboboxes and listboxes can be marked as required with
+            // aria-required=true" (combobox-pattern.html, "About This
+            // Pattern") -- now valid because of the role="combobox" above.
+            // Requiredness was already enforced functionally by the hidden
+            // native <select required> mirror (select.rs); this restores it
+            // to assistive technology too. `SelectMulti` has no `required`
+            // prop (see `SelectContext::required`'s doc) -- its context
+            // always carries a constant `false` here, so this reads
+            // "aria-required=false" for it unconditionally, same as
+            // `Checkbox`/`Switch`/`RadioGroup`'s identical
+            // `aria_required: props.required` shape.
+            aria_required: (ctx.required)(),
         }),
         props.attributes,
     ]);

@@ -430,18 +430,25 @@ test.describe("APG Menu and Menubar pattern — Navbar nav dropdowns", () => {
 // focus-restore-reference.spec.ts, which documents that page's DOM-focus-
 // stays-on-combobox/aria-activedescendant technique).
 //
-// IMPORTANT ROLE CAVEAT (see written report): this library's SelectTrigger
-// is an implicit-role <button> with aria-haspopup="listbox" -- NOT
-// role="combobox" -- and SelectList uses real roving DOM focus on
-// role="option" children, not aria-activedescendant. So "Select" does not
-// actually carry the combobox pattern's roles at all; it is graded here only
+// UPDATED ROLE CAVEAT (docs/backlog.md row 8, was "IMPORTANT ROLE CAVEAT"):
+// this library's SelectTrigger now carries role="combobox" with
+// aria-haspopup="listbox"/aria-expanded/aria-controls/aria-autocomplete=none
+// (and aria-required when the Select is required) -- see
+// select-only-combobox.spec.ts's R1/R2 for the dual-subject-calibrated
+// conformance rules this restores. What remains a DELIBERATE divergence from
+// the pattern (kept intentionally, per that row's own brief -- "keep this
+// repo's existing focus model, do NOT switch to aria-activedescendant"):
+// SelectList still uses real roving DOM focus on role="option" children,
+// not the reference example's aria-activedescendant technique
+// (focus-restore-reference.spec.ts documents that page's own technique).
+// So "Select" carries the combobox pattern's *roles* now, but not its
+// activedescendant focus-management technique -- graded here (as before)
 // because the task and the live bug report both name it as this library's
-// stand-in for that pattern (closest existing component to a select-only
-// combobox). Kept as a named divergence, not silently normalized away.
+// stand-in for the pattern.
 // ============================================================================
 test.describe("APG Combobox pattern (select-only) — Select trigger", () => {
   const trigger = (page: Page) =>
-    page.getByRole("button").filter({ hasText: /Select an option|Apple|Banana/ }).first();
+    page.getByRole("combobox").filter({ hasText: /Select an option|Apple|Banana/ }).first();
 
   test("Select trigger — Enter: opens the popup (Combobox Keyboard Interaction)", async ({ page }) => {
     await goto(page, "select");
