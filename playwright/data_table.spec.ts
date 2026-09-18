@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 // Fixture mirrors preview/src/components/data_table/variants/main/mod.rs's
 // `PAYMENTS` (12 rows, id/status/email/amount) exactly -- single source of
 // truth for the sort/filter/page expectations below is that file's own
 // header comment, not re-derived here.
 const goto = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=data_table&", { timeout: 20 * 60 * 1000 });
+  page.goto(`${BASE_URL}/component/?name=data_table&`, { timeout: 20 * 60 * 1000 });
 
 const table = (page: Page) => page.locator('[data-slot="table"]');
 const filterInput = (page: Page) => page.getByRole("textbox", { name: "Filter by email" });

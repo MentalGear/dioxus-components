@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations } from "./axe";
+import { BASE_URL as BASE } from "./base-url";
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
 const URL = `${BASE}/component/?name=tag_group&`;
 const LOAD_TIMEOUT = 20 * 60 * 1000;
 

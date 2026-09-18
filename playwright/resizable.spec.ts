@@ -1,7 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
-const URL = 'http://127.0.0.1:8080/component/?name=resizable&';
+const URL = `${BASE_URL}/component/?name=resizable&`;
 
 /** The panel a handle's `aria-controls` names -- its "primary pane". */
 async function primaryPanel(page: Page, handleName: string) {

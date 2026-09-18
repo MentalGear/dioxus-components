@@ -35,9 +35,10 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
-const URL = "http://127.0.0.1:8080/component/?name=command&";
-const HOME_URL = "http://127.0.0.1:8080/";
+const URL = `${BASE_URL}/component/?name=command&`;
+const HOME_URL = `${BASE_URL}/`;
 
 const openButton = (page: Page) => page.getByRole("button", { name: "Open Command Palette" });
 const dialog = (page: Page) => page.getByRole("dialog");

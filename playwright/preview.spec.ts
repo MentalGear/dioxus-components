@@ -48,7 +48,7 @@ test.describe("style tab", () => {
     // rebuild on every edit); it fetches the file's own `asset!()` URL at
     // runtime instead. This asserts that fetch actually lands real CSS
     // text, not a blank/loading/error placeholder.
-    await page.goto("http://127.0.0.1:8080/component/?name=kbd");
+    await page.goto(`${BASE_URL}/component/?name=kbd`);
 
     await page.getByRole("heading", { name: "kbd" }).waitFor({ state: "visible" });
     await page.locator("summary", { hasText: "Manual installation" }).click();

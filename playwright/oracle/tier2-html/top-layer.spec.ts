@@ -171,11 +171,12 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const gotoFixture = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=top_layer&", {
+  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });
@@ -914,7 +915,7 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
   });
 
   test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=color_picker&", {
+    await page.goto(`${BASE_URL}/component/?name=color_picker&`, {
       timeout: NAV_TIMEOUT,
       waitUntil: "networkidle",
     });
@@ -1778,7 +1779,7 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
 test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider than the room its trigger has on one side stays within the viewport horizontally (no CSS Anchor Positioning engine)", () => {
   test("ColorPicker popover (home page widget masonry) stays within the viewport horizontally", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
     await stripAnchorSupportsBlock(page);
 
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();

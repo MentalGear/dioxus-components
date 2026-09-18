@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('sheet basic interactions', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
 
   // Open sheet from Right button
   await page.getByRole('button', { name: 'Right' }).click();
@@ -62,7 +63,7 @@ test('sheet basic interactions', async ({ page }) => {
 });
 
 test('sheet opens from different sides', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
 
   const sheet = page.locator('[data-slot="sheet-root"]');
   const sheetContent = page.locator('[data-slot="sheet-content"]');
@@ -93,7 +94,7 @@ test('right sheet content geometry matches shadcn spec at desktop and near-break
   // shadcn: `inset-y-0 h-full w-3/4 border-l sm:max-w-sm` -- 384px (24rem)
   // only from a 640px viewport up; below that, plain 75% with no cap.
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
 
   const sheet = page.locator('[data-slot="sheet-root"]');
   const content = page.locator('[data-slot="sheet-content"]');
@@ -148,7 +149,7 @@ test('right sheet content geometry matches shadcn spec at desktop and near-break
 // dimension is content-sized, not a full-viewport stretch.
 test('sheet content is anchored flush to its own edge, not centered', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
 
   const sheet = page.locator('[data-slot="sheet-root"]');
   const content = page.locator('[data-slot="sheet-content"]');
@@ -210,7 +211,7 @@ test('sheet content is anchored flush to its own edge, not centered', async ({ p
 });
 
 test('close button matches shadcn spec: 16px icon, opacity-70, rounded-xs, top-right', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
 
   const sheet = page.locator('[data-slot="sheet-root"]');
   await page.getByRole('button', { name: 'Right' }).click();
@@ -248,7 +249,7 @@ test('close button matches shadcn spec: 16px icon, opacity-70, rounded-xs, top-r
 
 test.describe('Axe automated scan', () => {
   test('loaded (sheet closed) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Right' })).toBeVisible();
@@ -256,7 +257,7 @@ test.describe('Axe automated scan', () => {
   });
 
   test('open has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=sheet&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=sheet&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'Right' }).click();
     await expect(page.locator('[data-slot="sheet-root"]')).toHaveAttribute('data-state', 'open');
     await expectNoAxeViolations(page, 'sheet: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
