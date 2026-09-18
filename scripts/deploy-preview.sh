@@ -19,7 +19,7 @@ public_dir="$repo_root/target/dx/preview/release/web/public"
 rm -rf "$public_dir"
 
 echo "==> Building preview (release, ssg, fullstack) ..."
-dx build --platform web --release --ssg --features fullstack --base-path dioxus-components
+dx build --platform web --release --ssg --features fullstack --base-path dioxus-components --force-sequential=true
 
 if [ ! -d "$public_dir" ]; then
   echo "error: expected build output at $public_dir, not found" >&2
@@ -29,17 +29,33 @@ fi
 # `dx build --ssg` has a known, pre-existing race (unrelated to any one
 # source change -- reproduced identically on an untouched checkout, see
 # session notes) where its SSG render pass fires all routes' requests at
-# the freshly-started fullstack server concurrently, and on a build fast
-# enough (an already-warm cargo/dx cache -- this repeated-build sandbox's
-# normal state, not just a one-off) some of those requests can land before
-# something the server needs to inject the hydration bootstrap
-# `<script type="module">` is ready. The affected route's static HTML then
-# has no script tag at all -- not a visible error, just a dead,
-# never-hydrates page if it ships. It reliably self-heals on a build that
-# actually has to recompile (a cold cache), but this script's own `rm -rf
-# "$public_dir"` above only clears dx's *output* directory, not that
-# compile cache, so a run here can still land on the fast/racy side. Catch
-# it here, on every route dx actually produced, rather than trust that.
+# the freshly-started fullstack server concurrently, and some of those
+# requests can land before something the server needs to inject the
+# hydration bootstrap `<script type="module">` is ready. The affected
+# route's static HTML then has no script tag at all -- not a visible
+# error, just a dead, never-hydrates page if it ships.
+#
+# Earlier note in this file claimed a cold cargo cache "reliably self-heals"
+# this -- that was wrong, disproved by direct testing (2026-09-18 docs
+# deploy session): two independent fully-cold rebuilds (all of
+# target/wasm-release, target/wasm32-unknown-unknown/wasm-release,
+# target/server-release, target/x86_64-*/server-release, and
+# target/dx/preview/release cleared first -- confirmed by mtime, not just
+# assumed) reproduced the *identical* 5-of-6 failure, at near-identical
+# internal timing both times. Compile-cache warmth was never the variable.
+# The actual cause: by default `dx build --fullstack` compiles the server
+# and client targets in parallel, and the client side's post-compile work
+# (wasm-bindgen, wasm-opt -- both CPU-heavy) is still competing for CPU
+# when the SSG pass's concurrent requests hit the freshly-listening server,
+# starving whatever it needs to finish before it can inject the script tag.
+# On this sandbox's 4 cores, `--force-sequential=true` above (server build,
+# then client build, so nothing competes with the server during its SSG
+# window) fixed it 2/2 clean runs after 2/2 failures without it -- dx's own
+# `--help` already default-enables this under `CI=1` for what's presumably
+# this same reason. The verification below stays as a safety net regardless
+# (belt-and-suspenders: don't ship a dead page even if this analysis is
+# ever wrong for some other environment), on every route dx actually
+# produced, rather than trust that the flag always suffices.
 echo "==> Verifying every route's build output includes its hydration bootstrap script ..."
 missing_script=()
 route_count=0
@@ -55,10 +71,12 @@ if [ "${#missing_script[@]}" -gt 0 ]; then
   echo "bootstrap <script type=\"module\"> tag -- they would ship as dead, never-" >&2
   echo "hydrating pages:" >&2
   printf '  - %s\n' "${missing_script[@]}" >&2
-  echo "This is the dx/dioxus-fullstack SSG cache-warm race described above, not a" >&2
-  echo "config problem with this script. It reliably clears on a build that has to" >&2
-  echo "really recompile: run 'rm -rf \"$repo_root/target/dx/preview\"' (or 'cargo" >&2
-  echo "clean' for a full reset) and re-run this script." >&2
+  echo "This looks like the dx/dioxus-fullstack SSG server/client-build race" >&2
+  echo "described above -- but this script already passes --force-sequential=true" >&2
+  echo "specifically to avoid it, so seeing this means that mitigation didn't hold" >&2
+  echo "(different environment, dx version, core count, ...). A cold cache alone" >&2
+  echo "did NOT fix this when it was tested (see the comment above) -- diagnose" >&2
+  echo "fresh from this build's own log rather than assume that remedy." >&2
   exit 1
 fi
 echo "==> OK: all $route_count route(s) have their bootstrap script."
