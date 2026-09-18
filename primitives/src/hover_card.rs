@@ -320,9 +320,10 @@ pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
     let render = use_animated_open(id, ctx.open);
 
     // `HoverCardContentRendered` is a real component (not a plain fn) so it
-    // -- and the hooks it calls internally (this slice's `use_popover_sync`
-    // on the web arm) -- get a fresh scope each time `render()`
-    // mounts/unmounts it, matching this element's actual DOM lifetime. See
+    // -- and the hooks it calls internally (this slice's
+    // `use_popover_shown_while_mounted` on the web arm) -- get a fresh
+    // scope each time `render()` mounts/unmounts it, matching this
+    // element's actual DOM lifetime. See
     // `tooltip.rs`'s identical `TooltipContentRendered` comment for why a
     // plain fn here would be a conditional-hook-call hazard instead.
     rsx! {
@@ -348,6 +349,18 @@ pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
 /// pair already owns its lifecycle, and MDN's own naming for this pattern
 /// ("hover card") does not imply light dismiss the way a click-triggered
 /// popover does).
+///
+/// Uses `crate::top_layer::use_popover_shown_while_mounted`, not
+/// `use_popover_sync` (docs/backlog.md row 19) -- same reasoning as
+/// `tooltip.rs`'s identical `TooltipContentRendered`: this component is
+/// mounted by `render()` (`use_animated_open`) above for the whole CSS
+/// close animation, and `use_popover_sync` would call `hidePopover()` the
+/// instant `open` goes `false`, hiding the element via the UA's
+/// `[popover]:not(:popover-open) { display: none }` rule before that
+/// animation ever plays. `use_popover_shown_while_mounted` never calls
+/// `hidePopover()` from the closing path; only `render()` dropping to
+/// `false` and the real DOM removal that follows takes this element out of
+/// the top layer.
 #[cfg(feature = "web")]
 #[component]
 fn HoverCardContentRendered(
@@ -361,7 +374,7 @@ fn HoverCardContentRendered(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    crate::top_layer::use_popover_sync(id.clone(), open, set_open);
+    crate::top_layer::use_popover_shown_while_mounted(id.clone(), open, set_open);
     // JS-measured static positioning fallback for Firefox/WebKit (no CSS
     // Anchor Positioning) -- see `top_layer::use_anchor_position_fallback`'s
     // doc. `anchor_id` is this content's own `id`: `HoverCardTrigger`'s
