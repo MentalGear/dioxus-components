@@ -42,6 +42,11 @@ pub mod menubar;
 mod move_interaction;
 #[cfg(feature = "router")]
 pub mod navbar;
+// Deliberately NOT gated on `feature = "router"`, unlike `navbar` above:
+// `NavigationMenuLink` renders a plain `a[href]` itself rather than
+// `dioxus_router::Link`, so this module has no router dependency -- see
+// its own module doc.
+pub mod navigation_menu;
 mod pointer;
 pub mod popover;
 pub mod portal;

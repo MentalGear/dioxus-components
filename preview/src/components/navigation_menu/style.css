@@ -1,0 +1,180 @@
+.dx-navigation-menu {
+  display: flex;
+  box-sizing: border-box;
+}
+
+.dx-navigation-menu-list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: var(--dx-space-1);
+  margin: 0;
+  gap: var(--dx-space-1);
+  list-style: none;
+}
+
+.dx-navigation-menu-item {
+  position: relative;
+  display: flex;
+}
+
+.dx-navigation-menu-trigger,
+.dx-navigation-menu-item > .dx-navigation-menu-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border: none;
+  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
+  background: none;
+  color: var(--secondary-color-4);
+  cursor: pointer;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-1);
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
+}
+
+.dx-navigation-menu-item[data-state="open"] .dx-navigation-menu-trigger {
+  background-color: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7));
+  color: var(--secondary-color-1);
+}
+
+.dx-navigation-menu-trigger[data-disabled="true"],
+.dx-navigation-menu-link[data-disabled="true"] {
+  color: var(--secondary-color-5);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dx-navigation-menu-trigger:hover:not([data-disabled="true"]),
+.dx-navigation-menu-trigger:focus-visible,
+.dx-navigation-menu-item > .dx-navigation-menu-link:hover:not([data-disabled="true"]),
+.dx-navigation-menu-item > .dx-navigation-menu-link:focus-visible {
+  background: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7));
+  color: var(--secondary-color-1);
+  outline: none;
+}
+
+.dx-navigation-menu-expand-icon {
+  transition: rotate var(--dx-motion-duration-base) var(--dx-motion-ease-standard);
+}
+
+.dx-navigation-menu-item[data-state="open"] .dx-navigation-menu-expand-icon {
+  rotate: 180deg;
+}
+
+/* `popover="manual"` on the web arm still picks up the UA popover
+ * stylesheet's `[popover] { border: solid; overflow: auto; ... }`
+ * (WHATWG HTML's popover section) -- this content has no border of its
+ * own (drawn by `box-shadow` below) and never needs to scroll, so both are
+ * reset. Same fix as `../navbar/style.css`'s `.dx-navbar-content`. The
+ * matching `margin`/`inset` reset and the anchor-positioning rules that
+ * keep this panel anchored to its own trigger once promoted to the top
+ * layer live in the shared, engine-injected stylesheet every
+ * `dx-anchor-*`-marked overlay gets for free -- see
+ * `primitives/src/top_layer.rs`'s `ensure_anchor_positioning_styles` doc.
+ */
+.dx-navigation-menu-content {
+  position: absolute;
+  z-index: var(--dx-z-overlay);
+  top: 100%;
+  left: 0;
+  overflow: visible;
+  min-width: 280px;
+  max-width: calc(100vw - var(--dx-space-8));
+  box-sizing: border-box;
+  padding: var(--dx-space-3);
+  border: none;
+  border-radius: var(--dx-radius-lg);
+  margin-top: var(--dx-space-2);
+  background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-5));
+  box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: top;
+  will-change: transform, opacity;
+}
+
+.dx-navigation-menu-content[data-state="closed"] {
+  transform: translateY(var(--dx-space-2)) scale(0.98);
+  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease-in),
+    transform var(--dx-motion-duration-base) var(--dx-motion-ease-in);
+}
+
+.dx-navigation-menu-content[data-state="open"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
+    transform var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The link grid a themed panel's children compose -- e.g.
+ * `.dx-navigation-menu-grid.dx-navigation-menu-grid-2col` for a two-column
+ * "featured card + list" layout, a plain `.dx-navigation-menu-grid` for a
+ * simple multi-column list of links. */
+.dx-navigation-menu-grid {
+  display: grid;
+  gap: var(--dx-space-2);
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.dx-navigation-menu-grid-2col {
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.5fr);
+}
+
+.dx-navigation-menu-content .dx-navigation-menu-link {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
+  color: inherit;
+  cursor: pointer;
+  gap: var(--dx-space-1);
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.dx-navigation-menu-content .dx-navigation-menu-link:hover:not([data-disabled="true"]),
+.dx-navigation-menu-content .dx-navigation-menu-link:focus-visible {
+  background: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7));
+  outline: none;
+}
+
+.dx-navigation-menu-link-title {
+  color: var(--secondary-color-1);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+}
+
+.dx-navigation-menu-link-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  color: var(--secondary-color-4);
+  font-size: var(--dx-text-xs);
+  -webkit-line-clamp: 2;
+  line-height: 1.4;
+}
+
+.dx-navigation-menu-featured {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--dx-space-4);
+  border-radius: var(--dx-radius-lg);
+  background: linear-gradient(
+    to bottom,
+    var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7)),
+    var(--light, var(--primary-color-3)) var(--dark, var(--primary-color-8))
+  );
+  gap: var(--dx-space-2);
+}
+
+.dx-navigation-menu-featured .dx-navigation-menu-link-title {
+  font-size: var(--dx-text-lg);
+}

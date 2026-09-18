@@ -33,6 +33,27 @@ Per conformance-harness.md's reachability note (`patterns/menu-button/examples/m
 | Radio Group | Radio Group Example Using Roving `tabindex` | `radio/examples/radio.html` |
 | Radio Group | Rating Radio Group Example (also roving-`tabindex`) | `radio/examples/radio-rating.html` |
 | Table | Sortable Table Example | `table/examples/sortable-table.html` |
+| Disclosure | Disclosure (Show/Hide) Navigation Menu | `disclosure/examples/disclosure-navigation.html` |
+
+Added for the `navigation_menu` primitive's oracle
+(`playwright/oracle/tier1-apg/disclosure-navigation.spec.ts`): the
+Disclosure pattern's own site-navigation example, cited by that spec and by
+`primitives/src/navigation_menu.rs`'s module doc for why Radix/shadcn's
+`NavigationMenu` is a distinct ARIA contract from this crate's `Navbar`
+(Menu-and-Menubar pattern) rather than a reskin of it. Vendored the same
+way as the other three patterns above: `disclosure/examples/
+disclosure-navigation.html` plus its own `examples/css/
+disclosure-navigation.css`, `examples/js/disclosureMenu.js`, and
+`content/images/pattern-disclosure.svg` (its pattern icon, referenced via
+`../../../images/pattern-disclosure.svg`, three levels up from `examples/`
+like the other patterns' own icons). The sibling `disclosure-navigation-
+hybrid.html` example (top-level links alongside the disclosure buttons,
+cited in the same spec/module doc for its own optional-arrow-key keyboard
+table) is linked *from* the vendored page but was not itself vendored --
+same "reachable via `src=`/`href=`/`url()`/script-driven `fetch`/`import`,
+not merely cross-linked" scope rule this file's own "Dependencies vendored
+alongside each page" section documents for the other three patterns'
+sibling examples.
 
 The radio pattern's examples directory has two techniques and, within the roving-`tabindex` technique, two variants: `radio.html` (two independent groups: pizza crust / delivery method) and `radio-rating.html` (a star-rating widget), both stated in-page to use "a roving tabindex for managing focus" and cross-linked to each other as "Similar examples". The third file in that directory, `radio-activedescendant.html`, uses the *other* technique (`aria-activedescendant`, single tabindex) and was **not** vendored — conformance-harness.md and plan.md ask for the roving-tabindex example(s), and this pattern's own text is what distinguishes "roving tabindex" (`radio.html`, `radio-rating.html`) from "activedescendant" (`radio-activedescendant.html`).
 
