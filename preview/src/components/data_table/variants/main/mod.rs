@@ -1,6 +1,6 @@
 use super::super::component::{
-    filter_rows, paginate, sort_rows, DataTableColumnHeader, DataTablePagination, DataTableToolbar,
-    SortDirection,
+    filter_rows, includes_string, paginate, sort_rows, DataTableColumnHeader, DataTablePagination,
+    DataTableToolbar, SortDirection,
 };
 use crate::components::checkbox::Checkbox;
 use crate::components::table::*;
@@ -69,9 +69,11 @@ pub fn Demo() -> Element {
         page.set(0);
     };
 
-    let query = filter().trim().to_lowercase();
-    let filtered: Vec<Payment> =
-        filter_rows(PAYMENTS, |p| query.is_empty() || p.email.to_lowercase().contains(&query));
+    // Case-insensitive substring match anywhere in the email, not just a
+    // prefix -- shadcn/ui parity, see `includes_string`'s own doc comment
+    // (`state.rs`) for the exact semantics and why.
+    let query = filter();
+    let filtered: Vec<Payment> = filter_rows(PAYMENTS, |p| includes_string(p.email, &query));
 
     let sorted: Vec<Payment> = match sort_key() {
         "amount" => sort_rows(&filtered, sort_direction(), |p| p.amount_cents),

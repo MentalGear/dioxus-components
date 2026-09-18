@@ -80,10 +80,40 @@ pub fn sort_rows<T: Clone, K: Ord>(rows: &[T], direction: SortDirection, key_fn:
 
 /// Returns a new `Vec` containing only the rows `predicate` accepts.
 /// Whether/how an empty query means "match everything" is the caller's own
-/// predicate's business (see the demo's `filter_query.is_empty() || ...`) --
-/// this function stays a pure, unopinionated filter.
+/// predicate's business (see [`includes_string`], the predicate the demo
+/// actually feeds it) -- this function stays a pure, unopinionated filter.
 pub fn filter_rows<T: Clone>(rows: &[T], predicate: impl Fn(&T) -> bool) -> Vec<T> {
     rows.iter().filter(|row| predicate(row)).cloned().collect()
+}
+
+/// Whether `needle` appears anywhere in `haystack`, case-insensitively,
+/// after trimming `needle`'s surrounding whitespace. This is the Data
+/// Table demo's exact filter-matching semantics (see `variants/main/
+/// mod.rs`'s `Demo`, which drives [`filter_rows`] with
+/// `includes_string(p.email, &query)` on the `email` column, and
+/// `docs.md`) -- named and unit-tested here so the demo can't silently
+/// drift from the documented behavior.
+///
+/// This mirrors shadcn/ui's own Data Table example, which filters through
+/// TanStack Table's default `includesString` filter function --
+/// `String(value).toLowerCase().includes(filterValue.toLowerCase())`, a
+/// case-insensitive substring match anywhere in the cell value, *not*
+/// restricted to the start of the string. (Answers the question this was
+/// written for: no, matching only the start of the string was never the
+/// intent here or in shadcn -- a mid-string fragment is expected to narrow
+/// the rows exactly like a prefix would.)
+///
+/// One deliberate addition beyond TanStack's own filter fn: `needle` is
+/// trimmed before matching, so incidental leading/trailing whitespace (a
+/// stray space from a mobile keyboard, a pasted value) doesn't turn a
+/// query that would otherwise match into one that matches nothing just
+/// because email addresses never contain a literal space. An empty (or
+/// all-whitespace, since trimming collapses it to empty too) `needle`
+/// matches everything -- `str::contains("")` is already `true` for any
+/// haystack, so "empty query = no filter" falls out of this one-line
+/// check rather than needing its own branch.
+pub fn includes_string(haystack: &str, needle: &str) -> bool {
+    haystack.to_lowercase().contains(&needle.trim().to_lowercase())
 }
 
 /// Splits `rows` into 0-based `page`'s slice of (at most) `page_size` rows,
@@ -177,6 +207,48 @@ mod tests {
     fn filter_rows_empty_predicate_result_is_empty_not_error() {
         let filtered = filter_rows(ROWS, |r| r.name == "nobody");
         assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn includes_string_matches_a_prefix() {
+        assert!(includes_string("alexandra@example.com", "al"));
+    }
+
+    #[test]
+    fn includes_string_matches_an_uppercase_prefix() {
+        assert!(includes_string("alexandra@example.com", "AL"));
+    }
+
+    #[test]
+    fn includes_string_matches_a_mid_string_fragment_not_just_a_prefix() {
+        // "rek" is the tail of "derek", not a prefix of anything -- a
+        // filter that only matched string starts would reject this.
+        assert!(includes_string("derek@example.com", "rek"));
+    }
+
+    #[test]
+    fn includes_string_is_case_insensitive_on_both_sides() {
+        assert!(includes_string("CARMELLA@EXAMPLE.COM", "rmella"));
+    }
+
+    #[test]
+    fn includes_string_trims_surrounding_whitespace_from_the_query() {
+        assert!(includes_string("derek@example.com", "  derek  "));
+    }
+
+    #[test]
+    fn includes_string_empty_query_matches_everything() {
+        assert!(includes_string("anything@example.com", ""));
+    }
+
+    #[test]
+    fn includes_string_whitespace_only_query_matches_everything() {
+        assert!(includes_string("anything@example.com", "   "));
+    }
+
+    #[test]
+    fn includes_string_no_match_returns_false() {
+        assert!(!includes_string("derek@example.com", "zzz"));
     }
 
     #[test]

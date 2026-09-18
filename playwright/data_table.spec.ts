@@ -49,6 +49,24 @@ test("filter narrows rows by email", async ({ page }) => {
   await expect(selectedSummary(page)).toHaveText("0 of 12 row(s) selected.");
 });
 
+test("filter matches a case-insensitive fragment anywhere in the email, not just a prefix", async ({ page }) => {
+  await goto(page);
+
+  // shadcn/ui's own Data Table filters the email column through TanStack
+  // Table's default `includesString` filter fn -- a case-insensitive
+  // substring match anywhere in the cell, not restricted to the start of
+  // the string. "REK" is an uppercase, mid-to-end-of-string fragment of
+  // derek@example.com (the tail of "derek"), not a prefix of any PAYMENTS
+  // email -- a filter that only matched from the start would narrow to 0
+  // rows here instead of 1.
+  await filterInput(page).fill("REK");
+
+  const rows = table(page).locator("tbody tr");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("derek@example.com");
+  await expect(selectedSummary(page)).toHaveText("0 of 1 row(s) selected.");
+});
+
 test("select-all checks every visible row and the selected count updates", async ({ page }) => {
   await goto(page);
 
