@@ -300,8 +300,15 @@ const SURFACES: Surface[] = [
     name: "select",
     open: async (page) => {
       await goto(page, "select");
+      // `SelectTrigger` renders `role="combobox"`, not an implicit button,
+      // since `dev-docs/backlog.md` row 8 -- this locator predates that
+      // change and never matched afterward, hanging the click (and this
+      // test) until the 5-minute ceiling; found by the first full-suite run
+      // since row 8 landed. Same missed-locator class row 8's own account
+      // already names two instances of (the initial repo-wide grep, then
+      // `oracle-focus-restore.spec.ts` found separately) -- this is a third.
       await page
-        .getByRole("button")
+        .getByRole("combobox")
         .filter({ hasText: /Select an option|Apple|Banana/ })
         .click();
       await expect(page.locator('.dx-select-list[data-state="open"]')).toBeVisible();
