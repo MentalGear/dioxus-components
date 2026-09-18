@@ -47,7 +47,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" => {
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable" => {
             ComponentCategory::DataDisplay
         }
         _ => ComponentCategory::DataDisplay,
@@ -215,6 +215,7 @@ examples!(
     popover,
     progress,
     radio_group,
+    resizable,
     scroll_area,
     select[multi],
     separator,
