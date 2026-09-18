@@ -212,7 +212,7 @@ examples!(
     navigation_menu,
     navbar,
     pagination,
-    popover,
+    popover[non_modal],
     progress,
     radio_group,
     resizable,
