@@ -143,10 +143,50 @@
  * viewport edge, same reasoning as `.dx-top-layer-stack-sibling` above: a
  * deterministic, scroll-independent trigger position, so a trigger whose
  * preferred `side` points off-viewport is a fixture property, not an
- * accident of how tall the page happens to be above it.
+ * accident of how tall the page happens to be above it. Geometry (which
+ * edge, which offset) is what these rules measure and must stay exactly as
+ * written -- see the `z-index` note below for the one thing that does need
+ * to change here.
+ *
+ * `z-index: var(--dx-z-top, 9999)` on both rows (docs/backlog.md, the
+ * axe/fixture-hardening round): every route on this preview site now
+ * permanently mounts `DocsLayout`'s `Sidebar`
+ * (`preview/src/components/sidebar/style.css`'s `.dx-sidebar-container`,
+ * `position: fixed; z-index: var(--dx-z-local-sm)` = 10), which occupies a
+ * left-edge column (`left: 0`, `width: var(--dx-sidebar-width)` = 16rem).
+ * `.dx-top-layer-edge-bottom-row` spans `left: 1rem` to `right: 1rem` --
+ * i.e. almost the full viewport width -- so its leftmost children
+ * (confirmed by execution: the Tooltip/HoverCard triggers, first in DOM
+ * order) sit under that column; with no `z-index` of its own (`auto`) a
+ * `position: fixed` box always loses hit-testing to a sibling stacking
+ * context with an explicit positive `z-index`, regardless of DOM order, so
+ * Playwright's real `.click()`/`.hover()` (unlike a same-origin
+ * `.evaluate(el => el.click())`, which bypasses hit-testing) retried until
+ * the outer test timeout killed it
+ * (`oracle/tier2-html/top-layer.spec.ts` Rule 5's Tooltip/HoverCard
+ * flip cases). `.dx-top-layer-edge-right-col` sits at the opposite,
+ * right-hand edge and was not observed failing at the current sidebar
+ * width/viewport, but is the identical mechanism at a different edge, so
+ * it gets the same clearance preventively rather than waiting for a
+ * viewport size or a sidebar width change to make it visible too -- one
+ * root cause ("this fixture's fixed-position probes are not kept clear
+ * of, or stacked above, the permanently-mounted chrome") subsuming both
+ * rows by construction, not a per-trigger patch. `--dx-z-top` (9999,
+ * `preview/assets/dx-components-theme.css`, documented there as "toast,
+ * top_layer's absolute ceiling") is already this same fixture's own
+ * convention for "must render above ordinary page chrome no matter what"
+ * (`.dx-top-layer-stack-sibling` above uses the same value); reusing it
+ * here -- rather than a value only just above the sidebar's current 10 --
+ * keeps these rows clear of *any* future permanently-mounted fixed-position
+ * chrome at a normal z-index, not only today's Sidebar, without moving
+ * either row's geometry at all. A fallback (`, 9999`) is kept for the same
+ * reason `var(--dx-navbar-height, 60px)` elsewhere in this file has one:
+ * this fixture must still degrade sanely if its own theme stylesheet is
+ * ever missing.
  */
 .dx-top-layer-edge-bottom-row {
   position: fixed;
+  z-index: var(--dx-z-top, 9999);
   right: 1rem;
   bottom: 4px;
   left: 1rem;
@@ -158,6 +198,7 @@
 
 .dx-top-layer-edge-right-col {
   position: fixed;
+  z-index: var(--dx-z-top, 9999);
   top: 120px;
   right: 4px;
   display: flex;

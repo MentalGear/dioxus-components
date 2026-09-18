@@ -828,7 +828,41 @@ pub fn TopLayerFixture() -> Element {
                 // `position: static` when Playwright clicked) -- not a
                 // structural difference between the two lanes, so this is
                 // still fixed here rather than only in the SSG build.
-                div { style: "position: fixed; top: calc(var(--dx-navbar-height, 60px) + 20px); left: 40px;",
+                //
+                // `z-index: var(--dx-z-top, 9999)` -- added for a SECOND,
+                // later collision with a DIFFERENT permanently-mounted
+                // fixed-position element: once every route started
+                // rendering `DocsLayout`'s `Sidebar`
+                // (`preview/src/components/sidebar/style.css`'s
+                // `.dx-sidebar-container`, `position: fixed; z-index:
+                // var(--dx-z-local-sm)` = 10, occupying `left: 0` through
+                // `width: var(--dx-sidebar-width)` = 16rem), this trigger's
+                // `left: 40px` placed it inside that column too, and with
+                // no `z-index` of its own it lost hit-testing to the
+                // Sidebar exactly the way it once lost visual clearance to
+                // the navbar above (`oracle/tier2-html/native-dialog.spec.ts`
+                // Rule 6c/6d/6e; confirmed by execution -- Playwright's
+                // actionability retry log named
+                // `.dx-sidebar-desktop`/`.dx-sidebar-group-label` as the
+                // interceptor). A THIRD one-off `top`/`left` nudge would
+                // only fix the Sidebar specifically and leave the same
+                // mechanism free to recur against whatever permanently-
+                // mounted chrome comes next -- this repo's own "same
+                // problem more than once -> fix the class" rule (CLAUDE.md)
+                // -- so this is a `z-index` raise instead, using this
+                // fixture's own existing "must clear ordinary page chrome"
+                // convention (`--dx-z-top`, already used by
+                // `.dx-top-layer-stack-sibling` in style.css; see
+                // style.css's matching comment on
+                // `.dx-top-layer-edge-bottom-row`/`-edge-right-col`, the
+                // same collision against the same Sidebar, fixed the same
+                // way): far enough above *any* normal-range chrome
+                // z-index that a next one doesn't need its own fix here,
+                // with this trigger's actual position -- the geometry
+                // Rule 6e's trigger-anchored placement measurement and the
+                // Escape/focus-restore cycles depend on -- left untouched.
+                div {
+                    style: "position: fixed; top: calc(var(--dx-navbar-height, 60px) + 20px); left: 40px; z-index: var(--dx-z-top, 9999);",
                     PopoverRoot { id: "popover-modal-anchor-root",
                         PopoverTrigger { id: "popover-modal-anchor-trigger", "Modal popover anchor trigger" }
                         PopoverContent { id: "popover-modal-anchor-content",
