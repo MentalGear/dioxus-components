@@ -1660,17 +1660,31 @@ fn WidgetMasonry(heading_id: String) -> Element {
             }
             div { class: "dx-widget-masonry",
                 for entry in BLOCKS {
-                    MasonryCard { component: entry.component, popout: entry.popout }
+                    MasonryCard {
+                        component: move |()| (entry.component)(),
+                        popout: entry.popout,
+                    }
                 }
             }
         }
     }
 }
 
-#[allow(unpredictable_function_pointer_comparisons)]
+/// `component` takes `Callback<(), Element>` rather than a bare
+/// `fn() -> Element`: dioxus's `#[component]` macro derives `PartialEq` for
+/// this function's generated props struct by comparing every field with
+/// `==`, and a raw function-pointer field triggers rustc's
+/// `unpredictable_function_pointer_comparisons` lint from *inside* that
+/// macro-generated `impl PartialEq` -- a separate item the macro emits
+/// itself, so an `#[allow]` on this function (tried first; still present in
+/// history) cannot reach it. `Callback`'s own `PartialEq` compares a
+/// `GenerationalBox` pointer + `ScopeId` instead of a function pointer, so
+/// routing the prop through it (the crate's own idiom for this, used by
+/// every other dynamic-render/event prop in this codebase, e.g.
+/// `on_change: Callback<bool, ()>`) sidesteps the lint by construction
+/// instead of suppressing it.
 #[component]
-fn MasonryCard(component: fn() -> Element, #[props(default)] popout: bool) -> Element {
-    let Comp = component;
+fn MasonryCard(component: Callback<(), Element>, #[props(default)] popout: bool) -> Element {
     let class = if popout {
         "dx-widget-card dx-widget-card-popout"
     } else {
@@ -1678,7 +1692,7 @@ fn MasonryCard(component: fn() -> Element, #[props(default)] popout: bool) -> El
     };
     rsx! {
         div { class,
-            Comp {}
+            {component.call(())}
         }
     }
 }
