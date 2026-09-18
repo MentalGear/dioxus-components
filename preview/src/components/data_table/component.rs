@@ -36,7 +36,7 @@ pub struct DataTableColumnHeaderProps {
     /// The APG Table pattern's sortable-table example
     /// (`playwright/oracle/reference/7e4034b/content/patterns/table/
     /// examples/sortable-table.html`, "Role, Property, State, and Tabindex
-    /// Attributes"): "`aria-sort=\"value\"` ... [s]et on the currently
+    /// Attributes"): "`aria-sort=\"value\"` ... \[s\]et on the currently
     /// sorted column. When the sorted column is changed, the `aria-sort`
     /// attribute is removed and set on the newly sorted column." This
     /// component instead always *sets* `aria-sort`, valued `"none"` for
