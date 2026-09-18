@@ -192,14 +192,13 @@ test.describe("Library: navigation_menu primitive", () => {
     await expect(nav.locator('[role="menuitem"]')).toHaveCount(0);
 
     await page.getByRole("button", { name: "Getting started" }).click();
-    // The disclosed panel is promoted to the top layer on the web arm
-    // (`primitives/src/navigation_menu.rs`'s module doc, "Top layer"), so
-    // it is no longer a DOM descendant of `nav` once open -- scan the
-    // whole page for the open state, matching the intent of R4 (nothing
-    // in the *widget*, open or closed, carries a menu role) rather than
-    // only the `nav`'s own (now content-free) subtree.
-    await expect(page.locator('[role="menu"]')).toHaveCount(0);
-    await expect(page.locator('[role="menuitem"]')).toHaveCount(0);
+    // The disclosed panel is promoted to the top layer for *painting* on
+    // the web arm (`primitives/src/navigation_menu.rs`'s module doc, "Top
+    // layer"), via the native Popover API's `showPopover()` -- this never
+    // reparents the element, so it stays a DOM descendant of `nav` (and
+    // thus still inside this locator's scope) the whole time.
+    await expect(nav.locator('[role="menu"]')).toHaveCount(0);
+    await expect(nav.locator('[role="menuitem"]')).toHaveCount(0);
   });
 
   test("R5: Tab from an open trigger enters the panel's first link", async ({ page }) => {
