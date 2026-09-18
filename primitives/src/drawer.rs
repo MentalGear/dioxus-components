@@ -544,8 +544,13 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
             // (`pointer.rs`) removed this id -- the gesture ended. Decide
             // close-vs-snap-back from whatever was accumulated up to the
             // last real move sample.
+            //
+            // `.peek()`, not `()`: this effect must never subscribe to
+            // `raw_offset` itself -- see the `.peek()` note on the write
+            // below, in the branch that made this bug catastrophic rather
+            // than merely redundant.
             let should_close =
-                should_close_on_release(raw_offset(), panel_size(), last_velocity.cloned());
+                should_close_on_release(*raw_offset.peek(), panel_size(), last_velocity.cloned());
 
             dragging.set(false);
             active_pointer_id.set(None);
@@ -566,7 +571,24 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
             let axis_delta = dismiss_oriented_delta(side.cloned(), delta_x, delta_y);
 
             last_velocity.set(axis_delta / elapsed_ms);
-            raw_offset.set(raw_offset() + axis_delta);
+            // Regression (found by live reproduction: `page.mouse.down()`
+            // on the handle hung forever, and a follow-up `page.evaluate`
+            // hung too, proving the tab's main thread -- not just the
+            // test -- was wedged). `raw_offset()` reads through the
+            // tracked call syntax, which subscribes *this very effect* to
+            // `raw_offset`; the `.set()` right after then reliably
+            // re-triggers it. `dragging` never flips false on this path,
+            // so nothing ever breaks the cycle -- an infinite,
+            // synchronous self-retrigger from the instant a drag starts,
+            // exactly matching the observed hang. `.peek()` reads the
+            // current value without subscribing, the same fix (and the
+            // same documented reason) `lib.rs`'s `use_animated_open`
+            // already uses for its own read-then-write `generation`
+            // counter: "Written through `.write()` / read through
+            // `.peek()` only -- never `.read()` -- so this effect never
+            // subscribes to its own counter."
+            let current_offset = *raw_offset.peek();
+            raw_offset.set(current_offset + axis_delta);
         }
         last_sample.set(Some((position, now)));
     });
