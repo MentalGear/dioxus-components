@@ -62,6 +62,7 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
             index: props.index,
             value: props.value,
             disabled: props.disabled,
+            text_value: props.text_value,
             on_select: props.on_select,
             attributes: props.attributes,
             {props.children}

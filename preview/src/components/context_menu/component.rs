@@ -62,6 +62,7 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
             disabled: props.disabled,
             value: props.value,
             index: props.index,
+            text_value: props.text_value,
             on_select: props.on_select,
             attributes: props.attributes,
             {props.children}
@@ -102,6 +103,7 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
             index: props.index,
             id: props.id,
             disabled: props.disabled,
+            text_value: props.text_value,
             attributes: props.attributes,
             {props.children}
             ChevronRight { class: "dx-context-menu-sub-trigger-icon", size: "16px" }
@@ -137,6 +139,7 @@ pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
             disabled: props.disabled,
             value: props.value,
             index: props.index,
+            text_value: props.text_value,
             on_select: props.on_select,
             attributes: props.attributes,
             {props.children}
