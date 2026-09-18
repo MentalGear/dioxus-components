@@ -1195,23 +1195,42 @@ test.describe("Tooltip-class pattern — HoverCard (no dedicated APG pattern; gr
     await expect(card).toBeVisible();
 
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(200);
 
-    // OBSERVED: hover_card.rs registers onmouseenter/onmouseleave/onfocus/
-    // onblur but no onkeydown at all -- unlike tooltip.rs's `handle_keydown`,
-    // which explicitly closes on Key::Escape. HoverCard is otherwise built
-    // to the same show-on-focus contract Tooltip's own APG citation
-    // requires ("Focus stays on the triggering element while the tooltip is
-    // displayed"), making the missing Escape handling a same-class,
-    // component-specific gap rather than a difference in what each control
-    // is trying to be.
+    // UPDATED (dev-docs/backlog.md rows 19/7 integration round): this row's
+    // title/this comment used to say HoverCard has no keydown handler at
+    // all -- stale even before rows 19/7. `HoverCardTrigger`'s own
+    // `handle_keydown` (primitives/src/hover_card.rs) already closes on
+    // Key::Escape, matching `tooltip.rs`'s `handle_keydown` exactly (a
+    // separate, earlier fix; not this round's). Graded against Tooltip's
+    // own APG citation ("Escape: Dismisses the Tooltip"), which this
+    // same-class control does match.
+    //
+    // No fixed `waitForTimeout` before this assertion (there used to be
+    // one, 200ms): `toHaveCount` already polls up to its own timeout below,
+    // and a fixed pre-wait was never anything but an extra, now-actively-
+    // misleading delay tuned to the PRE-row-19 bug -- `use_popover_sync`
+    // used to call `hidePopover()` the instant `open` went false, hiding
+    // this content via the UA's `display: none` rule before
+    // `use_animated_open`'s close animation ever got a chance to play, so
+    // the card unmounted in ~1 animation frame regardless of any real
+    // animation duration. `use_popover_shown_while_mounted` (row 19) fixed
+    // that: this Escape now correctly holds the card mounted through its
+    // real CSS close animation (`--dx-motion-duration-fast`, 100ms) plus a
+    // 250ms settle hold (`use_animated_open`'s own doc, primitives/src/
+    // lib.rs) before it actually unmounts -- correct, intended behaviour,
+    // not a regression, but real wall-clock time `toHaveCount`'s poll must
+    // be given room for. An explicit, generous timeout here (not just the
+    // default 5000ms) documents that intent rather than leaving it
+    // implicit; measured at ~350ms unloaded and ~750ms even under 20x CPU
+    // throttling (CDP `Emulation.setCPUThrottlingRate`) in this session's
+    // own reproduction, so 3000ms is comfortable margin, not a loosened
+    // requirement -- the row still requires genuine dismissal, same as
+    // before.
     await expect(
       card,
       "Graded against Tooltip's own APG citation (\"Escape: Dismisses the " +
-        "Tooltip\"), which this same-class control should match. OBSERVED: " +
-        "Escape does not dismiss HoverCard at all -- hover_card.rs has no " +
-        "keydown handler, unlike tooltip.rs's explicit Key::Escape arm.",
-    ).toHaveCount(0);
+        "Tooltip\"), which this same-class control should match.",
+    ).toHaveCount(0, { timeout: 3000 });
   });
 });
 
