@@ -88,13 +88,14 @@
 import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { BASE_URL } from "../../base-url";
 
 const REFERENCE_ROOT = path.resolve(__dirname, "../reference/7e4034b/content/patterns");
 const referenceUrl = pathToFileURL(
   path.join(REFERENCE_ROOT, "disclosure/examples/disclosure-navigation.html"),
 ).href;
 
-const LIBRARY_URL = "http://127.0.0.1:8080/component/?name=navigation_menu&";
+const LIBRARY_URL = `${BASE_URL}/component/?name=navigation_menu&`;
 const LIBRARY_GOTO = { timeout: 20 * 60 * 1000 };
 
 /**
