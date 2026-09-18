@@ -6,7 +6,21 @@ test("table renders the invoice demo: caption, header, rows, and footer total", 
 
   const table = page.locator('[data-slot="table"]');
   await expect(table).toBeVisible();
-  await expect(page.getByText("A list of your recent invoices.")).toBeVisible();
+  // Scoped to the real <caption>, not an unscoped page.getByText() -- the
+  // demo's own source text (including this exact caption string) is also
+  // always in the DOM in the page's syntax-highlighted "Code" tab
+  // (ComponentVariantHighlight's TabContent for "Code" renders next to the
+  // "Demo" one, both mounted regardless of which tab is active) and in the
+  // "Manual installation" <details> section's component.rs source, so an
+  // unscoped text/name lookup for a string that also appears in either
+  // resolves 2+ elements and fails Playwright's strict mode. `table` is
+  // scoped by data-slot="table", an attribute the highlighted/copied
+  // source text never actually carries (it's highlighted as text, not
+  // reparsed into real DOM attributes), so every lookup below stays
+  // scoped under it rather than querying `page` directly.
+  const caption = table.locator("caption");
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveText("A list of your recent invoices.");
 
   // 4 columns.
   const headerRow = table.locator("thead tr");
