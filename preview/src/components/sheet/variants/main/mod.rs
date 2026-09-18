@@ -30,8 +30,8 @@ pub fn Demo() -> Element {
         }
         Sheet { open: open(), on_open_change: move |v| open.set(v), "data-side": side().as_str(),
             SheetHeader {
-                SheetTitle { "Sheet Title" }
-                SheetDescription { "Sheet description goes here." }
+                SheetTitle { "Edit profile" }
+                SheetDescription { "Make changes to your profile here. Click save when you're done." }
             }
 
             div {
