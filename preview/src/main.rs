@@ -30,8 +30,8 @@ use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
 use dioxus_i18n::prelude::{use_init_i18n, I18nConfig};
 use dioxus_icons::lucide::{
     ArrowRight, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronLeft, ChevronsUpDown,
-    Compass, Copy, ExternalLink, FileText, Hash, Layers, LayoutGrid, Mail, Pause, Play, SkipBack,
-    SkipForward, SquareCheck,
+    Compass, Copy, ExternalLink, FileText, Hash, House, Layers, LayoutGrid, Mail, Pause, Play,
+    SkipBack, SkipForward, SquareCheck,
 };
 use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -642,17 +642,23 @@ fn ComponentCode(
 /// The `/docs` "Overview" page's own section headings, in the order
 /// `Docs()` renders them. Single-sourced here so `Docs()`'s `h2`s and
 /// `DocsLayout`'s "Start" sidebar sub-items (rendered off the
-/// `docs_sections` prop `Docs()` passes it, see `DocsLayout`) can never
+/// `page_sections` prop `Docs()` passes it, see `DocsLayout`) can never
 /// drift out of sync with each other -- each `h2`'s visible text and the
 /// matching sub-link's label both read from this one array, and
 /// `docs_section_slug` derives both the `h2`'s `id` and the sub-link's
 /// `href` from that same text rather than a hand-typed anchor.
+///
+/// `Home()`'s own `HOME_SECTIONS` (near `Home()`, below) is the same
+/// pattern applied to the homepage's own sections -- both are plain
+/// `&'static [&'static str]` so `DocsLayout`'s `page_sections` prop can
+/// carry either one without caring which page it came from.
 const DOCS_SECTIONS: &[&str] = &["How it works", "Add a component", "Recommended workflow"];
 
 /// Turns a heading's visible text into a same-page anchor id: lowercased,
 /// with every run of non-alphanumeric characters (spaces included)
 /// collapsed to a single hyphen and none left dangling at either end.
-/// "How it works" -> "how-it-works".
+/// "How it works" -> "how-it-works". Generic over any page's headings --
+/// `Home()` reuses this as-is for its own sections.
 fn docs_section_slug(title: &str) -> String {
     let mut slug = String::with_capacity(title.len());
     let mut pending_hyphen = false;
@@ -673,7 +679,7 @@ fn docs_section_slug(title: &str) -> String {
 #[component]
 fn Docs(dark_mode: Option<bool>) -> Element {
     rsx! {
-        DocsLayout { active: DocsNavActive::Overview, docs_sections: Some(DOCS_SECTIONS),
+        DocsLayout { active: DocsNavActive::Overview, page_sections: Some(DOCS_SECTIONS),
             article { class: "dx-docs-page dx-docs-prose",
                 header { class: "dx-docs-page-header",
                     p { class: "dx-docs-eyebrow", "Docs" }
@@ -759,6 +765,35 @@ enum DocsNavActive {
     Home,
 }
 
+/// The heading-derived sub-item list nested under whichever "Start" nav
+/// item corresponds to the page currently being viewed (see `DocsLayout`'s
+/// `page_sections` prop and its "Start" group markup, below). Written once
+/// and called from both the "Home" and "Overview" `SidebarMenuItem`s so
+/// their sub-items can never diverge in markup shape -- same `SidebarMenuSub`/
+/// `SidebarMenuSubItem`/`SidebarMenuSubButton` structure, same plain same-
+/// page `a` anchor (not the router's `Link`) with a `Hash` icon, regardless
+/// of which page's sections are being listed.
+fn page_sections_submenu(sections: &'static [&'static str]) -> Element {
+    rsx! {
+        SidebarMenuSub {
+            for title in sections.iter().copied() {
+                SidebarMenuSubItem { key: "{title}",
+                    SidebarMenuSubButton {
+                        as: move |attributes: Vec<Attribute>| rsx! {
+                            a {
+                                href: "#{docs_section_slug(title)}",
+                                ..attributes,
+                                Hash { size: "0.875rem", "aria-hidden": "true" }
+                                span { "{title}" }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The site's real navigation shell: `SidebarProvider`/`Sidebar`/
 /// `SidebarInset` composed the same way `sidebar/variants/main/mod.rs`'s own
 /// demo (`Demo()`) composes them -- a `SidebarContent` of `SidebarGroup`s
@@ -792,13 +827,18 @@ fn DocsLayout(
     // component.rs`) already exists for exactly this and just needed
     // threading through here.
     #[props(default)] default_open: Option<bool>,
-    // Only `Docs()` passes this (its own `DOCS_SECTIONS`), so its "Start"
-    // sidebar item alone grows a heading-derived sub-list of in-page jump
-    // links. Every other call site (`Home()`, `ComponentHighlight()`)
-    // leaves this `None` and keeps rendering the plain, sub-item-less
-    // "Overview" entry from before -- those pages have no section
-    // headings of their own for this to reflect.
-    #[props(default)] docs_sections: Option<&'static [&'static str]>,
+    // The CURRENT page's own section headings, if it has any -- `Docs()`
+    // passes its `DOCS_SECTIONS`, `Home()` passes its `HOME_SECTIONS`.
+    // Page-agnostic on purpose: which top-level "Start" nav item this
+    // grows a heading-derived sub-list under is decided below purely from
+    // `active` (`DocsNavActive::Home` nests it under "Home",
+    // `DocsNavActive::Overview` under "Overview"), so this same prop
+    // shape carries either page's list without `DocsLayout` needing a
+    // separate prop -- or a separate `SidebarMenuSub` rendering block --
+    // per page. `ComponentHighlight()` leaves this `None` and keeps
+    // rendering both "Home" and "Overview" as plain, sub-item-less
+    // entries, same as before this page had sections of its own.
+    #[props(default)] page_sections: Option<&'static [&'static str]>,
     children: Element,
 ) -> Element {
     // Always call both hooks (rather than only inside an `unwrap_or_else`
@@ -835,6 +875,28 @@ fn DocsLayout(
                             SidebarMenu {
                                 SidebarMenuItem {
                                     SidebarMenuButton {
+                                        is_active: active == DocsNavActive::Home,
+                                        as: move |attributes: Vec<Attribute>| rsx! {
+                                            Link { to: Route::home(), attributes,
+                                                House { size: "1rem", "aria-hidden": "true" }
+                                                span { "Home" }
+                                            }
+                                        },
+                                    }
+                                    // Only rendered while `Home()` is the page being viewed
+                                    // AND it passed its own `page_sections` (`HOME_SECTIONS`)
+                                    // -- see `DocsLayout`'s prop doc comment and
+                                    // `page_sections_submenu`. On `/docs` or a component page
+                                    // this is `None`/doesn't match `active`, so "Home" stays
+                                    // the plain, sub-item-less link it always was.
+                                    if active == DocsNavActive::Home {
+                                        if let Some(sections) = page_sections {
+                                            {page_sections_submenu(sections)}
+                                        }
+                                    }
+                                }
+                                SidebarMenuItem {
+                                    SidebarMenuButton {
                                         is_active: active == DocsNavActive::Overview,
                                         as: move |attributes: Vec<Attribute>| rsx! {
                                             Link { to: Route::docs(), attributes,
@@ -843,28 +905,14 @@ fn DocsLayout(
                                             }
                                         },
                                     }
-                                    // Only `Docs()` passes `docs_sections` -- see this
-                                    // component's own prop doc comment. `Home()`/
-                                    // `ComponentHighlight()` leave it `None`, so this whole
-                                    // `SidebarMenuSub` (and the heading-derived sub-items in
-                                    // it) simply doesn't render there, matching the
-                                    // pre-existing "Overview" item exactly.
-                                    if let Some(sections) = docs_sections {
-                                        SidebarMenuSub {
-                                            for title in sections.iter().copied() {
-                                                SidebarMenuSubItem { key: "{title}",
-                                                    SidebarMenuSubButton {
-                                                        as: move |attributes: Vec<Attribute>| rsx! {
-                                                            a {
-                                                                href: "#{docs_section_slug(title)}",
-                                                                ..attributes,
-                                                                Hash { size: "0.875rem", "aria-hidden": "true" }
-                                                                span { "{title}" }
-                                                            }
-                                                        },
-                                                    }
-                                                }
-                                            }
+                                    // Mirrors the "Home" item above, but scoped to `Docs()`
+                                    // being the page being viewed instead -- same shared
+                                    // `page_sections_submenu`, so `/docs`'s 3 sub-items
+                                    // (`DOCS_SECTIONS`) render exactly as they did before
+                                    // "Home" gained this same treatment.
+                                    if active == DocsNavActive::Overview {
+                                        if let Some(sections) = page_sections {
+                                            {page_sections_submenu(sections)}
                                         }
                                     }
                                 }
@@ -1462,6 +1510,16 @@ struct HomeSidebarControls {
     collapsible: Signal<SidebarCollapsible>,
 }
 
+/// The homepage's own section headings, in the order `Home()` renders
+/// them -- the same single-source-of-truth pattern as `DOCS_SECTIONS`
+/// (see its doc comment): `docs_section_slug` derives both each `h2`'s
+/// `id` and `DocsLayout`'s "Start" > "Home" sub-link `href`s from this
+/// same text, so they can't drift apart. `HOME_SECTIONS[0]` ("Sample
+/// interfaces") is `WidgetMasonry()`'s own heading, rendered by that
+/// separate `#[component]` fn rather than here, so `Home()` passes its
+/// slug down as a prop instead of duplicating the `h2` here.
+const HOME_SECTIONS: &[&str] = &["Sample interfaces", "All components"];
+
 #[component]
 fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
     let side = use_signal(|| SidebarSide::Left);
@@ -1469,7 +1527,12 @@ fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
     use_context_provider(|| HomeSidebarControls { side, collapsible });
 
     rsx! {
-        DocsLayout { active: DocsNavActive::Home, side: Some(side), collapsible: Some(collapsible), default_open: Some(false),
+        DocsLayout {
+            active: DocsNavActive::Home,
+            side: Some(side),
+            collapsible: Some(collapsible),
+            default_open: Some(false),
+            page_sections: Some(HOME_SECTIONS),
             // No `role: "main"` here -- `DocsLayout`'s `SidebarInset` already
             // renders the page's one `<main>` landmark (axe
             // `landmark-no-duplicate-main`, see `DocsLayout`'s own comment).
@@ -1498,11 +1561,11 @@ fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
                         }
                     }
                 }
-                WidgetMasonry {}
+                WidgetMasonry { heading_id: docs_section_slug(HOME_SECTIONS[0]) }
                 section { class: "dx-home-section dx-catalog-section",
                     header { class: "dx-section-header",
                         span { class: "dx-section-eyebrow", "Catalog" }
-                        h2 { class: "dx-section-title", "All components" }
+                        h2 { id: "{docs_section_slug(HOME_SECTIONS[1])}", class: "dx-section-title", "{HOME_SECTIONS[1]}" }
                         p { class: "dx-section-summary",
                             "Every primitive in the library, with live previews and a copy-paste install command for each one."
                         }
@@ -1578,13 +1641,19 @@ const BLOCKS: &[MasonryEntry] = &[
     },
 ];
 
+// `heading_id` is `Home()`'s `docs_section_slug(HOME_SECTIONS[0])` --
+// threaded in as a prop (rather than this fn reaching for `HOME_SECTIONS`
+// itself) because the id belongs to whichever page mounts this section,
+// and `Home()` is the only caller today. The heading TEXT below still
+// reads from `HOME_SECTIONS[0]` directly (same module, no need to thread
+// that too), so id and text can't drift apart from each other.
 #[component]
-fn WidgetMasonry() -> Element {
+fn WidgetMasonry(heading_id: String) -> Element {
     rsx! {
         section { class: "dx-home-section dx-masonry-section",
             header { class: "dx-section-header",
                 span { class: "dx-section-eyebrow", "Showcase" }
-                h2 { class: "dx-section-title", "Sample interfaces" }
+                h2 { id: "{heading_id}", class: "dx-section-title", "{HOME_SECTIONS[0]}" }
                 p { class: "dx-section-summary",
                     "Live, interactive UI blocks composed from the primitives below. Use your keyboard to test the accessibility interactions."
                 }
