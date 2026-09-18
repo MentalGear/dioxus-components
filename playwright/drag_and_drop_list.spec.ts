@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations } from "./axe";
+import { BASE_URL as BASE } from "./base-url";
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
 const URL = `${BASE}/component/?name=drag_and_drop_list&`;
 const REMOVABLE_URL = `${BASE}/component/block/?name=drag_and_drop_list&variant=removable&`;
 const LOAD_TIMEOUT = 20 * 60 * 1000;

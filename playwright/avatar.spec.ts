@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=avatar&", { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=avatar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   let image = page.getByRole("img", { name: "User avatar" }).first();
   await expect(image).toHaveAttribute("src", "https://avatars.githubusercontent.com/u/66571940?s=96&v=4");
 
@@ -12,7 +13,7 @@ test("test", async ({ page }) => {
 test.describe("Axe automated scan", () => {
   // Avatar has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=avatar&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=avatar&`, { timeout: 20 * 60 * 1000 });
     await expectNoAxeViolations(page, "avatar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
