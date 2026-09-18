@@ -17,6 +17,7 @@ pub fn Demo() -> Element {
                             div { class: "dx-navigation-menu-grid dx-navigation-menu-grid-2col",
                                 NavigationMenuLink {
                                     href: "/",
+                                    content_index: 0usize,
                                     class: "dx-navigation-menu-featured",
                                     // Deliberately not "dioxus-components" --
                                     // the site's own persistent chrome
@@ -38,14 +39,14 @@ pub fn Demo() -> Element {
                                 }
                                 div { class: "dx-navigation-menu-grid",
                                     style: "grid-template-columns: 1fr;",
-                                    NavigationMenuLink { href: "/docs",
+                                    NavigationMenuLink { href: "/docs", content_index: 1usize,
                                         div { class: "dx-navigation-menu-link-title", "Introduction" }
                                         div { class: "dx-navigation-menu-link-description",
                                             "Re-usable primitives you can copy into your own project."
                                         }
                                     }
-                                    NavigationMenuLink { href: "/component/?name=button", "Button" }
-                                    NavigationMenuLink { href: "/component/?name=input", "Input" }
+                                    NavigationMenuLink { href: "/component/?name=button", content_index: 2usize, "Button" }
+                                    NavigationMenuLink { href: "/component/?name=input", content_index: 3usize, "Input" }
                                 }
                             }
                         }
@@ -54,37 +55,37 @@ pub fn Demo() -> Element {
                         NavigationMenuTrigger { "Components" }
                         NavigationMenuContent {
                             div { class: "dx-navigation-menu-grid",
-                                NavigationMenuLink { href: "/component/?name=accordion",
+                                NavigationMenuLink { href: "/component/?name=accordion", content_index: 0usize,
                                     div { class: "dx-navigation-menu-link-title", "Accordion" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A vertically stacked set of collapsible panels."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=dialog",
+                                NavigationMenuLink { href: "/component/?name=dialog", content_index: 1usize,
                                     div { class: "dx-navigation-menu-link-title", "Dialog" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A modal window layered above the page."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=tooltip",
+                                NavigationMenuLink { href: "/component/?name=tooltip", content_index: 2usize,
                                     div { class: "dx-navigation-menu-link-title", "Tooltip" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A short message shown on hover or focus."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=tabs",
+                                NavigationMenuLink { href: "/component/?name=tabs", content_index: 3usize,
                                     div { class: "dx-navigation-menu-link-title", "Tabs" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Switch between panels of related content."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=select",
+                                NavigationMenuLink { href: "/component/?name=select", content_index: 4usize,
                                     div { class: "dx-navigation-menu-link-title", "Select" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Pick one value from a list of options."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=progress",
+                                NavigationMenuLink { href: "/component/?name=progress", content_index: 5usize,
                                     div { class: "dx-navigation-menu-link-title", "Progress" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Displays the completion progress of a task."

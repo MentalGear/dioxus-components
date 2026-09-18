@@ -83,6 +83,7 @@ pub fn NavigationMenuLink(props: NavigationMenuLinkProps) -> Element {
             class: "dx-navigation-menu-link",
             active: props.active,
             disabled: props.disabled,
+            content_index: props.content_index,
             onclick: props.onclick,
             attributes: props.attributes,
             {props.children}
