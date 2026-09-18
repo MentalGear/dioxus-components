@@ -251,14 +251,28 @@ pub fn NavigationMenu(props: NavigationMenuProps) -> Element {
     // than wrapping).
     let focus = use_collection_provider(ReadSignal::new(Signal::new(false)));
 
+    // Each `use_delayed_action()` call is itself a hook (it wraps
+    // `use_signal`, `menu_sub.rs`), so -- like `open`/`focus` above -- it
+    // must run directly in this component's own body, never nested inside
+    // another hook's closure. Calling it inline inside
+    // `use_context_provider`'s initializer below produced a `BorrowMutError`
+    // ("The hook list is already borrowed ... hook inside a hook") on every
+    // real render, confirmed by live reproduction against a running dev
+    // server (the wasm panic never surfaced in `cargo check`/`clippy`/
+    // `cargo test`, since Dioxus's Rules of Hooks are enforced at runtime,
+    // not by the type system).
+    let hover_open = use_delayed_action();
+    let hover_close = use_delayed_action();
+    let blur_close = use_delayed_action();
+
     use_context_provider(|| NavigationMenuContext {
         open,
         set_open,
         disabled: props.disabled,
         focus,
-        hover_open: use_delayed_action(),
-        hover_close: use_delayed_action(),
-        blur_close: use_delayed_action(),
+        hover_open,
+        hover_close,
+        blur_close,
     });
 
     rsx! {

@@ -61,7 +61,7 @@
  * describes for `DropdownMenu`/`ContextMenu`/`Menubar`.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -72,6 +72,18 @@ const referenceUrl = pathToFileURL(
 
 const LIBRARY_URL = "http://127.0.0.1:8080/component/?name=navigation_menu&";
 const LIBRARY_GOTO = { timeout: 20 * 60 * 1000 };
+
+/**
+ * The Library subject's own `NavigationMenu`, scoped by its `aria_label`
+ * (`preview/src/components/navigation_menu/variants/main/mod.rs`) rather
+ * than querying the whole page. The docs site's own persistent chrome
+ * (header navbar, footer) renders its own "Docs" links on every route, so
+ * an unscoped `page.getByRole('link', { name: 'Docs' })` resolves to more
+ * than one element (confirmed live: 3 page-wide vs. 1 once scoped here).
+ */
+function libraryNav(page: Page) {
+  return page.getByRole("navigation", { name: "Component navigation menu" });
+}
 
 test.describe("Reference: W3C's own Disclosure Navigation example", () => {
   test("R1: each trigger is a button with aria-expanded reflecting state and aria-controls naming the panel", async ({ page }) => {
@@ -144,7 +156,7 @@ test.describe("Library: navigation_menu primitive", () => {
   test("R1: each trigger is a button with aria-expanded reflecting state and aria-controls naming the panel", async ({ page }) => {
     await page.goto(LIBRARY_URL, LIBRARY_GOTO);
 
-    const trigger = page.getByRole("button", { name: "Getting started" });
+    const trigger = libraryNav(page).getByRole("button", { name: "Getting started" });
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
     const controls = await trigger.getAttribute("aria-controls");
     expect(controls).toBeTruthy();
@@ -157,7 +169,7 @@ test.describe("Library: navigation_menu primitive", () => {
   test("R2: Enter and Space each toggle the trigger", async ({ page }) => {
     await page.goto(LIBRARY_URL, LIBRARY_GOTO);
 
-    const trigger = page.getByRole("button", { name: "Getting started" });
+    const trigger = libraryNav(page).getByRole("button", { name: "Getting started" });
     await trigger.focus();
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
@@ -171,7 +183,7 @@ test.describe("Library: navigation_menu primitive", () => {
   test("R3: Escape closes the open panel and returns focus to its trigger", async ({ page }) => {
     await page.goto(LIBRARY_URL, LIBRARY_GOTO);
 
-    const trigger = page.getByRole("button", { name: "Getting started" });
+    const trigger = libraryNav(page).getByRole("button", { name: "Getting started" });
     await trigger.focus();
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -187,11 +199,11 @@ test.describe("Library: navigation_menu primitive", () => {
   test("R4: no role=menu/menuitem anywhere in the widget", async ({ page }) => {
     await page.goto(LIBRARY_URL, LIBRARY_GOTO);
 
-    const nav = page.locator("nav").filter({ has: page.getByRole("button", { name: "Getting started" }) });
+    const nav = libraryNav(page);
     await expect(nav.locator('[role="menu"]')).toHaveCount(0);
     await expect(nav.locator('[role="menuitem"]')).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Getting started" }).click();
+    await nav.getByRole("button", { name: "Getting started" }).click();
     // The disclosed panel is promoted to the top layer for *painting* on
     // the web arm (`primitives/src/navigation_menu.rs`'s module doc, "Top
     // layer"), via the native Popover API's `showPopover()` -- this never
@@ -204,12 +216,12 @@ test.describe("Library: navigation_menu primitive", () => {
   test("R5: Tab from an open trigger enters the panel's first link", async ({ page }) => {
     await page.goto(LIBRARY_URL, LIBRARY_GOTO);
 
-    const trigger = page.getByRole("button", { name: "Getting started" });
+    const trigger = libraryNav(page).getByRole("button", { name: "Getting started" });
     await trigger.focus();
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "dioxus-components" })).toBeFocused();
+    await expect(libraryNav(page).getByRole("link", { name: "Component Library" })).toBeFocused();
   });
 });

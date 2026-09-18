@@ -18,7 +18,20 @@ pub fn Demo() -> Element {
                                 NavigationMenuLink {
                                     href: "/",
                                     class: "dx-navigation-menu-featured",
-                                    div { class: "dx-navigation-menu-link-title", "dioxus-components" }
+                                    // Deliberately not "dioxus-components" --
+                                    // the site's own persistent chrome
+                                    // (`main.rs`'s navbar brand link) already
+                                    // renders an `<a>` with that exact
+                                    // accessible name on every page, and
+                                    // `getByRole('link', { name: ... })`
+                                    // (both this demo's own oracle/smoke
+                                    // specs and any real screen-reader user's
+                                    // link-by-name navigation) would
+                                    // otherwise hit two matches -- confirmed
+                                    // by live reproduction against a running
+                                    // dev server. Same class of fix as this
+                                    // component's own `aria_label` above.
+                                    div { class: "dx-navigation-menu-link-title", "Component Library" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Beautifully designed, accessible primitives for Dioxus."
                                     }
