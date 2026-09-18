@@ -315,6 +315,16 @@ pub struct CommandInputProps {
     #[props(default)]
     pub aria_label: Option<String>,
 
+    /// Called when the input element is mounted. `CommandInput` also uses
+    /// this internally to explicitly focus itself once mounted -- see this
+    /// component's own doc, "First-mouse-click-open focus bug." A
+    /// caller-supplied callback here still fires, chained after that
+    /// internal behavior -- the same forwarding shape `Toggle`'s own
+    /// `onmounted` prop already uses (`toggle.rs`) so a caller doesn't lose
+    /// either half.
+    #[props(default)]
+    pub onmounted: Callback<Event<MountedData>>,
+
     /// Additional attributes.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -322,9 +332,9 @@ pub struct CommandInputProps {
 
 /// The text input that filters [`CommandList`]'s items.
 ///
-/// Always renders with the `autofocus` attribute set. This is the one piece
-/// of behavior the plan doc flagged as needing confirmation "by execution":
-/// a `showModal()`-opened `CommandDialog` runs the browser's dialog-focusing
+/// Always renders with the `autofocus` attribute set. This is the platform
+/// mechanism the plan doc flagged as needing confirmation "by execution": a
+/// `showModal()`-opened `CommandDialog` runs the browser's dialog-focusing
 /// steps (WHATWG HTML) at the moment it opens, which focus the first
 /// `autofocus` descendant found in the dialog's subtree, falling back to the
 /// dialog element itself if none exists (`dialog.rs`'s module doc describes
@@ -332,10 +342,45 @@ pub struct CommandInputProps {
 /// separate focus-trap script). Setting `autofocus` here, unconditionally,
 /// is what gives `CommandDialog` that descendant to find -- `ComboboxInput`
 /// never needed this because it is never the *first* focusable content of a
-/// freshly-`showModal()`-opened dialog. A real browser run to confirm this
-/// concretely was not available in this environment (see the PR/commit
-/// notes) -- this is the WHATWG-spec-correct implementation, flagged for a
-/// first real-browser check.
+/// freshly-`showModal()`-opened dialog.
+///
+/// ## First-mouse-click-open focus bug (live-site user report, 2026-09-18)
+///
+/// A user reported that the first time the command palette is opened by a
+/// mouse click on the overview page (`/`), focus does not land on this
+/// input. Real-browser reproduction attempted this session (a Playwright
+/// script driving this crate's own `preview` build on the `dx serve` dev
+/// server, both the standalone component page and the home page's demo
+/// gallery, fresh browser context per trial, real `.click()`s, first *and*
+/// second opens, plain runs plus runs under 4x CPU-throttling and this
+/// sandbox's own multi-lane CPU contention, 40+ trials total): `autofocus`
+/// alone landed focus correctly in every trial, so the exact mount-order
+/// race the doc above originally flagged as unconfirmed did not reproduce
+/// against this build. That does not clear `autofocus` alone, though: the
+/// live report is against the deployed SSG/hydration build
+/// (`dev-docs/backlog.md` row 22), a fundamentally different first-render
+/// pipeline than the CSR `dx serve` dev server this session could exercise
+/// (row 22 already documents this exact CSR/SSG divergence as a standing,
+/// confirmed-by-incident risk class in this repo, e.g. the 2026-09-01
+/// cfg-axis production incident) -- a hydration-only timing difference
+/// cannot be ruled out from this session's tooling.
+///
+/// Fixed by construction regardless, rather than left to a single
+/// mechanism: `onmounted` below explicitly calls
+/// [`dioxus::prelude::MountedData::set_focus`] as soon as this element
+/// mounts, the same `onmounted` + `spawn` + `set_focus(true).await` shape
+/// `Toggle`/`Slider`/`DropdownMenuTrigger` already use elsewhere in this
+/// crate for imperative focus (`toggle.rs`, `slider.rs`,
+/// `dropdown_menu.rs`) -- proven, cross-platform (works identically on the
+/// native/Blitz arm, no `#[cfg(feature = "web")]` needed), and requires no
+/// change to `dialog.rs`. This does not depend on, or need to race against,
+/// `showModal()`'s own autofocus step: both mechanisms target the same
+/// element, so whichever lands first wins and the other is a redundant
+/// no-op, never a conflict. Kept *in addition to* `autofocus` rather than
+/// in its place -- `autofocus` is still the WHATWG-spec-correct, zero-cost
+/// first line, and removing it would also regress a non-JS/no-wasm-yet
+/// rendering of this content (e.g. a pre-hydration SSG paint) to no
+/// indicated focus target at all.
 #[component]
 pub fn CommandInput(props: CommandInputProps) -> Element {
     let mut ctx = use_context::<CommandContext>();
@@ -345,6 +390,7 @@ pub fn CommandInput(props: CommandInputProps) -> Element {
 
     let query = ctx.query;
     let set_query = ctx.set_query;
+    let user_onmounted = props.onmounted;
 
     let active_descendant = use_memo(move || ctx.focused_option_id());
 
@@ -399,6 +445,15 @@ pub fn CommandInput(props: CommandInputProps) -> Element {
             aria_activedescendant: active_descendant(),
             aria_label: props.aria_label.clone(),
 
+            onmounted: move |evt: Event<MountedData>| {
+                // Deterministic backstop for `autofocus` above -- see this
+                // component's doc, "First-mouse-click-open focus bug."
+                let data = evt.data();
+                spawn(async move {
+                    let _ = data.set_focus(true).await;
+                });
+                user_onmounted.call(evt);
+            },
             oninput: move |event| {
                 set_query.call(event.value());
                 ctx.selectable.collection.clear_focus();
