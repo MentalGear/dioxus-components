@@ -1,0 +1,67 @@
+/* Data Table -- shadcn/ui catalog parity (dev-docs/component-backlog.md
+ * row 69). Classes namespaced `dx-data-table*`, scripts/check-dx-class-
+ * prefix.sh's rule for the `data_table` component folder (`_` -> `-`).
+ * Values drawn from preview/assets/dx-components-theme.css wherever a
+ * token already names the value this needs
+ * (scripts/check-css-literals.sh). */
+
+.dx-data-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--dx-space-2);
+}
+
+.dx-data-table-filter {
+  max-width: 20rem;
+}
+
+.dx-data-table-column-header-button {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--dx-space-1) var(--dx-space-2);
+  margin: calc(var(--dx-space-2) * -1);
+  gap: var(--dx-space-1);
+}
+
+.dx-data-table-sort-icon {
+  flex-shrink: 0;
+  opacity: var(--dx-opacity-hover);
+}
+
+.dx-data-table-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--dx-space-2);
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-4);
+}
+
+.dx-data-table-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dx-space-6);
+}
+
+.dx-data-table-pagination-size {
+  display: flex;
+  align-items: center;
+  gap: var(--dx-space-2);
+}
+
+.dx-data-table-pagination-size-label {
+  white-space: nowrap;
+}
+
+.dx-data-table-pagination-page {
+  white-space: nowrap;
+}
+
+.dx-data-table-pagination-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--dx-space-2);
+}

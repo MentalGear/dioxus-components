@@ -47,7 +47,9 @@ pub fn category_of(name: &str) -> ComponentCategory {
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" => ComponentCategory::DataDisplay,
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" => {
+            ComponentCategory::DataDisplay
+        }
         _ => ComponentCategory::DataDisplay,
     }
 }
@@ -189,6 +191,7 @@ examples!(
     combobox[controlled, disabled, dynamic],
     command,
     context_menu,
+    data_table,
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
     drag_and_drop_list[removable],
@@ -219,6 +222,7 @@ examples!(
     slider[dynamic_range, range],
     spinner,
     switch,
+    table,
     tabs,
     tag_group[multi, states],
     textarea[outline, fade, ghost],

@@ -1,0 +1,18 @@
+{
+  "name": "data_table",
+  "description": "A composition pattern for sortable, filterable, paginated tables with row selection.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    },
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "componentDependencies": ["table", "button", "select", "input", "checkbox"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

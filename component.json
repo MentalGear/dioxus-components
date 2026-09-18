@@ -57,6 +57,8 @@
     "preview/src/components/input_otp",
     "preview/src/components/kbd",
     "preview/src/components/spinner",
-    "preview/src/components/native_select"
+    "preview/src/components/native_select",
+    "preview/src/components/table",
+    "preview/src/components/data_table"
   ]
 }
