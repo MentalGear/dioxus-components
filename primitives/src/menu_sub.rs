@@ -106,11 +106,11 @@ pub(crate) const SUBMENU_CLOSE_GRACE_DELAY: Duration = Duration::from_millis(200
 
 /// A single cancellable delayed action, backed by `dioxus_sdk_time::sleep`
 /// + `spawn`/`Task` -- the same primitive `ContextMenuTrigger`'s long-press
-/// timer already uses (`context_menu.rs`'s `long_press_task`/
-/// `LONG_PRESS_DURATION`), not a new mechanism. Scheduling a new action
-/// implicitly cancels whatever this handle was already waiting on, so a
-/// trigger can call [`Self::schedule`] on every `onmouseenter` without
-/// separately tracking whether a previous timer is still pending.
+///   timer already uses (`context_menu.rs`'s `long_press_task`/
+///   `LONG_PRESS_DURATION`), not a new mechanism. Scheduling a new action
+///   implicitly cancels whatever this handle was already waiting on, so a
+///   trigger can call [`Self::schedule`] on every `onmouseenter` without
+///   separately tracking whether a previous timer is still pending.
 #[derive(Clone, Copy)]
 pub(crate) struct DelayedAction {
     task: Signal<Option<Task>>,
