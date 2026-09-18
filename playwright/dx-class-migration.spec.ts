@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { BASE_URL } from "./base-url";
 
 /**
  * Row 32 migration oracle — every themed component must render UNHASHED
@@ -159,7 +160,7 @@ async function prefixReachesAnyFrame(
 
 for (const name of MIGRATED) {
   test(`${name}: stylesheet delivered, classes unhashed`, async ({ page }) => {
-    await page.goto(`http://127.0.0.1:8080/component/?name=${name}&`);
+    await page.goto(`${BASE_URL}/component/?name=${name}&`);
     // The page's own demo must have rendered before the sheet is meaningful.
     await expect(page.locator("body")).toBeVisible();
 

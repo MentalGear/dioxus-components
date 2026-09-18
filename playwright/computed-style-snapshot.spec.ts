@@ -1,6 +1,7 @@
 import { test } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
+import { BASE_URL } from "./base-url";
 
 /**
  * Not a conformance test — a TOOL, run on demand to capture a computed-style
@@ -38,7 +39,7 @@ test("capture computed styles for every themed component page", async ({ page })
 
   const all: Record<string, unknown> = {};
   for (const name of names) {
-    await page.goto(`http://127.0.0.1:8080/component/?name=${name}&`, {
+    await page.goto(`${BASE_URL}/component/?name=${name}&`, {
       waitUntil: "domcontentloaded",
     });
     // Let the wasm client render and its stylesheets attach.

@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("table renders the invoice demo: caption, header, rows, and footer total", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=table&", { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=table&`, { timeout: 20 * 60 * 1000 });
 
   const table = page.locator('[data-slot="table"]');
   await expect(table).toBeVisible();
@@ -50,7 +51,7 @@ test.describe("Axe automated scan", () => {
   // state to scan (the two-state convention in ./axe.ts applies only to
   // components that reach an open/expanded/selected state).
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=table&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=table&`, { timeout: 20 * 60 * 1000 });
     await expect(page.locator('[data-slot="table"]')).toBeVisible();
     await expectNoAxeViolations(page, "table: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });

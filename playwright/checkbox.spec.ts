@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('test', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=checkbox&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=checkbox&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' }); // Increase timeout to 20 minutes
   let checkbox = page.getByRole('checkbox', { name: 'Demo Checkbox' });
   await expect(checkbox).toBeVisible();
   // The checkbox should not be checked initially
@@ -20,12 +21,12 @@ test('test', async ({ page }) => {
 
 test.describe('Axe automated scan', () => {
   test('loaded (unchecked) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=checkbox&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/component/?name=checkbox&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
     await expectNoAxeViolations(page, 'checkbox: unchecked', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('checked has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=checkbox&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/component/?name=checkbox&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
     await page.getByRole('checkbox', { name: 'Demo Checkbox' }).click();
     await expectNoAxeViolations(page, 'checkbox: checked', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });

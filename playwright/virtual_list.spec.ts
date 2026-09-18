@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 // Helper to run scrollHeight stability test with configurable tolerance
 async function testScrollHeightStability(
   page: import("@playwright/test").Page,
   tolerancePx: number
 ) {
-  await page.goto("http://127.0.0.1:8080/component/?name=virtual_list&", {
+  await page.goto(`${BASE_URL}/component/?name=virtual_list&`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -95,7 +96,7 @@ test("scrollHeight remains stable during continuous scroll", async ({ page }) =>
 // Test with random_heights variant which has highly variable item sizes
 // This reproduces production failure where adaptive estimation struggles
 test("scrollHeight stable with random heights variant", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/block/?name=virtual_list&variant=random_heights", {
+  await page.goto(`${BASE_URL}/component/block/?name=virtual_list&variant=random_heights`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -168,7 +169,7 @@ test("scrollHeight stable with random heights variant", async ({ page }) => {
 });
 
 test("virtual list virtualizes rows and updates on scroll", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=virtual_list&", { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=virtual_list&`, { timeout: 20 * 60 * 1000 });
 
   const cards = page.getByRole("listitem");
   await expect(cards.first()).toBeVisible({ timeout: 30000 });
@@ -218,7 +219,7 @@ test("resize churn while scrolling does not panic (holds no borrow across resize
   page.on("console", (msg) => consoleMessages.push(msg.text()));
   page.on("pageerror", (err) => consoleMessages.push(`pageerror: ${err.message}`));
 
-  await page.goto("http://127.0.0.1:8080/component/block/?name=virtual_list&variant=random_heights", {
+  await page.goto(`${BASE_URL}/component/block/?name=virtual_list&variant=random_heights`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -254,7 +255,7 @@ test("resize churn while scrolling does not panic (holds no borrow across resize
 test.describe("Axe automated scan", () => {
   // Virtual list has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=virtual_list&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=virtual_list&`, { timeout: 20 * 60 * 1000 });
     await expect(page.getByRole("list").first()).toBeVisible({ timeout: 30000 });
     await expectNoAxeViolations(page, "virtual_list: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });

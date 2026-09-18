@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=hover_card&");
+  await page.goto(`${BASE_URL}/component/?name=hover_card&`);
   let tooltip = page.getByRole("tooltip");
   // tabbing to the trigger element should show the tooltip
   await page.locator("#component-preview-frame").focus();
@@ -24,7 +25,7 @@ test("test", async ({ page }) => {
 
 test.describe("Axe automated scan", () => {
   test("loaded (card closed) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=hover_card&");
+    await page.goto(`${BASE_URL}/component/?name=hover_card&`);
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole("button", { name: "Dioxus" })).toBeVisible();
@@ -32,7 +33,7 @@ test.describe("Axe automated scan", () => {
   });
 
   test("card open (hover) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=hover_card&");
+    await page.goto(`${BASE_URL}/component/?name=hover_card&`);
     await page.getByRole("button", { name: "Dioxus" }).hover();
     await expect(page.getByRole("tooltip")).toBeVisible();
     await expectNoAxeViolations(page, "hover-card: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
@@ -54,7 +55,7 @@ test.describe("Axe automated scan", () => {
 // (row 7).
 test.describe("Close-fade animation (docs/backlog.md rows 19, 7)", () => {
   test("content fades out (opacity -> 0, still popover-open) before unmounting", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=hover_card&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=hover_card&`, { timeout: 20 * 60 * 1000 });
     const trigger = page.getByRole("button", { name: "Dioxus" });
     await trigger.hover();
     const card = page.getByRole("tooltip");

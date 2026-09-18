@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
+  await page.goto(`${BASE_URL}/component/?name=calendar&`, {
     timeout: 20 * 60 * 1000,
   }); // Increase timeout to 20 minutes
   await page.waitForLoadState('networkidle');
@@ -78,7 +79,7 @@ test("test", async ({ page }) => {
 });
 
 test("year navigation by moving 52 weeks with arrow keys", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
+  await page.goto(`${BASE_URL}/component/?name=calendar&`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -142,7 +143,7 @@ test("year navigation by moving 52 weeks with arrow keys", async ({ page }) => {
 });
 
 test("shift + arrow keys navigation", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
+  await page.goto(`${BASE_URL}/component/?name=calendar&`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -192,7 +193,7 @@ async function testArrowKeyNavigation(
   startPosition: "first" | "last",
   expectedOrder: "ascending" | "descending"
 ) {
-  await page.goto("http://127.0.0.1:8080/component/?name=calendar&", {
+  await page.goto(`${BASE_URL}/component/?name=calendar&`, {
     timeout: 20 * 60 * 1000,
   });
 
@@ -275,13 +276,13 @@ test.describe("Axe automated scan", () => {
   // Calendar renders inline (no overlay); a day is focused/"selected" by
   // keyboard, so that state, plus the plain loaded state, are scanned.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=calendar&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=calendar&`, { timeout: 20 * 60 * 1000 });
     await page.waitForLoadState("networkidle");
     await expectNoAxeViolations(page, "calendar: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("a day focused via keyboard has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=calendar&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=calendar&`, { timeout: 20 * 60 * 1000 });
     await page.waitForLoadState("networkidle");
     const calendar = page.locator("#component-preview-frame").first();
     // Click the prev/next nav buttons first, exactly as the file's own main

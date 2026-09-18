@@ -32,9 +32,10 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
-const PAGE_URL = "http://127.0.0.1:8080/component/?name=date_picker&";
+const PAGE_URL = `${BASE_URL}/component/?name=date_picker&`;
 
 async function gotoDatePicker(page: Page) {
   await page.goto(PAGE_URL, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });

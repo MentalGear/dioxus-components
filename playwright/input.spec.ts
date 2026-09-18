@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=input&", {
+  await page.goto(`${BASE_URL}/component/?name=input&`, {
     timeout: 20 * 60 * 1000,
   }); // Increase timeout to 20 minutes
 
@@ -13,7 +14,7 @@ test("test", async ({ page }) => {
 test.describe("Axe automated scan", () => {
   // Input has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=input&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=input&`, { timeout: 20 * 60 * 1000 });
     // Wait for the wasm app to actually render before scanning -- without
     // this, axe can catch the pre-hydration document shell (no <main>, no
     // h1 yet) and report a false "page has no main landmark"/"no h1" that

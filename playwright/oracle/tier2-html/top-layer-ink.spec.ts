@@ -120,10 +120,11 @@
  */
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
-const url = (name: string) => `http://127.0.0.1:8080/component/?name=${name}&`;
+const url = (name: string) => `${BASE_URL}/component/?name=${name}&`;
 
 async function goto(page: Page, name: string) {
   await page.goto(url(name), { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });

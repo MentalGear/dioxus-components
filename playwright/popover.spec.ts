@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   await expect(popoverButton).toBeVisible();
   await popoverButton.click();
@@ -44,7 +45,7 @@ test("test", async ({ page }) => {
 });
 
 test("popover dismisses when clicking outside", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   await popoverButton.click();
   const dialog = page.getByRole("dialog");
@@ -62,7 +63,7 @@ test("popover stays open when clicking non-focusable content inside it", async (
   // is outside the popover's root while still containing it. The shared
   // handler read that as focus leaving and closed the popover the user just
   // clicked into.
-  await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   await popoverButton.click();
   const dialog = page.getByRole("dialog");
@@ -81,7 +82,7 @@ test("rapid open/close/open settles on the correct final state", async ({ page }
   // before that task's animation settles, a naive fix can let the stale
   // task's `show_in_dom.set(false)` run after the fresh reopen already set
   // `show_in_dom.set(true)` -- the popover vanishes although it is open.
-  await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   const dialog = page.getByRole("dialog");
 
@@ -119,7 +120,7 @@ test("an animation cancelled with no successor cycle still unmounts", async ({ p
   // `show_in_dom`, the closed (but still `opacity: 0`) node stays mounted
   // forever. The generation counter must apply the stale cycle's own result
   // in that case, since no newer generation exists to own it.
-  await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   const dialog = page.getByRole("dialog");
 
@@ -152,7 +153,7 @@ test("an animation cancelled with no successor cycle still unmounts", async ({ p
 
 test.describe("Axe automated scan", () => {
   test("loaded (popover closed) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+    await page.goto(`${BASE_URL}/component/?name=popover&`);
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole("button", { name: "Show Popover" })).toBeVisible();
@@ -160,7 +161,7 @@ test.describe("Axe automated scan", () => {
   });
 
   test("open has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=popover&");
+    await page.goto(`${BASE_URL}/component/?name=popover&`);
     await page.getByRole("button", { name: "Show Popover" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectNoAxeViolations(page, "popover: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
@@ -235,7 +236,7 @@ test.describe("Axe automated scan", () => {
 // a genuinely script-driven toggle, exactly the path row 19 fixes.
 test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)", () => {
   test("content fades out (opacity -> 0, still popover-open) before unmounting", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=popover&variant=non_modal&", {
+    await page.goto(`${BASE_URL}/component/?name=popover&variant=non_modal&`, {
       timeout: 20 * 60 * 1000,
     });
     const trigger = page.getByRole("button", { name: "Open popover" });

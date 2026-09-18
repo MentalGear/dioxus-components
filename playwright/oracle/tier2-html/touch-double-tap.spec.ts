@@ -101,6 +101,7 @@
  */
 
 import { test, expect, devices, type Page } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
 // Same reasoning as touch-focus-zoom.spec.ts: run the iPhone 13 device
 // descriptor on Chromium (this repo's local lanes ship no WebKit project).
@@ -109,7 +110,7 @@ import { test, expect, devices, type Page } from "@playwright/test";
 // real Mobile Safari to observe directly (docs/backlog.md row 4).
 test.use({ ...devices["iPhone 13"], defaultBrowserType: "chromium" });
 
-const BASE = "http://127.0.0.1:8080";
+const BASE = BASE_URL;
 
 // Mirrors preview/assets/main.css's app-layer selector list exactly -- see
 // that rule's own comment for why each entry is there.

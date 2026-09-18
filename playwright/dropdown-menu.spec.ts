@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('test', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+  await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
   let menuElement = page.getByRole('button', { name: 'Open Menu' });
   // The menu should not be open initially
   await expect(menuElement).toHaveAttribute('data-state', 'closed');
@@ -60,7 +61,7 @@ test('test', async ({ page }) => {
 // stylesheet authors `min-width` only, never `width`.
 test('open content is fit-content width, not full page width, and sits near its trigger', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+  await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
   const trigger = page.getByRole('button', { name: 'Open Menu' });
   const triggerBox = await trigger.boundingBox();
   await trigger.click();
@@ -82,7 +83,7 @@ test('open content is fit-content width, not full page width, and sits near its 
 
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Open Menu' })).toBeVisible();
@@ -90,7 +91,7 @@ test.describe('Axe automated scan', () => {
   });
 
   test('menu open has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=dropdown_menu&');
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
     await page.getByRole('button', { name: 'Open Menu' }).click();
     await expect(page.getByRole('menu')).toBeVisible();
     await expectNoAxeViolations(page, 'dropdown-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });

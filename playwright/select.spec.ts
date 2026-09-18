@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 // docs/backlog.md row 8: SelectTrigger's role is now "combobox" (APG
 // select-only combobox pattern), not an implicit button -- see
@@ -13,7 +14,7 @@ const multiSelectTrigger = (page: Page) =>
     page.getByRole("combobox").filter({ hasText: /Pepperoni|Mushroom|Onion/ });
 
 test("test", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&", {
+    await page.goto(`${BASE_URL}/component/?name=select&`, {
         timeout: 20 * 60 * 1000,
         waitUntil: 'networkidle'
     }); // Increase timeout to 20 minutes
@@ -75,7 +76,7 @@ test("test", async ({ page }) => {
 });
 
 test("tabbing out of menu closes the select menu", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     // Find Select a fruit...
     let selectTrigger = singleSelectTrigger(page);
     await selectTrigger.click();
@@ -91,7 +92,7 @@ test("tabbing out of menu closes the select menu", async ({ page }) => {
 });
 
 test("multi-select toggles options and stays open", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&variant=multi&", {
+    await page.goto(`${BASE_URL}/component/?name=select&variant=multi&`, {
         timeout: 20 * 60 * 1000,
     });
     const selectTrigger = multiSelectTrigger(page);
@@ -129,7 +130,7 @@ test("multi-select toggles options and stays open", async ({ page }) => {
 });
 
 test("mobile: multi-select tapping options keeps the dropdown open", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&variant=multi&", {
+    await page.goto(`${BASE_URL}/component/?name=select&variant=multi&`, {
         timeout: 20 * 60 * 1000,
     });
     const selectTrigger = multiSelectTrigger(page);
@@ -154,7 +155,7 @@ test("mobile: multi-select tapping options keeps the dropdown open", async ({ pa
 });
 
 test("multi-select keyboard toggles and exposes aria-multiselectable", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&variant=multi&", {
+    await page.goto(`${BASE_URL}/component/?name=select&variant=multi&`, {
         timeout: 20 * 60 * 1000,
     });
     const selectTrigger = multiSelectTrigger(page);
@@ -192,7 +193,7 @@ test("multi-select keyboard toggles and exposes aria-multiselectable", async ({ 
 });
 
 test("tabbing out of item closes the select menu", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     // Find Select a fruit...
     let selectTrigger = singleSelectTrigger(page);
     await selectTrigger.click();
@@ -213,7 +214,7 @@ test("tabbing out of item closes the select menu", async ({ page }) => {
 });
 
 test("options selected", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     // Find Select a fruit...
     let selectTrigger = singleSelectTrigger(page);
     await selectTrigger.click();
@@ -242,7 +243,7 @@ test("options selected", async ({ page }) => {
 });
 
 test("down arrow selects first element", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     // Find Select a fruit...
     let selectTrigger = singleSelectTrigger(page);
     const selectMenu = page.getByRole("listbox");
@@ -255,7 +256,7 @@ test("down arrow selects first element", async ({ page }) => {
 });
 
 test("up arrow selects last element", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     // Find Select a fruit...
     let selectTrigger = singleSelectTrigger(page);
     const selectMenu = page.getByRole("listbox");
@@ -268,7 +269,7 @@ test("up arrow selects last element", async ({ page }) => {
 });
 
 test("keyboard navigation skips disabled options", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     const selectTrigger = singleSelectTrigger(page);
     await selectTrigger.click();
 
@@ -287,7 +288,7 @@ test("keyboard navigation skips disabled options", async ({ page }) => {
 });
 
 test("typeahead skips disabled options", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=select&");
+    await page.goto(`${BASE_URL}/component/?name=select&`);
     const selectTrigger = singleSelectTrigger(page);
     await selectTrigger.click();
 
@@ -360,7 +361,7 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
 
     test("component page: listbox tracks trigger width, not viewport width", async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 800 });
-        await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
+        await page.goto(`${BASE_URL}/component/?name=select&`, { waitUntil: 'networkidle' });
         const trigger = singleSelectTrigger(page);
         await trigger.click();
         const listbox = page.getByRole("listbox");
@@ -372,7 +373,7 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
         // The original report: desktop width, home page, the styled Select
         // cards ("Choose a fruit" / "Select an option").
         await page.setViewportSize({ width: 1280, height: 800 });
-        await page.goto("http://127.0.0.1:8080/", { waitUntil: 'networkidle' });
+        await page.goto(`${BASE_URL}/`, { waitUntil: 'networkidle' });
         const trigger = page.getByRole("combobox").filter({ hasText: /^(Select an option|Choose a fruit)$/ }).first();
         await trigger.click();
         const listbox = page.getByRole("listbox");
@@ -404,7 +405,7 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
  */
 test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026-09-14)", () => {
     test("a selected option's checkmark reaches the row's own right edge, not just the label", async ({ page }) => {
-        await page.goto("http://127.0.0.1:8080/component/?name=form&", { waitUntil: "networkidle" });
+        await page.goto(`${BASE_URL}/component/?name=form&`, { waitUntil: "networkidle" });
         const trigger = page.getByRole("combobox", { name: "Fruit, required (library)" });
         await trigger.click();
         const listbox = page.getByRole("listbox", { name: "Fruit options, required (library)" });
@@ -454,12 +455,12 @@ test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026
 
 test.describe("Axe automated scan", () => {
     test("loaded (listbox closed) has no automatically detectable a11y issues", async ({ page }) => {
-        await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
+        await page.goto(`${BASE_URL}/component/?name=select&`, { waitUntil: 'networkidle' });
         await expectNoAxeViolations(page, "select: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
 
     test("listbox open has no automatically detectable a11y issues", async ({ page }) => {
-        await page.goto("http://127.0.0.1:8080/component/?name=select&", { waitUntil: 'networkidle' });
+        await page.goto(`${BASE_URL}/component/?name=select&`, { waitUntil: 'networkidle' });
         await singleSelectTrigger(page).click();
         await expect(page.getByRole("listbox")).toHaveAttribute("data-state", "open");
         await expectNoAxeViolations(page, "select: listbox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });

@@ -78,17 +78,18 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const gotoTopLayer = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=top_layer&", {
+  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });
 
 const gotoDialog = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=dialog&", {
+  page.goto(`${BASE_URL}/component/?name=dialog&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });
@@ -655,7 +656,7 @@ test.describe("Rule 8 — the opening-gesture false positive: a modal Popover's 
     const context = await browser.newContext({ hasTouch: true });
     const page = await context.newPage();
     try {
-      await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+      await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
       const trigger = page.getByRole("button", { name: "Show Popover" });
       await trigger.scrollIntoViewIfNeeded();
       await trigger.tap();
@@ -726,7 +727,7 @@ test.describe("Rule 8 — the opening-gesture false positive: a modal Popover's 
       };
     });
 
-    await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
     const trigger = page.getByRole("button", { name: "Show Popover" });
     await trigger.scrollIntoViewIfNeeded();
     await trigger.click();

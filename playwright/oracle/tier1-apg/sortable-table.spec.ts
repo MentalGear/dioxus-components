@@ -78,6 +78,7 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { BASE_URL } from "../../base-url";
 
 const sortableTableUrl = pathToFileURL(
   path.resolve(
@@ -87,7 +88,7 @@ const sortableTableUrl = pathToFileURL(
 ).href;
 
 const gotoDataTable = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=data_table&", { timeout: 20 * 60 * 1000 });
+  page.goto(`${BASE_URL}/component/?name=data_table&`, { timeout: 20 * 60 * 1000 });
 
 /**
  * R1: every locator in `sortableHeaders` exposes a valid `aria-sort` state,

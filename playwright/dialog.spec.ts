@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('test', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   await page.getByRole('button', { name: 'Show Dialog' }).click();
   // Assert the dialog is open
   const dialog = page.getByRole('dialog');
@@ -64,7 +65,7 @@ test('dialog stays open when clicking non-focusable content inside it', async ({
   // focused control, and the browser moves focus to the nearest focusable
   // *ancestor* -- outside the dialog's root while still containing it. The
   // shared handler read that as focus leaving and closed the dialog.
-  await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 });
   await page.getByRole('button', { name: 'Show Dialog' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -76,7 +77,7 @@ test('dialog stays open when clicking non-focusable content inside it', async ({
 
 test.describe('Axe automated scan', () => {
   test('loaded (dialog closed) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 });
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Show Dialog' })).toBeVisible();
@@ -84,7 +85,7 @@ test.describe('Axe automated scan', () => {
   });
 
   test('open has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=dialog&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'Show Dialog' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectNoAxeViolations(page, 'dialog: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });

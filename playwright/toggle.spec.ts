@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('test', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=toggle&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' }); // Increase timeout to 20 minutes
 
   let toggleElement = page.getByRole('button', { name: 'B', exact: true });
   await expect(toggleElement).toBeVisible();
@@ -22,12 +23,12 @@ test('test', async ({ page }) => {
 
 test.describe('Axe automated scan', () => {
   test('loaded (off) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/component/?name=toggle&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
     await expectNoAxeViolations(page, 'toggle: off', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test('on has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=toggle&', { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/component/?name=toggle&`, { timeout: 20 * 60 * 1000, waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'B', exact: true }).click();
     await expectNoAxeViolations(page, 'toggle: on', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });

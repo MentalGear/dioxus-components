@@ -116,6 +116,7 @@
 
 import { test, expect, devices, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 // Playwright's iPhone descriptors default to WebKit (`defaultBrowserType:
 // "webkit"`), which this repo's local lanes do not ship; the rule under test
@@ -125,7 +126,7 @@ import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../ax
 // missing calibration (docs/backlog.md row 4).
 test.use({ ...devices["iPhone 13"], defaultBrowserType: "chromium" });
 
-const BASE = "http://127.0.0.1:8080";
+const BASE = BASE_URL;
 
 // Matches every element WebKit's auto-zoom rule cares about: text-like
 // `input`s, `textarea`, `select`, and editable `contenteditable` hosts.
