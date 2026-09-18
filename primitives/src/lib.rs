@@ -62,6 +62,7 @@ pub mod toggle_group;
 pub mod toolbar;
 pub mod tooltip;
 mod top_layer;
+mod typeahead;
 pub(crate) mod r#virtual;
 pub mod virtual_list;
 

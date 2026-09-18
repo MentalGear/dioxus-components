@@ -227,6 +227,48 @@ test.describe("APG Menu (opened from a menu button) pattern — DropdownMenu con
     );
     await expect(page.getByText("Selected: Duplicate")).toBeVisible();
   });
+
+  // docs/backlog.md row 11 (Phase 6, typeahead). Demo item order (see
+  // dropdown_menu/variants/main/mod.rs's own top-of-file comment): Edit=0,
+  // Undo=1 (disabled), Duplicate=2, "More tools" (a DropdownMenuSubTrigger,
+  // no text_value in this demo, so unsearchable) =3, Delete=4 -- Duplicate
+  // and Delete are the pair sharing a first letter ("D") these rows target.
+  test("DropdownMenu item — printable character (Optional): \"Move focus to the next item in the current menu whose label begins with that printable character\" (first match)", async ({ page }) => {
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+  });
+
+  test("DropdownMenu item — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (a second, different character narrows to the matching prefix)", async ({ page }) => {
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.keyboard.press("e"); // buffer "de" -- Duplicate no longer matches, Delete does
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
+  });
+
+  test("DropdownMenu item — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (repeating the same character cycles through matches)", async ({ page }) => {
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.keyboard.press("d"); // repeat -- cycles to the next "D" item
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
+    await page.keyboard.press("d"); // repeat again -- wraps back to the first
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+  });
+
+  test("DropdownMenu item — printable character (Optional): the search buffer resets after ~1000ms of inactivity", async ({ page }) => {
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press("e");
+    // If the buffer had NOT reset, "d" then "e" would search on "de" and
+    // land on "Delete" (see the narrowing row above). Landing on "Edit"
+    // instead -- a fresh, single-character "e" search -- proves the
+    // >1000ms gap cleared it.
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeFocused();
+  });
 });
 
 // ============================================================================
@@ -367,6 +409,57 @@ test.describe("APG Menu and Menubar pattern — Menubar", () => {
       .filter({ has: page.getByRole("menuitem", { name: "New" }) })
       .last();
     await expect(fileMenu).toHaveCount(0);
+  });
+
+  // docs/backlog.md row 11 (Phase 6, typeahead). The "Edit" menu (Cut=0,
+  // Copy=1, Paste=2) is the pair sharing a first letter ("C") these rows
+  // target -- the "File" menu (New/Open/Save) has no such pair. Opened via
+  // ArrowDown on the trigger, the one trigger key that both opens the menu
+  // and places focus on its first item (see the "Down Arrow" row above).
+  test("MenubarItem — printable character (Optional): \"Move focus to the next item in the current menu whose label begins with that printable character\" (first match, wrapping)", async ({ page }) => {
+    const editTrigger = page.getByRole("menuitem", { name: "Edit" });
+    await editTrigger.focus();
+    await page.keyboard.press("ArrowDown"); // opens, focuses Cut
+    await page.keyboard.press("ArrowDown"); // Copy
+    await page.keyboard.press("ArrowDown"); // Paste
+    await page.keyboard.press("c");
+    // From Paste (no "C" item after it), the search wraps back to the
+    // first "C" item, Cut.
+    await expect(page.getByRole("menuitem", { name: "Cut" })).toBeFocused();
+  });
+
+  test("MenubarItem — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (a second, different character narrows to the matching prefix)", async ({ page }) => {
+    const editTrigger = page.getByRole("menuitem", { name: "Edit" });
+    await editTrigger.focus();
+    await page.keyboard.press("ArrowDown"); // opens, focuses Cut
+    await page.keyboard.press("c"); // single-character search excludes Cut itself -> Copy
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeFocused();
+    await page.keyboard.press("o"); // buffer "co" -- Copy still matches, focus stays
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeFocused();
+  });
+
+  test("MenubarItem — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (repeating the same character cycles through matches)", async ({ page }) => {
+    const editTrigger = page.getByRole("menuitem", { name: "Edit" });
+    await editTrigger.focus();
+    await page.keyboard.press("ArrowDown"); // opens, focuses Cut
+    await page.keyboard.press("c");
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeFocused();
+    await page.keyboard.press("c"); // repeat -- cycles past Paste (no match) to Cut
+    await expect(page.getByRole("menuitem", { name: "Cut" })).toBeFocused();
+  });
+
+  test("MenubarItem — printable character (Optional): the search buffer resets after ~1000ms of inactivity", async ({ page }) => {
+    const editTrigger = page.getByRole("menuitem", { name: "Edit" });
+    await editTrigger.focus();
+    await page.keyboard.press("ArrowDown"); // opens, focuses Cut
+    await page.keyboard.press("c");
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press("u");
+    // If the buffer had NOT reset, "c" then "u" would search on "cu" and
+    // move focus to "Cut". No item starts with "u" alone, so staying on
+    // "Copy" proves the >1000ms gap cleared the buffer.
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeFocused();
   });
 });
 
@@ -1147,5 +1240,59 @@ test.describe("APG Menu pattern (context-menu invocation) — ContextMenu", () =
     // not inferred from the source, since the source alone would predict a
     // fail here.
     await expect(page.getByRole("menu")).toBeVisible();
+  });
+
+  // docs/backlog.md row 11 (Phase 6, typeahead). Demo item order (see
+  // context_menu/variants/main/mod.rs's own top-of-file comment): Edit=0,
+  // Undo=1 (disabled), Duplicate=2, Delete=3, "More tools" (a
+  // ContextMenuSubTrigger, no text_value in this demo, so unsearchable) =4
+  // -- Duplicate and Delete are the pair sharing a first letter ("D") these
+  // rows target. Each test opens the menu itself (this describe block has
+  // no shared `beforeEach`, matching the Shift+F10 row above and
+  // `context-menu.spec.ts`'s own "keyboard navigation" test).
+  test("ContextMenu item — printable character (Optional): \"Move focus to the next item in the current menu whose label begins with that printable character\" (first match)", async ({ page }) => {
+    await goto(page, "context_menu");
+    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+  });
+
+  test("ContextMenu item — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (a second, different character narrows to the matching prefix)", async ({ page }) => {
+    await goto(page, "context_menu");
+    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.keyboard.press("e"); // buffer "de" -- Duplicate no longer matches, Delete does
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
+  });
+
+  test("ContextMenu item — printable character (Optional): \"Move focus to the next item ... whose label begins with that printable character\" (repeating the same character cycles through matches)", async ({ page }) => {
+    await goto(page, "context_menu");
+    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.keyboard.press("d"); // repeat -- cycles to the next "D" item
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
+    await page.keyboard.press("d"); // repeat again -- wraps (skipping the
+    // unlabelled "More tools" row) back to the first
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+  });
+
+  test("ContextMenu item — printable character (Optional): the search buffer resets after ~1000ms of inactivity", async ({ page }) => {
+    await goto(page, "context_menu");
+    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    await page.keyboard.press("ArrowDown"); // Edit
+    await page.keyboard.press("d");
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press("e");
+    // If the buffer had NOT reset, "d" then "e" would search on "de" and
+    // land on "Delete" (see the narrowing row above). Landing on "Edit"
+    // instead -- a fresh, single-character "e" search -- proves the
+    // >1000ms gap cleared it.
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeFocused();
   });
 });

@@ -232,6 +232,14 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
     // effect stays out of this shared construction.
     crate::menu_root::use_open_focus_sync(focus, open, set_open, submenu_open_count);
 
+    // docs/backlog.md row 11 (Phase 6, typeahead): one buffer for this
+    // menu's own root-level items (including any `DropdownMenuSubTrigger`
+    // rows, which register in this same `focus` collection -- see that
+    // component's own `text_value` prop). A submenu's own open content gets
+    // its own, independent `TypeaheadState` -- see
+    // `DropdownMenuSubContentRendered`.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
+
     // A fresh open shouldn't inherit an `interacted_outside` flag set by a
     // previous close -- otherwise an internal close (Escape, item select)
     // right after an outside-dismiss would wrongly skip refocusing the
@@ -321,6 +329,28 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
             }
             Key::Home => ctx.focus.focus_first(),
             Key::End => ctx.focus.focus_last(),
+            // APG Menu and Menubar pattern, "Keyboard Interaction" (h2),
+            // same pinned commit as `DropdownMenuSubTrigger`'s doc:
+            // "Any key that corresponds to a printable character
+            // (Optional): Move focus to the next item in the current menu
+            // whose label begins with that printable character." Only
+            // while actually open -- while closed, `ctx.focus` has no
+            // registered items to search (`DropdownMenuContent` mounts
+            // items only once `render()` is true), so there is nothing to
+            // move focus to. `TypeaheadState::handle_key` itself declines
+            // (returns `false`, leaving this `return` before
+            // `prevent_default()` below) any Ctrl/Meta/Alt-held key and
+            // Space -- the latter already has its own arm above, matched
+            // first, so it never reaches here regardless.
+            Key::Character(_) => {
+                if !open() {
+                    return;
+                }
+                let entries = ctx.focus.text_entries();
+                if !typeahead.handle_key(ctx.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -776,6 +806,16 @@ pub struct DropdownMenuItemProps<T: Clone + PartialEq + 'static> {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Explicit label text used for typeahead search (`docs/backlog.md`
+    /// row 11 -- APG's "Any key that corresponds to a printable character"
+    /// rule). When not set, falls back to [`Self::value`]'s own `String`/
+    /// `&str` representation if it has one, else this item is not
+    /// searchable by typeahead at all -- see `option_text_value` (this
+    /// crate's `select/` uses the identical fallback for its own generic
+    /// item value).
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// The callback function that will be called when the item is selected. The value of the item will be passed as an argument.
     #[props(default)]
     pub on_select: Callback<T>,
@@ -839,7 +879,17 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
     let mut ctx: DropdownMenuContext = use_context();
 
     let disabled = move || (ctx.disabled)() || (props.disabled)();
-    let item = use_item(collection_item(ctx.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(ctx.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || {
+                Some(crate::selection::option_text_value(
+                    &(props.value)(),
+                    (props.text_value)(),
+                    "DropdownMenuItem",
+                ))
+            }),
+    );
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
@@ -1063,6 +1113,17 @@ pub struct DropdownMenuSubTriggerProps {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Explicit label text used for root-menu typeahead search
+    /// (`docs/backlog.md` row 11): this sub-trigger's own row is a
+    /// registered item of the *enclosing* menu's collection (see this
+    /// component's own doc), so it is just as searchable as any
+    /// [`DropdownMenuItem`] when it has a label to search. Unlike an item,
+    /// there is no `value` prop here to fall back to, so an unset
+    /// `text_value` simply leaves this row unmatched by typeahead rather
+    /// than guessing at one.
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// Additional attributes to apply to the sub-trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -1126,7 +1187,11 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
     // the enclosing menu's collection (`ctx.focus`), the same way
     // `MenubarTrigger` registers in `Menubar`'s row rather than its own
     // menu's collection (`menubar.rs`).
-    let item = use_item(collection_item(ctx.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(ctx.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || (props.text_value)()),
+    );
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
@@ -1320,6 +1385,10 @@ fn DropdownMenuSubContentRendered(
     // within the grace window actually closes it.
     let mut hover_open = sub.hover_open;
     let mut hover_close = sub.hover_close;
+    // docs/backlog.md row 11 (Phase 6, typeahead): this submenu's own
+    // buffer, independent of the enclosing menu's root-level one -- see
+    // `DropdownMenu`'s identical call for the general rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1428,6 +1497,17 @@ fn DropdownMenuSubContentRendered(
             Key::ArrowUp => sub.focus.focus_prev(),
             Key::Home => sub.focus.focus_first(),
             Key::End => sub.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm for the full APG citation.
+            // Scoped to `sub.focus`, this submenu's own items, never the
+            // enclosing menu's -- matches every other navigation key in
+            // this same handler.
+            Key::Character(_) => {
+                let entries = sub.focus.text_entries();
+                if !typeahead.handle_key(sub.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -1487,6 +1567,9 @@ fn DropdownMenuSubContentRendered(
     // events are lower-priority here.
     let mut hover_open = sub.hover_open;
     let mut hover_close = sub.hover_close;
+    // docs/backlog.md row 11 (Phase 6, typeahead): see the web arm's
+    // identical call above for the general rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
 
     let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
         Vec::new()
@@ -1512,6 +1595,17 @@ fn DropdownMenuSubContentRendered(
             Key::ArrowUp => sub.focus.focus_prev(),
             Key::Home => sub.focus.focus_first(),
             Key::End => sub.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm for the full APG citation.
+            // Scoped to `sub.focus`, this submenu's own items, never the
+            // enclosing menu's -- matches every other navigation key in
+            // this same handler.
+            Key::Character(_) => {
+                let entries = sub.focus.text_entries();
+                if !typeahead.handle_key(sub.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -1557,6 +1651,12 @@ pub struct DropdownMenuSubItemProps<T: Clone + PartialEq + 'static> {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Explicit label text used for typeahead search within this submenu
+    /// -- see [`DropdownMenuItemProps::text_value`]'s identical doc for the
+    /// fallback when this is not set.
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// The callback function that will be called when the item is
     /// selected. The value of the item will be passed as an argument.
     #[props(default)]
@@ -1596,7 +1696,17 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
     let mut sub: crate::menu_sub::SubMenuState = use_context();
 
     let disabled = move || (ctx.disabled)() || (props.disabled)();
-    let item = use_item(collection_item(sub.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(sub.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || {
+                Some(crate::selection::option_text_value(
+                    &(props.value)(),
+                    (props.text_value)(),
+                    "DropdownMenuSubItem",
+                ))
+            }),
+    );
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 

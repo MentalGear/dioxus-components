@@ -699,6 +699,11 @@ fn ContextMenuContentRendered(
     // to the top layer and has a real rendered size to measure.
     crate::top_layer::use_point_anchor_clamp(id.clone(), x, y, open);
 
+    // docs/backlog.md row 11 (Phase 6, typeahead): one buffer for this
+    // menu's own items -- see `DropdownMenu`'s identical call
+    // (`dropdown_menu.rs`) for the general rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
+
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
             Key::Escape => ctx.focus.clear_focus(),
@@ -712,6 +717,22 @@ fn ContextMenuContentRendered(
             }
             Key::Home => ctx.focus.focus_first(),
             Key::End => ctx.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm (`dropdown_menu.rs`) for the
+            // full APG citation. Only while genuinely open, matching this
+            // handler's own `Key::ArrowUp` arm just above -- while closed
+            // (or mid close-animation), `ctx.focus` may still carry
+            // whatever it last held, so this avoids spuriously reacting to
+            // a keystroke on an unrelated, no-longer-visible menu.
+            Key::Character(_) => {
+                if !open() {
+                    return;
+                }
+                let entries = ctx.focus.text_entries();
+                if !typeahead.handle_key(ctx.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -830,6 +851,10 @@ fn ContextMenuContentRendered(
     let open = ctx.open;
     let (x, y) = (ctx.position)();
 
+    // docs/backlog.md row 11 (Phase 6, typeahead): see the web arm's
+    // identical call above for the general rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
+
     let onkeydown = move |event: Event<KeyboardData>| {
         match event.key() {
             Key::Escape => ctx.focus.clear_focus(),
@@ -843,6 +868,22 @@ fn ContextMenuContentRendered(
             }
             Key::Home => ctx.focus.focus_first(),
             Key::End => ctx.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm (`dropdown_menu.rs`) for the
+            // full APG citation. Only while genuinely open, matching this
+            // handler's own `Key::ArrowUp` arm just above -- while closed
+            // (or mid close-animation), `ctx.focus` may still carry
+            // whatever it last held, so this avoids spuriously reacting to
+            // a keystroke on an unrelated, no-longer-visible menu.
+            Key::Character(_) => {
+                if !open() {
+                    return;
+                }
+                let entries = ctx.focus.text_entries();
+                if !typeahead.handle_key(ctx.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -943,6 +984,12 @@ pub struct ContextMenuItemProps {
     /// The index of the item in the menu
     pub index: ReadSignal<usize>,
 
+    /// Explicit label text used for typeahead search (`docs/backlog.md`
+    /// row 11 -- APG's "Any key that corresponds to a printable character"
+    /// rule). When not set, falls back to [`Self::value`].
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// Callback when the item is selected
     #[props(default)]
     pub on_select: Callback<String>,
@@ -1011,7 +1058,11 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
     let mut ctx: ContextMenuCtx = use_context();
 
     let disabled = move || (props.disabled)() || (ctx.disabled)();
-    let item = use_item(collection_item(ctx.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(ctx.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || Some((props.text_value)().unwrap_or_else(|| (props.value)()))),
+    );
     let focused = move || item.focused();
 
     let onmounted = item.onmounted();
@@ -1228,6 +1279,13 @@ pub struct ContextMenuSubTriggerProps {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// Explicit label text used for root-menu typeahead search
+    /// (`docs/backlog.md` row 11) -- see
+    /// [`crate::dropdown_menu::DropdownMenuSubTriggerProps::text_value`]'s
+    /// identical doc for why there is no fallback beyond this prop.
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// Additional attributes to apply to the sub-trigger element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -1264,7 +1322,11 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
     // The sub-trigger is the focusable element, so it registers *itself* in
     // the enclosing (root) menu's collection -- see
     // `DropdownMenuSubTrigger`'s identical choice.
-    let item = use_item(collection_item(ctx.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(ctx.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || (props.text_value)()),
+    );
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
@@ -1430,6 +1492,11 @@ fn ContextMenuSubContentRendered(
     // within the grace window actually closes it.
     let mut hover_open = sub.hover_open;
     let mut hover_close = sub.hover_close;
+    // docs/backlog.md row 11 (Phase 6, typeahead): this submenu's own
+    // buffer, independent of the enclosing menu's root-level one -- see
+    // `DropdownMenu`'s identical call (`dropdown_menu.rs`) for the general
+    // rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
 
     crate::top_layer::use_popover_sync(
         id.clone(),
@@ -1503,6 +1570,16 @@ fn ContextMenuSubContentRendered(
             Key::ArrowUp => sub.focus.focus_prev(),
             Key::Home => sub.focus.focus_first(),
             Key::End => sub.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm (`dropdown_menu.rs`) for the
+            // full APG citation. Scoped to `sub.focus`, this submenu's own
+            // items, never the enclosing menu's.
+            Key::Character(_) => {
+                let entries = sub.focus.text_entries();
+                if !typeahead.handle_key(sub.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -1588,6 +1665,9 @@ fn ContextMenuSubContentRendered(
     // events are lower-priority here.
     let mut hover_open = sub.hover_open;
     let mut hover_close = sub.hover_close;
+    // docs/backlog.md row 11 (Phase 6, typeahead): see the web arm's
+    // identical call above for the general rationale.
+    let mut typeahead = crate::typeahead::use_typeahead_state();
 
     let trigger_id = sub.trigger_id;
     let onkeydown = move |event: Event<KeyboardData>| {
@@ -1604,6 +1684,16 @@ fn ContextMenuSubContentRendered(
             Key::ArrowUp => sub.focus.focus_prev(),
             Key::Home => sub.focus.focus_first(),
             Key::End => sub.focus.focus_last(),
+            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+            // `DropdownMenu`'s identical arm (`dropdown_menu.rs`) for the
+            // full APG citation. Scoped to `sub.focus`, this submenu's own
+            // items, never the enclosing menu's.
+            Key::Character(_) => {
+                let entries = sub.focus.text_entries();
+                if !typeahead.handle_key(sub.focus, &entries, &event) {
+                    return;
+                }
+            }
             _ => return,
         }
         event.prevent_default();
@@ -1653,6 +1743,12 @@ pub struct ContextMenuSubItemProps {
     /// The index of the item within the enclosing [`ContextMenuSubContent`].
     pub index: ReadSignal<usize>,
 
+    /// Explicit label text used for typeahead search within this submenu
+    /// -- see [`ContextMenuItemProps::text_value`]'s identical doc for the
+    /// fallback when this is not set.
+    #[props(default)]
+    pub text_value: ReadSignal<Option<String>>,
+
     /// Callback when the item is selected.
     #[props(default)]
     pub on_select: Callback<String>,
@@ -1690,7 +1786,11 @@ pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
     let mut sub: crate::menu_sub::SubMenuState = use_context();
 
     let disabled = move || (props.disabled)() || (ctx.disabled)();
-    let item = use_item(collection_item(sub.focus, props.index).disabled(disabled));
+    let item = use_item(
+        collection_item(sub.focus, props.index)
+            .disabled(disabled)
+            .text_value(move || Some((props.text_value)().unwrap_or_else(|| (props.value)()))),
+    );
     let focused = move || item.focused();
 
     let onmounted = item.onmounted();

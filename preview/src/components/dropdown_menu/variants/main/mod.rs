@@ -46,6 +46,13 @@ enum ToolOperation {
 pub fn Demo() -> Element {
     let mut selected_operation = use_signal(|| None);
 
+    // `text_value` is set explicitly on every item below (docs/backlog.md
+    // row 11, typeahead): `Operation`/`ToolOperation` are plain enums, not
+    // `String`/`&str`, so the item components' own value-based typeahead
+    // fallback (`crate::selection::option_text_value`) can't derive a label
+    // from `value` alone here the way it can for a `String`-valued item --
+    // an explicit `text_value` is required for these rows to be
+    // typeahead-searchable at all, not just a nicety.
     let operations = Operation::iter().enumerate().map(|(i, o)| {
         rsx! {
             DropdownMenuItem::<Operation> {
@@ -53,6 +60,7 @@ pub fn Demo() -> Element {
                 value: o,
                 index: i,
                 disabled: matches!(o, Operation::Undo),
+                text_value: o.to_string(),
                 on_select: move |value: Operation| {
                     selected_operation.set(Some(value.to_string()));
                 },
@@ -66,6 +74,7 @@ pub fn Demo() -> Element {
             DropdownMenuSubItem::<ToolOperation> {
                 value: o,
                 index: i,
+                text_value: o.to_string(),
                 on_select: move |value: ToolOperation| {
                     selected_operation.set(Some(value.to_string()));
                 },
@@ -83,13 +92,18 @@ pub fn Demo() -> Element {
                 // this file's top-of-file comment for why this sits at
                 // index 3, between Duplicate (2) and Delete (4).
                 DropdownMenuSub {
-                    DropdownMenuSubTrigger { index: 3usize, "More tools" }
+                    DropdownMenuSubTrigger {
+                        index: 3usize,
+                        text_value: "More tools",
+                        "More tools"
+                    }
                     DropdownMenuSubContent { {tool_operations} }
                 }
                 DropdownMenuItem::<String> {
                     class: "dx-dropdown-menu-item",
                     value: "Delete".to_string(),
                     index: 4usize,
+                    text_value: "Delete",
                     on_select: move |value: String| {
                         selected_operation.set(Some(value));
                     },

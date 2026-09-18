@@ -13,6 +13,10 @@ struct CollectionItemState {
     disabled: bool,
     hidden: bool,
     selected: bool,
+    // Optional label text, read back by `CollectionState::text_entries` --
+    // additive to this struct's other per-item fields, not a second item
+    // registry. See that method's own doc.
+    text_value: Option<String>,
 }
 
 impl CollectionItemState {
@@ -197,6 +201,31 @@ impl CollectionState {
             .read()
             .iter()
             .any(|item| item.index == index && item.available())
+    }
+
+    /// Every currently registered item's `(index, text value or empty
+    /// string, disabled)`, in index order -- the read side of the per-item
+    /// `text_value` registered via [`CollectionItemBuilder::text_value`].
+    /// Additive to the existing per-item registration [`use_item`] already
+    /// threads through for `key`/`disabled`/`hidden`/`selected`: a feature
+    /// that needs to search item text (currently only
+    /// `crate::typeahead::find_next_match`) reads it here instead of
+    /// keeping its own second, parallel item registry that would
+    /// inevitably drift from this one. `disabled` here means "not
+    /// available" (disabled *or* hidden), matching every other read on this
+    /// type (e.g. [`Self::is_available`]).
+    pub(crate) fn text_entries(&self) -> Vec<(usize, String, bool)> {
+        self.items
+            .read()
+            .iter()
+            .map(|item| {
+                (
+                    item.index,
+                    item.text_value.clone().unwrap_or_default(),
+                    !item.available(),
+                )
+            })
+            .collect()
     }
 
     pub(crate) fn first_available_index(&self) -> Option<usize> {
@@ -477,6 +506,7 @@ pub(crate) fn collection_item(
         disabled: Rc::new(|| false),
         hidden: Rc::new(|| false),
         selected: Rc::new(|| false),
+        text_value: Rc::new(|| None),
     }
 }
 
@@ -490,6 +520,7 @@ pub(crate) struct CollectionItemBuilder {
     disabled: Rc<dyn Fn() -> bool>,
     hidden: Rc<dyn Fn() -> bool>,
     selected: Rc<dyn Fn() -> bool>,
+    text_value: Rc<dyn Fn() -> Option<String>>,
 }
 
 impl CollectionItemBuilder {
@@ -518,6 +549,16 @@ impl CollectionItemBuilder {
         self.selected = Rc::new(selected);
         self
     }
+
+    /// Optional label text for this item, read back (in bulk, across every
+    /// registered item) by [`CollectionState::text_entries`]. Unset by
+    /// default (`None`) — nothing reads this unless a caller opts in, so
+    /// existing `collection_item(...)` call sites that never chain this are
+    /// unaffected.
+    pub(crate) fn text_value(mut self, text_value: impl Fn() -> Option<String> + 'static) -> Self {
+        self.text_value = Rc::new(text_value);
+        self
+    }
 }
 
 /// Register an item builder and return its handle: a roving `tabindex`,
@@ -532,6 +573,7 @@ pub(crate) fn use_item(builder: CollectionItemBuilder) -> CollectionItem {
         disabled,
         hidden,
         selected,
+        text_value,
     } = builder;
 
     let mut previous_item: Signal<Option<CollectionItemState>> = use_signal(|| None);
@@ -547,6 +589,7 @@ pub(crate) fn use_item(builder: CollectionItemBuilder) -> CollectionItem {
                 disabled: disabled(),
                 hidden: hidden(),
                 selected: selected(),
+                text_value: text_value(),
             };
             let stale_item = previous_item.peek().clone();
             if let Some(stale_item) = stale_item {
