@@ -4,11 +4,7 @@
 
 .dx-select-trigger {
   display: flex;
-  box-sizing: border-box;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--dx-space-2) var(--dx-space-3);
+
   /* A caller who never sets an explicit width (e.g. the `form` conformance
    * fixture's library-select fields) previously shrank to fit whatever
    * text happened to be selected -- as little as 85px for "apple". Since
@@ -22,6 +18,11 @@
    * Select trigger this stylesheet themes, not just this one demo field.
    */
   min-width: 8rem;
+  box-sizing: border-box;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--dx-space-2) var(--dx-space-3);
   border: none;
   border-radius: var(--dx-radius-lg);
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
