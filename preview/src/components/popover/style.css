@@ -86,6 +86,30 @@
   }
 }
 
+/*
+ * dev-docs/backlog.md row 7: this content already had a symmetric
+ * close-fade (the two rules above -- no `display: none` to begin with),
+ * but no `prefers-reduced-motion` override, so a user who asked their OS
+ * to reduce motion still got the full-duration fade either direction. Row
+ * 31a's shared reduced-motion layer (dx-components-theme.css) only covers
+ * interactive roots, not animated content (see that file's own comment,
+ * and row 31/27's `Spinner` note) -- same reasoning as
+ * `../tooltip/style.css`'s and `../hover_card/style.css`'s identical
+ * blocks, matching the per-component convention `input_otp`/`spinner`
+ * already carry. Previously dormant either way: `primitives/src/
+ * top_layer.rs`'s `use_popover_sync` used to call `hidePopover()` the
+ * instant `open` went false, hiding this content via the UA's `display:
+ * none` rule before either animation ever got a chance to play; row 19
+ * (`use_popover_shown_while_mounted`) is what makes this fade -- and so
+ * this override -- observable at all.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .dx-popover-content[data-state="open"],
+  .dx-popover-content[data-state="closed"] {
+    animation-duration: var(--dx-motion-duration-reduced);
+  }
+}
+
 /* Positioning based on side */
 .dx-popover-content[data-side="top"] {
   position: absolute;
