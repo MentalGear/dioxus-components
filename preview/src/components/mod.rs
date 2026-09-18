@@ -1,4 +1,46 @@
 use super::{ComponentDemoData, ComponentType, ComponentVariantDemoData, HighlightedCode};
+// Only `css_highlight!`'s debug-only arm needs `asset!` -- gating the
+// import too keeps a release build (which never calls it) from a bare
+// `unused_imports` warning.
+#[cfg(debug_assertions)]
+use dioxus::prelude::*;
+
+/// Builds this codebase's `CssHighlight` (`main.rs`) for one component's
+/// CSS file (`style.css` or a Block-kind variant's `demo.css`). See
+/// `CssHighlight`'s own doc comment for the full why: release/SSG builds
+/// keep the previous compile-time `dioxus_code::code!()` embed unchanged;
+/// debug builds (`dx serve`'s dev loop) carry only the file's own
+/// `asset!()` URL instead, so an edit hot-reloads via the asset pipeline
+/// rather than forcing a full rebuild through `code!()`'s
+/// `include_str!(path)` (which makes rustc -- and in turn `dx serve`'s own
+/// file-change classifier, which reads the compiled crate's rustc
+/// dep-info -- treat the `.css` file as a source dependency of this
+/// crate). Measured before/after: `dev-docs/dev-loop.md`'s CSS section.
+///
+/// Two full, cfg-gated definitions rather than one macro with a cfg'd
+/// struct-literal field: `CssHighlight`'s own two fields are themselves
+/// `#[cfg]`-gated (release-only `embedded`, debug-only `asset`), so each
+/// mode's definition here can only ever construct the field that exists
+/// in it.
+#[cfg(not(debug_assertions))]
+macro_rules! css_highlight {
+    ($path:expr) => {
+        crate::CssHighlight {
+            embedded: crate::HighlightedCode {
+                source: dioxus_code::code!($path),
+            },
+        }
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! css_highlight {
+    ($path:expr) => {
+        crate::CssHighlight {
+            asset: asset!($path),
+        }
+    };
+}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum ComponentCategory {
@@ -97,9 +139,7 @@ macro_rules! examples {
             component: HighlightedCode {
                 source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/component.rs")),
             },
-            style: HighlightedCode {
-                source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/style.css")),
-            },
+            style: css_highlight!(concat!("/src/components/", stringify!($name), "/style.css")),
             variants: &[
                 ComponentVariantDemoData {
                     name: "main",
@@ -140,18 +180,14 @@ macro_rules! examples {
             component: HighlightedCode {
                 source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/component.rs")),
             },
-            style: HighlightedCode {
-                source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/style.css")),
-            },
+            style: css_highlight!(concat!("/src/components/", stringify!($name), "/style.css")),
             variants: &[
                 ComponentVariantDemoData {
                     name: "main",
                     rs_highlighted: HighlightedCode {
                         source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/variants/main/mod.rs")),
                     },
-                    css_highlighted: Some(HighlightedCode {
-                        source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/variants/demo.css")),
-                    }),
+                    css_highlighted: Some(css_highlight!(concat!("/src/components/", stringify!($name), "/variants/demo.css"))),
                     component: $name::variants::main::Demo,
                 },
                 $(
@@ -161,9 +197,7 @@ macro_rules! examples {
                             rs_highlighted: HighlightedCode {
                                 source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/variants/", stringify!($variant), "/mod.rs")),
                             },
-                            css_highlighted: Some(HighlightedCode {
-                                source: dioxus_code::code!(concat!("/src/components/", stringify!($name), "/variants/demo.css")),
-                            }),
+                            css_highlighted: Some(css_highlight!(concat!("/src/components/", stringify!($name), "/variants/demo.css"))),
                             component: $name::variants::$variant::Demo,
                         },
                     )*

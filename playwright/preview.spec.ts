@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 
 test.describe("homepage", () => {
@@ -32,5 +32,29 @@ test.describe("details", () => {
     await expectNoAxeViolations(page, "component/calendar", {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
+  });
+});
+
+test.describe("style tab", () => {
+  test("shows the component's real, current CSS via the debug-build lazy fetch", async ({
+    page,
+  }) => {
+    // Regression guard for the `css_highlight!` construction
+    // (preview/src/components/mod.rs, preview/src/main.rs -- dev-docs/
+    // dev-loop.md's CSS section, backlog rows 72/76): in debug builds the
+    // Style tab no longer compile-time-embeds `style.css` via
+    // `dioxus_code::code!()` (that macro's `include_str!` forced a full
+    // rebuild on every edit); it fetches the file's own `asset!()` URL at
+    // runtime instead. This asserts that fetch actually lands real CSS
+    // text, not a blank/loading/error placeholder.
+    await page.goto("http://127.0.0.1:8080/component/?name=kbd");
+
+    await page.getByRole("heading", { name: "kbd" }).waitFor({ state: "visible" });
+    await page.locator("summary", { hasText: "Manual installation" }).click();
+    await page.getByRole("tab", { name: "style.css" }).click();
+
+    const styleCode = page.locator("pre code", { hasText: ".dx-kbd" });
+    await expect(styleCode).toBeVisible({ timeout: 10_000 });
+    await expect(styleCode).toContainText(".dx-kbd");
   });
 });

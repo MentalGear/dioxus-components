@@ -56,7 +56,7 @@ struct ComponentDemoData {
     description: &'static str,
     docs: &'static str,
     component: HighlightedCode,
-    style: HighlightedCode,
+    style: CssHighlight,
     variants: &'static [ComponentVariantDemoData],
 }
 
@@ -65,7 +65,7 @@ struct ComponentDemoData {
 struct ComponentVariantDemoData {
     name: &'static str,
     rs_highlighted: HighlightedCode,
-    css_highlighted: Option<HighlightedCode>,
+    css_highlighted: Option<CssHighlight>,
     component: fn() -> Element,
 }
 
@@ -457,6 +457,126 @@ fn PreviewCode(source: HighlightedSource) -> Element {
     }
 }
 
+/// The Style tab's CSS source for one component file (`style.css`, or a
+/// Block-kind variant's `demo.css`).
+///
+/// In release/SSG builds this carries the text highlighted (and embedded)
+/// at compile time via `dioxus_code::code!()`, exactly like
+/// `HighlightedCode` -- unchanged from before this type existed. In debug
+/// builds (`dx serve`'s own dev loop) `code!()` is deliberately NOT used:
+/// it expands to `include_str!(path)`, which makes rustc track the `.css`
+/// file as a source dependency of this crate. `dx serve`'s file watcher
+/// checks that dependency list (dioxus-cli's
+/// `serve/runner.rs::handle_file_change`, via the compiled artifact's own
+/// rustc dep-info `.d` file) and, finding the edited file listed there,
+/// classifies the edit as `needs_full_rebuild` -- a full ~30-60s rebuild,
+/// instead of the sub-second asset hot-reload every *other* `style.css`
+/// edit already gets from its own separate `asset!()` stylesheet link
+/// (`hotreload_bundled_assets`, checked first, but overridden once
+/// `needs_full_rebuild` is also true for that same file). Measured
+/// before/after and the full mechanism: `dev-docs/dev-loop.md`'s CSS
+/// section. Debug builds instead carry only the file's own bundled
+/// `asset!()` URL -- `asset!()` does not embed the file's text at compile
+/// time, so referencing it costs nothing extra; `CssCodeBlock` below
+/// fetches and highlights that URL's text lazily, client-side, the first
+/// time the Style tab is rendered.
+#[derive(Clone, PartialEq)]
+struct CssHighlight {
+    /// Pre-highlighted content -- release/SSG builds only.
+    #[cfg(not(debug_assertions))]
+    embedded: HighlightedCode,
+    /// This file's own bundled asset URL -- debug builds only.
+    #[cfg(debug_assertions)]
+    asset: Asset,
+}
+
+/// Renders a CSS Style tab from a [`CssHighlight`]. Release/SSG builds
+/// show the compile-time-highlighted text directly, identical to
+/// `CodeBlock`.
+#[cfg(not(debug_assertions))]
+#[component]
+fn CssCodeBlock(source: CssHighlight) -> Element {
+    rsx! {
+        CodeBlock { source: source.embedded }
+    }
+}
+
+/// Debug builds' half of [`CssCodeBlock`]: fetch the CSS from its own
+/// asset URL and highlight it at runtime instead of at compile time --
+/// see `CssHighlight`'s doc comment for why.
+#[cfg(debug_assertions)]
+#[component]
+fn CssCodeBlock(source: CssHighlight) -> Element {
+    rsx! {
+        LazyCssCodeBlock { asset: source.asset }
+    }
+}
+
+/// Fetches `asset`'s own text over HTTP -- the same URL its
+/// `document::Link`/`document::Stylesheet` sibling already loads as a live
+/// stylesheet -- and highlights it client-side once it arrives, so a
+/// `style.css` edit is visible here exactly like the live stylesheet
+/// already is: via `dx serve`'s asset hot-reload, not a crate rebuild.
+#[cfg(debug_assertions)]
+#[component]
+fn LazyCssCodeBlock(asset: Asset) -> Element {
+    let url = asset.to_string();
+    let css = use_resource(move || {
+        let url = url.clone();
+        async move { fetch_asset_text(url).await }
+    });
+
+    // Fully qualified rather than imported: this file already has its own,
+    // unrelated local `enum Language` (the i18n language switcher above),
+    // and importing `dioxus_code::Language` under that same bare name
+    // shadows it -- confirmed live: it breaks the i18n enum's own inherent
+    // `impl` block ("cannot define inherent `impl` for a type outside of
+    // the crate") the moment both are in scope together.
+    let placeholder = |text: &'static str| HighlightedCode {
+        source: HighlightedSource::from_static_parts(text, dioxus_code::Language::Css, &[]),
+    };
+
+    // Cloned out of the resource's read guard into an owned value up front
+    // (rather than matching on `&*css.read()` directly) so the guard drops
+    // immediately, before any of the `rsx!` arms below run -- avoids tying
+    // the returned `Element` to that guard's borrow.
+    let state: Option<Option<String>> = css.read().clone();
+
+    match state {
+        Some(Some(text)) => rsx! {
+            CodeBlock {
+                source: HighlightedCode {
+                    source: dioxus_code::SourceCode::new(dioxus_code::Language::Css, text).into(),
+                },
+            }
+        },
+        Some(None) => rsx! { CodeBlock { source: placeholder("/* failed to load style.css */") } },
+        None => rsx! { CodeBlock { source: placeholder("/* loading style.css... */") } },
+    }
+}
+
+/// One-shot fetch of a same-origin asset's raw text, used only by
+/// [`LazyCssCodeBlock`] (debug builds). Mirrors this codebase's other
+/// one-shot `document::eval` helpers (e.g. `primitives/src/input_otp.rs`'s
+/// `snap_caret_to_slot`) -- a scoped async JS snippet, not a persistent
+/// listener.
+#[cfg(debug_assertions)]
+async fn fetch_asset_text(url: String) -> Option<String> {
+    let mut eval = document::eval(
+        r#"
+        const url = await dioxus.recv();
+        try {
+            const res = await fetch(url);
+            dioxus.send(res.ok ? await res.text() : null);
+        } catch (e) {
+            dioxus.send(null);
+        }
+        "#,
+    );
+    let _ = eval.send(url);
+    eval.recv::<Option<String>>().await.ok().flatten()
+}
+
 #[component]
 fn CopyButton(#[props(extends=GlobalAttributes)] attributes: Vec<Attribute>) -> Element {
     let mut copied = use_signal(|| false);
@@ -584,7 +704,7 @@ fn LanguageSelect() -> Element {
 #[component]
 fn ComponentCode(
     rs_highlighted: HighlightedCode,
-    css_highlighted: HighlightedCode,
+    css_highlighted: CssHighlight,
     #[props(default = ComponentType::Normal)] component_type: ComponentType,
 ) -> Element {
     rsx! {
@@ -622,7 +742,7 @@ fn ComponentCode(
                     value: "style.css",
                     width: "100%",
                     position: "relative",
-                    CodeBlock { source: css_highlighted }
+                    CssCodeBlock { source: css_highlighted }
                 }
                 if component_type != ComponentType::Block {
                     TabContent {
@@ -631,7 +751,7 @@ fn ComponentCode(
                         value: "dx-components-theme.css",
                         width: "100%",
                         position: "relative",
-                        CodeBlock { source: THEME_CSS }
+                        CssCodeBlock { source: THEME_CSS }
                     }
                 }
             }
@@ -1154,7 +1274,7 @@ fn ComponentInstallCommand(name: &'static str) -> Element {
 }
 
 #[component]
-fn ManualComponentInstallation(component: HighlightedCode, style: HighlightedCode) -> Element {
+fn ManualComponentInstallation(component: HighlightedCode, style: CssHighlight) -> Element {
     rsx! {
         div { class: "dx-component-manual-copy",
             p { class: "dx-docs-muted",
@@ -2553,6 +2673,20 @@ fn GotoIcon(mut props: LinkProps) -> Element {
     Link(props)
 }
 
-const THEME_CSS: HighlightedCode = HighlightedCode {
-    source: dioxus_code::code!("/assets/dx-components-theme.css"),
+// Same class as `CssHighlight` (see its doc comment): this shared theme
+// stylesheet lives under `preview/assets/`, not a component folder, but it
+// is *also* embedded via `dioxus_code::code!()` for this same Style tab --
+// so editing it hits the identical rustc-dep-info full-rebuild path a
+// component's own `style.css` does, for the identical reason. It gets the
+// identical fix.
+#[cfg(not(debug_assertions))]
+const THEME_CSS: CssHighlight = CssHighlight {
+    embedded: HighlightedCode {
+        source: dioxus_code::code!("/assets/dx-components-theme.css"),
+    },
+};
+
+#[cfg(debug_assertions)]
+const THEME_CSS: CssHighlight = CssHighlight {
+    asset: asset!("/assets/dx-components-theme.css"),
 };

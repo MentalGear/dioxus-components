@@ -75,17 +75,151 @@ to its `READY` line, cross-checked with a real Chromium load
 | e | New asset file | new `preview/assets/devloop-probe.css` + a new `asset!()` `document::Link` in `preview/src/components/kbd/component.rs` (a `.rs` change) | Full rebuild | **~31.5s** | Yes |
 | e′ | *Follow-up*: content-only edit to that **already-wired** asset file | same `devloop-probe.css`, value changed, no `.rs` touched | `Hotreloading: /assets/devloop-probe.css` only | **~0.86s** | Eventually yes (see Trap 4's asset-file footnote) |
 
-**The headline finding: CSS is not cheap in this repo, and it's not CSS's
-fault.** Every themed component's stylesheet lives at
+**The headline finding, as first written up here: CSS is not cheap in this
+repo.** Every themed component's stylesheet lives at
 `preview/src/components/<name>/style.css` — under `src/`. Row (b) above
 shows that costs a full ~30s rebuild, identical in kind to a Rust logic
 change. Row (e′) proves CSS *can* hot-reload in well under a second — content
 edits to an asset under `preview/assets/` (outside `src/`, `asset!()`
-reference unchanged) do exactly that. The determining factor observed here
-is the file's location relative to `src/`, not its extension. This is not
-something this task changes (moving ~50+ stylesheets is a real, separate
-project decision), but it is worth knowing before assuming "it's just CSS,
-it'll be instant."
+reference unchanged) do exactly that. This section originally concluded the
+determining factor was the file's location relative to `src/`. **That
+diagnosis was wrong — see "CSS root cause, corrected" below, which replaces
+it** — moving stylesheets was never actually necessary, and rows (b)/(e′)
+above are left as-is as the original, honest measurements that motivated the
+follow-up, not because the location theory turned out to be right.
+
+## CSS root cause, corrected (backlog rows 72/76 follow-up)
+
+Row (b)'s own explanation — "it's the directory" — does not survive a
+direct counter-example already sitting in this same codebase:
+`preview/src/main.rs`'s shared `THEME_CSS` constant highlights
+`/assets/dx-components-theme.css` for its own "Style" tab, and that file
+lives under `preview/assets/`, the exact directory row (e′) called cheap —
+yet, before this fix, editing it hit the identical full-rebuild path
+`style.css` did, for the same reason described below. Location was never the
+actual variable; it happened to correlate with the real one in every case
+this session had tried so far.
+
+**The real mechanism, found by reading dioxus-cli 0.7.9's own source
+(`~/.cargo/registry/.../dioxus-cli-0.7.9/src/serve/runner.rs`,
+`handle_file_change`) and `dioxus-code-macro`'s source
+(`~/.cargo/registry/.../dioxus-code-macro-0.1.1/src/lib.rs`), then confirmed
+live by isolating each variable in turn:**
+
+1. `preview/src/components/mod.rs`'s `examples!` macro renders each
+   component's "Style" tab by calling
+   `dioxus_code::code!(concat!("/src/components/", name, "/style.css"))`.
+   Reading that macro's own source shows it expands to (among other things)
+   `const SOURCE: &str = include_str!(#path);` — a literal `include_str!`
+   naming the `.css` file, emitted into `preview`'s own compiled source.
+   `rustc` treats `include_str!` exactly like a source file: it goes into
+   the compiled artifact's own dependency list (the `.d` file next to the
+   binary, `RustcDepInfo` in dioxus-cli's terms).
+2. `dx serve`'s file-change handler (`handle_file_change`, `runner.rs`)
+   checks a changed non-`.rs` file against exactly that list
+   (`artifacts.depinfo.files.contains(path)`) and, if present, sets
+   `needs_full_rebuild = true` — **unconditionally overriding** the asset
+   hot-reload path (`hotreload_bundled_assets`, checked first in the same
+   loop) that the file's *separate* `asset!()` reference (the one that
+   actually links the live stylesheet into the rendered page,
+   `component.rs`) would otherwise have taken on its own. Both mechanisms
+   fire for the same file; the depinfo check wins.
+3. `preview/build.rs`'s blanket `cargo:rerun-if-changed=src/components`
+   (a recursive directory watch) was a **second, compounding** contributor,
+   not the root cause by itself: `walk_markdown_dir` unconditionally
+   rewrites every component's `description.txt`/`docs.html` in `OUT_DIR` on
+   every build-script run, regardless of which file triggered it, and
+   `components/mod.rs` `include_str!`s those two per-component — so once
+   build.rs reruns for *any* reason, cargo's mtime-based freshness check
+   sees those files change too, on every component, independent of (1).
+
+**Isolated empirically, one variable at a time, on this lane's own server
+(port 8100, isolated `CARGO_TARGET_DIR`, `scripts/dev-wait.sh`; this
+session's box was running 10+ concurrent lanes at a load average that
+peaked past 70 on 4 cores, so treat every absolute second below as a noisy
+upper bound — the *classification* (rebuild vs. hot-reload), not the
+latency, is the reproducible result):**
+
+| Step | Change | Edit | Result |
+|---|---|---|---|
+| Baseline | unmodified `main` | `kbd/style.css` | `READY rebuild 45.9s: Build completed in 49.72s` — full rebuild, matching row (b) |
+| Isolate (3) alone | `build.rs`'s `rerun-if-changed` narrowed to the `*.md`/`component.json` paths it actually reads (the blanket directory watch removed); `code!()` embed left untouched | `kbd/style.css` (fresh edit) | `READY rebuild 37.9s: Build completed in 41.28s` — **still a full rebuild**. Narrowing `build.rs` alone does not fix it: `dx`'s classifier never consults `build.rs`'s `rerun-if-changed` at all, only the compiled artifact's own rustc dep-info, so (3) alone was never going to be sufficient — it just stops compounding (2) |
+| Apply (2)+(3) together | the construction below (compile-time `code!()` embed replaced with a runtime fetch in debug builds) plus the `build.rs` narrowing | `kbd/style.css` (fresh edit) | `READY hotreload 0.8s: Hotreloading: /src/components/kbd/style.css` — **hot-reload**, confirmed live against a fresh, never-before-opened page load (not just an already-open tab — see "trap 4" below) |
+
+**The construction (keeps `preview/src/components/<name>/` exactly as
+upstream's layout and `dx components add` packaging unit — no files
+moved):** a component's CSS Style tab source is compile-time-embedded (via
+`dioxus_code::code!()`, unchanged) **only in release/SSG builds**
+(`#[cfg(not(debug_assertions))]`); in debug builds
+(`#[cfg(debug_assertions)]` — i.e. `dx serve`'s own dev loop, always CSR-only
+in this repo per this doc's own recipe, never SSR/hydrated) it instead
+carries just the file's own `asset!()` URL (cheap: `asset!()` does not embed
+the file's text at compile time, so it registers no rustc dependency and
+costs nothing extra to always compute), and a new `LazyCssCodeBlock`
+component (`preview/src/main.rs`) fetches that URL's text at runtime
+(`document::eval` running a plain JS `fetch`, mirroring this codebase's
+other one-shot-eval hooks such as `input_otp.rs`'s `snap_caret_to_slot`) and
+highlights it client-side with `dioxus_code::SourceCode`/`Language::Css`
+(the crate's own runtime-highlighting API — already compiled in today,
+since `preview/Cargo.toml`'s existing `dioxus-code` feature list includes
+`lang-css`, and `lang-css` itself unconditionally implies `runtime` in
+`dioxus-code`'s own `Cargo.toml`; no `Cargo.toml` edit was needed or made).
+**Why gate on `debug_assertions` rather than `feature = "web"`/target:**
+hydration parity (`dev-docs/conformance-harness.md`'s "Hydration/deployment
+parity" rules) is exercised only by the SSG/fullstack lane, which is always
+a release build — the debug/dev-loop path this fix changes has no server
+prerender to hydrate against at all, so there is no parity surface for a
+debug-only rendering difference to violate. Release output is byte-for-byte
+the same code path as before this fix (nothing in `#[cfg(not(debug_
+assertions))]` changed), so this is a zero-risk change to the deployed site.
+Applies to all four `code!()` CSS call sites in `examples!`'s two `@demo`
+arms (`style.css` ×2, `variants/demo.css` ×2) via one new
+`css_highlight!` macro, plus the same class's other live instance found
+above, `main.rs`'s `THEME_CSS`.
+
+**`build.rs`'s narrowing, kept even though (3) alone doesn't fix the bug:**
+it removes real, unnecessary work this build script was doing on every
+single edit anywhere under any component folder (a full markdown-highlight
+re-walk of all ~60 components), and it removes the *compounding* mechanism
+in (3) above, in case a future change re-introduces a compile-time CSS/text
+embed elsewhere. The one accepted, documented trade-off: a **brand new**
+`.md`/`component.json` file isn't watched until something else causes
+`build.rs` to rerun (cargo has no "watch this directory for new entries
+only" primitive) — self-healing in practice (adding a new component always
+also means editing `components/mod.rs`, and the very next build fails
+loudly with a clear "No such file" against the missing `OUT_DIR` output
+until `build.rs` is touched or `cargo clean -p preview` run), not a silent
+correctness gap. See `preview/build.rs`'s own comment for the full account.
+
+**Trap 4, re-verified against this specific fix:** a naive "did the fix
+apply" check that only holds an already-open tab open across the edit would
+not have caught the difference between this fix's `hotreload` classification
+and the old `rebuild` one, since template hot-reload was never the mechanism
+in question for a `.css` file either way. The check that actually matters —
+and the one done here — is a **fresh navigation after the edit**
+(`inspect.mjs` launching a brand-new browser context, never having loaded
+the page before): it correctly showed the newly-edited CSS text, because
+this fix's fetch runs at *request* time against whatever `dx serve`'s asset
+pipeline is currently serving at that URL, not against anything baked into
+the wasm binary — there is no stale-until-rebuild window here the way row
+(a)'s RSX case has one.
+
+**Verified, this lane's own server:** `cargo check -p preview` and
+`cargo clippy -p preview --tests -- -D warnings` both clean in *both*
+debug and `--release` profiles (the two `#[cfg(debug_assertions)]` arms
+compile and lint cleanly on their own — release was not exercised by `dx
+serve` at all in this session, so checking it directly mattered); `cargo
+test -p preview` 23/23 passed; all four `scripts/check-*.sh` guards and
+`stylelint` clean (no CSS file's content changed by this fix); a live
+`inspect.mjs` check confirmed the Style tab renders the real, current CSS
+(not a blank/loading placeholder) for a Normal component (`kbd`), a Block
+component's `demo.css` (`sidebar`), and `THEME_CSS`, each via a fresh page
+load. **Not verified:** the release/SSG code path was checked for
+compilation and lint only, not rendered in a real browser (this lane's
+server never runs `--release`; the code path is provably unchanged from
+before this fix, so this is a compile-time-only guarantee, not a
+behavioral one); Firefox/WebKit (this sandbox has Chromium only, consistent
+with every other note in this file).
 
 ## Traps 4 and 5 (new this session — 1–3 are in `dx-serve-hot-reload.md`)
 
