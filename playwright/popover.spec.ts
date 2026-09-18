@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
 
 test("test", async ({ page }) => {
   await page.goto("http://127.0.0.1:8080/component/?name=popover&");
@@ -163,5 +164,64 @@ test.describe("Axe automated scan", () => {
     await page.getByRole("button", { name: "Show Popover" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectNoAxeViolations(page, "popover: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+// dev-docs/backlog.md rows 19 and 7: on the web (popover) arm,
+// `use_popover_sync` used to call `hidePopover()` the instant `open` went
+// false, and the UA's `[popover]:not(:popover-open) { display: none }`
+// rule then hid the content before `dx-popover-fade-out`
+// (`../preview/src/components/popover/style.css`, which already had this
+// animation defined -- it just never got to play) ever got a chance to
+// run -- RED before both fixes landed (reasoned through, not executed,
+// since this lane cannot run Playwright: `display: none` from the very
+// first sample, so `assertFadesOutThenUnmounts` would fail both the "no
+// display:none while mounted" invariant and the "a few frames of
+// decreasing opacity" check immediately). GREEN once
+// `primitives/src/top_layer.rs`'s `use_popover_shown_while_mounted`
+// (row 19) keeps the popover shown through the animation that CSS already
+// defined (row 7).
+//
+// Uses the `top_layer` oracle fixture (`preview/src/components/
+// top_layer/component.rs`), not this file's own `?name=popover&` demo
+// above: that demo's `PopoverRoot` never sets `is_modal`, so it defaults
+// to `true` (`primitives/src/popover.rs`) and renders as a real
+// `<dialog>` + `showModal()` -- a completely different code path
+// (`use_dialog_open_driver`/`use_dialog_close_sync`, no `popover`
+// attribute at all) that neither row 19 nor row 7 touches. `#stack-popover-*`
+// is the fixture's non-modal (`is_modal: false`) instance -- the same one
+// `oracle/tier2-html/top-layer.spec.ts`'s Rule 2/3 (light dismiss/Escape)
+// tests use, not edited here.
+//
+// The close is triggered via `.evaluate(el => el.click())`, not
+// Playwright's `.click()` (same as this file's own "test" above, for a
+// related reason): a real `.click()` dispatches a genuine `pointerdown`
+// first, which native `popover="auto"` light dismiss reacts to
+// synchronously -- closing the popover (and applying `display: none`)
+// *before* Rust's own `open` signal (and this content's close animation)
+// ever gets involved, exactly the "native close bypasses the exit
+// animation" limit `use_popover_shown_while_mounted`'s own doc describes
+// as accepted and out of scope. A JS-level `.click()` call dispatches only
+// a `click` event (no `pointerdown`), so it never engages light dismiss at
+// all -- only this trigger's own `onclick` handler
+// (`ctx.set_open.call(!(ctx.open)())`, `primitives/src/popover.rs`) runs,
+// a genuinely script-driven toggle, exactly the path row 19 fixes.
+test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)", () => {
+  test("content fades out (opacity -> 0, still popover-open) before unmounting", async ({ page }) => {
+    await page.goto("http://127.0.0.1:8080/component/?name=top_layer&", { timeout: 20 * 60 * 1000 });
+    const trigger = page.locator("#stack-popover-trigger");
+    const content = page.locator("#stack-popover-content");
+
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    await expect(content).toBeVisible();
+
+    // Start sampling before triggering the close, so the first frames
+    // (still data-state="open") are never missed -- see
+    // assert-fade-out.ts's `startFadeSampling` doc.
+    const framesPromise = startFadeSampling(page, "stack-popover-content");
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    const samples = await framesPromise;
+
+    assertFadesOutThenUnmounts(samples);
   });
 });
