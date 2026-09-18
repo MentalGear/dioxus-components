@@ -19,13 +19,15 @@
 .dx-tag-group-tag {
   display: flex;
   max-width: fit-content;
+  min-height: var(--dx-space-7);
+  box-sizing: border-box;
   align-items: center;
   border: 1px solid var(--primary-color-6);
   border-radius: var(--dx-radius-full);
   cursor: default;
-  font-size: var(--dx-text-xs);
+  font-size: var(--dx-text-sm);
   gap: var(--dx-space-1);
-  padding-block: 0.125rem;
+  padding-block: var(--dx-space-1);
   padding-inline: var(--dx-space-3);
 }
 
