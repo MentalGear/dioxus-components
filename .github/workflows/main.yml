@@ -61,6 +61,24 @@ jobs:
       - name: Enforce markup cfgs split on the `web` feature, not target_family
         run: scripts/check-cfg-axis.sh
 
+  hooks-in-closures:
+    if: github.event.pull_request.draft == false
+    name: Hooks-in-closures guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce no Dioxus hook called inside another hook's closure
+        run: scripts/check-hooks-in-closures.sh
+
+  self-subscribing-effects:
+    if: github.event.pull_request.draft == false
+    name: Self-subscribing-effects guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce no signal read with tracked syntax and written in the same use_effect
+        run: scripts/check-self-subscribing-effects.sh
+
   test:
     if: github.event.pull_request.draft == false
     name: Test Suite
