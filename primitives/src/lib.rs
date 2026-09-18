@@ -43,7 +43,7 @@ mod move_interaction;
 pub mod navbar;
 mod pointer;
 pub mod popover;
-mod portal;
+pub mod portal;
 pub mod progress;
 pub mod radio_group;
 pub mod scroll_area;
