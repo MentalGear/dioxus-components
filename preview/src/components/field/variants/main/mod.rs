@@ -32,6 +32,12 @@ pub fn Demo() -> Element {
                             FieldDescription { "Receive emails about new products and features." }
                         }
                     }
+                    FieldSeparator {}
+                    Field { orientation: FieldOrientation::Responsive,
+                        FieldLabel { html_for: "field-demo-bio", "Bio" }
+                        Input { id: "field-demo-bio", placeholder: "Tell us about yourself" }
+                        FieldDescription { "Vertical on narrow screens, horizontal from 640px up." }
+                    }
                 }
             }
         }
