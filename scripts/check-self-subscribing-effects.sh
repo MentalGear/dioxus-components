@@ -87,35 +87,40 @@
 # terminate today, so it is worth surfacing on sight rather than only
 # once it has already hung a page.
 #
-# Known HEAD findings (reported, not fixed here -- none of these files
-# are owned by this change): three real `Signal`s, in two files, are
-# read with tracked syntax and later written in the same `use_effect`,
-# and none of them is the row-73 shape (an unconditional write on every
-# firing with nothing to ever break the cycle):
-#   - `drawer.rs`'s `DrawerContent` effect: `dragging`/`active_pointer_id`
-#     are read at the top of the closure and only written (to `false`/
-#     `None`) behind the same `if !dragging() { return; }` guard they
-#     both sit under, so the one extra re-run the write schedules reads
-#     `dragging()` as `false` and returns immediately without reading or
-#     writing anything else -- bounded, not infinite.
-#   - `color_picker/component.rs`'s two hex/hue sync effects: `value` and
-#     `current_hue` are each written only inside an `if` that already
-#     checked the new value differs from what was just read (`parsed !=
-#     external_rgb`, `value != current`) -- the standard "sync from an
-#     external source, but do not clobber unless it actually changed"
-#     idiom. Bounded as long as the round trip through that comparison
-#     converges (i.e. writing the synced value makes the next run's same
-#     comparison false); not re-proven here for floating-point/hex
-#     rounding edge cases, which is exactly the kind of runtime property
-#     this script cannot and should not try to prove.
-#   - `collection.rs`'s `use_deferred_collection_focus`: `placement` is
-#     read then written to `None` behind an `else`/`if` shape that, like
-#     `dragging` above, makes the next run's read see the very state
-#     that stops it writing again.
-# All three are left for this script to keep finding rather than
-# allowlisted away -- NON_SELF_TERMINATING below stays empty until each
-# file's owner or the main loop decides what, if anything, to do about
-# them.
+# Known HEAD findings, resolved during batch 2 integration: four real
+# `Signal`s, in three files, were read with tracked syntax and later
+# written in the same `use_effect`, and none of them was ever the row-73
+# shape (an unconditional write on every firing with nothing to ever
+# break the cycle) -- each was analyzed as bounded before deciding what,
+# if anything, to do about it:
+#   - `drawer.rs`'s `DrawerContent` drag effect: `dragging` and
+#     `active_pointer_id` were both read at the top of the closure and
+#     only written (to `false`/`None`) behind the same
+#     `if !dragging() { return; }` guard they both sit under, so the one
+#     extra re-run either write schedules reads `dragging()` as `false`
+#     and returns immediately without reading or writing anything else.
+#     `active_pointer_id` was fixed by construction (`.peek()` -- nothing
+#     needs it to wake the effect; a pointer id change is always
+#     accompanied by a `dragging` transition). `dragging` itself IS this
+#     effect's wake switch (pointerdown sets it, pointerup/cancel clears
+#     it) and has to stay tracked to do that job, so it is allowlisted
+#     below instead of peeked.
+#   - `color_picker/component.rs`'s two hex/hue sync effects (`value`,
+#     `current_hue`) were each read only to guard a write against
+#     clobbering already-correct or mid-edit state, with the effect's
+#     real input (the surrounding `ColorPickerContext`'s color) already
+#     tracked separately -- fixed by construction (`.peek()` for the
+#     guard read). `value`'s effect also had a field-went-empty recovery
+#     riding on the same tracked read; that one sub-case genuinely needed
+#     a fresh trigger when the field emptied, which `.peek()` cannot
+#     provide, so it moved to the `oninput` handler that actually knows
+#     the field just emptied instead.
+#   - `collection.rs`'s `use_deferred_collection_focus`: `placement` was
+#     read then written to `None` behind an `else`/`if` shape -- fixed by
+#     construction (`.peek()`), since every caller sets `placement`
+#     before it flips this effect's real trigger (`active`) from false to
+#     true, so `active()` alone already re-runs it for every fresh
+#     request the crate's `open_with_focus`-family call sites make today.
 #
 # Why python3, not grep/bash regex: same reasoning as
 # check-hooks-in-closures.sh -- finding "the body of this use_effect"
@@ -148,11 +153,17 @@ from pathlib import Path
 # deliberate, reviewed decision (by whoever owns the file in question),
 # not something this script does on its own initiative.
 NON_SELF_TERMINATING = {
-    # ("drawer.rs", "dragging"),
-    # ("drawer.rs", "active_pointer_id"),
-    # ("component.rs", "value"),
-    # ("component.rs", "current_hue"),
-    # ("collection.rs", "placement"),
+    # `DrawerContent`'s drag effect: `dragging` is this effect's wake
+    # switch (it must stay tracked so the effect re-runs on
+    # pointerdown/pointerup) and is only written back to `false` behind
+    # the same `if !dragging() { return; }` guard it sits under -- the one
+    # extra re-run that write schedules reads `dragging()` as `false` and
+    # returns immediately (batch 2 integration, `primitives/src/drawer.rs`;
+    # see `eab243e`'s message for the fuller analysis, and the header
+    # comment above for why `active_pointer_id` in the same effect was
+    # instead fixed by construction with `.peek()` rather than allowlisted
+    # here).
+    ("drawer.rs", "dragging"),
 }
 
 USE_EFFECT_RE = re.compile(r"\buse_effect\s*\(")

@@ -261,16 +261,25 @@ fn ColorField(props: ColorFieldProps) -> Element {
     // Synchronize local text with external color changes. Only overwrite
     // when the field already holds a parseable hex — otherwise the user is
     // mid-edit and replacing their text would clobber the input.
+    //
+    // `value.peek()`, not `value()`: this effect's only real input is
+    // `external` (the surrounding context's color) -- `value` is read
+    // purely to check whether the field already shows it, so a write is
+    // skipped when it's already correct. Reading it with tracked syntax
+    // would subscribe this effect to the very signal it writes below,
+    // the shape `scripts/check-self-subscribing-effects.sh` flags
+    // (dev-docs/backlog.md row 73's class). The field-went-empty
+    // recovery this effect used to also do by re-reading `value` moved
+    // to `oninput` below, the place that actually knows the field just
+    // emptied, instead of relying on a self-triggered re-run to notice.
     use_effect(move || {
         let external = ctx.color();
-        let current = value();
+        let current = value.peek().clone();
         if let Ok(parsed) = current.parse::<Color>() {
             let external_rgb: Color = Srgb::<f64>::from_color(external).into_format();
             if parsed != external_rgb {
                 value.set(hex_from_hsv(external));
             }
-        } else if current.is_empty() {
-            value.set(hex_from_hsv(external));
         }
     });
 
@@ -301,6 +310,18 @@ fn ColorField(props: ColorFieldProps) -> Element {
                     }
 
                     input.truncate(7);
+
+                    if input.is_empty() {
+                        // Restore immediately instead of leaving the field
+                        // blank. This used to be the sync effect's job
+                        // above (re-reading `value` to notice it had gone
+                        // empty), which subscribed that effect to its own
+                        // write; doing it right here, where the field
+                        // actually just emptied, needs no such read.
+                        value.set(hex_from_hsv(ctx.color()));
+                        return;
+                    }
+
                     value.set(input.to_uppercase());
 
                     if let Ok(parsed) = input.parse::<Color>() {
@@ -384,9 +405,17 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
         .into_format()
     });
 
+    // `current_hue.peek()`, not `current_hue()`: this effect's only real
+    // input is `ctx.color()` above -- the only other place that writes
+    // `current_hue` (`on_value_change` below) always writes `ctx`'s hue
+    // in the same call, so tracking `ctx.color()` alone already re-runs
+    // this effect on every real change. Reading `current_hue` with
+    // tracked syntax here would subscribe this effect to the value it
+    // writes below, the shape `scripts/check-self-subscribing-effects.sh`
+    // flags (dev-docs/backlog.md row 73's class).
     use_effect(move || {
         let value = ctx.color().hue.into_positive_degrees();
-        let current = current_hue();
+        let current = *current_hue.peek();
 
         let is_wrap_around = (value - current).abs() > 350.0;
 
