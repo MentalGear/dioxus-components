@@ -81,6 +81,38 @@ if [ "${#missing_script[@]}" -gt 0 ]; then
 fi
 echo "==> OK: all $route_count route(s) have their bootstrap script."
 
+# dev-docs/backlog.md row 46: before the path-segment route construction
+# (preview/src/main.rs's ComponentDemoPath/ComponentBlockDemoPath), every
+# `/component/?name=X&` page prerendered as the "Component not found" shell
+# for every X, because a query-string route is not enumerable at build time
+# -- this check is the safety net for a recurrence of that class, on every
+# route dx actually produced, the same belt-and-suspenders shape as the
+# bootstrap-script check above. A well-formed build should never ship this
+# marker at all: `ComponentDemoPath`'s own not-found branch only renders for
+# a name absent from `components::DEMOS`, and `server_static_routes`
+# (preview/src/main.rs) only ever asks dx to prerender names that ARE in
+# that list; the legacy query-string routes (`ComponentDemo`/
+# `ComponentBlockDemo`) render a differently-classed loading/redirect shell
+# (`dx-component-demo-redirect`), not this marker.
+echo "==> Verifying no route's build output is the \"Component not found\" shell ..."
+not_found_routes=()
+while IFS= read -r -d '' html_file; do
+  if grep -q 'dx-component-demo-not-found' "$html_file"; then
+    not_found_routes+=("${html_file#"$public_dir"/}")
+  fi
+done < <(find "$public_dir" -name "index.html" -print0)
+
+if [ "${#not_found_routes[@]}" -gt 0 ]; then
+  echo "error: ${#not_found_routes[@]} of $route_count route(s) built as the" >&2
+  echo "\"Component not found\" shell (dx-component-demo-not-found) instead of" >&2
+  echo "their real content -- this is dev-docs/backlog.md row 46's regression:" >&2
+  printf '  - %s\n' "${not_found_routes[@]}" >&2
+  echo "Check preview/src/main.rs's server_static_routes() actually lists this" >&2
+  echo "route's name, and that the name matches a components::DEMOS entry." >&2
+  exit 1
+fi
+echo "==> OK: no route shipped the not-found shell."
+
 echo "==> Refreshing $repo_root/docs from $public_dir ..."
 mkdir -p "$repo_root/docs"
 find "$repo_root/docs" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
