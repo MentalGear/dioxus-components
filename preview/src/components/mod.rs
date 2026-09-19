@@ -214,6 +214,7 @@ examples!(
     aspect_ratio,
     avatar,
     badge,
+    bar_chart[multiple, stacked, stacked_legend, interactive],
     breadcrumb,
     button[size, icon],
     button_group,

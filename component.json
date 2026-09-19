@@ -65,6 +65,7 @@
     "preview/src/components/navigation_menu",
     "preview/src/components/chart",
     "preview/src/components/carousel",
-    "preview/src/components/area_chart"
+    "preview/src/components/area_chart",
+    "preview/src/components/bar_chart"
   ]
 }
