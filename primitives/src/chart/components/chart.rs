@@ -81,10 +81,45 @@ pub struct ChartProps {
     #[props(default)]
     pub show_y_axis: bool,
 
+    /// The x-axis category column's header: rendered as the hidden data
+    /// table's corner `<th scope="col">` (top-left cell, above the row
+    /// headers). Not part of the original `$S/chart-api.md` sketch, which
+    /// left that cell empty (`th {}`) -- an empty `<th>` has no accessible
+    /// name, which axe's `empty-table-header` rule (`best-practice` tag)
+    /// correctly flags as a real defect on every scan, not a false
+    /// positive: a screen-reader user browsing the table by column has no
+    /// way to tell what the first column *is*. Defaults to `"Category"`,
+    /// a neutral header that fits any chart's x-axis regardless of what
+    /// the data actually represents (dates, labels, ...); callers with a
+    /// more specific axis (e.g. `"Date"`) should override it.
+    #[props(default = "Category".to_string())]
+    pub x_label: String,
+
     /// Format an x-axis category label. Defaults to its first 3 characters
     /// (shadcn's own demo convention, e.g. `"January"` -> `"Jan"`).
     #[props(default)]
     pub x_tick_format: Option<Callback<String, String>>,
+
+    /// The maximum number of x-axis tick *labels* to draw, regardless of
+    /// how many data points the chart has. A dense chart (e.g. 90 daily
+    /// data points) would otherwise draw one `<text>` per datum and
+    /// overlap them into an unreadable smear; this labels only every
+    /// `ceil(n / max_x_ticks)`-th datum (always including the first),
+    /// leaving every hit band, mark and hidden-table row exactly as
+    /// before -- this only thins the *visible tick labels*, never the
+    /// underlying per-datum data or interactivity. MVP count-based
+    /// thinning: it does not account for the actual rendered pixel width
+    /// of a label (a genuinely crowded chart at a narrow viewport can
+    /// still overlap short labels, or leave room for more than
+    /// `max_x_ticks` long ones) -- the forks survey
+    /// (`dev-docs/research/chart-forks-2026-09-19.md`, §6/§3c,
+    /// `leptos-chartistry`'s `ticks/gen/aligned_floats.rs`) documents a
+    /// width-aware alternative (derive the count from estimated label
+    /// width vs. available pixel span) as the natural stage-2 upgrade;
+    /// not built here since this MVP has no text-measurement facility and
+    /// the fixed-count default already fixes the crowded 90-point demo.
+    #[props(default = 12)]
+    pub max_x_ticks: usize,
 
     /// Target number of y-axis ticks (see [`LinearScale::ticks`] -- the
     /// actual count can differ slightly, same as d3's own `ticks`).
@@ -363,14 +398,21 @@ pub fn Chart(props: ChartProps) -> Element {
                 }
 
                 if props.show_x_axis {
-                    g { "data-slot": "chart-axis", "data-axis": "x",
-                        for (i , datum) in data.iter().enumerate() {
-                            text {
-                                key: "{i}",
-                                "data-index": "{i}",
-                                x: "{fmt_num(x_scale.center(i))}",
-                                y: "{fmt_num(plot_y1 + 16.0)}",
-                                {format_x_tick(&datum.label, &props.x_tick_format)}
+                    {
+                        let tick_step = x_tick_step(n, props.max_x_ticks);
+                        rsx! {
+                            g { "data-slot": "chart-axis", "data-axis": "x",
+                                for (i , datum) in data.iter().enumerate() {
+                                    if i % tick_step == 0 {
+                                        text {
+                                            key: "{i}",
+                                            "data-index": "{i}",
+                                            x: "{fmt_num(x_scale.center(i))}",
+                                            y: "{fmt_num(plot_y1 + 16.0)}",
+                                            {format_x_tick(&datum.label, &props.x_tick_format)}
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -474,7 +516,7 @@ pub fn Chart(props: ChartProps) -> Element {
                 caption { "{props.aria_label}" }
                 thead {
                     tr {
-                        th {}
+                        th { scope: "col", "{props.x_label}" }
                         for series in &config.series {
                             th { key: "{series.key}", "{series.label}" }
                         }
@@ -685,6 +727,19 @@ fn format_x_tick(label: &str, format: &Option<Callback<String, String>>) -> Stri
     }
 }
 
+/// The x-axis tick-label stride (see [`ChartProps::max_x_ticks`]): label
+/// datum `i` only when `i % x_tick_step(..) == 0`, so at most `max_x_ticks`
+/// labels are drawn regardless of `n`, always including the first datum
+/// (`i == 0`). MVP count-based thinning -- a pure function so the
+/// "at most `max_x_ticks` labels" guarantee is unit-testable independent of
+/// any SSR render.
+fn x_tick_step(n: usize, max_x_ticks: usize) -> usize {
+    if n == 0 {
+        return 1;
+    }
+    n.div_ceil(max_x_ticks.max(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,6 +921,148 @@ mod tests {
         assert!(html.contains("305"));
         assert!(html.contains('—'), "expected the None gap marker: {html}");
         assert!(html.contains(r#"scope="row""#));
+    }
+
+    /// Regression test for the empty corner `<th>` axe's `empty-table-header`
+    /// rule (`best-practice` tag) flagged on every scan: the default
+    /// `x_label` ("Category") must give that cell real, non-empty text
+    /// instead of `th {}`.
+    #[test]
+    fn table_corner_header_has_a_default_accessible_label() {
+        let html = render(ChartKind::Bar, false, true);
+        assert!(
+            html.contains(r#"<th scope="col">Category</th>"#),
+            "expected the default x_label corner header, not an empty <th>: {html}"
+        );
+    }
+
+    /// Props for a second, more configurable test harness (`x_label`/
+    /// `max_x_ticks`/an arbitrary data length) -- kept separate from
+    /// [`Harness`] above so every existing test's fixed 2-datum shape is
+    /// untouched.
+    #[derive(Clone, PartialEq, Props)]
+    struct AxisHarnessProps {
+        #[props(default = 2)]
+        data_len: usize,
+        #[props(default = 12)]
+        max_x_ticks: usize,
+        #[props(default = "Category".to_string())]
+        x_label: String,
+    }
+
+    #[component]
+    fn AxisHarness(props: AxisHarnessProps) -> Element {
+        let config = use_signal(sample_config);
+        let data_len = props.data_len;
+        let data = use_signal(move || {
+            (0..data_len)
+                .map(|i| ChartDatum {
+                    // First 3 chars unique per index (the default
+                    // x_tick_format truncation) so rendered tick labels
+                    // can be told apart in the thinning test below.
+                    label: format!("D{i:02} full label"),
+                    values: vec![Some(i as f64), Some((i * 2) as f64)],
+                })
+                .collect::<Vec<_>>()
+        });
+        rsx! {
+            ChartContainer { config, data, kind: ChartKind::Line,
+                Chart {
+                    aria_label: "Visitors by month",
+                    x_label: props.x_label.clone(),
+                    max_x_ticks: props.max_x_ticks,
+                }
+            }
+        }
+    }
+
+    fn render_axis(data_len: usize, max_x_ticks: usize, x_label: &str) -> String {
+        let mut dom = VirtualDom::new_with_props(
+            AxisHarness,
+            AxisHarnessProps {
+                data_len,
+                max_x_ticks,
+                x_label: x_label.to_string(),
+            },
+        );
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        dioxus_ssr::render(&dom)
+    }
+
+    #[test]
+    fn table_corner_header_can_be_overridden() {
+        let html = render_axis(2, 12, "Date");
+        assert!(
+            html.contains(r#"<th scope="col">Date</th>"#),
+            "expected the overridden corner header: {html}"
+        );
+    }
+
+    #[test]
+    fn x_tick_step_keeps_the_rendered_count_at_or_under_max_x_ticks() {
+        // The stride itself, and the classic pagination identity it relies
+        // on (`ceil(n / ceil(n / max)) <= max` for positive integers): the
+        // rendered tick count is `ceil(n / x_tick_step(n, max))`, so no
+        // input can ever render more than `max_x_ticks` labels.
+        for n in [0usize, 1, 2, 11, 12, 13, 29, 90, 91, 1000] {
+            for max in [1usize, 3, 5, 12, 50] {
+                let step = x_tick_step(n, max);
+                assert!(step >= 1, "step must be >= 1 for n={n} max={max}");
+                let rendered = if n == 0 { 0 } else { n.div_ceil(step) };
+                assert!(
+                    rendered <= max,
+                    "n={n} max={max} step={step} rendered={rendered} exceeds max_x_ticks"
+                );
+            }
+        }
+        // Concrete cases named in the API doc/commit message.
+        assert_eq!(x_tick_step(2, 12), 1);
+        assert_eq!(x_tick_step(90, 12), 8);
+        assert_eq!(x_tick_step(0, 12), 1);
+        assert_eq!(x_tick_step(10, 0), 10);
+    }
+
+    #[test]
+    fn x_axis_tick_labels_are_thinned_for_a_dense_chart() {
+        let html = render_axis(90, 12, "Category");
+        // Bound the search to the x-axis group's own children so a
+        // coincidental substring match elsewhere (e.g. the hidden table,
+        // which always mirrors every datum's full, untruncated label)
+        // can't produce a false pass -- `data-axis="x"` is this group's
+        // own attribute and appears nowhere else.
+        let start = html
+            .find(r#"data-axis="x""#)
+            .expect("x-axis group should be present when show_x_axis is on");
+        let after_open = &html[start..];
+        let end = after_open
+            .find("</g>")
+            .expect("x-axis group should close with </g>");
+        let axis_group = &after_open[..end];
+
+        let tick_labels = axis_group.matches("<text ").count();
+        assert!(
+            tick_labels <= 12,
+            "expected at most max_x_ticks=12 rendered tick labels for 90 data points, got {tick_labels}: {axis_group}"
+        );
+        // Matches x_tick_step(90, 12) == 8 exactly: ceil(90/8) == 12.
+        assert_eq!(tick_labels, 12);
+        // The first datum's label is always kept (default 3-char
+        // truncation of "D00 full label" is "D00").
+        assert!(
+            axis_group.contains("D00"),
+            "expected the first datum's tick label to survive thinning: {axis_group}"
+        );
+        // A thinned-away datum's label must NOT appear (index 1 falls
+        // between kept indices 0 and 8).
+        assert!(
+            !axis_group.contains("D01"),
+            "index 1 should have been thinned out: {axis_group}"
+        );
+
+        // Every hit band stays per-datum -- thinning only removes axis
+        // *labels*, never data or interactivity.
+        assert_eq!(html.matches(r#"data-slot="chart-hit-band""#).count(), 90);
     }
 
     #[test]

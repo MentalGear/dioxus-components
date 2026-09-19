@@ -105,6 +105,12 @@ pub fn Demo() -> Element {
                         // translucent fill) rather than stacking them --
                         // stacking is this package's `stacked` variant's own job.
                         aria_label: "Visitors by day, desktop and mobile",
+                        // Daily dates, not the generic "Category" default --
+                        // this is the one demo whose x-axis is actually a
+                        // date series (labels like "Apr 1"). The default
+                        // max_x_ticks=12 already thins the 90-day view's
+                        // x-axis labels down from one-per-day.
+                        x_label: "Date",
                     }
                     ChartTooltip {}
                     ChartLegend {}
