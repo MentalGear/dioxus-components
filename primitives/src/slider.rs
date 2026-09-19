@@ -1,11 +1,36 @@
 //! Defines the [`Slider`] and [`RangeSlider`] components and their sub-components, which provide
 //! a range input control for selecting a single value or a value range within a specified range.
 
+use crate::direction::{use_direction, Direction};
 use crate::move_interaction::{use_move_interaction, MoveEvent};
 use crate::use_controlled;
 use dioxus::prelude::*;
 use std::ops::Range;
 use std::rc::Rc;
+
+/// Whether this slider's horizontal pointer/keyboard mapping should be
+/// physically mirrored for RTL. Only ever true when `horizontal` -- a
+/// vertical slider never consults direction at all, matching Radix
+/// (`SliderVertical` in `slider.tsx` takes no `dir` prop; only
+/// `SliderHorizontal` does -- `radix-ui/primitives` commit
+/// `f7ecd5ab16f5e1e820eb5786a1419a98a2d594ae`, lines 318, 400).
+fn mirror_horizontal(horizontal: bool, direction: Direction) -> bool {
+    horizontal && direction == Direction::Rtl
+}
+
+/// Mirror a physical offset along the track's horizontal axis (`0` at the
+/// left edge, `size` at the right edge). Feeding the mirrored offset
+/// through this crate's existing (`inverted`-aware, direction-unaware)
+/// value formula reproduces Radix's own RTL output exactly: scaling
+/// `offset` through `[0,size] -> [min,max]` gives the same result as
+/// scaling `(size - offset)` through `[0,size] -> [max,min]`, since both
+/// reduce to `max - offset/size*(max-min)` -- see this lane's own
+/// `$S/batch3/rtl-rust/reference.md` §4 for the full derivation. A
+/// mirrored *delta* (used by drag and keyboard) is simply its negation:
+/// for two offsets `a`, `b`, `mirror(b) - mirror(a) == a - b == -(b - a)`.
+fn mirror_offset(offset: f64, size: f64) -> f64 {
+    size - offset
+}
 
 fn ordered_range(start: f64, end: f64) -> Range<f64> {
     if start <= end {
@@ -101,6 +126,14 @@ pub struct SliderProps {
     #[props(default)]
     pub inverted: bool,
 
+    /// The text direction, for a horizontal slider's pointer/keyboard value
+    /// mapping and which physical edge its thumb/range anchor to. Never
+    /// consulted for a vertical slider (matches Radix -- see
+    /// [`mirror_horizontal`]'s doc). Defaults to the nearest
+    /// [`crate::direction::DirectionProvider`], or LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Callback when value changes
     #[props(default)]
     pub on_value_change: Callback<f64>,
@@ -167,6 +200,7 @@ pub fn Slider(props: SliderProps) -> Element {
             disabled: props.disabled,
             horizontal: props.horizontal,
             inverted: props.inverted,
+            dir: props.dir,
             label: props.label,
             attributes: props.attributes,
             {props.children}
@@ -207,6 +241,10 @@ pub struct RangeSliderProps {
     /// Inverts the order of the values
     #[props(default)]
     pub inverted: bool,
+
+    /// The text direction -- see [`SliderProps::dir`]'s identical doc.
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Callback when value changes
     #[props(default)]
@@ -294,6 +332,7 @@ pub fn RangeSlider(props: RangeSliderProps) -> Element {
             disabled: props.disabled,
             horizontal: props.horizontal,
             inverted: props.inverted,
+            dir: props.dir,
             label: props.label,
             attributes: props.attributes,
             {props.children}
@@ -311,6 +350,7 @@ struct SliderImplProps {
     disabled: ReadSignal<bool>,
     horizontal: bool,
     inverted: bool,
+    dir: Option<Direction>,
     label: ReadSignal<Option<String>>,
     #[props(extends = GlobalAttributes)]
     attributes: Vec<Attribute>,
@@ -324,6 +364,7 @@ fn SliderImpl(props: SliderImplProps) -> Element {
     } else {
         "vertical"
     };
+    let direction = use_direction(props.dir);
 
     let mut dragging = use_signal(|| false);
     // Index of the thumb currently being interacted with via pointer. Only meaningful while
@@ -339,6 +380,7 @@ fn SliderImpl(props: SliderImplProps) -> Element {
         disabled: props.disabled,
         horizontal: props.horizontal,
         inverted: props.inverted,
+        direction,
         dragging: dragging.into(),
         active_thumb,
         label: props.label,
@@ -373,6 +415,13 @@ fn SliderImpl(props: SliderImplProps) -> Element {
         } else {
             move_event.delta_y
         };
+        // RTL mirrors the horizontal axis: a mirrored *delta* is simply its
+        // negation -- see `mirror_offset`'s doc for the derivation.
+        let delta_pos = if mirror_horizontal(ctx.horizontal, ctx.direction) {
+            -delta_pos
+        } else {
+            delta_pos
+        };
 
         let value_delta = delta_pos / size * ctx.range_size();
 
@@ -390,8 +439,10 @@ fn SliderImpl(props: SliderImplProps) -> Element {
     rsx! {
         div {
             role: "group",
+            dir: direction.as_str(),
             "data-disabled": props.disabled,
             "data-orientation": orientation,
+            "data-direction": direction.as_str(),
 
             onmounted: move |evt| async move {
                 let mut movement = movement;
@@ -430,6 +481,16 @@ fn SliderImpl(props: SliderImplProps) -> Element {
                             relative_pos.x
                         } else {
                             relative_pos.y
+                        };
+                        // RTL: a click near the left end of a horizontal
+                        // slider must resolve to a value near `max` -- see
+                        // `mirror_offset`'s doc for why mirroring the
+                        // physical offset before this formula reproduces
+                        // that (Radix `slider.tsx` L345-353).
+                        let offset = if mirror_horizontal(ctx.horizontal, ctx.direction) {
+                            mirror_offset(offset, size)
+                        } else {
+                            offset
                         };
                         let raw = (offset / size) * ctx.range_size() + (ctx.min)();
 
@@ -591,7 +652,15 @@ pub fn SliderRange(props: SliderRangeProps) -> Element {
         let end_percent = ctx.as_percent(end);
 
         if ctx.horizontal {
-            format!("left: {}%; right: {}%", start_percent, 100.0 - end_percent)
+            // RTL anchors the same two percentages to the *opposite* CSS
+            // edges -- matches Radix's `startEdge`/`endEdge` swap
+            // (`slider.tsx` L595-601 equivalent): `right`/`left` instead of
+            // `left`/`right`, same numbers.
+            if mirror_horizontal(ctx.horizontal, ctx.direction) {
+                format!("right: {}%; left: {}%", start_percent, 100.0 - end_percent)
+            } else {
+                format!("left: {}%; right: {}%", start_percent, 100.0 - end_percent)
+            }
         } else {
             format!("bottom: {}%; top: {}%", start_percent, 100.0 - end_percent)
         }
@@ -692,7 +761,13 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
 
     let percent = ctx.as_percent(value());
     let style = if ctx.horizontal {
-        format!("left: {percent}%")
+        // RTL anchors the same percent to `right` instead of `left` --
+        // matches Radix's `startEdge` swap (`slider.tsx` L722 equivalent).
+        if mirror_horizontal(ctx.horizontal, ctx.direction) {
+            format!("right: {percent}%")
+        } else {
+            format!("left: {percent}%")
+        }
     } else {
         format!("bottom: {percent}%")
     };
@@ -729,6 +804,7 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
             "data-orientation": orientation,
             "data-dragging": ctx.dragging,
             "data-index": index as i64,
+            "data-direction": ctx.direction.as_str(),
             style,
             tabindex: 0,
             onmounted: move |evt| {
@@ -760,7 +836,16 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                 };
 
                 evt.prevent_default();
-                let new_value = value() + move_event.delta_x + move_event.delta_y;
+                // RTL flips ArrowLeft/ArrowRight's contribution only --
+                // ArrowUp/ArrowDown (`delta_y`) are never direction-
+                // dependent, matching Radix's `BACK_KEYS` table (every row
+                // has `ArrowDown` as a back key regardless of direction).
+                let delta_x = if mirror_horizontal(ctx.horizontal, ctx.direction) {
+                    -move_event.delta_x
+                } else {
+                    move_event.delta_x
+                };
+                let new_value = value() + delta_x + move_event.delta_y;
 
                 // Clamp (against neighbor in range mode) and snap, then commit.
                 ctx.set_thumb.call((index, ctx.clamp_for(index, new_value)));
@@ -782,6 +867,7 @@ struct SliderContext {
     disabled: ReadSignal<bool>,
     horizontal: bool,
     inverted: bool,
+    direction: Direction,
     dragging: ReadSignal<bool>,
     active_thumb: Signal<usize>,
     label: ReadSignal<Option<String>>,
@@ -872,6 +958,62 @@ mod tests {
         assert_eq!(clamp_to_step_bounds(84.0, 78.0, 89.0, 10.0), 80.0);
     }
 
+    #[test]
+    fn mirror_horizontal_only_when_horizontal_and_rtl() {
+        assert!(!mirror_horizontal(true, Direction::Ltr));
+        assert!(mirror_horizontal(true, Direction::Rtl));
+        // A vertical slider never mirrors, regardless of direction --
+        // matches Radix's `SliderVertical` never taking a `dir` prop.
+        assert!(!mirror_horizontal(false, Direction::Ltr));
+        assert!(!mirror_horizontal(false, Direction::Rtl));
+    }
+
+    #[test]
+    fn mirror_offset_reflects_across_the_track() {
+        assert_eq!(mirror_offset(0.0, 100.0), 100.0);
+        assert_eq!(mirror_offset(100.0, 100.0), 0.0);
+        assert_eq!(
+            mirror_offset(50.0, 100.0),
+            50.0,
+            "the midpoint is a fixed point"
+        );
+        assert_eq!(mirror_offset(30.0, 100.0), 70.0);
+        // Mirroring twice is the identity -- an involution, as a physical
+        // reflection must be.
+        assert_eq!(mirror_offset(mirror_offset(30.0, 100.0), 100.0), 30.0);
+    }
+
+    #[test]
+    fn rtl_click_near_left_end_yields_a_high_value() {
+        with_runtime(|| {
+            let ctx = make_context(0.0, 100.0, 1.0, false, vec![50.0]);
+            let size = 200.0;
+
+            // A click 5px from the *left* edge of a 200px-wide RTL
+            // horizontal slider must resolve near `max` -- mirrors Radix's
+            // own `getValueFromPointer` output for `isSlidingFromLeft ==
+            // false` (`slider.tsx` L345-353; see `mirror_offset`'s doc for
+            // the algebraic equivalence).
+            assert!(mirror_horizontal(true, Direction::Rtl));
+            let mirrored_offset = mirror_offset(5.0, size);
+            let rtl_value = (mirrored_offset / size) * ctx.range_size() + (ctx.min)();
+            assert!(
+                rtl_value > 90.0,
+                "left-edge RTL click should resolve near max, got {rtl_value}"
+            );
+
+            // The identical physical click under LTR (no mirroring) must
+            // resolve near `min` instead -- the control case proving the
+            // RTL branch is a real behavior change, not a no-op.
+            assert!(!mirror_horizontal(true, Direction::Ltr));
+            let ltr_value = (5.0 / size) * ctx.range_size() + (ctx.min)();
+            assert!(
+                ltr_value < 10.0,
+                "left-edge LTR click should resolve near min, got {ltr_value}"
+            );
+        });
+    }
+
     /// Run a closure inside a Dioxus runtime context so that Signal/Memo/Callback
     /// APIs are available (mirrors `virtual/virtualizer.rs`'s `with_runtime`).
     fn with_runtime(f: impl Fn() + 'static) {
@@ -931,6 +1073,7 @@ mod tests {
             disabled: disabled_sig.into(),
             horizontal: true,
             inverted,
+            direction: Direction::Ltr,
             dragging: dragging_sig.into(),
             active_thumb,
             label: label_sig.into(),
