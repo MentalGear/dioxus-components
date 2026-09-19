@@ -10,7 +10,38 @@
 
 use dioxus::prelude::*;
 
-use super::engine::{ChartConfig, ChartDatum, ChartKind};
+use super::engine::{BandScale, ChartConfig, ChartDatum, ChartKind, LinearScale};
+
+/// The pixel-space layout `Chart` computed for its own SVG, shared so
+/// `ChartTooltip` can position itself "from the same scales" (per
+/// `$S/chart-api.md`) with no DOM measurement of its own. `Chart` is the
+/// only writer (a plain assignment during its own render, not inside an
+/// effect -- its width/height/axis-visibility props are the only inputs
+/// this depends on, so it's cheap and correct to just recompute and
+/// re-set every render; `Signal`'s own equality check keeps that a no-op
+/// once the value stabilizes); `ChartTooltip` is the only reader. `None`
+/// until `Chart` has rendered at least once -- `ChartTooltip` treats that
+/// exactly like `active_index == None` (rendered `data-state="closed"`, so
+/// its exact position doesn't matter yet), which covers every real case:
+/// nothing can set `active_index` to `Some` before `Chart` -- the thing
+/// that owns the hit bands that set it -- has rendered.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) struct ChartLayout {
+    /// The SVG viewBox's own width/height -- percentages are relative to
+    /// these, not the (smaller) plot area the scales below draw within.
+    pub width: f64,
+    pub height: f64,
+    /// The x scale `Chart` drew its bands with.
+    pub x_scale: BandScale,
+    /// The y scale `Chart` drew its values with.
+    pub y_scale: LinearScale,
+    /// The topmost (max) raw value across all series at each datum,
+    /// post-stacking if the chart is stacked -- what the tooltip anchors
+    /// its y position to ("the active band center / max value point",
+    /// `$S/chart-api.md`), so `ChartTooltip` needs no stacking-awareness
+    /// of its own. `0.0` for a datum with no defined values at all.
+    pub top_value: Vec<f64>,
+}
 
 /// The state `ChartContainer` provides to every descendant -- fetch it
 /// with [`use_chart`]. `Copy` (like this crate's other root contexts, e.g.
@@ -39,6 +70,13 @@ pub struct ChartContext {
     pub active_index: Signal<Option<usize>>,
     /// Which mark family this chart draws.
     pub kind: ReadSignal<ChartKind>,
+    /// `Chart`'s own computed pixel layout, shared for `ChartTooltip`'s
+    /// benefit -- see [`ChartLayout`]'s own doc. Not part of this crate's
+    /// public API surface (`pub(crate)`, unlike every other field here):
+    /// an internal wiring detail this design needed, not a contract this
+    /// lane commits to keeping stable for outside callers of
+    /// [`use_chart`].
+    pub(crate) layout: Signal<Option<ChartLayout>>,
 }
 
 /// Fetch the nearest ancestor `ChartContainer`'s [`ChartContext`].

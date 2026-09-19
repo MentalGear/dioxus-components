@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::chart::context::use_chart;
+use crate::chart::context::{use_chart, ChartLayout};
 use crate::chart::engine::geometry::plot_runs;
 use crate::chart::engine::scale::{fmt_decimal, fmt_num};
 use crate::chart::engine::table::table_rows;
@@ -208,6 +208,7 @@ pub fn Chart(props: ChartProps) -> Element {
     let kind = (ctx.kind)();
     let direction = use_direction(props.dir);
     let mut active_index = ctx.active_index;
+    let mut layout_signal = ctx.layout;
 
     // A "stacked line chart" isn't a standard construction -- see this
     // prop's own doc. Every computation below reads this, not the raw
@@ -254,6 +255,42 @@ pub fn Chart(props: ChartProps) -> Element {
     } else {
         Vec::new()
     };
+
+    // Share this render's layout for `ChartTooltip`'s benefit -- see
+    // `ChartLayout`'s own doc for why a plain write here (not an effect)
+    // is correct: it depends only on this component's own props, so
+    // recomputing and re-setting every render is cheap and right, and
+    // `Signal`'s equality check keeps it a no-op once stable.
+    let top_value: Vec<f64> = (0..n)
+        .map(|i| {
+            let top = if stacked {
+                stacked_spans[i]
+                    .iter()
+                    .map(|(_, y1)| *y1)
+                    .fold(f64::NEG_INFINITY, f64::max)
+            } else {
+                data[i]
+                    .values
+                    .iter()
+                    .take(config.series.len())
+                    .flatten()
+                    .copied()
+                    .fold(f64::NEG_INFINITY, f64::max)
+            };
+            if top.is_finite() {
+                top
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    layout_signal.set(Some(ChartLayout {
+        width,
+        height,
+        x_scale,
+        y_scale,
+        top_value,
+    }));
 
     let rows = table_rows(&data);
 

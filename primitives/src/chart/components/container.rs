@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::chart::context::ChartContext;
+use crate::chart::context::{ChartContext, ChartLayout};
 use crate::chart::engine::{ChartConfig, ChartDatum, ChartKind};
 use crate::{use_id_or, use_unique_id};
 
@@ -86,6 +86,7 @@ pub struct ChartContainerProps {
 pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let id = use_id_or(use_unique_id(), props.id);
     let active_index = use_signal(|| None::<usize>);
+    let layout = use_signal(|| None::<ChartLayout>);
 
     use_context_provider(|| ChartContext {
         id,
@@ -93,6 +94,7 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
         data: props.data,
         active_index,
         kind: props.kind,
+        layout,
     });
 
     let kind_str = use_memo(move || (props.kind)().as_str());
