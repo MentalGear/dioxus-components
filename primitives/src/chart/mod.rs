@@ -59,9 +59,9 @@ mod components;
 mod context;
 pub mod engine;
 
-pub use components::{ChartContainer, ChartContainerProps};
+pub use components::{Chart, ChartContainer, ChartContainerProps, ChartProps};
 pub use context::{use_chart, ChartContext};
 pub use engine::{
-    area_path, line_path, nice_domain, stack, BandScale, ChartConfig, ChartDatum, ChartKind,
-    ChartSeries, Curve, LinearScale,
+    area_between_path, area_path, line_path, nice_domain, stack, BandScale, ChartConfig,
+    ChartDatum, ChartKind, ChartSeries, Curve, LinearScale,
 };

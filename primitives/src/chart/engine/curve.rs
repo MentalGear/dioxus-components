@@ -139,72 +139,129 @@ pub enum Curve {
     Step,
 }
 
-fn linear_path(points: &[(f64, f64)]) -> String {
-    let mut out = String::new();
-    for (i, (x, y)) in points.iter().enumerate() {
-        if i == 0 {
-            out.push_str(&format!(
-                "M{} {}",
-                super::scale::fmt_num(*x),
-                super::scale::fmt_num(*y)
-            ));
-        } else {
-            out.push_str(&format!(
-                " L{} {}",
-                super::scale::fmt_num(*x),
-                super::scale::fmt_num(*y)
-            ));
+/// A straight or cubic edge connecting one on-curve anchor point to the
+/// next (nearer-to-previous control point first, for `Cubic`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Edge {
+    /// A straight line from the previous anchor to this one.
+    Line,
+    /// A cubic Bezier from the previous anchor to this one.
+    Cubic(f64, f64, f64, f64),
+}
+
+/// A curve as an explicit sequence of on-curve anchor points plus the
+/// [`Edge`] connecting each consecutive pair (`edges.len() == anchors.len()
+/// - 1`) -- the intermediate representation [`line_path`]/[`area_path`]/
+/// [`area_between_path`] all build on.
+///
+/// This exists specifically so [`Self::reversed`] is correct for *every*
+/// [`Curve`] variant, which [`area_between_path`]'s curved-baseline bottom
+/// edge needs: retracing an already-built curve backward, not recomputing
+/// a curve algorithm on reversed input. The latter happens to be
+/// numerically correct for `Linear` and `Monotone` (Steffen's tangent
+/// formula is symmetric under point-order reversal, confirmed by direct
+/// computation while building this module) but is *wrong* for `Step`: its
+/// "after" corner is a real anchor point, and naively recomputing "step
+/// after" on reversed input silently produces a "step before" shape
+/// instead of the same curve traced backward. Representing the corner as
+/// its own anchor (connected by two `Line` edges) sidesteps that
+/// distinction entirely -- reversing a sequence of anchors and edges is
+/// unconditionally correct, regardless of what the edges mean visually.
+struct Path {
+    anchors: Vec<(f64, f64)>,
+    edges: Vec<Edge>,
+}
+
+impl Path {
+    /// Build a [`Path`] tracing `points` (at least 2) with `curve`'s
+    /// interpolation.
+    fn build(points: &[(f64, f64)], curve: Curve) -> Self {
+        match curve {
+            Curve::Linear => Path {
+                anchors: points.to_vec(),
+                edges: vec![Edge::Line; points.len().saturating_sub(1)],
+            },
+            Curve::Step => {
+                let mut anchors = vec![points[0]];
+                let mut edges = Vec::new();
+                for w in points.windows(2) {
+                    let (_, y0) = w[0];
+                    let (x1, y1) = w[1];
+                    anchors.push((x1, y0));
+                    edges.push(Edge::Line);
+                    anchors.push((x1, y1));
+                    edges.push(Edge::Line);
+                }
+                Path { anchors, edges }
+            }
+            Curve::Monotone => {
+                let tangents = monotone_tangents(points);
+                let mut edges = Vec::with_capacity(points.len() - 1);
+                for i in 0..points.len() - 1 {
+                    let (x0, y0) = points[i];
+                    let (x1, y1) = points[i + 1];
+                    let dx = (x1 - x0) / 3.0;
+                    edges.push(Edge::Cubic(
+                        x0 + dx,
+                        y0 + dx * tangents[i],
+                        x1 - dx,
+                        y1 - dx * tangents[i + 1],
+                    ));
+                }
+                Path {
+                    anchors: points.to_vec(),
+                    edges,
+                }
+            }
         }
     }
-    out
-}
 
-/// Step-*after*: from each point, a horizontal line to the next point's x
-/// (at the *current* point's y), then a vertical line up/down to the next
-/// point's own y. The step transition happens right at the next point, not
-/// before it or at the midpoint (those would be d3's `curveStepBefore`/
-/// plain `curveStep`, not requested here).
-fn step_after_path(points: &[(f64, f64)]) -> String {
-    let fmt = super::scale::fmt_num;
-    let mut out = format!("M{} {}", fmt(points[0].0), fmt(points[0].1));
-    for w in points.windows(2) {
-        let (_, y0) = w[0];
-        let (x1, y1) = w[1];
-        out.push_str(&format!(" L{} {}", fmt(x1), fmt(y0)));
-        out.push_str(&format!(" L{} {}", fmt(x1), fmt(y1)));
+    /// The same curve, traced from its last anchor back to its first.
+    fn reversed(&self) -> Self {
+        let anchors: Vec<_> = self.anchors.iter().rev().copied().collect();
+        let edges: Vec<_> = self
+            .edges
+            .iter()
+            .rev()
+            .map(|e| match e {
+                Edge::Line => Edge::Line,
+                Edge::Cubic(x1, y1, x2, y2) => Edge::Cubic(*x2, *y2, *x1, *y1),
+            })
+            .collect();
+        Path { anchors, edges }
     }
-    out
-}
 
-/// Monotone cubic Hermite, converted to SVG cubic Bezier segments via the
-/// standard Hermite-to-Bezier control-point construction (each segment's
-/// control points sit a third of the way along x, offset by that
-/// endpoint's own tangent) -- the same construction d3-shape's own `point`
-/// helper uses (module doc), cited via
-/// <https://en.wikipedia.org/wiki/Cubic_Hermite_spline#Representations>.
-fn monotone_path(points: &[(f64, f64)]) -> String {
-    let fmt = super::scale::fmt_num;
-    let tangents = monotone_tangents(points);
-    let mut out = format!("M{} {}", fmt(points[0].0), fmt(points[0].1));
-    for i in 0..points.len() - 1 {
-        let (x0, y0) = points[i];
-        let (x1, y1) = points[i + 1];
-        let dx = (x1 - x0) / 3.0;
-        let cp1x = x0 + dx;
-        let cp1y = y0 + dx * tangents[i];
-        let cp2x = x1 - dx;
-        let cp2y = y1 - dx * tangents[i + 1];
-        out.push_str(&format!(
-            " C{} {} {} {} {} {}",
-            fmt(cp1x),
-            fmt(cp1y),
-            fmt(cp2x),
-            fmt(cp2y),
-            fmt(x1),
-            fmt(y1)
-        ));
+    fn to_svg(&self) -> String {
+        let fmt = super::scale::fmt_num;
+        let Some((x0, y0)) = self.anchors.first() else {
+            return String::new();
+        };
+        let mut out = format!("M{} {}", fmt(*x0), fmt(*y0));
+        for (i, edge) in self.edges.iter().enumerate() {
+            let (x, y) = self.anchors[i + 1];
+            match edge {
+                Edge::Line => out.push_str(&format!(" L{} {}", fmt(x), fmt(y))),
+                Edge::Cubic(x1, y1, x2, y2) => out.push_str(&format!(
+                    " C{} {} {} {} {} {}",
+                    fmt(*x1),
+                    fmt(*y1),
+                    fmt(*x2),
+                    fmt(*y2),
+                    fmt(x),
+                    fmt(y)
+                )),
+            }
+        }
+        out
     }
-    out
+
+    fn first_x(&self) -> f64 {
+        self.anchors.first().map_or(0.0, |(x, _)| *x)
+    }
+
+    fn last_x(&self) -> f64 {
+        self.anchors.last().map_or(0.0, |(x, _)| *x)
+    }
 }
 
 /// Build an SVG path `d` string tracing `points` in order, using `curve`'s
@@ -219,16 +276,15 @@ pub fn line_path(points: &[(f64, f64)], curve: Curve) -> String {
         let (x, y) = points[0];
         return format!("M{} {}", super::scale::fmt_num(x), super::scale::fmt_num(y));
     }
-    match curve {
-        Curve::Linear => linear_path(points),
-        Curve::Step => step_after_path(points),
-        Curve::Monotone => monotone_path(points),
-    }
+    Path::build(points, curve).to_svg()
 }
 
 /// Build a closed SVG path `d` string for an area: the same top edge as
 /// [`line_path`], then straight down to `baseline_y` under the last point,
 /// straight back to `baseline_y` under the first point, and closed (`Z`).
+/// For a *stacked* area (whose bottom edge is itself a curve -- the
+/// previous series' cumulative top, not a flat line), use
+/// [`area_between_path`] instead.
 pub fn area_path(points: &[(f64, f64)], baseline_y: f64, curve: Curve) -> String {
     let fmt = super::scale::fmt_num;
     if points.is_empty() {
@@ -243,15 +299,60 @@ pub fn area_path(points: &[(f64, f64)], baseline_y: f64, curve: Curve) -> String
             b = fmt(baseline_y)
         );
     }
-    let top = line_path(points, curve);
-    let first_x = points[0].0;
-    let last_x = points[points.len() - 1].0;
+    let path = Path::build(points, curve);
+    let top = path.to_svg();
     format!(
         "{top} L{lx} {b} L{fx} {b} Z",
-        lx = fmt(last_x),
+        lx = fmt(path.last_x()),
         b = fmt(baseline_y),
-        fx = fmt(first_x)
+        fx = fmt(path.first_x())
     )
+}
+
+/// Build a closed SVG path `d` string for a *stacked* area: `top` (the
+/// series' own values) drawn forward with `curve`'s interpolation, then
+/// `bottom` (the previous series' cumulative top -- [`super::stack::stack`]'s
+/// per-row `y0`) retraced backward with the same interpolation, closed.
+/// `top` and `bottom` should share x positions pairwise (as
+/// [`super::stack::stack`]'s output, read at the same x positions, does);
+/// a length mismatch is handled defensively by using the shorter of the
+/// two rather than panicking.
+///
+/// ```
+/// use dioxus_primitives::chart::{area_between_path, Curve};
+///
+/// let top = [(0.0, 10.0), (10.0, 20.0)];
+/// let bottom = [(0.0, 5.0), (10.0, 8.0)];
+/// assert_eq!(
+///     area_between_path(&top, &bottom, Curve::Linear),
+///     "M0 10 L10 20 L10 8 L0 5 Z"
+/// );
+/// ```
+pub fn area_between_path(top: &[(f64, f64)], bottom: &[(f64, f64)], curve: Curve) -> String {
+    let fmt = super::scale::fmt_num;
+    let n = top.len().min(bottom.len());
+    if n == 0 {
+        return String::new();
+    }
+    if n == 1 {
+        let (x, y1) = top[0];
+        let (_, y0) = bottom[0];
+        return format!(
+            "M{x} {y1} L{x} {y0} Z",
+            x = fmt(x),
+            y1 = fmt(y1),
+            y0 = fmt(y0)
+        );
+    }
+    let top_svg = Path::build(&top[..n], curve).to_svg();
+    let bottom_svg = Path::build(&bottom[..n], curve).reversed().to_svg();
+    // `bottom_svg` starts with its own "M x y" -- continue the same path
+    // instead of starting a new subpath.
+    let bottom_svg = bottom_svg
+        .strip_prefix('M')
+        .map(|rest| format!("L{rest}"))
+        .unwrap_or(bottom_svg);
+    format!("{top_svg} {bottom_svg} Z")
 }
 
 #[cfg(test)]
@@ -362,6 +463,84 @@ mod tests {
     #[test]
     fn area_path_empty_is_empty() {
         assert_eq!(area_path(&[], 20.0, Curve::Linear), "");
+    }
+
+    // -- area_between_path / Path::reversed ------------------------------------------------------
+
+    #[test]
+    fn area_between_path_linear_closes_top_forward_bottom_backward() {
+        let top = [(0.0, 10.0), (10.0, 20.0)];
+        let bottom = [(0.0, 5.0), (10.0, 8.0)];
+        assert_eq!(
+            area_between_path(&top, &bottom, Curve::Linear),
+            "M0 10 L10 20 L10 8 L0 5 Z"
+        );
+    }
+
+    #[test]
+    fn area_between_path_step_retraces_the_after_corner_correctly() {
+        // The case `Path`'s anchor-based reversal exists for: naively
+        // recomputing "step after" on reversed input would silently
+        // produce a "step before" shape instead of this same curve traced
+        // backward.
+        let top = [(0.0, 10.0), (10.0, 20.0)];
+        let bottom = [(0.0, 5.0), (10.0, 8.0)];
+        // Top (step-after, forward): M0 10 L10 10 L10 20.
+        // Bottom (step-after, forward) would be M0 5 L10 5 L10 8; traced
+        // BACKWARD that's M10 8 L10 5 L0 5 -- the corner (10, 5) stays a
+        // corner, it does not move to (0, 8).
+        assert_eq!(
+            area_between_path(&top, &bottom, Curve::Step),
+            "M0 10 L10 10 L10 20 L10 8 L10 5 L0 5 Z"
+        );
+    }
+
+    #[test]
+    fn area_between_path_monotone_matches_reversed_tangents() {
+        // Cross-check against the pinned Steffen derivation
+        // (`monotone_path_matches_the_pinned_steffen_derivation`): the
+        // bottom edge here is exactly that same 3-point curve, so its
+        // retraced-backward form must be that same path's segments in
+        // reverse, control points swapped -- not a fresh (and, per this
+        // module's doc, provably identical, but worth pinning) tangent
+        // computation on the reversed points.
+        let top = [(0.0, 10.0), (1.0, 10.0), (3.0, 10.0)]; // flat -- isolates the bottom edge
+        let bottom = [(0.0, 0.0), (1.0, 1.0), (3.0, 2.0)];
+        let path = area_between_path(&top, &bottom, Curve::Monotone);
+        // Flat top: every tangent is 0, so its Bezier control points sit
+        // at the same y as the anchors (still "C" commands, not "L" --
+        // Monotone always emits cubics, even for a visually straight run).
+        assert!(path.starts_with("M0 10 C0.333 10 0.667 10 1 10 C1.667 10 2.333 10 3 10 "));
+        assert!(path.ends_with(" Z"));
+        // The bottom edge, forward, is
+        // "M0 0 C0.333 0.361 0.667 0.722 1 1 C1.667 1.556 2.333 1.778 3 2"
+        // (the pinned derivation) -- traced backward that's the same two
+        // Beziers, segment order AND each one's own control points
+        // reversed, ending back at (0, 0).
+        assert!(path.contains("L3 2 C2.333 1.778 1.667 1.556 1 1 C0.667 0.722 0.333 0.361 0 0"));
+    }
+
+    #[test]
+    fn area_between_path_single_point_is_a_closed_sliver() {
+        assert_eq!(
+            area_between_path(&[(5.0, 10.0)], &[(5.0, 2.0)], Curve::Linear),
+            "M5 10 L5 2 Z"
+        );
+    }
+
+    #[test]
+    fn area_between_path_empty_is_empty() {
+        assert_eq!(area_between_path(&[], &[], Curve::Linear), "");
+    }
+
+    #[test]
+    fn area_between_path_mismatched_lengths_uses_the_shorter() {
+        let top = [(0.0, 10.0), (10.0, 20.0), (20.0, 30.0)];
+        let bottom = [(0.0, 5.0), (10.0, 8.0)];
+        assert_eq!(
+            area_between_path(&top, &bottom, Curve::Linear),
+            "M0 10 L10 20 L10 8 L0 5 Z"
+        );
     }
 
     #[test]
