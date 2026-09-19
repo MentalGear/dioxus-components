@@ -1,0 +1,8 @@
+{
+  "name": "area_chart",
+  "description": "shadcn-parity area chart gallery: default, curves, stacking, gradients, legend, axes, and an interactive range picker.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "componentDependencies": ["chart"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
