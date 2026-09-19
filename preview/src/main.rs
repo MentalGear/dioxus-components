@@ -329,6 +329,43 @@ impl Route {
     }
 }
 
+/// The outermost layout, applied to EVERY route (never popped by an
+/// `#[end_layout]` anywhere in `Route`) -- this is deliberately where
+/// `GlobalHead` renders (dev-docs/backlog.md row 46 finding, below), not
+/// `NavigationLayout`, precisely because it stays mounted across a
+/// client-side transition between ANY two routes in the app, including two
+/// routes that both sit outside `NavigationLayout`
+/// (`ComponentBlockDemo`/`ComponentBlockDemoPath`/`EmailClientDashboard`).
+///
+/// **Row 46 finding:** before this construction, those three routes each
+/// called `GlobalHead {}` themselves (the same shape, three separate call
+/// sites -- CLAUDE.md's "two or more occurrences is a class" case). That
+/// was harmless as long as the ONLY way to reach any of them was a hard
+/// page load, but `ComponentBlockDemo`'s new client-side redirect (this
+/// same row) to `ComponentBlockDemoPath` made it the first construction in
+/// this app to ever SPA-navigate between two routes that each mount their
+/// own independent `GlobalHead` instance -- and doing so silently dropped
+/// `main.css`/`dx-components-theme.css`/the Google Fonts `<link>`s
+/// entirely (confirmed by reading `document.styleSheets` before/after:
+/// present on a hard load of the destination route directly, absent after
+/// the redirect transition) rather than erroring, a hydration-adjacent
+/// silent-CSS-loss defect of the exact same *class* `oracle/tier2-html/
+/// global-stylesheet.spec.ts` already exists to catch for the `@import`
+/// case. Root cause: `document::Link`'s own head-tag bookkeeping does not
+/// re-insert a href it believes is already present, and unmounting the
+/// FIRST `GlobalHead` instance (when the "from" route's tree is torn down)
+/// does not clear that bookkeeping, so the SECOND instance's identical
+/// `document::Link`s silently no-op. Fixed by construction, not by patching
+/// each call site: `GlobalHead` now mounts exactly once, here, and simply
+/// never unmounts for the lifetime of the app, so there is no unmount+
+/// remount pair for the bug to trigger on, regardless of which route
+/// transitions to which. Subsumes all three prior call sites
+/// (`NavigationLayout`, `ComponentBlockDemo`/`ComponentBlockDemoPath`,
+/// `EmailClientDashboard`); does not need a matching fix for
+/// `NavigationLayout`'s own `hero.css` link, which stays where it is --
+/// no evidence of the same defect there (nothing outside `NavigationLayout`
+/// ever needed `hero.css`, so no cross-layout transition has ever unmounted
+/// it under a sibling that also renders it).
 #[component]
 fn AppLayout() -> Element {
     use_effect(move || {
@@ -339,6 +376,7 @@ fn AppLayout() -> Element {
     });
 
     rsx! {
+        GlobalHead {}
         Outlet::<Route> {}
     }
 }
@@ -364,7 +402,6 @@ fn NavigationLayout() -> Element {
     });
 
     rsx! {
-        GlobalHead {}
         document::Link { rel: "stylesheet", href: asset!("/assets/hero.css") }
         Outlet::<Route> {}
         Footer {}
@@ -1718,8 +1755,10 @@ fn GlobalHead() -> Element {
 
 #[component]
 fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
+    // `GlobalHead` renders once, in `AppLayout` (this route's own ancestor
+    // layout) -- see that component's doc comment (row 46) for why it moved
+    // there rather than being called per-route as it used to be here.
     rsx! {
-        GlobalHead {}
         dashboard::views::email_client::EmailClient {}
     }
 }
@@ -1761,8 +1800,14 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
         });
     });
 
+    // `GlobalHead` renders once, in `AppLayout` (see that component's doc
+    // comment, row 46) -- NOT called here. This route's own redirect to
+    // `ComponentBlockDemoPath` is exactly the transition that finding
+    // documents: calling `GlobalHead` independently in both of two routes a
+    // client-side navigation can move between silently drops its `<link>`s
+    // on the destination once the source unmounts, which a per-route call
+    // here would reintroduce.
     rsx! {
-        GlobalHead {}
         main {
             style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
             p { "Loading component…" }
@@ -1778,9 +1823,10 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
 /// its own static file and its own server/client-agreeing render.
 #[component]
 fn ComponentBlockDemoPath(name: String, variant: String, dark_mode: Option<bool>) -> Element {
+    // `GlobalHead` renders once, in `AppLayout` -- not per-route here; see
+    // `AppLayout`'s doc comment (row 46) for why.
     let Some(demo) = components::DEMOS.iter().find(|d| d.name == name).cloned() else {
         return rsx! {
-            GlobalHead {}
             main {
                 h1 { "Block component not found" }
             }
@@ -1789,7 +1835,6 @@ fn ComponentBlockDemoPath(name: String, variant: String, dark_mode: Option<bool>
 
     let Some(variant) = demo.variants.iter().find(|v| v.name == variant) else {
         return rsx! {
-            GlobalHead {}
             main {
                 style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
                 h1 { "Variant content not found: {variant}" }
@@ -1829,7 +1874,6 @@ fn ComponentBlockDemoPath(name: String, variant: String, dark_mode: Option<bool>
     };
 
     rsx! {
-        GlobalHead {}
         header {
             h1 { style: "{SR_ONLY_STYLE}", "{heading}" }
         }
