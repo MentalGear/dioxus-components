@@ -4,6 +4,7 @@ use core::panic;
 use std::time::Duration;
 
 use crate::{
+    direction::{use_direction, Direction},
     selectable::{
         use_selectable_root, use_single_selectable_value, RcPartialEqValue, SelectionMode,
     },
@@ -75,6 +76,12 @@ pub struct SelectProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub scroll_lock: ReadSignal<bool>,
 
+    /// The text direction, emitted on the trigger and listbox content.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Additional attributes for the select element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -133,6 +140,10 @@ pub struct SelectMultiProps<T: Clone + PartialEq + 'static = String> {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub scroll_lock: ReadSignal<bool>,
 
+    /// The text direction -- see [`SelectProps::dir`]'s identical doc.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Additional attributes for the select element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -151,6 +162,8 @@ struct SelectRootConfig {
     required: ReadSignal<bool>,
     /// See `SelectContext::scroll_lock`'s doc.
     scroll_lock: ReadSignal<bool>,
+    /// See `SelectContext::direction`'s doc.
+    direction: Direction,
 }
 
 /// Sets up the shared signals, focus, and context that both [`Select`] and
@@ -168,6 +181,7 @@ fn use_select_root(
         typeahead_timeout,
         required,
         scroll_lock,
+        direction,
     } = config;
     let selectable = use_selectable_root(
         values,
@@ -204,6 +218,7 @@ fn use_select_root(
         keep_trigger_focus,
         required,
         scroll_lock,
+        direction,
     });
 
     (ctx, open)
@@ -282,6 +297,7 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
         props.on_value_change,
         "select",
     );
+    let direction = use_direction(props.dir);
 
     let (ctx, open) = use_select_root(
         values,
@@ -298,6 +314,7 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
             typeahead_timeout: props.typeahead_timeout,
             required: props.required,
             scroll_lock: props.scroll_lock,
+            direction,
         },
     );
 
@@ -324,8 +341,10 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
 
     rsx! {
         div {
+            dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
+            "data-direction": ctx.direction.as_str(),
             ..props.attributes,
             {props.children}
         }
@@ -470,11 +489,13 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
         set_multi_internal.call(current);
     });
 
+    let direction = use_direction(props.dir);
+
     // SelectMulti has no `required` prop: a native <select multiple> can't
     // express "at least one selected" via a single `required` attribute the
     // way a single-select can, and multi-select form participation is out of
     // scope for docs/plan.md Phase 1 (which only asks for `Select`).
-    let (_ctx, open) = use_select_root(
+    let (ctx, open) = use_select_root(
         values,
         set_value,
         SelectionMode::Multiple,
@@ -492,13 +513,16 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
             // anything forwarded from `props`.
             required: ReadSignal::new(Signal::new(false)),
             scroll_lock: props.scroll_lock,
+            direction,
         },
     );
 
     rsx! {
         div {
+            dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
+            "data-direction": ctx.direction.as_str(),
             ..props.attributes,
             {props.children}
         }

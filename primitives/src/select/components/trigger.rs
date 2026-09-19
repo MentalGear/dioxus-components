@@ -122,6 +122,8 @@ pub fn SelectTrigger(props: SelectTriggerProps) -> Element {
     let attributes = merge_attributes(vec![
         attributes!(button {
             id: id.cloned(),
+            dir: ctx.direction.as_str(),
+            "data-direction": ctx.direction.as_str(),
             // See `crate::top_layer::anchor_name_style`: ties this trigger
             // to the web-arm listbox's `position-anchor`
             // (`SelectListRendered`, `list.rs`) so its anchor-positioned

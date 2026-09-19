@@ -8,6 +8,7 @@
 //! the exact pinned-commit source its quotes were read from; the doc comments below cite the same
 //! pattern's "Keyboard Interaction" and "WAI-ARIA Roles, States, and Properties" sections by name.
 
+use crate::direction::{use_direction, Direction};
 use crate::move_interaction::{use_move_interaction, MoveEvent, MoveInteraction};
 use crate::{use_controlled, use_unique_id};
 use dioxus::prelude::*;
@@ -166,6 +167,16 @@ fn home_end_target(key: &Key, panel: &PanelConstraints) -> Option<f64> {
 #[derive(Clone, Copy)]
 struct ResizableGroupContext {
     direction: ReadSignal<ResizableDirection>,
+    /// Text direction (not to be confused with `direction` above, this
+    /// group's *layout axis*) -- only ever consulted when `direction` is
+    /// `Horizontal`; a vertical group's handle never flips, matching every
+    /// other RTL-aware component in this crate that has an orientation
+    /// (Slider's `SliderVertical` never consults direction either). See
+    /// `ResizableHandle`'s own `onkeydown` and this lane's
+    /// `$S/batch3/rtl-rust/reference.md`'s Resizable row for the
+    /// extrapolation this is based on (no Radix/shadcn original exists to
+    /// cite directly).
+    text_direction: Direction,
     disabled: ReadSignal<bool>,
     group_id: Signal<String>,
     panels: Signal<Vec<PanelConstraints>>,
@@ -281,6 +292,16 @@ pub struct ResizablePanelGroupProps {
     #[props(default)]
     pub disabled: ReadSignal<bool>,
 
+    /// The text direction. Only affects a `Horizontal` group: its panels
+    /// render in reverse visual order (`flex-direction: row-reverse`) and
+    /// its handles' `ArrowLeft`/`ArrowRight` swap roles, so the physically-
+    /// left arrow key always shrinks whichever panel is visually on the
+    /// left. A `Vertical` group ignores this entirely. Defaults to the
+    /// nearest [`crate::direction::DirectionProvider`], or LTR if there is
+    /// none.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Additional attributes to apply to the group's container element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -321,6 +342,7 @@ pub struct ResizablePanelGroupProps {
 /// control styling:
 /// - `data-orientation`: `horizontal` or `vertical`, matching `direction`.
 /// - `data-disabled`: Indicates if the group is disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn ResizablePanelGroup(props: ResizablePanelGroupProps) -> Element {
     let (committed, set_committed) = use_controlled(
@@ -334,9 +356,11 @@ pub fn ResizablePanelGroup(props: ResizablePanelGroupProps) -> Element {
     let pre_collapse = use_signal(Vec::new);
     let group_dragging_unused = use_signal(|| false);
     let mut group_movement = use_move_interaction(group_dragging_unused);
+    let text_direction = use_direction(props.dir);
 
     let ctx = use_context_provider(|| ResizableGroupContext {
         direction: props.direction,
+        text_direction,
         disabled: props.disabled,
         group_id,
         panels,
@@ -347,6 +371,15 @@ pub fn ResizablePanelGroup(props: ResizablePanelGroupProps) -> Element {
     });
 
     let orientation = use_memo(move || (ctx.direction)().as_str());
+    // Deliberately always plain "row", never "row-reverse": CSS Flexbox's
+    // `flex-direction: row` is *already* direction-relative by spec (main-
+    // start is inline-start, which the `dir` attribute below moves from
+    // the left edge to the right edge under RTL) -- so the first DOM
+    // child/panel already renders on the physically-*right* edge under
+    // `dir="rtl"` with no CSS change needed at all. Adding `row-reverse`
+    // on top would cancel that automatic mirroring and put the DOM order
+    // back to looking LTR. `ResizableHandle`'s own keyboard delta flip
+    // (below) is derived assuming exactly this unmodified `row` mirroring.
     let flex_direction = use_memo(move || match (ctx.direction)() {
         ResizableDirection::Horizontal => "row",
         ResizableDirection::Vertical => "column",
@@ -372,8 +405,10 @@ pub fn ResizablePanelGroup(props: ResizablePanelGroupProps) -> Element {
 
     rsx! {
         div {
+            dir: text_direction.as_str(),
             "data-orientation": orientation,
             "data-disabled": ctx.disabled,
+            "data-direction": text_direction.as_str(),
             style,
             onmounted: move |evt| async move {
                 group_movement.set_mounted(evt.data()).await;
@@ -665,7 +700,28 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
                         evt.prevent_default();
                         let full = ctx.effective_sizes();
                         let constraints = ctx.constraints_vec();
+                        // RTL flips a horizontal handle's ArrowLeft/ArrowRight
+                        // role so a physical arrow key always moves the
+                        // divider in that same physical direction. Under
+                        // `dir="rtl"`, `ResizablePanelGroup`'s own unmodified
+                        // `flex-direction: row` already mirrors panel order
+                        // per the CSS Flexbox spec (main-start becomes
+                        // inline-start = the right edge) -- this panel
+                        // (`index`, `resize_pair`'s "primary") is now
+                        // visually on the *right*, its `index + 1` neighbor
+                        // on the left. `resize_pair` always grows `index`
+                        // for a positive delta regardless of visual side, so
+                        // moving the divider physically rightward now means
+                        // *shrinking* `index` (and growing `index + 1`) --
+                        // the negation below. A vertical handle never flips
+                        // -- see `ResizableGroupContext::text_direction`'s
+                        // doc.
                         let delta = match dir {
+                            ResizableDirection::Horizontal
+                                if ctx.text_direction == Direction::Rtl =>
+                            {
+                                -move_event.delta_x
+                            }
                             ResizableDirection::Horizontal => move_event.delta_x,
                             ResizableDirection::Vertical => move_event.delta_y,
                         };

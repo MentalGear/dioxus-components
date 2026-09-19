@@ -7,6 +7,7 @@ use dioxus_sdk_time::sleep;
 use std::time::Duration;
 
 use super::text_search::AdaptiveKeyboard;
+use crate::direction::Direction;
 use crate::selectable::SelectableContext;
 
 /// Main context for the select component containing all shared state
@@ -47,6 +48,16 @@ pub(super) struct SelectContext {
     /// (docs/backlog.md row 9). Defaults to `true` (Radix parity) via both
     /// props' own `#[props(default = ...)]`.
     pub scroll_lock: ReadSignal<bool>,
+
+    /// Text direction, emitted as `dir`/`data-direction` on the trigger and
+    /// the listbox content. Neither this crate's trigger nor its listbox
+    /// has an `ArrowLeft`/`ArrowRight`-driven navigation to flip (both are
+    /// vertical-only, matching the APG select-only combobox pattern) --
+    /// see this lane's own `$S/batch3/rtl-rust/reference.md`'s Select row
+    /// for why Radix's own RTL-specific positioning math does not apply
+    /// here either (this crate's `SelectList` always uses anchor
+    /// positioning, never Radix's "item-aligned" mode that math is for).
+    pub direction: Direction,
 }
 
 impl SelectContext {
