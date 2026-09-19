@@ -50,7 +50,27 @@
     cursor: not-allowed;
 }
 
-.dx-tabs-trigger:hover:not([data-disabled="true"]),
+/* Sweep fix (calendar-state lane, same class as calendar/style.css's day
+   hover -- see that file's rule for the full :where() rationale): a plain
+   hover must never outrank the active tab's own [data-state="active"] color
+   (--secondary-color-1, chosen to read as "this one is active") with this
+   file's plain --secondary-color-3 hover tint -- confirmed live, before this
+   fix, clicking a tab left the pointer on it and the active tab's text
+   silently reverted to the same shade any hovered, non-active tab gets,
+   i.e. exactly the calendar bug, on `tabs` instead of `calendar`.
+   :focus-visible is kept OUT of the :where() and as its own rule on
+   purpose: this component has no separate focus ring/outline anywhere in
+   this file, so this color change is its ONLY focus indicator, and it must
+   keep enough specificity to outrank [data-state="active"] the way it
+   already did (both one class + one attribute/pseudo-class; this rule
+   staying textually after the active-state rule above breaks the tie in
+   its favor, unchanged from before this fix) -- an active, keyboard-focused
+   tab SHOULD still visibly show focus, per the lane brief's "keep
+   focus-visible rings visible on selected days". */
+:where(.dx-tabs-trigger:hover:not([data-disabled="true"])) {
+    color: var(--secondary-color-3);
+}
+
 .dx-tabs-trigger:focus-visible {
     color: var(--secondary-color-3);
 }

@@ -33,6 +33,42 @@ test("test", async ({ page }) => {
   await expect(activeTab).toContainText("Tab 1 Content");
 });
 
+test.describe("active tab keeps its color under the pointer (calendar-state lane sweep)", () => {
+  // Same bug class as calendar/style.css's day hover (see calendar.spec.ts):
+  // `.dx-tabs-trigger:hover` used to carry higher specificity than
+  // `.dx-tabs-trigger[data-state="active"]`, so clicking a tab -- which
+  // leaves the pointer resting on it -- silently dimmed its text to the
+  // plain hover tint instead of the active color. Runs in both themes: this
+  // one (unlike calendar's) reproduced in light mode too, since
+  // --secondary-color-1 and --secondary-color-3 differ in both.
+  for (const dark of [false, true]) {
+    test(`clicking a tab keeps its active text color while still hovered (${dark ? "dark" : "light"} mode)`, async ({ page }) => {
+      await page.goto(`${BASE_URL}/component/?name=tabs&${dark ? "dark_mode=true" : ""}`);
+      const tab2Button = page.getByRole("tab", { name: "Tab 2" });
+      const tab3Button = page.getByRole("tab", { name: "Tab 3" });
+
+      // The plain hover color, from a tab that stays inactive throughout
+      // (Tab 1 is active by default, so it cannot supply an "unselected
+      // hover" baseline).
+      await tab3Button.hover();
+      const plainHoverColor = await tab3Button.evaluate((el) => getComputedStyle(el).color);
+
+      // Click Tab 2 -- Playwright's .click() leaves the pointer on it.
+      await tab2Button.click();
+      await expect(tab2Button).toHaveAttribute("data-state", "active");
+      expect(await tab2Button.evaluate((el) => el.matches(":hover"))).toBe(true);
+      const activeAndHoveredColor = await tab2Button.evaluate((el) => getComputedStyle(el).color);
+
+      // Move the pointer off and read the "true" active color.
+      await page.locator("body").hover({ position: { x: 0, y: 0 } });
+      const activeAtRestColor = await tab2Button.evaluate((el) => getComputedStyle(el).color);
+
+      expect(activeAndHoveredColor).toBe(activeAtRestColor); // active color survives hover
+      expect(activeAndHoveredColor).not.toBe(plainHoverColor); // not just the plain hover tint
+    });
+  }
+});
+
 test.describe("Axe automated scan", () => {
   test("loaded (tab 1 active) has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=tabs&`);
