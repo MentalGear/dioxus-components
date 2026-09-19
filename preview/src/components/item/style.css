@@ -146,7 +146,7 @@ a.dx-item:hover {
   font-weight: 400;
   -webkit-line-clamp: 2;
   line-height: 1.5;
-  text-align: left;
+  text-align: start;
   text-wrap: balance;
 }
 
