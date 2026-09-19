@@ -66,6 +66,7 @@
     "preview/src/components/chart",
     "preview/src/components/carousel",
     "preview/src/components/area_chart",
-    "preview/src/components/bar_chart"
+    "preview/src/components/bar_chart",
+    "preview/src/components/line_chart"
   ]
 }

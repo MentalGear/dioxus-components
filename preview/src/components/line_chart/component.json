@@ -1,0 +1,14 @@
+{
+  "name": "line_chart",
+  "description": "Line chart gallery: shadcn's ten chart-line-* demos (default, linear, step, multiple, dots, dots with colors/custom markers, value/custom labels, interactive) built entirely on the Chart primitive.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["chart", "card"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
