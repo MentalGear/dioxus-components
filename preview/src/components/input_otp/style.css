@@ -52,11 +52,11 @@
   position: absolute;
   top: 22%;
   bottom: 22%;
-  left: 50%;
   width: 1px;
   animation: dx-input-otp-caret-blink 1s step-end infinite;
   background-color: var(--secondary-color-4);
   content: "";
+  inset-inline-start: 50%;
 }
 
 @keyframes dx-input-otp-caret-blink {

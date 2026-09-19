@@ -34,6 +34,13 @@
   height: calc(1.15rem - 2px);
   border-radius: var(--dx-radius-full);
   background-color: var(--light, var(--primary-color)) var(--dark, var(--secondary-color-2));
+
+  /* rtl-physical: `transform: translateX()` is never direction-aware. The
+     unchecked/checked rest positions below are a physical left-to-right
+     slide; the `[dir="rtl"]` block further down negates both so the thumb
+     still rests at the track's start and travels to its end, matching
+     every mainstream RTL toggle-switch convention (iOS/Android/Radix-based
+     UI kits mirror the thumb travel). */
   transform: translateX(1px);
   transition: transform var(--dx-motion-duration-base);
   will-change: transform;
@@ -41,7 +48,18 @@
 
 .dx-switch[data-state="checked"] .dx-switch-thumb {
   background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
-  transform: translateX(calc(var(--dx-space-8) - 1px - (1.15rem - 2px)));
+  transform: translateX(calc(var(--dx-space-8) - 1px - (1.15rem - 2px))); /* rtl-physical: see .dx-switch-thumb's comment above */
+}
+
+/* rtl-physical: the RTL counterparts of the two rules above -- both signs
+   negated so the thumb rests at the track's (now physically opposite)
+   start and travels to its end. */
+[dir="rtl"] .dx-switch-thumb {
+  transform: translateX(-1px); /* rtl-physical */
+}
+
+[dir="rtl"] .dx-switch[data-state="checked"] .dx-switch-thumb {
+  transform: translateX(calc(-1 * (var(--dx-space-8) - 1px - (1.15rem - 2px)))); /* rtl-physical */
 }
 
 /* Only apply disabled styles when data-disabled is "true" */
