@@ -70,7 +70,8 @@ pub fn stack(rows: &[Vec<Option<f64>>]) -> Vec<Vec<(f64, f64)>> {
 /// with-`stackOffset="expand"` demos).
 ///
 /// Mirrors d3-shape's `stackOffsetExpand` (`d3/d3-shape@a82254afd6`,
-/// `src/offset/expand.js`, ISC license -- see [`normalize_rows`] for the
+/// `src/offset/expand.js`, ISC license -- see `normalize_rows` (this
+/// module's own, private, pre-pass function) for the
 /// exact correspondence): for each row, divide every series' value by that
 /// row's own total, so every row's stacked top lands at exactly `1.0`
 /// (100%) instead of the row's raw sum -- a chart reading "what share of
@@ -100,7 +101,8 @@ pub enum StackMode {
 /// [`stack`], with an additional [`StackMode`] -- [`StackMode::Normal`]
 /// (the default) is byte-for-byte [`stack`] itself;
 /// [`StackMode::Expand`] first replaces every row with
-/// [`normalize_rows`]'s output, then stacks that exactly like `Normal`
+/// `normalize_rows`'s (this module's own, private, pre-pass function)
+/// output, then stacks that exactly like `Normal`
 /// does. A new, additive function rather than a changed signature on
 /// [`stack`] itself: every existing caller/doctest/unit test of `stack`
 /// (this module's own, plus `primitives/src/chart/components/chart.rs`'s,

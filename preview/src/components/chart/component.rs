@@ -25,19 +25,20 @@ use dioxus_primitives::merge_attributes;
 // `check-preview-composition.sh` would then have to special-case per
 // gallery instead of once, here, at the seam this file already is).
 //
-// `AreaOptions`/`BarOptions`/`PieOptions`/`RadarOptions`/`RadialOptions`
-// have no demo using them yet (only `variants/line/mod.rs` sets `line:
-// LineOptions { .. }` today -- LineOptions is the one name below that
-// `cargo`'s own usage tracking through the `use super::super::component::*;`
-// glob chain sees as used) -- reserved stage-2 extension points, same as
-// `ChartProps`' own `area`/`bar`/`pie`/`radar`/`radial` fields, so each
-// family's own gallery lane (`s2-area`/`s2-bar`/`s2-polar`/`s2-radar`) can
-// write `<Family>Options { .. }` in its demo the moment it lands, with no
-// edit to this shared file needed first.
+// `BarOptions`/`PieOptions`/`RadarOptions`/`RadialOptions` have no demo
+// using them yet (only `variants/line/mod.rs` sets `line: LineOptions { .. }`
+// today, plus `area_chart`'s own `AreaOptions`-using variants) -- reserved
+// stage-2 extension points, same as `ChartProps`' own
+// `bar`/`pie`/`radar`/`radial` fields, so each family's own gallery lane
+// (`s2-bar`/`s2-polar`/`s2-radar`) can write `<Family>Options { .. }` in its
+// demo the moment it lands, with no edit to this shared file needed first.
+// `ChartSeries`/`ChartIcon`/`StackMode` join this list for `area_chart`'s
+// own `icons`/`stacked_expand` variants (setting a series' `icon` field
+// directly, and `AreaOptions.stack_mode`, respectively).
 #[allow(unused_imports)]
 pub use dioxus_primitives::chart::{
-    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartKind, Curve, LegendAlign, LineOptions,
-    PieOptions, RadarOptions, RadialOptions,
+    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartIcon, ChartKind, ChartSeries, Curve,
+    LegendAlign, LineOptions, PieOptions, RadarOptions, RadialOptions, StackMode,
 };
 
 /// The themed chart container: scopes the `--color-<key>` CSS variables
