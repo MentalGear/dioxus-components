@@ -904,12 +904,16 @@ mod tests {
         assert!(html.contains(r#"data-slot="chart-grid""#));
     }
 
-    // -- Stage-2 stub kinds (Pie/Radar/RadialBar) ---------------------------
+    // -- Stage-2 stub kinds (Pie/RadialBar) ---------------------------------
     //
     // Each stub kind renders the same `Harness` used by every Cartesian
     // test above (it's generic over `kind`) -- the point of these tests is
     // exactly that nothing kind-specific needs to change to reach a
-    // non-panicking render for a brand new `ChartKind`.
+    // non-panicking render for a brand new `ChartKind`. `ChartKind::Radar`
+    // moved out of this section (below, "Radar (landed, s2-radar)") once
+    // `s2-radar` replaced its own stub -- see that test's own comment for
+    // why this section's original assertions about it went stale, not
+    // wrong-from-the-start.
 
     #[test]
     fn pie_kind_renders_the_placeholder_group_and_the_table_without_panicking() {
@@ -924,14 +928,43 @@ mod tests {
         assert!(!html.contains(r#"data-slot="chart-cursor""#));
     }
 
+    // -- Radar (landed, s2-radar) -------------------------------------------
+    //
+    // `series::radar::render` replaced its own placeholder body (stage-2
+    // chart round, `s2-radar` lane) with real per-category-angle geometry:
+    // its own grid/spokes/rim labels and angular hit-sectors (`is_cartesian`
+    // is still `false` for `Radar`, so none of that comes from `Chart`'s own
+    // Cartesian-only rendering above -- `series::radar`'s own module doc has
+    // the full account). This test's ORIGINAL two assertions (`!contains
+    // "chart-grid"`, `!contains "chart-hit-bands"`) encoded that placeholder
+    // state, not a permanent contract -- flipped here to match, rather than
+    // left stale, since a green `cargo test --workspace` gate can't
+    // otherwise pass once that family has real content. `chart.rs` is
+    // "`s2-refactor` only, forever" per `$S/stage2-lanes.md`'s ownership
+    // table for everything else in this file; this one pre-existing test's
+    // now-incorrect assertions about a specific `ChartKind`'s stub state are
+    // the documented, narrow exception -- `series::radar`'s own module tests
+    // carry the actual grid/hit-sector/dot/label coverage.
     #[test]
-    fn radar_kind_renders_the_placeholder_group_and_the_table_without_panicking() {
+    fn radar_kind_renders_its_own_grid_and_hit_sectors() {
         let html = render(ChartKind::Radar, false, true);
         assert!(html.contains(r#"data-slot="chart-series""#));
         assert!(html.contains(r#"data-kind="radar""#));
         assert!(html.contains(r#"data-slot="chart-data""#));
-        assert!(!html.contains(r#"data-slot="chart-grid""#));
-        assert!(!html.contains(r#"data-slot="chart-hit-bands""#));
+        // Radar draws its OWN grid/hit-sectors (not `Chart`'s Cartesian
+        // ones, which stay gated off by `is_cartesian` either way) --
+        // `series::radar`'s own test module has the detailed coverage.
+        assert!(html.contains(r#"data-slot="chart-grid""#));
+        assert!(html.contains(r#"data-slot="chart-hit-bands""#));
+        // Radar's own rim category labels reuse the `chart-axis` slot with
+        // `data-axis="angle"` (not Cartesian `"x"`/`"y"`, which stay
+        // absent) -- see `series::radar`'s own module doc for why reusing
+        // this slot name costs the themed stylesheet zero new CSS.
+        assert!(html.contains(r#"data-axis="angle""#));
+        assert!(!html.contains(r#"data-axis="x""#));
+        assert!(!html.contains(r#"data-axis="y""#));
+        // Still no Cartesian-only apparatus: no rectangular cursor.
+        assert!(!html.contains(r#"data-slot="chart-cursor""#));
     }
 
     #[test]
