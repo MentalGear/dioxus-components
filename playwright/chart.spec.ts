@@ -6,8 +6,14 @@ test("test", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=chart&`);
   const frame = page.locator("#component-preview-frame").first();
 
-  // the chart renders as a single accessible image
-  const svg = frame.getByRole("img").first();
+  // the chart renders as a single accessible image. An attribute selector,
+  // not getByRole("img") -- this page's Select trigger also renders a bare
+  // decorative chevron <svg> with no explicit role, which Chromium's own
+  // accessibility tree still computes an implicit "img" role for, so
+  // getByRole("img").first() picks up that unrelated icon instead (found by
+  // running this spec for real: it resolved to
+  // `svg.dx-select-expand-icon`, not the chart).
+  const svg = frame.locator('svg[role="img"]').first();
   await expect(svg).toBeVisible();
   await expect(svg).toHaveAccessibleName(/.+/);
 

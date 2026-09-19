@@ -1,0 +1,251 @@
+/*
+ * Chart theme -- styles the primitive's unstyled `data-slot`/`data-series`
+ * DOM (`$S/chart-api.md`, the binding contract between the chart-primitive
+ * and chart-preview lanes; dev-docs/research/chart-2026-09-19.md §6).
+ *
+ * Every rule below is scoped under one of the three classes the wrapper
+ * components in `component.rs` attach (`.dx-chart` on `ChartContainer`,
+ * `.dx-chart-tooltip` on `ChartTooltip`, `.dx-chart-legend` on
+ * `ChartLegend`) -- `Chart` itself (the svg/table piece) adds no class of
+ * its own, since it is always rendered as a `ChartContainer` child and so
+ * always sits inside `.dx-chart`'s own scope. This mirrors the contract's
+ * own example selector shape (`.dx-chart [data-slot="chart-bar"]`) and
+ * keeps every selector's only real CSS class within this component's own
+ * `dx-chart` namespace (scripts/check-dx-class-prefix.sh), while never
+ * matching a same-named `data-slot` some future, unrelated component might
+ * use (an unscoped bare `[data-slot="..."]` selector would leak globally).
+ *
+ * Series colors are never hardcoded here. Per the contract, the primitive
+ * sets `--series-color: var(--color-<key>)` inline wherever `data-series`
+ * scopes a mark or a legend/tooltip row; every rule below that needs a
+ * series' color just reads `var(--series-color)`, inherited down from
+ * whichever ancestor the primitive put it on -- this stylesheet never
+ * writes a single per-key rule.
+ */
+
+/* `display: flex; flex-direction: column` (not plain `block`) so
+ * `ChartLegend`'s `order` below can move it before `Chart` in RENDER order
+ * without needing DOM order to change -- `ChartLegend` is a plain sibling
+ * of `Chart` with no layout authority over it, per `$S/chart-api.md`'s
+ * "API changes" #6, so `vertical_align: LegendAlign::Top` has no observable
+ * effect without this. `ChartTooltip` (`position: absolute`) is unaffected
+ * either way -- it never participates in flex layout. */
+.dx-chart {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Keyboard contract (`$S/chart-api.md`, "API changes" #4): `Chart`'s own
+ * `[data-slot="chart"]` wrapper div -- not `ChartContainer`'s `.dx-chart`
+ * div, and not the svg -- is the focusable/roving root when `Chart`'s
+ * `keyboard` prop is on. Ring token matches every other interactive root in
+ * this theme (dx-components-theme.css's `[data-dx-interactive]:focus-visible`). */
+.dx-chart [data-slot="chart"]:focus-visible {
+  border-radius: var(--dx-radius-lg);
+  box-shadow: var(--dx-ring);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------- *
+ * The svg and its structural marks
+ * ---------------------------------------------------------------------- */
+
+.dx-chart [data-slot="chart-svg"] {
+  display: block;
+  overflow: visible;
+  width: 100%;
+  height: auto;
+
+  /* SVG `text` does not reliably pick up the page's body font from the UA
+     stylesheet alone in every engine -- set once here and let every text
+     descendant (axis labels) inherit it normally, same idiom as
+     `main.css`'s own `font-family: inherit` re-affirmations. */
+  font-family: inherit;
+}
+
+.dx-chart [data-slot="chart-grid"] line {
+  stroke: var(--dx-chart-grid);
+  stroke-width: 1;
+}
+
+.dx-chart [data-slot="chart-axis"] text {
+  fill: var(--dx-chart-axis-text);
+  font-size: var(--dx-text-xs);
+}
+
+.dx-chart [data-slot="chart-area"] {
+  fill: var(--series-color);
+  fill-opacity: 0.4;
+  stroke: none;
+}
+
+.dx-chart [data-slot="chart-line"] {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.dx-chart [data-slot="chart-bar"] {
+  fill: var(--series-color);
+  rx: var(--dx-radius-xs);
+}
+
+.dx-chart [data-slot="chart-dot"] {
+  fill: var(--series-color);
+  stroke: var(--primary-color-1);
+  stroke-width: 1.5;
+}
+
+/* The hover/keyboard crosshair: a dashed line for area/line charts
+ * (`chart-cursor-line`), a translucent band over the active group for bar
+ * charts (`chart-cursor-rect` -- its own distinct data-slot, per
+ * `$S/chart-api.md`'s "API changes" #6, not a `data-kind`-conditioned
+ * variant of the line slot as this file originally assumed). */
+.dx-chart [data-slot="chart-cursor-line"] {
+  fill: none;
+  pointer-events: none;
+  stroke: var(--dx-chart-axis-text);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.dx-chart [data-slot="chart-cursor-rect"] {
+  fill: var(--dx-chart-axis-text);
+  fill-opacity: 0.1;
+  pointer-events: none;
+  stroke: none;
+}
+
+/* The whole hover mechanism (`$S/chart-api.md`: "no coordinate math, no
+ * layout reads, no document::eval") -- invisible, full-height bands, one
+ * per datum, that alone drive `active_index`. */
+.dx-chart [data-slot="chart-hit-band"] {
+  cursor: pointer;
+  fill: transparent;
+  pointer-events: all;
+}
+
+/* The real, visually-hidden `<table>` -- the actual AT-facing "browse the
+ * data" path (dev-docs/research/chart-2026-09-19.md §2.5/§6.4). Same
+ * technique as `sidebar/style.css`'s `.dx-sidebar-sr-only` and
+ * `pagination/style.css`'s `.dx-pagination-sr-only` (byte-identical there
+ * too; still not collapsed into a shared utility -- see those files' own
+ * TODO(row 31a) comment), namespaced here as this component's own copy. */
+.dx-chart [data-slot="chart-data"] {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Tooltip
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip {
+  position: absolute;
+  z-index: var(--dx-z-local-md);
+  min-width: 8rem;
+  padding: var(--dx-space-2) var(--dx-space-3);
+  border-radius: var(--dx-radius-lg);
+  background-color: var(--primary-color-2);
+  box-shadow: var(--dx-shadow-md);
+  color: var(--primary-color);
+  font-size: var(--dx-text-xs);
+  pointer-events: none;
+
+  /* rtl-physical: centers the tooltip over its anchor point (the active
+     band's center, given as inline `left`/`top` percentages by the
+     primitive) -- a symmetric offset around a point, not a reading-
+     direction-dependent side, so it is identical under `dir="rtl"`. Same
+     reasoning as `tooltip/style.css`'s own arrow-centering `translateX`. */
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+}
+
+.dx-chart-tooltip[data-state="closed"] {
+  display: none;
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-label"] {
+  font-weight: 600;
+  margin-block-end: var(--dx-space-1);
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-item"] {
+  display: flex;
+  align-items: center;
+  gap: var(--dx-space-2);
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-item"] + [data-slot="chart-tooltip-item"] {
+  margin-block-start: var(--dx-space-1);
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-name"] {
+  color: var(--secondary-color-5);
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-value"] {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-inline-start: auto;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Legend
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  gap: var(--dx-space-4);
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+/* `vertical_align: LegendAlign::Top` (`$S/chart-api.md`'s "API changes"
+ * #6): rendered as `data-align="top"` on this element; `bottom` (the
+ * default) needs no rule since it already matches DOM order (`Chart`
+ * composed before `ChartLegend` in every demo in this package). Moves the
+ * legend before `Chart` in the `.dx-chart` flex column above without
+ * touching DOM order (source order stays the render/table/hidden-content
+ * order; only visual position changes) -- every other child defaults to
+ * `order: 0`, so `-1` alone is enough to place this first. */
+.dx-chart-legend[data-align="top"] {
+  order: -1;
+}
+
+.dx-chart-legend [data-slot="chart-legend-item"] {
+  display: flex;
+  align-items: center;
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Swatch -- shared shape between the tooltip and the legend
+ * (`role="graphics-symbol"`, `$S/chart-api.md`).
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip [data-slot="chart-swatch"],
+.dx-chart-legend [data-slot="chart-swatch"] {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: var(--dx-radius-xs);
+  background-color: var(--series-color);
+}

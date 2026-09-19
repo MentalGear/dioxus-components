@@ -64,11 +64,23 @@ import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
 
-const URL = `${BASE_URL}/component/?name=chart&variant=bar&`;
-const DARK_URL = `${BASE_URL}/component/?name=chart&variant=bar&dark_mode=true&`;
+// `?variant=` has no effect on this route: every registered variant
+// renders inline, all at once, further down the SAME page (a "Variants"
+// section, one `h3.dx-component-variant-title` + one demo/code tab pair
+// per variant) -- confirmed live, not assumed (`?variant=bar` and no
+// variant param at all render byte-identical pages, same finding
+// date-picker.spec.ts's own header comment already recorded for that
+// component's route). The default (un-suffixed) `#component-preview-frame`
+// belongs to the `main` variant shown at the top of the page; every other
+// variant's demo panel is `#component-preview-frame-<variant>` instead
+// (its DEMO tab's own `aria-controls` target, read live from the page).
+// This file uses the `bar` variant throughout (three series, a legend, a
+// small fixed six-row dataset) for every rule below.
+const URL = `${BASE_URL}/component/?name=chart&`;
+const DARK_URL = `${BASE_URL}/component/?name=chart&dark_mode=true&`;
 
 function frameOf(page: Page) {
-  return page.locator("#component-preview-frame").first();
+  return page.locator("#component-preview-frame-bar").first();
 }
 
 async function goto(page: Page, url: string = URL) {
@@ -86,6 +98,17 @@ test.describe("R1 -- svg root: role=img, non-empty accessible name, <title> (WAI
     expect(ariaLabel, "svg[role=img] must carry a non-empty aria-label").toBeTruthy();
     expect(ariaLabel!.trim().length).toBeGreaterThan(0);
 
+    // Known framework limitation, not a component bug ($S/chart-lanes.md
+    // "API changes" #7): dioxus-html 0.7.9 has no SVG-namespaced `title`
+    // element, so on this CSR-only dev server (`dx serve --web`, no SSR)
+    // Chart's <title> is built as an HTML-namespaced node. A bare CSS type
+    // selector matches by local name regardless of namespace (no
+    // `@namespace` is declared here), so `svg > title` still finds it
+    // structurally either way; only the SSG/hydrated production build gets
+    // the namespace-correct SVGTitleElement (server HTML parses foreign
+    // content correctly; hydration reuses that node rather than recreating
+    // it). aria-label above is this rule's real accessible-name assertion
+    // regardless, per accname computation's own aria-label-wins precedence.
     const title = svg.locator("> title").first();
     await expect(title).toHaveCount(1);
     const titleText = await title.textContent();
@@ -172,7 +195,10 @@ test.describe("R5 -- keyboard: ArrowRight/ArrowLeft step the active index, Home/
   test("LTR: ArrowRight/ArrowLeft/Home/End/Escape drive the active index and the tooltip", async ({ page }) => {
     await goto(page);
     const frame = frameOf(page);
-    const container = frame.locator("[data-chart]");
+    // $S/chart-api.md "API changes" #4: the keyboard/tabindex/role/aria
+    // attributes live on `Chart`'s own [data-slot="chart"] wrapper div, not
+    // on `ChartContainer`'s [data-chart] div.
+    const container = frame.locator('[data-slot="chart"]');
     const tooltip = frame.locator('[data-slot="chart-tooltip"]');
     const table = frame.locator('table[data-slot="chart-data"]');
     const rowHeaders = table.locator("tbody tr th[scope=\"row\"]");
