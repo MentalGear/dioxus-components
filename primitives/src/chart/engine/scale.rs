@@ -343,7 +343,14 @@ pub fn nice_domain(min: f64, max: f64) -> (f64, f64) {
 /// trailing `.` trimmed, and `-0` normalized to `0` (a value that rounds to
 /// exactly zero from the negative side, e.g. a scale of a tiny negative
 /// input, must not render the confusing, byte-different `-0`).
-pub(super) fn fmt_decimal(v: f64, decimals: u8) -> String {
+///
+/// `pub(in crate::chart)`, not `pub(super)`: every raw coordinate the
+/// `components` layer builds directly (grid lines, axis text positions,
+/// bar/hit-band/cursor rects, tooltip percentages -- anything not already
+/// wrapped in one of [`super::curve`]'s path-string builders) needs this
+/// same formatting rule, not just this module's own siblings under
+/// `engine`.
+pub(in crate::chart) fn fmt_decimal(v: f64, decimals: u8) -> String {
     if !v.is_finite() {
         return "0".to_string();
     }
@@ -362,7 +369,7 @@ pub(super) fn fmt_decimal(v: f64, decimals: u8) -> String {
 
 /// Format a coordinate for an SVG attribute: at most 3 decimal places (per
 /// `$S/chart-api.md`'s numeric-formatting rule). See [`fmt_decimal`].
-pub(super) fn fmt_num(v: f64) -> String {
+pub(in crate::chart) fn fmt_num(v: f64) -> String {
     fmt_decimal(v, 3)
 }
 

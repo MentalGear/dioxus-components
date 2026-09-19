@@ -63,7 +63,7 @@ pub mod scale;
 pub mod stack;
 pub mod table;
 
-pub use curve::{area_path, line_path, Curve};
+pub use curve::{area_between_path, area_path, line_path, Curve};
 pub use data::{ChartConfig, ChartDatum, ChartKind, ChartSeries};
 pub use scale::{nice_domain, BandScale, LinearScale};
 pub use stack::stack;
