@@ -414,7 +414,18 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     expect(response.ok()).toBeTruthy();
     const html = await response.text();
 
-    const containerMatch = html.match(/<div[^>]*class="dx-toast-container-[^"]*"[^>]*>/);
+    // `\bdx-toast-container\b` (a whole class TOKEN anywhere in the
+    // attribute value), not `dx-toast-container-[^"]*` (a literal trailing
+    // hyphen then more characters): the latter was written against the old
+    // `#[css_module]`-hashed shape (`dx-toast-container-a1b2c3`) row 32
+    // (dev-docs/backlog.md) already migrated away from -- the class is now
+    // the plain, unhashed, multi-class `class="dx-toast-base-region
+    // dx-toast-container"`, which the old pattern can never match (it
+    // requires a literal "-" immediately after "container"). Found by
+    // actually executing this lane for the first time (row 22) -- this
+    // spec's own Rule 1 had silently never been re-verified against a
+    // post-row-32 build.
+    const containerMatch = html.match(/<div[^>]*class="[^"]*\bdx-toast-container\b[^"]*"[^>]*>/);
     expect(
       containerMatch,
       "expected a dx-toast-container element in the raw server-rendered HTML",
@@ -467,7 +478,21 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
         "(data-state never became 'open') — the literal user-reported " +
         "symptom this rule regression-tests",
     ).toHaveAttribute("data-state", "open");
-    await expect(page.getByRole("option", { name: "Edit" })).toBeVisible();
+    // `menuitem`, not `option`: DropdownMenu's items were `role="option"`
+    // (inherited listbox/option roles) until dev-docs/backlog.md row 24
+    // fixed them to the correct APG Menu Button pattern role
+    // (`menu-roles.spec.ts`) -- this rule's own locator was never updated
+    // to match and had gone unnoticed because the SSG lane it runs against
+    // had never been executed (row 22) until now. Scoped through
+    // `getByLabel("Open Menu")` (the popup's own accessible name, via
+    // `aria-labelledby` back to its trigger) rather than a bare
+    // page-wide `getByRole` -- with every component's gallery card mounted
+    // on `/`, `menubar`'s own demo ALSO has an "Edit" menuitem, and a
+    // page-wide locator hits a strict-mode "2 elements" violation across
+    // the two components' items (confirmed by execution).
+    await expect(
+      page.getByLabel("Open Menu").getByRole("menuitem", { name: "Edit" }),
+    ).toBeVisible();
   });
 
   // `/component/?name=top_layer&`/`/component/?name=dialog&` are not
@@ -612,6 +637,10 @@ test.describe("hydration parity — per-component pages (row 46)", () => {
   test("Rule 2 (extended): zero hydration errors on every prerendered component page", async ({
     page,
   }) => {
+    // One test, 62+ sequential navigations -- well past ssg.local.config.ts's
+    // 90s default test timeout even when every page is fast.
+    test.setTimeout(5 * 60 * 1000);
+
     const failures: string[] = [];
     for (const name of COMPONENT_NAMES) {
       const consoleMessages: string[] = [];
@@ -621,7 +650,17 @@ test.describe("hydration parity — per-component pages (row 46)", () => {
       page.on("console", onConsole);
       page.on("pageerror", onError);
 
-      await page.goto(`${BASE}/component/${name}/`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+      // "load", not "networkidle" (Rule 2's own home-page-only test uses
+      // "networkidle" and that page settles fine): `top_layer`'s oracle
+      // fixture page is "a large probe surface" with its own ongoing
+      // timers/listeners by design (playwright/oracle/tier2-html/
+      // top-layer.spec.ts), so it may never reach network-idle at all --
+      // confirmed by execution, this loop timed out at 90s on exactly that
+      // page before this fix. A hydration mismatch surfaces during the
+      // synchronous hydration walk right after `load`, not from later
+      // background network activity, so "load" is both sufficient for what
+      // this rule checks and immune to a fixture page's own idle timers.
+      await page.goto(`${BASE}/component/${name}/`, { timeout: NAV_TIMEOUT, waitUntil: "load" });
       // Shorter settle window than Rule 2's own 2s: this loop already pays
       // one full navigation per component, and a hydration-mismatch
       // recovery (the defect class this guards) surfaces within a tick or
