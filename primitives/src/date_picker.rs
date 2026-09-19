@@ -833,6 +833,26 @@ fn date_segment_key_effects<T: Integer + Copy + FromStr>(
             };
             effects.push(DateSegmentEffect::EmitValue(Some(value)));
         }
+        // `aria-valuemin`/`aria-valuemax` are unconditionally present on every
+        // `DateSegment` (see its `rsx!` below), so per the APG Spin Button
+        // pattern's Keyboard Interaction section (non-optional, unlike Page
+        // Up/Down which that same list marks "(Optional)"):
+        // "Home: If the spinbutton has a minimum value, sets the value to
+        // its minimum." / "End: ... sets the value to its maximum."
+        // (`$S/aria-practices` content/patterns/spinbutton/spinbutton-
+        // pattern.html#keyboard_interaction, commit 7e4034b -- the current,
+        // non-deprecated pattern doc, not the deprecated `datepicker-
+        // spinbuttons.html` example, which predates this rule and has no
+        // Home/End support of its own to conflict with it). Previously
+        // unhandled (fell through to the wildcard arm below), confirmed by
+        // execution against this repo's dev server before this fix: Home/End
+        // on a focused segment left `aria-valuenow` completely unchanged.
+        Key::Home => {
+            effects.push(DateSegmentEffect::EmitValue(Some(min)));
+        }
+        Key::End => {
+            effects.push(DateSegmentEffect::EmitValue(Some(max)));
+        }
         _ => (),
     }
     effects
@@ -922,7 +942,6 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
 
     let span_id = use_unique_id();
     let id = use_memo(move || format!("span-{span_id}"));
-    let label_id = format!("{id}-label");
 
     rsx! {
         span {
@@ -931,7 +950,34 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
             aria_valuemin: props.min.to_string(),
             aria_valuemax: props.max.to_string(),
             aria_valuenow: now_value.to_string(),
-            aria_labelledby: "{label_id}",
+            // No `aria-labelledby` here: per the APG Spin Button pattern's
+            // own Roles/States/Properties section ("If the spinbutton has a
+            // visible label, it is referenced by aria-labelledby ... .
+            // Otherwise, the spinbutton element has a label provided by
+            // aria-label" -- `$S/aria-practices` content/patterns/
+            // spinbutton/spinbutton-pattern.html#roles_states_properties,
+            // commit 7e4034b), and every caller here (`DatePickerYearSegment`
+            // etc., below) always passes a plain `aria_label: "year"`/
+            // `"month"`/`"day"` -- there never is a separate *visible* label
+            // element for `aria-labelledby` to reference. This span used to
+            // also render `aria-labelledby="{id}-label"`, but nothing in
+            // this module (or its preview consumers) ever rendered an
+            // element with that id -- confirmed by execution before this
+            // fix: every one of a live page's spinbuttons carried a
+            // dangling reference (`document.getElementById(idref)` ===
+            // `null`). Chromium's own accessible-name computation happens
+            // to fall back to `aria-label` when `aria-labelledby`'s IDREFs
+            // don't resolve (confirmed live via Playwright's
+            // `ariaSnapshot()`, and axe-core's ruleset does not flag it
+            // either), so this was not user-visible in this repo's own
+            // harness -- but it is dead, misleading markup that contradicts
+            // the cited rule outright (an `aria-labelledby` with nothing to
+            // reference is not "referencing a visible label"), and relying
+            // on a fallback another AT/browser might implement differently
+            // is exactly the kind of fragility the cited either/or rule
+            // exists to avoid. `aria-label` alone (already present via
+            // `props.attributes`, spread below) is the correct, sufficient
+            // source per that rule.
             inputmode: "numeric",
             contenteditable: !(ctx.read_only)(),
             spellcheck: false,
@@ -1604,6 +1650,30 @@ mod tests {
     }
 
     #[test]
+    fn date_segment_renders_aria_label_and_no_dangling_aria_labelledby() {
+        // Regression guard for the `aria-labelledby` fix -- SSR-level rather
+        // than the browser-level `playwright/date-picker.spec.ts` check, so
+        // this runs (and was run, red-then-green) without needing a `dx
+        // serve --web` build: this repo's own sandbox hit severe, batch-
+        // wide disk pressure while this lane worked (see this lane's
+        // report), so this cargo-only check is the primary evidence for the
+        // RSX shape here, with the browser-level test as the fuller
+        // (still-current-code, not yet server-verified) companion.
+        let mut dom = VirtualDom::new(ControlledDatePicker);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(
+            html.contains(r#"aria-label="year""#),
+            "aria-label must still be present: {html}"
+        );
+        assert!(
+            !html.contains("aria-labelledby"),
+            "aria-labelledby must not be rendered at all (no visible label element exists to reference): {html}"
+        );
+    }
+
+    #[test]
     fn date_range_picker_input_renders_controlled_range_on_first_render() {
         let mut dom = VirtualDom::new(ControlledDateRangePicker);
         dom.rebuild_in_place();
@@ -2121,6 +2191,68 @@ mod tests {
             10,
         );
         assert_eq!(down, vec![DateSegmentEffect::EmitValue(Some(7))]);
+    }
+
+    // -----------------------------------------------------------------
+    // Home/End (APG spinbutton-pattern.html #keyboard_interaction --
+    // playwright/date-picker.spec.ts's "Home/End" describe block is the
+    // browser-level regression guard for the same fix; these are its pure-
+    // function-level counterpart, mirroring every other `key_effects_*`
+    // test above).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn key_effects_home_sets_the_minimum_regardless_of_current_value() {
+        let (ctrl, meta, alt) = no_modifiers();
+        let effects = key_effects(
+            &Key::Home,
+            ctrl,
+            meta,
+            alt,
+            "15",
+            2,
+            false,
+            Some(15),
+            1,
+            1,
+            31,
+        );
+        assert_eq!(
+            effects,
+            vec![DateSegmentEffect::EmitValue(Some(1))],
+            "Home sets the value to the minimum, per the cited APG rule"
+        );
+
+        // Also true with no current value yet (the field still has a
+        // well-defined `min`, so the rule still applies).
+        let effects = key_effects(&Key::Home, ctrl, meta, alt, "", 2, false, None, 1, 1, 31);
+        assert_eq!(effects, vec![DateSegmentEffect::EmitValue(Some(1))]);
+    }
+
+    #[test]
+    fn key_effects_end_sets_the_maximum_regardless_of_current_value() {
+        let (ctrl, meta, alt) = no_modifiers();
+        let effects = key_effects(
+            &Key::End,
+            ctrl,
+            meta,
+            alt,
+            "15",
+            2,
+            false,
+            Some(15),
+            1,
+            1,
+            31,
+        );
+        assert_eq!(
+            effects,
+            vec![DateSegmentEffect::EmitValue(Some(31))],
+            "End sets the value to the maximum, per the cited APG rule"
+        );
+
+        let effects = key_effects(&Key::End, ctrl, meta, alt, "", 2, false, None, 1, 1, 31);
+        assert_eq!(effects, vec![DateSegmentEffect::EmitValue(Some(31))]);
     }
 
     #[test]
