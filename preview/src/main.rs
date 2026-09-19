@@ -102,22 +102,67 @@ fn main() {
         // server function ends up under `/<base>/api/static_routes`, but the SSG
         // step POSTs to the unprefixed `/api/static_routes` and fails to parse
         // the empty body. Expose a shim at the root that returns the route list.
+        //
+        // This shim is ALSO the fix for dev-docs/backlog.md row 46 -- see
+        // `server_static_routes`'s own doc comment for why.
         let router = Router::new()
             .route(
                 "/api/static_routes",
-                post(|| async {
-                    Json(
-                        Route::static_routes()
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<String>>(),
-                    )
-                }),
+                post(|| async { Json(server_static_routes()) }),
             )
             .serve_dioxus_application(cfg, App);
 
         Ok(router)
     })
+}
+
+/// The full list of routes `dx build --ssg` should prerender, as route
+/// strings (`Route::to_string()`). Served by the `/api/static_routes` shim
+/// above, which is the only caller.
+///
+/// `Route::static_routes()` (dioxus-router-0.7.9's own default,
+/// `routable.rs`) only ever enumerates route variants whose path is made
+/// ENTIRELY of literal segments -- it `filter_map`s away any variant
+/// containing a `Dynamic`/`CatchAll` segment, so it can never expand
+/// `ComponentDemoPath`'s `:name` (or `ComponentBlockDemoPath`'s
+/// `:name`/`:variant`) into one concrete entry per `components::DEMOS` item;
+/// it would just silently omit those routes entirely (dev-docs/backlog.md
+/// row 46). Appending one resolved route string per demo (and per
+/// block-demo variant) below is what actually makes every component page
+/// SSG-enumerable. `Route::static_routes()` still supplies every genuinely
+/// all-static route: `/`, `/docs`, `/demos`, `/dashboard/email-client`, and
+/// the legacy bare `/component/`/`/component/block/` query-form shells (see
+/// `ComponentDemo`/`ComponentBlockDemo`'s own doc comments for why those two
+/// stay deliberately name-agnostic rather than being enumerated here too).
+#[cfg(feature = "server")]
+fn server_static_routes() -> Vec<String> {
+    let mut routes: Vec<String> = Route::static_routes()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    for demo in components::DEMOS {
+        routes.push(
+            Route::ComponentDemoPath {
+                name: demo.name.to_string(),
+                iframe: None,
+                dark_mode: None,
+            }
+            .to_string(),
+        );
+        if demo.r#type == ComponentType::Block {
+            for variant in demo.variants {
+                routes.push(
+                    Route::ComponentBlockDemoPath {
+                        name: demo.name.to_string(),
+                        variant: variant.name.to_string(),
+                        dark_mode: None,
+                    }
+                    .to_string(),
+                );
+            }
+        }
+    }
+    routes
 }
 
 #[component]
@@ -148,17 +193,54 @@ pub enum Route {
     Docs { dark_mode: Option<bool> },
     #[route("/demos?:dark_mode")]
     Demos { dark_mode: Option<bool> },
+    // Legacy query-string deep link (dev-docs/backlog.md row 46). Kept ONLY
+    // so old bookmarks/external links/the hundreds of existing Playwright
+    // specs using this URL form keep working -- it is NOT SSG-enumerable by
+    // construction (a query string can never become a distinct static FILE:
+    // `dioxus-server-0.7.9`'s `FileSystemCache::map_path` strips everything
+    // from `?` onward before mapping a route to a file path, so every
+    // `name=X` value would collide onto the same `component/index.html`
+    // even if this app's `/api/static_routes` enumerated every X). Renders a
+    // name-agnostic loading shell (see `ComponentDemo`'s doc comment) and
+    // redirects client-side to `ComponentDemoPath` once mounted.
     #[route("/component/?:name&:iframe&:dark_mode")]
     ComponentDemo {
         name: String,
         iframe: Option<bool>,
         dark_mode: Option<bool>,
     },
+    // Canonical, SSG-enumerable component page (row 46's construction):
+    // `name` lives in the PATH, so every `components::DEMOS` entry maps to
+    // its own static file (`component/<name>/index.html`) instead of every
+    // one collapsing onto a single query-keyed file. Every internal link
+    // (`Route::component`) points here; `ComponentDemo` above only exists to
+    // catch old links and hand them off to this route.
+    #[route("/component/:name/?:iframe&:dark_mode")]
+    ComponentDemoPath {
+        name: String,
+        iframe: Option<bool>,
+        dark_mode: Option<bool>,
+    },
     #[end_layout]
+    // Legacy query-string block-demo deep link -- same reasoning and same
+    // redirect-shell construction as `ComponentDemo` above;
+    // `ComponentBlockDemoPath` is the canonical form.
     #[route("/component/block/?:name&:variant&:dark_mode")]
     ComponentBlockDemo {
         name: String,
         variant: Option<String>,
+        dark_mode: Option<bool>,
+    },
+    // Canonical, SSG-enumerable block-demo page: both `name` AND `variant`
+    // are path segments (`variant` required, unlike the legacy query form's
+    // `Option` -- the canonical route has no "default variant" concept of
+    // its own; `ComponentBlockDemo`'s redirect resolves that default before
+    // handing off here), so every (demo, variant) pair -- not just every
+    // demo -- gets its own static file.
+    #[route("/component/block/:name/:variant/?:dark_mode")]
+    ComponentBlockDemoPath {
+        name: String,
+        variant: String,
         dark_mode: Option<bool>,
     },
     #[route("/dashboard/email-client?:dark_mode")]
@@ -172,7 +254,9 @@ impl Route {
             Route::Docs { .. } => None,
             Route::Demos { .. } => None,
             Route::ComponentDemo { iframe, .. } => *iframe,
+            Route::ComponentDemoPath { iframe, .. } => *iframe,
             Route::ComponentBlockDemo { .. } => None,
+            Route::ComponentBlockDemoPath { .. } => None,
             Route::EmailClientDashboard { .. } => None,
         }
     }
@@ -188,7 +272,9 @@ impl Route {
             Route::Docs { dark_mode, .. } => *dark_mode,
             Route::Demos { dark_mode, .. } => *dark_mode,
             Route::ComponentDemo { dark_mode, .. } => *dark_mode,
+            Route::ComponentDemoPath { dark_mode, .. } => *dark_mode,
             Route::ComponentBlockDemo { dark_mode, .. } => *dark_mode,
+            Route::ComponentBlockDemoPath { dark_mode, .. } => *dark_mode,
             Route::EmailClientDashboard { dark_mode, .. } => *dark_mode,
         }
     }
@@ -214,12 +300,30 @@ impl Route {
         Self::Demos { dark_mode }
     }
 
+    /// The canonical component-page link every internal caller (sidebar,
+    /// home gallery cards, the navbar demo fixture) should use --
+    /// `ComponentDemoPath` (row 46), never the legacy query-string
+    /// `ComponentDemo`, so every link this app renders itself is already
+    /// SSG-enumerable.
     pub fn component(name: impl ToString) -> Self {
         let iframe = Self::in_iframe();
         let dark_mode = Self::in_dark_mode();
-        Self::ComponentDemo {
+        Self::ComponentDemoPath {
             name: name.to_string(),
             iframe,
+            dark_mode,
+        }
+    }
+
+    /// The canonical block-demo iframe-content link (mirrors `component`
+    /// above) -- `ComponentBlockDemoPath`, used by
+    /// `BlockComponentVariantHighlight` to build the `<iframe src>` for a
+    /// given demo's variant.
+    pub fn component_block(name: impl ToString, variant: impl ToString) -> Self {
+        let dark_mode = Self::in_dark_mode();
+        Self::ComponentBlockDemoPath {
+            name: name.to_string(),
+            variant: variant.to_string(),
             dark_mode,
         }
     }
@@ -284,7 +388,10 @@ fn NavigationLayout() -> Element {
 #[component]
 fn Navbar() -> Element {
     let in_iframe = Route::in_iframe().unwrap_or_default();
-    let in_component = matches!(router().current(), Route::ComponentDemo { .. });
+    let in_component = matches!(
+        router().current(),
+        Route::ComponentDemo { .. } | Route::ComponentDemoPath { .. }
+    );
     let has_sidebar = try_consume_context::<SidebarCtx>().is_some();
     if in_iframe {
         return rsx! {
@@ -1155,8 +1262,45 @@ fn Demos(dark_mode: Option<bool>) -> Element {
     }
 }
 
+/// Legacy query-string deep link (`/component/?name=<x>&`, dev-docs/
+/// backlog.md row 46). Renders the SAME markup regardless of `name` -- a
+/// generic, name-agnostic loading shell -- on every platform, so there is
+/// nothing for a server prerender and a client hydration to ever disagree
+/// on structurally (unlike the old behavior this replaces, which tried to
+/// resolve `name` against `components::DEMOS` here and rendered the
+/// "Component not found" shell server-side for every X, since `dx build
+/// --ssg` only ever prerenders this route with an EMPTY query -- see
+/// `Route::ComponentDemo`'s own doc comment). Once mounted client-side (in
+/// a real browser, where `name` IS available from the real URL), redirects
+/// to the canonical `ComponentDemoPath` route so old links/bookmarks/specs
+/// keep landing on the right component.
 #[component]
 fn ComponentDemo(iframe: Option<bool>, dark_mode: Option<bool>, name: String) -> Element {
+    let nav = navigator();
+    use_effect(move || {
+        nav.replace(Route::ComponentDemoPath {
+            name: name.clone(),
+            iframe,
+            dark_mode,
+        });
+    });
+
+    rsx! {
+        Navbar {}
+        main { class: "dx-component-demo-redirect", role: "main",
+            p { "Loading component…" }
+        }
+    }
+}
+
+/// Canonical, SSG-enumerable component page (`/component/<name>/`, row 46).
+/// `name` is a PATH segment here, so the server prerender for a given `name`
+/// and the client's initial render for that same URL always resolve to the
+/// same branch below -- unlike the legacy `ComponentDemo` query route, a
+/// genuinely nonexistent `name` shows "Component not found" identically on
+/// both sides rather than on every name unconditionally.
+#[component]
+fn ComponentDemoPath(iframe: Option<bool>, dark_mode: Option<bool>, name: String) -> Element {
     let route = router().current::<Route>();
     tracing::info!("route: {route}");
     let Some(demo) = components::DEMOS
@@ -1391,12 +1535,11 @@ fn BlockComponentVariantHighlight(
         component: _,
     } = variant;
 
-    let route_path = Route::ComponentBlockDemo {
-        name: component_name.to_string(),
-        variant: Some(name.to_string()),
-        dark_mode: Route::in_dark_mode(),
-    }
-    .to_string();
+    // The canonical, SSG-enumerable path route (row 46) -- NOT the legacy
+    // `Route::ComponentBlockDemo` query form, so every block demo's iframe
+    // content this app renders itself is already a page `dx build --ssg`
+    // can prerender per (name, variant) pair.
+    let route_path = Route::component_block(component_name, name).to_string();
 
     let iframe_src = match router().prefix() {
         Some(prefix) => format!("{prefix}{route_path}"),
@@ -1590,8 +1733,51 @@ fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
 // instead), and this fix's own file lane does not include any stylesheet.
 const SR_ONLY_STYLE: &str = "position: absolute; overflow: hidden; width: 1px; height: 1px; padding: 0; border: 0; margin: -1px; clip-path: inset(50%); white-space: nowrap;";
 
+/// Legacy query-string block-demo deep link (`/component/block/?name=<x>&
+/// variant=<y>&`, dev-docs/backlog.md row 46) -- same reasoning as
+/// `ComponentDemo`'s doc comment: a name-agnostic loading shell, identical
+/// on server and client, that redirects to the canonical
+/// `ComponentBlockDemoPath` once mounted in a real browser. Resolves the
+/// same "no variant specified -> use the demo's first (\"main\") variant"
+/// default the old direct-render code used to apply, so an old link that
+/// never named a variant still redirects to the content it used to render
+/// directly.
 #[component]
 fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<bool>) -> Element {
+    let nav = navigator();
+    use_effect(move || {
+        let name = name.clone();
+        let resolved_variant = variant.clone().unwrap_or_else(|| {
+            components::DEMOS
+                .iter()
+                .find(|d| d.name == name)
+                .map(|d| d.variants[0].name.to_string())
+                .unwrap_or_default()
+        });
+        nav.replace(Route::ComponentBlockDemoPath {
+            name,
+            variant: resolved_variant,
+            dark_mode,
+        });
+    });
+
+    rsx! {
+        GlobalHead {}
+        main {
+            style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
+            p { "Loading component…" }
+        }
+    }
+}
+
+/// Canonical, SSG-enumerable block-demo page
+/// (`/component/block/<name>/<variant>/`, row 46): both `name` and `variant`
+/// are PATH segments -- unlike the legacy `ComponentBlockDemo` query route's
+/// `Option<String>` variant with an implicit "first variant" default, this
+/// route always names a concrete variant, so every (demo, variant) pair gets
+/// its own static file and its own server/client-agreeing render.
+#[component]
+fn ComponentBlockDemoPath(name: String, variant: String, dark_mode: Option<bool>) -> Element {
     let Some(demo) = components::DEMOS.iter().find(|d| d.name == name).cloned() else {
         return rsx! {
             GlobalHead {}
@@ -1601,20 +1787,14 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
         };
     };
 
-    let variant = match variant.as_deref() {
-        Some(wanted) => match demo.variants.iter().find(|v| v.name == wanted) {
-            Some(v) => v,
-            None => {
-                return rsx! {
-                    GlobalHead {}
-                    main {
-                        style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
-                        h1 { "Variant content not found: {wanted}" }
-                    }
-                };
+    let Some(variant) = demo.variants.iter().find(|v| v.name == variant) else {
+        return rsx! {
+            GlobalHead {}
+            main {
+                style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
+                h1 { "Variant content not found: {variant}" }
             }
-        },
-        None => &demo.variants[0],
+        };
     };
 
     let Comp = variant.component;
