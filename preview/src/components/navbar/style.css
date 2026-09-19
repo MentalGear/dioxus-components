@@ -50,17 +50,16 @@
 .dx-navbar-content::before {
   position: absolute;
   top: -0.5rem;
-  left: 0;
   width: 100%;
   height: 0.5rem;
   content: "";
+  inset-inline-start: 0;
 }
 
 .dx-navbar-content {
   position: absolute;
   z-index: var(--dx-z-overlay);
   top: 100%;
-  left: 0;
 
   /*
    * `overflow`/`border` undo the UA popover stylesheet's `[popover] {
@@ -96,6 +95,7 @@
     var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6))
     var(--dark, var(--primary-color-7));
+  inset-inline-start: 0;
   opacity: 0;
   pointer-events: none;
   transform-origin: top;
@@ -103,28 +103,46 @@
 }
 
 .dx-navbar-nav:first-child .dx-navbar-content {
-  margin-left: calc(-1 * var(--dx-space-1));
+  margin-inline-start: calc(-1 * var(--dx-space-1));
 }
 
 .dx-navbar-content[data-state="closed"] {
   transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease-in), transform var(--dx-motion-duration-base) var(--dx-motion-ease-in);
 }
 
+/* rtl-physical: `data-open-menu-direction` is already logical ("start"/
+   "end"), but `transform: translateX()` is never direction-aware, so the
+   LTR-authored physical sign below is only correct while `dir="ltr"`. The
+   `[dir="rtl"]` block further down negates both signs so "start" still
+   slides toward the reading-direction start in RTL. */
 .dx-navbar-content[data-state="closed"][data-open-menu-direction="start"] {
-  transform: translateX(-100%) scale(0.98);
+  transform: translateX(-100%) scale(0.98); /* rtl-physical: see comment above */
 }
 
 .dx-navbar-content[data-state="closed"][data-open-menu-direction="end"] {
-  transform: translateX(100%) scale(0.98);
+  transform: translateX(100%) scale(0.98); /* rtl-physical: see comment above */
 }
 
 .dx-navbar-content[data-state="closed"][data-open-menu-direction="closed"] {
   transform: translateY(1rem) scale(0.98);
 }
 
+/* rtl-physical: RTL counterparts of the "start"/"end" rules above, signs
+   negated. */
+[dir="rtl"] .dx-navbar-content[data-state="closed"][data-open-menu-direction="start"] {
+  transform: translateX(100%) scale(0.98); /* rtl-physical */
+}
+
+[dir="rtl"] .dx-navbar-content[data-state="closed"][data-open-menu-direction="end"] {
+  transform: translateX(-100%) scale(0.98); /* rtl-physical */
+}
+
 .dx-navbar-content[data-state="open"] {
   opacity: 1;
   pointer-events: auto;
+
+  /* rtl-physical: resting state, zero offset on both axes -- no side is
+     encoded, so nothing to mirror. */
   transform: translateX(0) translateY(0) scale(1);
   transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
     transform var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1);

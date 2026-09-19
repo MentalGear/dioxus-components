@@ -77,6 +77,9 @@
   position: fixed;
   z-index: var(--dx-z-overlay-raised);
   top: 20%;
+
+  /* rtl-physical: viewport-centering, paired with `transform:
+     translateX(-50%)` below -- see dialog/style.css's identical note. */
   left: 50%;
   display: flex;
   overflow: hidden;
@@ -91,7 +94,7 @@
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
   box-shadow: var(--dx-shadow-2xl);
   color: var(--secondary-color-1);
-  transform: translateX(-50%);
+  transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
 @media (width >= 40rem) {
@@ -191,5 +194,5 @@
  * references a class outside this stylesheet's own `dx-command-...`
  * namespace (docs/backlog.md row 32 / scripts/check-dx-class-prefix.sh). */
 .dx-command-item [data-command-item-shortcut] {
-  margin-left: auto;
+  margin-inline-start: auto;
 }

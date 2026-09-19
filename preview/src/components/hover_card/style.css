@@ -80,7 +80,12 @@
 /* Alignment styles for top and bottom */
 .dx-hover-card-content[data-side="top"][data-align="start"],
 .dx-hover-card-content[data-side="bottom"][data-align="start"] {
-  left: 0;
+  /* logical: `align="start"` is a reading-direction concept for a
+     top/bottom-placed overlay's cross axis (Radix's Floating UI resolves
+     align logically from `dir` -- packages/react/popper/src/popper.tsx,
+     radix-ui/primitives commit f7ecd5a). No transform to desync from
+     (`transform: none` below), so this is a plain, safe conversion. */
+  inset-inline-start: 0;
   transform: none;
 }
 
@@ -92,8 +97,7 @@
 
 .dx-hover-card-content[data-side="top"][data-align="end"],
 .dx-hover-card-content[data-side="bottom"][data-align="end"] {
-  right: 0;
-  left: auto;
+  inset-inline: auto 0;
   transform: none;
 }
 
