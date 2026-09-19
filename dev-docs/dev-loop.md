@@ -262,6 +262,14 @@ past the first `READY`, or (more simply) just re-run `dev-wait.sh` once more
 with `--since-line` set past the first match — if it times out, you're done;
 if it reports another `READY`, that was the real one.
 
+**A sixth trap, found later (2026-09-18/19, batch-2 integration) and recorded
+in `dx-serve-hot-reload.md` rather than here, since it belongs with traps
+1-3's "no clean rebuild signal" family:** near-simultaneous saves to two
+*different* files can make the watcher drop the rebuild entirely (no
+`Hotreloading:`, no `Build completed`, ~2% CPU, indefinitely) rather than
+merely mis-time it the way trap 5 above does — see that file for the full
+account and how to tell the two apart.
+
 **A methodology footnote from `getComputedStyle`:** checking whether a CSS
 change landed by reading `outline-color` alone is a false-negative trap in
 its own right — the browser's default computed `outline-color` is

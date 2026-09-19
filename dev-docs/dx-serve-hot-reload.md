@@ -53,6 +53,25 @@ for the cold-start string after an ordinary edit will find nothing even when the
 finished — match `Build completed` (without "successfully") for a watch rebuild, and know which
 kind of start you're polling for before concluding the log shows no completion at all.
 
+## A sixth trap: a dropped rebuild on near-simultaneous saves (traps 4 and 5 are in `dev-loop.md`)
+
+Beyond a rebuild that only *looks* incomplete (the previous trap) or is merely
+mistimed (`dev-loop.md`'s trap 5), saving two **different** files within a
+few seconds of each other can make the watcher drop the rebuild **entirely**:
+no `Hotreloading:` line, no `Build completed` line, the server process stays
+alive and keeps serving HTTP, but sits idle at ~2% CPU indefinitely — as if
+nothing had changed at all. Found during 2026-09-18/19 batch-2 integration:
+two files were edited roughly 7 seconds apart, and the server never rebuilt
+for either one. **Recovery is a trivial re-save of either file** — the
+watcher picks up the next save normally and rebuilds everything pending, not
+just the re-saved file. Likely mechanism: both saves landed inside the same
+debounce window and were coalesced into nothing, the more severe sibling of
+`dev-loop.md`'s trap 5 ("coalesced into an early, incomplete rebuild").
+Telling the three apart: trap 5 still produces a `Build completed` line,
+just prematurely; this trap produces no completion line at all; a wedged
+server (`dev-loop.md`'s "Trap 0") also shows no completion line, so check
+`ps`/CPU% too — idle at ~2% with no error is this trap, not a wedge.
+
 ## Testing methodology traps that *look* like a stale build
 
 Two mistakes this session produced symptoms indistinguishable from "the dev
