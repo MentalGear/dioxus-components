@@ -9,7 +9,16 @@ use dioxus_primitives::merge_attributes;
 // attach"). Re-exported here -- rather than left for demo code to import
 // raw from `dioxus_primitives::chart` -- so every demo composes exclusively
 // through `crate::components::chart::*`, never a raw `dioxus_primitives::`
-// path outside this file (`scripts/check-preview-composition.sh`).
+// path outside this file (`scripts/check-preview-composition.sh`). `Curve`
+// joins this list for the stage-2 per-family gallery packages (`area_chart`,
+// `line_chart`, ...): their own `component.rs` is a thin `pub use
+// crate::components::chart::*;` (the installable package stays `chart`
+// alone), so anything a variant demo names -- `Curve::Linear`/`Curve::Step`
+// for e.g. `area_chart`'s `linear`/`step` demos -- has to be reachable from
+// here, transitively, rather than each gallery reaching past this module
+// into `dioxus_primitives::chart::Curve` directly (which
+// `check-preview-composition.sh` would then have to special-case per
+// gallery instead of once, here, at the seam this file already is).
 //
 // `AreaOptions`/`BarOptions`/`PieOptions`/`RadarOptions`/`RadialOptions`
 // have no demo using them yet (only `variants/line/mod.rs` sets `line:
@@ -17,12 +26,12 @@ use dioxus_primitives::merge_attributes;
 // `cargo`'s own usage tracking through the `use super::super::component::*;`
 // glob chain sees as used) -- reserved stage-2 extension points, same as
 // `ChartProps`' own `area`/`bar`/`pie`/`radar`/`radial` fields, so each
-// family's own gallery lane (`s2-area`/`s2-bar`/`s2-polar`/`s2-radar`) can
-// write `<Family>Options { .. }` in its demo the moment it lands, with no
-// edit to this shared file needed first.
+// family's own gallery lane (`s2-bar`/`s2-polar`/`s2-radar`) can write
+// `<Family>Options { .. }` in its demo the moment it lands, with no edit to
+// this shared file needed first.
 #[allow(unused_imports)]
 pub use dioxus_primitives::chart::{
-    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartKind, LegendAlign, LineOptions,
+    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartKind, Curve, LegendAlign, LineOptions,
     PieOptions, RadarOptions, RadialOptions,
 };
 
