@@ -2,6 +2,7 @@
 
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
+    direction::{use_direction, Direction, HorizontalNav},
     toggle::Toggle,
     use_controlled,
 };
@@ -24,6 +25,10 @@ struct ToggleGroupCtx {
 
     horizontal: ReadSignal<bool>,
     roving_loop: ReadSignal<bool>,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role --
+    // see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 }
 
 impl ToggleGroupCtx {
@@ -100,6 +105,12 @@ pub struct ToggleGroupProps {
     #[props(default)]
     pub horizontal: ReadSignal<bool>,
 
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none. See [`crate::direction::use_direction`].
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
@@ -138,6 +149,7 @@ pub struct ToggleGroupProps {
 /// The [`ToggleGroup`] component defines the following data attributes you can use to control styling:
 /// - `data-orientation`: Indicates the orientation of the toggle group. Values are `horizontal` or `vertical`.
 /// - `data-allow-multiple-pressed`: Indicates if multiple items can be pressed at the same time. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn ToggleGroup(props: ToggleGroupProps) -> Element {
     let (pressed, set_pressed) = use_controlled(
@@ -145,6 +157,7 @@ pub fn ToggleGroup(props: ToggleGroupProps) -> Element {
         props.default_pressed,
         props.on_pressed_change,
     );
+    let direction = use_direction(props.dir);
 
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| ToggleGroupCtx {
@@ -156,14 +169,17 @@ pub fn ToggleGroup(props: ToggleGroupProps) -> Element {
         focus,
         horizontal: props.horizontal,
         roving_loop: props.roving_loop,
+        direction,
     });
 
     rsx! {
         div {
+            dir: direction.as_str(),
             onfocusout: move |_| ctx.focus.clear_focus(),
 
             "data-orientation": ctx.orientation(),
             "data-allow-multiple-pressed": ctx.allow_multiple_pressed,
+            "data-direction": direction.as_str(),
             ..props.attributes,
 
             {props.children}
@@ -246,8 +262,13 @@ pub fn ToggleItem(props: ToggleItemProps) -> Element {
                 match key {
                     Key::ArrowUp if !horizontal => ctx.focus_prev(),
                     Key::ArrowDown if !horizontal => ctx.focus_next(),
-                    Key::ArrowLeft if horizontal => ctx.focus_prev(),
-                    Key::ArrowRight if horizontal => ctx.focus_next(),
+                    Key::ArrowLeft | Key::ArrowRight if horizontal => {
+                        match ctx.direction.resolve_horizontal(&key) {
+                            Some(HorizontalNav::Prev) => ctx.focus_prev(),
+                            Some(HorizontalNav::Next) => ctx.focus_next(),
+                            None => {}
+                        }
+                    }
                     Key::Home => ctx.focus.focus_first(),
                     Key::End => ctx.focus.focus_last(),
                     _ => prevent_default = false,

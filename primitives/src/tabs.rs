@@ -2,6 +2,7 @@
 
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
+    direction::{use_direction, Direction, HorizontalNav},
     use_controlled, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
@@ -18,6 +19,10 @@ struct TabsContext {
 
     // Orientation
     horizontal: ReadSignal<bool>,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role --
+    // see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 
     // ARIA attributes
     tab_content_ids: Signal<Vec<String>>,
@@ -44,6 +49,12 @@ pub struct TabsProps {
     /// Whether the tabs are horizontal.
     #[props(default)]
     pub horizontal: ReadSignal<bool>,
+
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none. See [`crate::direction::use_direction`].
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
@@ -105,10 +116,12 @@ pub struct TabsProps {
 /// The [`Tabs`] component defines the following data attributes you can use to control styling:
 /// - `data-orientation`: Indicates the orientation of the tabs. Values are `horizontal` or `vertical`.
 /// - `data-disabled`: Indicates if the tabs are disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn Tabs(props: TabsProps) -> Element {
     let (value, set_value) =
         use_controlled(props.value, props.default_value, props.on_value_change);
+    let direction = use_direction(props.dir);
 
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| TabsContext {
@@ -119,13 +132,16 @@ pub fn Tabs(props: TabsProps) -> Element {
         focus,
 
         horizontal: props.horizontal,
+        direction,
         tab_content_ids: Signal::new(Vec::new()),
     });
 
     rsx! {
         div {
+            dir: direction.as_str(),
             "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
 
             onfocusout: move |_| ctx.focus.clear_focus(),
             ..props.attributes,
@@ -323,8 +339,13 @@ pub fn TabTrigger(props: TabTriggerProps) -> Element {
                 match key {
                     Key::ArrowUp if !horizontal => ctx.focus.focus_prev(),
                     Key::ArrowDown if !horizontal => ctx.focus.focus_next(),
-                    Key::ArrowLeft if horizontal => ctx.focus.focus_prev(),
-                    Key::ArrowRight if horizontal => ctx.focus.focus_next(),
+                    Key::ArrowLeft | Key::ArrowRight if horizontal => {
+                        match ctx.direction.resolve_horizontal(&key) {
+                            Some(HorizontalNav::Prev) => ctx.focus.focus_prev(),
+                            Some(HorizontalNav::Next) => ctx.focus.focus_next(),
+                            None => {}
+                        }
+                    }
                     Key::Home => ctx.focus.focus_first(),
                     Key::End => ctx.focus.focus_last(),
                     _ => prevent_default = false,

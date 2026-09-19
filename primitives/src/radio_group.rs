@@ -6,6 +6,7 @@ use crate::{
     collection::{
         collection_item, use_collection_provider_with, use_item, CollectionOptions, CollectionState,
     },
+    direction::{use_direction, Direction, HorizontalNav},
     use_controlled, use_effect_with_cleanup, use_form_reset_listener, use_unique_id,
 };
 use dioxus::prelude::*;
@@ -30,6 +31,10 @@ struct RadioGroupCtx {
     focus: CollectionState,
 
     horizontal: ReadSignal<bool>,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role --
+    // see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 }
 
 impl RadioGroupCtx {
@@ -107,6 +112,12 @@ pub struct RadioGroupProps {
     #[props(default)]
     pub horizontal: ReadSignal<bool>,
 
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none. See [`crate::direction::use_direction`].
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
@@ -159,8 +170,10 @@ pub struct RadioGroupProps {
 /// The [`RadioGroup`] component defines the following data attributes you can use to control styling:
 /// - `data-orientation`: Indicates the orientation of the radio group. Values are `horizontal` or `vertical`.
 /// - `data-disabled`: Indicates if the radio group is disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn RadioGroup(props: RadioGroupProps) -> Element {
+    let direction = use_direction(props.dir);
     // Snapshot the default before `use_controlled` consumes it -- each
     // RadioItem's hidden radio needs it (for `initial_checked`) and the
     // group's own form-reset listener needs it (to restore the Rust-side
@@ -189,13 +202,16 @@ pub fn RadioGroup(props: RadioGroupProps) -> Element {
         values: Signal::new(Default::default()),
         focus,
         horizontal: props.horizontal,
+        direction,
     });
 
     rsx! {
         div {
             role: "radiogroup",
+            dir: direction.as_str(),
             "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
             aria_required: props.required,
 
             onfocusout: move |_| ctx.set_focus(None),
@@ -348,8 +364,13 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
                 match key {
                     Key::ArrowUp if !horizontal => ctx.focus_prev(),
                     Key::ArrowDown if !horizontal => ctx.focus_next(),
-                    Key::ArrowLeft if horizontal => ctx.focus_prev(),
-                    Key::ArrowRight if horizontal => ctx.focus_next(),
+                    Key::ArrowLeft | Key::ArrowRight if horizontal => {
+                        match ctx.direction.resolve_horizontal(&key) {
+                            Some(HorizontalNav::Prev) => ctx.focus_prev(),
+                            Some(HorizontalNav::Next) => ctx.focus_next(),
+                            None => {}
+                        }
+                    }
                     Key::Home => ctx.focus_start(),
                     Key::End => ctx.focus_end(),
                     _ => prevent_default = false,

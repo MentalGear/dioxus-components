@@ -9,6 +9,7 @@ use crate::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
+    direction::{use_direction, Direction, HorizontalNav},
     use_id_or, use_unique_id,
 };
 
@@ -21,6 +22,11 @@ struct MenubarContext {
 
     // Focus state
     focus: CollectionState,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role
+    // between top-level `MenubarMenu`s -- always horizontal (a menubar is a
+    // single row) -- see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 }
 
 /// The props for the [`Menubar`] component.
@@ -33,6 +39,12 @@ pub struct MenubarProps {
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
+
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus between
+    /// top-level menus. Defaults to the nearest
+    /// [`crate::direction::DirectionProvider`], or LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Additional attributes to apply to the menubar element.
     #[props(extends = GlobalAttributes)]
@@ -108,10 +120,12 @@ pub struct MenubarProps {
 ///
 /// The [`Menubar`] component defines the following data attributes you can use to control styling:
 /// - `data-disabled`: Indicates if the menubar is disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn Menubar(props: MenubarProps) -> Element {
     let mut open_menu = use_signal(|| None);
     let set_open_menu = use_callback(move |idx| open_menu.set(idx));
+    let direction = use_direction(props.dir);
 
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| MenubarContext {
@@ -119,6 +133,7 @@ pub fn Menubar(props: MenubarProps) -> Element {
         set_open_menu,
         disabled: props.disabled,
         focus,
+        direction,
     });
     use_effect(move || {
         let index = ctx.focus.focused_index();
@@ -130,7 +145,9 @@ pub fn Menubar(props: MenubarProps) -> Element {
     rsx! {
         div {
             role: "menubar",
+            dir: direction.as_str(),
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
             tabindex: (!ctx.focus.any_focused()).then_some("0"),
             // If the menu receives focus, focus the most recently focused menu item.
             onfocus: move |_| {
@@ -360,8 +377,13 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
                         ctx.focus.clear_focus();
                         ctx.focus.set_focus(Some(props.index.cloned()));
                     }
-                    Key::ArrowLeft => ctx.focus.focus_prev(),
-                    Key::ArrowRight => ctx.focus.focus_next(),
+                    Key::ArrowLeft | Key::ArrowRight => {
+                        match ctx.direction.resolve_horizontal(&event.key()) {
+                            Some(HorizontalNav::Prev) => ctx.focus.focus_prev(),
+                            Some(HorizontalNav::Next) => ctx.focus.focus_next(),
+                            None => {}
+                        }
+                    }
                     Key::ArrowDown if !disabled() => {
                         if !is_open() {
                             menu_ctx.initial_focus.set(Some(CollectionPlacement::First));

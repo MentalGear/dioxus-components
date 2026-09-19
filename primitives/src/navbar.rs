@@ -5,6 +5,7 @@ use crate::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
+    direction::{use_direction, Direction, HorizontalNav},
     has_own_accessible_name, merge_attributes, use_animated_open, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
@@ -19,6 +20,11 @@ struct NavbarContext {
 
     // Focus state
     focus: CollectionState,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role
+    // between top-level nav triggers -- always horizontal (a navbar is a
+    // single row) -- see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 }
 
 /// The props for the [`Navbar`] component.
@@ -31,6 +37,12 @@ pub struct NavbarProps {
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
+
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus between
+    /// top-level nav triggers. Defaults to the nearest
+    /// [`crate::direction::DirectionProvider`], or LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Additional attributes to apply to the navbar element.
     #[props(extends = GlobalAttributes)]
@@ -107,10 +119,12 @@ pub struct NavbarProps {
 ///
 /// The [`Navbar`] component defines the following data attributes you can use to control styling:
 /// - `data-disabled`: Indicates if the navbar is disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn Navbar(props: NavbarProps) -> Element {
     let mut open_nav = use_signal(|| None);
     let set_open_nav = use_callback(move |idx| open_nav.set(idx));
+    let direction = use_direction(props.dir);
 
     let focus = use_collection_provider(props.roving_loop);
     let mut ctx = use_context_provider(|| NavbarContext {
@@ -118,6 +132,7 @@ pub fn Navbar(props: NavbarProps) -> Element {
         set_open_nav,
         disabled: props.disabled,
         focus,
+        direction,
     });
     use_effect(move || {
         let index = ctx.focus.focused_index();
@@ -149,7 +164,9 @@ pub fn Navbar(props: NavbarProps) -> Element {
                 // rather than widening the module to cover a role it
                 // explicitly disclaims.
                 role: "menubar",
+                dir: direction.as_str(),
                 "data-disabled": (props.disabled)(),
+                "data-direction": direction.as_str(),
                 tabindex: (!ctx.focus.any_focused()).then_some("0"),
                 // If the menu receives focus, focus the most recently focused menu item.
                 onfocus: move |_| {
@@ -190,8 +207,13 @@ pub fn Navbar(props: NavbarProps) -> Element {
                                 ctx.focus.set_focus(Some(index));
                             }
                         }
-                        Key::ArrowLeft => ctx.focus.focus_prev(),
-                        Key::ArrowRight => ctx.focus.focus_next(),
+                        Key::ArrowLeft | Key::ArrowRight => {
+                            match ctx.direction.resolve_horizontal(&event.key()) {
+                                Some(HorizontalNav::Prev) => ctx.focus.focus_prev(),
+                                Some(HorizontalNav::Next) => ctx.focus.focus_next(),
+                                None => {}
+                            }
+                        }
                         Key::Home => ctx.focus.focus_first(),
                         Key::End => ctx.focus.focus_last(),
                         _ => return,
