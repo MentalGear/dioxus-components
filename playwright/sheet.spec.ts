@@ -220,6 +220,20 @@ test('close button matches shadcn spec: 16px icon, opacity-70, rounded-xs, top-r
   const content = page.locator('[data-slot="sheet-content"]');
   const closeButton = sheet.getByRole('button').last();
 
+  // `data-state="open"` flips synchronously with the state change, well
+  // before the 500ms slide-in (`dx-slide-in-right` et al., style.css)
+  // finishes -- geometry and computed-style reads taken before it settles
+  // are unstable (the panel, and everything positioned inside/relative to
+  // it, is still moving/transitioning). Same wait-for-animations idiom
+  // `toast.spec.ts` already uses. Found by construction: re-running this
+  // test alone, `--workers=1` (no cross-test contention), reproduced two
+  // DIFFERENT assertions failing across 5 runs (opacity once, the
+  // rightGap/topGap geometry pair another time) -- both symptoms of the
+  // same missing wait, not two separate bugs.
+  await content.evaluate((el) =>
+    Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined))),
+  );
+
   // shadcn's close icon is `size-4` (16px).
   const iconBox = await closeButton.locator('svg').first().boundingBox();
   expect(iconBox).not.toBeNull();
