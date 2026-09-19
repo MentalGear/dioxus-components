@@ -283,11 +283,32 @@ test('a short, slow drag snaps back without closing the drawer', async ({ page }
   const startY = handleBox.y + handleBox.height / 2;
 
   // Short (well under the 25% distance threshold for any reasonably-sized
-  // panel) and slow (the pause before release keeps velocity low too) --
-  // must snap back, not close.
+  // panel) and slow -- must snap back, not close.
+  //
+  // The velocity half of that needs the same care the long-drag test
+  // above already takes, not just a pause *after* the move: drawer.rs's
+  // `use_drawer_drag_move`'s velocity is `axis_delta / elapsed_ms` between
+  // the last two pointermove samples ONLY, floored at 1ms
+  // (`elapsed_ms.max(1.0)`, guarding the real division only) -- a pause
+  // *after* the drag's one and only `mouse.move` call changes nothing
+  // about the velocity already recorded from THAT move's own internal
+  // `steps`, whose real inter-step timing is under no guarantee at all
+  // (found by execution: a single `mouse.move(..., { steps: 2 })` here,
+  // exactly as it read before this fix, reordered the drawer to "closed"
+  // in roughly 1 of 3 runs even on an otherwise idle box, every time with
+  // the identical `data-state` mismatch -- Playwright dispatches a
+  // `{ steps: N }` move's synthetic events as fast as the page processes
+  // them, occasionally under 1ms apart, which the `.max(1.0)` floor turns
+  // into an artificially explosive velocity rather than a merely
+  // undefined one). Splitting the same 15px into two explicit moves with
+  // a real, measured pause between them -- the long-drag test's own
+  // technique -- gives the last-two-samples velocity a genuine, timed
+  // denominator instead of an incidental one.
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move(startX, startY + 15, { steps: 2 });
+  await page.mouse.move(startX, startY + 7, { steps: 1 });
+  await page.waitForTimeout(120);
+  await page.mouse.move(startX, startY + 15, { steps: 1 });
   await page.waitForTimeout(150);
   await page.mouse.up();
 
