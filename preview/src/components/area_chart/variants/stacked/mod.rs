@@ -24,6 +24,7 @@ fn generate_data() -> Vec<ChartDatum> {
         .map(|&(label, desktop, mobile)| ChartDatum {
             label: label.to_string(),
             values: vec![Some(desktop), Some(mobile)],
+            ..Default::default()
         })
         .collect()
 }

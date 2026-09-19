@@ -4,15 +4,13 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
 /// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-axes.tsx`
-/// (shadcn's `chart-area-axes` demo): the same stacked two-series data,
-/// with the y axis shown (`show_y_axis: true`) alongside the default x
-/// axis, and a reduced tick count (`y_tick_count: 3`, matching the
-/// upstream demo's `tickCount={3}`). shadcn's own `YAxis`/`XAxis` also set
-/// `axisLine={false}` (no baseline stroke, only tick labels) -- this
-/// crate's `Chart` draws axis tick *labels* only in the first place (no
-/// baseline stroke to suppress; see `$S/chart-api.md`), so that prop has
-/// no equivalent to port.
+/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-gradient.tsx`
+/// (shadcn's `chart-area-gradient` demo): the same stacked two-series data
+/// as `stacked`/`legend`, with `AreaOptions::gradient: true` -- a
+/// top-to-bottom `<linearGradient>` per series
+/// (`primitives/src/chart/components/series/area.rs`, id'd
+/// `"{chart-id}-gradient-{series-slot}"`, SSR-stable) instead of a flat
+/// fill, matching the upstream demo's own `stopOpacity` `0.8`/`0.1` pair.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -41,16 +39,18 @@ pub fn Demo() -> Element {
         div { class: "dx-area-chart-gallery",
             Card {
                 CardHeader {
-                    CardTitle { "Area Chart - Axes" }
+                    CardTitle { "Area Chart - Gradient" }
                     CardDescription { "Showing total visitors for the last 6 months" }
                 }
                 CardContent {
                     ChartContainer { config, data: generate_data(), kind: ChartKind::Area,
                         Chart {
-                            aria_label: "Visitors by month, desktop and mobile, stacked",
+                            aria_label: "Visitors by month, desktop and mobile, stacked, gradient fill",
                             stacked: true,
-                            show_y_axis: true,
-                            y_tick_count: 3,
+                            area: AreaOptions {
+                                gradient: true,
+                                ..Default::default()
+                            },
                         }
                         ChartTooltip {}
                     }

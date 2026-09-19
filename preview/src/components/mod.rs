@@ -210,7 +210,7 @@ examples!(
     accordion,
     alert,
     alert_dialog,
-    area_chart[linear, step, stacked, legend, axes, interactive],
+    area_chart[linear, step, stacked, stacked_expand, gradient, legend, axes, icons, interactive],
     aspect_ratio,
     avatar,
     badge,
