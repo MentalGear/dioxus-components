@@ -65,6 +65,6 @@ pub use components::{
 };
 pub use context::{use_chart, ChartContext};
 pub use engine::{
-    area_between_path, area_path, line_path, nice_domain, stack, BandScale, ChartConfig,
-    ChartDatum, ChartKind, ChartSeries, Curve, LinearScale,
+    area_between_path, area_path, line_path, nice_domain, stack, stack_with_mode, BandScale,
+    ChartConfig, ChartDatum, ChartKind, ChartSeries, Curve, LinearScale, StackMode,
 };

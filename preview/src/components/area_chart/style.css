@@ -1,0 +1,21 @@
+/* Area Chart gallery -- shadcn/ui `chart-area-*` demo parity
+ * (dev-docs/research/chart-2026-09-19.md §1.2; `$S/chart-api.md`).
+ *
+ * This package composes the `chart` package's own themed pieces
+ * (`.dx-chart`/`.dx-chart-tooltip`/`.dx-chart-legend`, all styled in
+ * `../chart/style.css`) and defines no visual behavior of its own. Every
+ * component in this registry ships a `style.css` -- `component.rs`'s
+ * `css_highlight!`/`asset!` macros (preview/src/components/mod.rs) embed
+ * it unconditionally for the docs site's "Style" tab, so the file must
+ * exist even here. The one rule below gives each variant's root a real,
+ * namespaced (scripts/check-dx-class-prefix.sh: folder `area_chart` ->
+ * prefix `dx-area-chart`) selector to hang future gallery-level layout off
+ * without touching `chart`'s own stylesheet -- `display: contents` keeps
+ * it a no-op today (every demo is a single `Card`, so there is nothing to
+ * lay out yet), rather than an inert/placeholder rule that would fail
+ * stylelint's `no-empty-source`.
+ */
+
+.dx-area-chart-gallery {
+  display: contents;
+}

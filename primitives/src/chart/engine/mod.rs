@@ -42,7 +42,9 @@
 //!   [`scale::BandScale`], plus [`scale::nice_domain`].
 //! - [`curve`] -- [`curve::Curve`] and the [`curve::line_path`]/
 //!   [`curve::area_path`] SVG path builders.
-//! - [`mod@stack`] -- [`stack::stack`], series stacking.
+//! - [`mod@stack`] -- [`stack::stack`], series stacking, plus
+//!   [`stack::stack_with_mode`]/[`stack::StackMode`] for percent
+//!   ("100% stacked") stacking.
 //! - [`geometry`] -- [`geometry::plot_runs`], gap-aware point-run
 //!   splitting for a line/area series.
 //! - [`table`] -- [`table::table_rows`], the hidden data table's row
@@ -66,4 +68,4 @@ pub mod table;
 pub use curve::{area_between_path, area_path, line_path, Curve};
 pub use data::{ChartConfig, ChartDatum, ChartKind, ChartSeries};
 pub use scale::{nice_domain, BandScale, LinearScale};
-pub use stack::stack;
+pub use stack::{stack, stack_with_mode, StackMode};
