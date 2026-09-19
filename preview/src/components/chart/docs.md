@@ -18,8 +18,8 @@ let config = ChartConfig::new()
 // the same order as `config` -- `None` renders as a gap (line/area) or a
 // zero-height bar, never a fabricated zero.
 let data = vec![
-    ChartDatum { label: "January".into(), values: vec![Some(186.0), Some(80.0)] },
-    ChartDatum { label: "February".into(), values: vec![Some(305.0), Some(200.0)] },
+    ChartDatum { label: "January".into(), values: vec![Some(186.0), Some(80.0)], ..Default::default() },
+    ChartDatum { label: "February".into(), values: vec![Some(305.0), Some(200.0)], ..Default::default() },
     // ...
 ];
 
@@ -36,7 +36,7 @@ ChartContainer {
     Chart {
         aria_label: "Visitors by month, desktop and mobile",
         stacked: false,
-        show_dots: false, // Line only
+        line: LineOptions { dots: false }, // Line only
         x_label: "Month", // hidden table's corner <th> -- default "Category"
         max_x_ticks: 12, // thin x-axis labels on a dense chart -- see below
     }

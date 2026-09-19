@@ -10,7 +10,21 @@ use dioxus_primitives::merge_attributes;
 // raw from `dioxus_primitives::chart` -- so every demo composes exclusively
 // through `crate::components::chart::*`, never a raw `dioxus_primitives::`
 // path outside this file (`scripts/check-preview-composition.sh`).
-pub use dioxus_primitives::chart::{ChartConfig, ChartDatum, ChartKind, LegendAlign};
+//
+// `AreaOptions`/`BarOptions`/`PieOptions`/`RadarOptions`/`RadialOptions`
+// have no demo using them yet (only `variants/line/mod.rs` sets `line:
+// LineOptions { .. }` today -- LineOptions is the one name below that
+// `cargo`'s own usage tracking through the `use super::super::component::*;`
+// glob chain sees as used) -- reserved stage-2 extension points, same as
+// `ChartProps`' own `area`/`bar`/`pie`/`radar`/`radial` fields, so each
+// family's own gallery lane (`s2-area`/`s2-bar`/`s2-polar`/`s2-radar`) can
+// write `<Family>Options { .. }` in its demo the moment it lands, with no
+// edit to this shared file needed first.
+#[allow(unused_imports)]
+pub use dioxus_primitives::chart::{
+    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartKind, LegendAlign, LineOptions,
+    PieOptions, RadarOptions, RadialOptions,
+};
 
 /// The themed chart container: scopes the `--color-<key>` CSS variables
 /// generated from `config` to this instance via `data-chart="<id>"`. Always
@@ -54,27 +68,28 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
 /// primitive and selected off `[data-slot="..."]` inside the container's
 /// own `.dx-chart` scope (see `style.css`), so there is nothing new to
 /// attach here beyond forwarding attributes through untouched.
+///
+/// Forwards via `..props` (a plain struct-update spread -- precedented in
+/// this repo, e.g. `primitives/src/toast.rs`'s own `Toast { ..props }`),
+/// not a hand-listed field-by-field call: `props` here IS `chart::Chart`'s
+/// own `ChartProps` (imported directly, not a separate preview-defined
+/// props type), so every field forwards with no mapping needed. This is a
+/// stage-2 chart round fix-by-construction, not merely this round's own
+/// six new option fields: a hand-listed forward silently drops any field
+/// the list doesn't (yet) name, with no compile error -- which is exactly
+/// how this file's own pre-stage-2 list had already gone stale (API change
+/// #8's `x_label`/`max_x_ticks` were never added to it, so a demo setting
+/// either was silently ignored; fixed for free by this same spread, not
+/// tracked as its own change). `ChartTooltip`/`ChartLegend` below have the
+/// same class of gap for their own newer props -- left as found, since
+/// neither is a field this round touches (see `$S/stage2-lanes.md`'s own
+/// s2-tooltip entry, which independently flagged both and will apply the
+/// same construction to them).
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::Chart {
-            aria_label: props.aria_label,
-            description: props.description,
-            width: props.width,
-            height: props.height,
-            stacked: props.stacked,
-            curve: props.curve,
-            show_grid: props.show_grid,
-            show_x_axis: props.show_x_axis,
-            show_y_axis: props.show_y_axis,
-            x_tick_format: props.x_tick_format,
-            y_tick_count: props.y_tick_count,
-            show_dots: props.show_dots,
-            keyboard: props.keyboard,
-            dir: props.dir,
-            attributes: props.attributes,
-        }
+        chart::Chart { ..props }
     }
 }
 
