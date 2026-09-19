@@ -1,0 +1,116 @@
+/*
+ * `chart_tooltip` gallery -- page layout, plus a TEMPORARY scoped copy of
+ * the indicator/icon/total-row rules this gallery's `indicator_line`,
+ * `dashed`-shaped rows, `icons`, and `advanced` demos need.
+ *
+ * The real home for those rules is `chart`'s own
+ * `preview/src/components/chart/style.css` -- every chart gallery (area,
+ * bar, line, pie, radar, radial, and this one) shares the SAME
+ * `ChartTooltip`/`ChartLegend` implementation, so a rule that styles
+ * `[data-indicator="line"]` or `[data-slot="chart-icon"]` belongs there,
+ * unscoped, not duplicated once per gallery. This lane does not own that
+ * file (`$S/stage2-common.md`: `preview/src/components/chart/**` is
+ * stage-1's and integration-owned now) -- the exact rules below were filed
+ * verbatim as a request to `$S/stage2-lanes.md`'s "requests for the
+ * refactor owner". Everything under `.dx-chart-tooltip-gallery` here is
+ * that same request's rules, scoped to this component's own root
+ * (`component.rs`'s `Gallery`) so THIS gallery's nine demos render
+ * correctly right now, without waiting on that request to land.
+ * Integration deletes this copy once `chart/style.css` carries the
+ * unscoped version -- the two must never both apply at once outside this
+ * page (they wouldn't conflict -- same rules -- but would be dead weight).
+ *
+ * `check-dx-class-prefix.sh`: the only real class defined below is
+ * `dx-chart-tooltip-gallery` (`dx-<name>`, this component's folder name
+ * `chart_tooltip` dashed); every other selector is an attribute selector
+ * scoped underneath it, never a bare `[data-slot=...]` that could leak
+ * globally.
+ */
+
+.dx-chart-tooltip-gallery {
+  display: block;
+
+  /* shadcn's own nine demos: `containerClassName`'s `[&>div]:max-w-md`. */
+  max-width: 28rem;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Indicator shapes (`ChartTooltipProps::indicator`, `TooltipIndicator`).
+ * `Dot` (the default) already matches `chart/style.css`'s existing base
+ * `[data-slot="chart-swatch"]` rule (10x10, `--dx-radius-xs`) unchanged --
+ * only `Line` and `Dashed` need an override; `None`/`hide_indicator`
+ * render no swatch element at all, so neither needs a rule here.
+ * ---------------------------------------------------------------------- */
+
+/* Stretch the row to the indicator's own height instead of centering a
+ * small dot -- shadcn's own `items-stretch` row default, overridden back
+ * to `items-center` only when `indicator === "dot"`
+ * (`$S/refs/ui/apps/v4/registry/new-york-v4/ui/chart.tsx`). The tooltip
+ * root's own `data-indicator` (not just the swatch's) is the hook here,
+ * since it's what's present even when a row's `formatter` replaces the
+ * swatch element itself. */
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip"][data-indicator="line"] [data-slot="chart-tooltip-item"],
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip"][data-indicator="dashed"] [data-slot="chart-tooltip-item"] {
+  align-items: stretch;
+}
+
+.dx-chart-tooltip-gallery [data-slot="chart-swatch"][data-indicator="line"] {
+  width: 4px;
+  height: auto;
+  align-self: stretch;
+  border-radius: var(--dx-radius-xs);
+  background-color: var(--series-color);
+}
+
+.dx-chart-tooltip-gallery [data-slot="chart-swatch"][data-indicator="dashed"] {
+  width: 0;
+  height: auto;
+  align-self: stretch;
+  border-radius: 0;
+  background-color: transparent;
+
+  /* rtl-physical: a vertical rule alongside the row's own start edge, not
+     a page-reading-direction concept -- logical property regardless. */
+  border-inline-start: 1.5px dashed var(--series-color);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Per-series icons (`ChartSeries.icon`) -- rendered in place of the swatch
+ * in a tooltip row (and, once a demo needs it, a legend item), sized to
+ * match the swatch/indicator they replace.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip-gallery [data-slot="chart-icon"] {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--secondary-color-5);
+}
+
+.dx-chart-tooltip-gallery [data-slot="chart-icon"] svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------------- *
+ * The `advanced` demo's fully custom rows: an extra total row after the
+ * last series, inside that row's own `formatter` output.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip-total"] {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  border-block-start: 1px solid var(--dx-chart-grid);
+  font-weight: 600;
+  margin-block-start: var(--dx-space-1);
+  padding-block-start: var(--dx-space-1);
+}
+
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip-total-value"] {
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: auto;
+}
