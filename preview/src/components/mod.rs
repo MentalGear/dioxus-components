@@ -222,6 +222,7 @@ examples!(
     card,
     carousel[multiple, indicators, vertical, rtl],
     chart[bar, line, stacked],
+    chart_tooltip[indicator_none, label_none, label_formatter],
     checkbox,
     collapsible,
     color_picker,

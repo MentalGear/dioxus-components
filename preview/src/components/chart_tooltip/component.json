@@ -1,0 +1,14 @@
+{
+  "name": "chart_tooltip",
+  "description": "Tooltip and legend options for the chart component: indicator styles, label/value formatters, and icons.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["chart", "card"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
