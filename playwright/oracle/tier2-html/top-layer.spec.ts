@@ -231,12 +231,32 @@ async function escapesClip(
   ancestorSelector: string,
 ): Promise<{ escapes: boolean; reason?: string; x?: number; y?: number; hit?: string | null }> {
   return page.evaluate(
-    ({ contentSelector, ancestorSelector }) => {
+    async ({ contentSelector, ancestorSelector }) => {
       const content = document.querySelector(contentSelector) as HTMLElement | null;
       const ancestor = document.querySelector(ancestorSelector) as HTMLElement | null;
       if (!content || !ancestor) {
         return { escapes: false, reason: `missing element(s): content=${!!content} ancestor=${!!ancestor}` };
       }
+      // Wait out any entrance animation on `content` itself before probing
+      // -- same idiom `toast.spec.ts` already uses. Found by construction,
+      // via NavigationMenu's own instance of this exact call (row 72's
+      // fix, `08a14d8`, made its dead entrance animation actually run):
+      // `document.elementFromPoint` at the content's own top-left corner
+      // returned the page's "Clipping escape" `<h2>` instead of the
+      // (correctly top-layered, `position:fixed`, `z-index:1000`) content,
+      // reproducibly, every time the probe ran before this wait existed --
+      // never once after adding it. Every one of this describe block's 11
+      // `escapesClip` calls shares this same "probe immediately after
+      // hover/click, before any entrance animation settles" shape; only
+      // NavigationMenu's own animation happened to be slow/real enough
+      // (`--dx-motion-duration-slow`, and genuinely running rather than
+      // dead) to make the race land often enough to fail here first, but
+      // nothing about the mechanism is specific to it -- fixed for all 11
+      // by construction, in the shared helper, rather than adding a wait
+      // to one call site.
+      await Promise.all(
+        content.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined)),
+      );
       const c = content.getBoundingClientRect();
       const a = ancestor.getBoundingClientRect();
       const inset = 2;
