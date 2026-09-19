@@ -153,6 +153,7 @@ fn generate_data() -> Vec<ChartDatum> {
         .map(|&(date, desktop, mobile)| ChartDatum {
             label: format_date_label(date),
             values: vec![Some(desktop), Some(mobile)],
+            ..Default::default()
         })
         .collect()
 }

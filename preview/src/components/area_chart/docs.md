@@ -29,9 +29,9 @@ ChartContainer { config, data, kind: ChartKind::Area,
 - **Legend** (`chart-area-legend`) — a stacked area chart with a `ChartLegend` below it.
 - **Axes** (`chart-area-axes`) — both axes shown (`show_y_axis: true` alongside the default `show_x_axis`), with a reduced y-tick count (`y_tick_count: 3`) matching shadcn's own `tickCount={3}`.
 - **Interactive** (`chart-area-interactive`) — 90 days of two-series data, a `Select` narrows the visible range to the last 90/30/7 days, with a `ChartLegend`.
-- **Stacked, expand** (`chart-area-stacked-expand`) — three series stacked as *percentages of each datum's total* (every datum's stack reaches exactly 100%), via the area engine's percent-stacking mode.
-- **Gradient** (`chart-area-gradient`) — each series' fill is a top-to-bottom `<linearGradient>` (opaque near the line, fading toward the baseline) instead of a flat, uniform fill-opacity.
-- **Icons** (`chart-area-icons`) — each series carries an icon shown next to its legend/tooltip label.
+- **Stacked, expand** (`chart-area-stacked-expand`) — three series stacked as *percentages of each datum's total* (`area: AreaOptions { stack_mode: StackMode::Expand, .. }`) — every datum's stack reaches exactly 100%, regardless of its raw total. Renders with `show_grid: false`: the shared grid still reflects the *raw* domain, not the percent one, until a follow-up makes it stack-mode-aware (see the component's own source comment).
+- **Gradient** (`chart-area-gradient`) — `area: AreaOptions { gradient: true, .. }`: each series' fill is a top-to-bottom `<linearGradient>` (opaque near the line, fading toward the baseline) instead of a flat, uniform fill-opacity.
+- **Icons** (`chart-area-icons`) — each series' `ChartSeries.icon` is set (`TrendingDown`/`TrendingUp`). Not yet visually wired up — `ChartLegend`/`ChartTooltip` don't read this field yet — so today this renders identically to `legend`; the config is ready for the moment they do.
 
 ## Accessibility
 
