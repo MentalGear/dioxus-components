@@ -1,18 +1,25 @@
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
-use dioxus_icons::lucide::TrendingUp;
+use dioxus_icons::lucide::{TrendingDown, TrendingUp};
 
 /// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-axes.tsx`
-/// (shadcn's `chart-area-axes` demo): the same stacked two-series data,
-/// with the y axis shown (`show_y_axis: true`) alongside the default x
-/// axis, and a reduced tick count (`y_tick_count: 3`, matching the
-/// upstream demo's `tickCount={3}`). shadcn's own `YAxis`/`XAxis` also set
-/// `axisLine={false}` (no baseline stroke, only tick labels) -- this
-/// crate's `Chart` draws axis tick *labels* only in the first place (no
-/// baseline stroke to suppress; see `$S/chart-api.md`), so that prop has
-/// no equivalent to port.
+/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-icons.tsx`
+/// (shadcn's `chart-area-icons` demo): the same stacked two-series data as
+/// `stacked`/`legend`/`gradient`, with each series' `chartConfig` icon
+/// (`TrendingDown` for desktop, `TrendingUp` for mobile, matching the
+/// upstream file exactly) ported to [`ChartSeries::icon`].
+///
+/// **Not yet visually wired up** -- stated plainly, not silently shipped:
+/// `ChartSeries::icon` is a stage-2 *extension point* the refactor lane
+/// added (`primitives/src/chart/config.rs`: "added ... unused until a
+/// later lane wires it into `ChartLegend`/`ChartTooltip`"); that wiring is
+/// `s2-tooltip`'s own task (`components::{tooltip,legend}`), not
+/// `s2-area`'s, and had not landed when this variant was written. This
+/// demo sets the config field correctly (so it renders the *rest* of the
+/// chart faithfully, and is ready to show icons the moment
+/// `ChartLegend`/`ChartTooltip` read this field) rather than skip the
+/// variant or fake the icon rendering here.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -33,15 +40,17 @@ fn generate_data() -> Vec<ChartDatum> {
 
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new()
+    let mut config = ChartConfig::new()
         .series("desktop", "Desktop", "var(--dx-chart-1)")
         .series("mobile", "Mobile", "var(--dx-chart-2)");
+    config.series[0].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingDown {} })));
+    config.series[1].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })));
 
     rsx! {
         div { class: "dx-area-chart-gallery",
             Card {
                 CardHeader {
-                    CardTitle { "Area Chart - Axes" }
+                    CardTitle { "Area Chart - Icons" }
                     CardDescription { "Showing total visitors for the last 6 months" }
                 }
                 CardContent {
@@ -49,10 +58,9 @@ pub fn Demo() -> Element {
                         Chart {
                             aria_label: "Visitors by month, desktop and mobile, stacked",
                             stacked: true,
-                            show_y_axis: true,
-                            y_tick_count: 3,
                         }
                         ChartTooltip {}
+                        ChartLegend {}
                     }
                 }
                 CardFooter {

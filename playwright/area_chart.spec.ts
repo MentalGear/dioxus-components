@@ -8,20 +8,16 @@ import { BASE_URL } from "./base-url";
 // repo's normal multi-variant layout, `preview/src/main.rs`): the first/
 // default demo's frame is `#component-preview-frame`, every other named
 // variant's is `#component-preview-frame-<variant>`.
-//
-// Commit 1 of this lane ships the seven variants buildable from the
-// pre-refactor `Chart`/`ChartContainer` API (`default`/`linear`/`step`/
-// `stacked`/`legend`/`axes`/`interactive`); `stacked_expand`/`gradient`/
-// `icons` (added to this same table, and this same file, once
-// `AreaOptions` lands) need primitive features this lane's stage-2 refactor
-// dependency had not yet landed when this table was written.
 const VARIANTS: { name: string; frameId: string; seriesCount: number }[] = [
   { name: "default", frameId: "component-preview-frame", seriesCount: 1 },
   { name: "linear", frameId: "component-preview-frame-linear", seriesCount: 1 },
   { name: "step", frameId: "component-preview-frame-step", seriesCount: 1 },
   { name: "stacked", frameId: "component-preview-frame-stacked", seriesCount: 2 },
+  { name: "stacked_expand", frameId: "component-preview-frame-stacked_expand", seriesCount: 3 },
+  { name: "gradient", frameId: "component-preview-frame-gradient", seriesCount: 2 },
   { name: "legend", frameId: "component-preview-frame-legend", seriesCount: 2 },
   { name: "axes", frameId: "component-preview-frame-axes", seriesCount: 2 },
+  { name: "icons", frameId: "component-preview-frame-icons", seriesCount: 2 },
   { name: "interactive", frameId: "component-preview-frame-interactive", seriesCount: 2 },
 ];
 
@@ -125,6 +121,48 @@ test.describe("Behavioural: variant-specific rendering", () => {
         isHorizontal || isVertical,
         `segment ${i} (${x0},${y0}) -> (${x1},${y1}) is diagonal, not a step`,
       ).toBe(true);
+    }
+  });
+
+  test("stacked_expand: the topmost stacked area reaches the plot top (y close to the margin)", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/component/?name=area_chart&`);
+    const frame = page.locator("#component-preview-frame-stacked_expand").first();
+    // Config order is desktop, mobile, other (`ChartConfig::series`
+    // positional stacking order -- `engine::stack`'s own doc): each
+    // series stacks on top of the previous one, so "other" (added last)
+    // is the topmost series, and every row's percent-stacked top is
+    // exactly 1.0 regardless of the row's raw total.
+    const topPath = frame.locator('[data-series="other"] [data-slot="chart-area"]');
+    const d = await topPath.getAttribute("d");
+    expect(d).toBeTruthy();
+    const match = (d as string).match(/^M(-?[\d.]+)[ ,](-?[\d.]+)/);
+    expect(match).toBeTruthy();
+    const y = Number(match![2]);
+    // MARGIN_TOP (primitives/src/chart/components/layout.rs) is 8.0 of a
+    // 300-tall default viewBox -- a wide, deliberately loose bound (not
+    // pixel-exact) so this test is about "reaches the plot top", not a
+    // brittle pin on an internal layout constant.
+    expect(y).toBeLessThan(9);
+  });
+
+  test("gradient: every series' area fill references its own <linearGradient> def", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/component/?name=area_chart&`);
+    const frame = page.locator("#component-preview-frame-gradient").first();
+
+    const areaPaths = frame.locator('[data-slot="chart-area"]');
+    await expect(areaPaths).toHaveCount(2);
+
+    for (const fill of await areaPaths.evaluateAll((els) => els.map((el) => el.getAttribute("fill")))) {
+      expect(fill).toMatch(/^url\(#.+-gradient-.+\)$/);
+      const id = (fill as string).slice(5, -1); // "url(#X)" -> "X"
+      // The referenced def actually exists, inside this same chart (defs
+      // render per-series, inside that series' own `g[data-series]`
+      // group -- primitives/src/chart/components/series/area.rs).
+      await expect(frame.locator(`linearGradient[id="${id}"]`)).toHaveCount(1);
     }
   });
 
