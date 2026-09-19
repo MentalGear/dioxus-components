@@ -8,7 +8,9 @@ use super::scale::fmt_decimal;
 
 /// One row of the chart's visually-hidden data table: the x-category label
 /// and one pre-formatted cell per series, in
-/// [`super::data::ChartConfig::series`] order.
+/// [`crate::chart::ChartConfig::series`] order (moved out of this `engine`
+/// tree in the stage-2 chart round -- see `chart::config`'s own module
+/// doc).
 #[derive(Clone, PartialEq, Debug)]
 pub struct TableRow {
     /// The row header (`th[scope=row]`) -- the datum's x-category label.
@@ -24,7 +26,7 @@ pub struct TableRow {
 /// ```
 /// use dioxus_primitives::chart::{engine::table::table_rows, ChartDatum};
 ///
-/// let data = vec![ChartDatum { label: "January".to_string(), values: vec![Some(186.0), None] }];
+/// let data = vec![ChartDatum { label: "January".to_string(), values: vec![Some(186.0), None], ..Default::default() }];
 /// let rows = table_rows(&data);
 /// assert_eq!(rows[0].label, "January");
 /// assert_eq!(rows[0].cells, vec!["186".to_string(), "—".to_string()]);
@@ -34,6 +36,31 @@ pub fn table_rows(data: &[ChartDatum]) -> Vec<TableRow> {
         .map(|datum| TableRow {
             label: datum.label.clone(),
             cells: datum.values.iter().map(|v| format_cell(*v)).collect(),
+        })
+        .collect()
+}
+
+/// Build one [`TableRow`] per datum, same as [`table_rows`], but with only
+/// the *first* configured series' value as its one cell. Used by `Chart`
+/// for the polar-family stub kinds (`ChartKind::Pie`/`Radar`/`RadialBar` --
+/// `components::chart`'s own module doc), whose real per-datum/per-category
+/// data table shape is each owning lane's own job (`s2-polar`/`s2-radar`);
+/// this MVP stand-in at least avoids either an empty table or a misleading
+/// one that repeats every series' column for a family that doesn't draw
+/// per-series marks per datum the way Area/Bar/Line do.
+///
+/// ```
+/// use dioxus_primitives::chart::{engine::table::table_rows_single_series, ChartDatum};
+///
+/// let data = vec![ChartDatum { label: "A".to_string(), values: vec![Some(1.0), Some(2.0)], ..Default::default() }];
+/// let rows = table_rows_single_series(&data);
+/// assert_eq!(rows[0].cells, vec!["1".to_string()]);
+/// ```
+pub fn table_rows_single_series(data: &[ChartDatum]) -> Vec<TableRow> {
+    data.iter()
+        .map(|datum| TableRow {
+            label: datum.label.clone(),
+            cells: vec![format_cell(datum.values.first().copied().flatten())],
         })
         .collect()
 }
@@ -57,10 +84,12 @@ mod tests {
             ChartDatum {
                 label: "January".to_string(),
                 values: vec![Some(186.0), Some(80.5), None],
+                ..Default::default()
             },
             ChartDatum {
                 label: "February".to_string(),
                 values: vec![Some(305.125), None, Some(0.0)],
+                ..Default::default()
             },
         ];
         let rows = table_rows(&data);
@@ -75,5 +104,34 @@ mod tests {
     #[test]
     fn table_rows_of_no_data_is_empty() {
         assert!(table_rows(&[]).is_empty());
+    }
+
+    #[test]
+    fn table_rows_single_series_keeps_only_the_first_value() {
+        let data = vec![
+            ChartDatum {
+                label: "January".to_string(),
+                values: vec![Some(186.0), Some(80.5)],
+                ..Default::default()
+            },
+            ChartDatum {
+                label: "February".to_string(),
+                values: vec![None, Some(200.0)],
+                ..Default::default()
+            },
+            ChartDatum {
+                label: "March".to_string(),
+                values: vec![],
+                ..Default::default()
+            },
+        ];
+        let rows = table_rows_single_series(&data);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].cells, vec!["186".to_string()]);
+        // The first series' own gap stays a gap, even though the second
+        // series has a value -- only `values[0]` is ever read.
+        assert_eq!(rows[1].cells, vec!["—".to_string()]);
+        // No series at all (an empty `values`) is a gap too, not a panic.
+        assert_eq!(rows[2].cells, vec!["—".to_string()]);
     }
 }

@@ -2,15 +2,16 @@
 //! (`components::container`) provides its descendants (`Chart`,
 //! `ChartTooltip`, `ChartLegend`). This is the one place in `chart/` that
 //! is deliberately *not* part of the [`super::engine`] seam: it exists
-//! specifically to hold `engine`'s plain data
-//! ([`super::engine::ChartConfig`]/[`super::engine::ChartDatum`]/
-//! [`super::engine::ChartKind`]) behind this crate's own reactive
+//! specifically to hold `engine`'s plain data ([`super::engine::ChartDatum`]/
+//! [`super::engine::ChartKind`]) and [`super::config`]'s
+//! [`super::config::ChartConfig`] behind this crate's own reactive
 //! primitives (`Signal`/`ReadSignal`/`Memo`), which a standalone engine
 //! crate would have no reason to depend on.
 
 use dioxus::prelude::*;
 
-use super::engine::{BandScale, ChartConfig, ChartDatum, ChartKind, LinearScale};
+use super::config::ChartConfig;
+use super::engine::{BandScale, ChartDatum, ChartKind, LinearScale};
 
 /// The pixel-space layout `Chart` computed for its own SVG, shared so
 /// `ChartTooltip` can position itself "from the same scales" (per
