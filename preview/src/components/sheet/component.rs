@@ -72,7 +72,10 @@ pub fn SheetContentClose(#[props(extends = GlobalAttributes)] attributes: Vec<At
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
         SheetClose { attributes,
-            X { size: "20px" }
+            // shadcn's close icon is `size-4` (16px) -- style.css's own
+            // `.dx-sheet-close` comment has the full rationale for keeping
+            // the 24px button box around it as a WCAG 2.5.8 hit target.
+            X { size: "16px" }
         }
     }
 }

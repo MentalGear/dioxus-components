@@ -117,8 +117,15 @@
    icon rather than CSS-generated `content:` text. */
 .dx-context-menu-sub-trigger-icon {
   flex-shrink: 0;
-  margin-left: var(--dx-space-2);
+  margin-inline-start: var(--dx-space-2);
   opacity: 0.7;
+}
+
+/* Cross-lane handoff (rtl-rust, $S/batch3/rtl-rust/css-needs.md): same
+   reasoning as `../dropdown_menu/style.css`'s identical rule -- a real SVG
+   that must flip to match the submenu's RTL-flipped open side. */
+[dir="rtl"] .dx-context-menu-sub-trigger-icon {
+  transform: rotate(180deg);
 }
 
 .dx-context-menu-sub-trigger[data-state="open"] {
@@ -143,6 +150,6 @@
 .dx-context-menu-content.dx-context-menu-sub-content {
   position: absolute;
   top: 0;
-  left: 100%;
   margin: 0;
+  inset-inline-start: 100%;
 }

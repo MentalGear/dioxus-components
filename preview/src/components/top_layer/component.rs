@@ -7,6 +7,16 @@ use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigge
 use dioxus_primitives::menubar::{Menubar, MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger};
 use dioxus_primitives::navbar::{Navbar, NavbarContent, NavbarItem, NavbarNav, NavbarTrigger};
 use dioxus_primitives::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
+// Themed wrapper, not the raw primitive -- docs/backlog.md row 72 follow-up
+// (Navigation Menu oracle coverage) asked for this one new fixture family to
+// compose `crate::components::navigation_menu::*` specifically, unlike every
+// other overlay in this file (this file's own composition-rule exemption in
+// `scripts/check-preview-composition.sh` covers either choice; the themed
+// wrapper is used here per that instruction).
+use crate::components::navigation_menu::{
+    NavigationMenu, NavigationMenuContent, NavigationMenuItem, NavigationMenuLink,
+    NavigationMenuList, NavigationMenuTrigger,
+};
 use dioxus_primitives::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
 use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger, SelectValue};
 use dioxus_primitives::combobox::{Combobox, ComboboxInput, ComboboxList, ComboboxOption};
@@ -225,6 +235,33 @@ pub fn TopLayerFixture() -> Element {
                                     value: "one".to_string(),
                                     to: crate::Route::home(),
                                     "Item one"
+                                }
+                            }
+                        }
+                    }
+
+                    // docs/backlog.md row 72 follow-up (Navigation Menu oracle
+                    // coverage): `NavigationMenuContent`'s web arm ->
+                    // `popover="manual"`, anchored to its own trigger
+                    // (`NavigationMenuContentRendered`, `navigation_menu.rs`)
+                    // -- the same top-layer engine `NavbarContent` above
+                    // uses (marker class `dx-anchor-navigation-menu`,
+                    // already wired alongside `dx-anchor-navbar` in
+                    // `top_layer.rs`'s shared anchor-positioning
+                    // stylesheet). A *different* APG pattern from `Navbar`
+                    // (Disclosure Navigation, not Menu/Menubar -- see
+                    // `navigation_menu.rs`'s module doc), but the same
+                    // hover/click-opened, trigger-anchored top-layer shape
+                    // this rule checks, so it gets an identical clip-*
+                    // fixture instance right alongside Navbar's.
+                    NavigationMenu { id: "clip-navigation-menu-root", aria_label: "Clip navigation menu test",
+                        NavigationMenuList {
+                            NavigationMenuItem { index: 0usize,
+                                NavigationMenuTrigger { id: "clip-navigation-menu-trigger", "Navigation menu trigger" }
+                                NavigationMenuContent {
+                                    id: "clip-navigation-menu-content",
+                                    style: "min-height: 100px;",
+                                    NavigationMenuLink { href: "#", "Item one" }
                                 }
                             }
                         }
@@ -528,6 +565,25 @@ pub fn TopLayerFixture() -> Element {
                                     value: "one".to_string(),
                                     to: crate::Route::home(),
                                     "Flips above its trigger when the preferred side runs off-viewport."
+                                }
+                            }
+                        }
+                    }
+
+                    // docs/backlog.md row 72 follow-up. Like `Navbar` just
+                    // above, `NavigationMenuContent` has no `side` prop
+                    // (always below/start-aligned -- see
+                    // `navigation_menu.rs`'s `NavigationMenuContentRendered`,
+                    // hardcoded `ContentSide::Bottom`/`ContentAlign::Start`),
+                    // so this pins the *trigger* at the bottom edge instead,
+                    // the identical construction as the Navbar case.
+                    NavigationMenu { id: "edge-bottom-navigation-menu-root", aria_label: "Edge bottom navigation menu test",
+                        NavigationMenuList {
+                            NavigationMenuItem { index: 0usize,
+                                NavigationMenuTrigger { id: "edge-bottom-navigation-menu-trigger", "Bottom navigation menu" }
+                                NavigationMenuContent {
+                                    id: "edge-bottom-navigation-menu-content",
+                                    NavigationMenuLink { href: "#", "Flips above its trigger when the preferred side runs off-viewport." }
                                 }
                             }
                         }
@@ -867,6 +923,46 @@ pub fn TopLayerFixture() -> Element {
                         PopoverTrigger { id: "popover-modal-anchor-trigger", "Modal popover anchor trigger" }
                         PopoverContent { id: "popover-modal-anchor-content",
                             "Modal popover anchored content."
+                        }
+                    }
+                }
+            }
+
+            section { class: Styles::dx_top_layer_section,
+                h2 { "Select scroll_lock opt-out (docs/backlog.md rows 9/72)" }
+                p { class: Styles::dx_top_layer_hint,
+                    "Row 9 landed an opt-out "
+                    code { "scroll_lock: ReadSignal<bool>" }
+                    " prop (default "
+                    code { "true" }
+                    ") on "
+                    code { "Select" }
+                    "/"
+                    code { "SelectMulti" }
+                    ", but no fixture exercised "
+                    code { "scroll_lock=false" }
+                    " -- the trigger below sets it explicitly, so opening its "
+                    "listbox must leave page scroll unlocked (a wheel event "
+                    "still scrolls the page), unlike every other overlay on "
+                    "this page and unlike Select's own default-"
+                    code { "true" }
+                    " instance ("
+                    code { "playwright/oracle/tier3-radix/scroll-lock.spec.ts" }
+                    "'s pre-existing case, on Select's own gallery page)."
+                }
+                Select::<String> {
+                    id: "scroll-lock-select-root",
+                    scroll_lock: ReadSignal::new(Signal::new(false)),
+                    SelectTrigger {
+                        id: "scroll-lock-select-trigger",
+                        SelectValue { placeholder: "Scroll-unlocked select" }
+                    }
+                    SelectList {
+                        id: "scroll-lock-select-content",
+                        SelectOption::<String> {
+                            index: 0usize,
+                            value: "one",
+                            "Option one"
                         }
                     }
                 }

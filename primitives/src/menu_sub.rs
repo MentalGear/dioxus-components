@@ -71,6 +71,7 @@ use dioxus_core::Task;
 use dioxus_sdk_time::sleep;
 
 use crate::collection::{use_collection_provider, CollectionPlacement, CollectionState};
+use crate::direction::{Direction, HorizontalNav};
 use crate::use_unique_id;
 
 /// Hover-intent delay before a pointer hovering a sub-trigger opens its
@@ -103,6 +104,36 @@ pub(crate) const SUBMENU_OPEN_INTENT_DELAY: Duration = Duration::from_millis(200
 /// under the pointer before it ever arrives. Same non-normative status as
 /// [`SUBMENU_OPEN_INTENT_DELAY`] above.
 pub(crate) const SUBMENU_CLOSE_GRACE_DELAY: Duration = Duration::from_millis(200);
+
+/// Whether `key` is this pattern's direction-aware submenu **open** arrow
+/// key -- `ArrowRight` in LTR, `ArrowLeft` in RTL. Callers combine this with
+/// their own `Enter`/`Space` arms (direction-independent), matching Radix's
+/// `SUB_OPEN_KEYS[dir]` (`packages/react/menu/src/menu.tsx`,
+/// `radix-ui/primitives` commit `f7ecd5ab16f5e1e820eb5786a1419a98a2d594ae`,
+/// lines 41-43) with `SELECTION_KEYS` (`['Enter', ' ']`) split out: that
+/// union equals `SELECTION_KEYS` plus exactly the arrow
+/// [`Direction::resolve_horizontal`] maps to [`HorizontalNav::Next`] for
+/// `dir` (`ArrowRight` under LTR, `ArrowLeft` under RTL) -- see this
+/// crate's own `$S/batch3/rtl-rust/reference.md` §5 for the equivalence.
+pub(crate) fn is_submenu_open_arrow_key(key: &Key, direction: Direction) -> bool {
+    direction.resolve_horizontal(key) == Some(HorizontalNav::Next)
+}
+
+/// Whether `key` is this pattern's direction-aware submenu **close** arrow
+/// key -- `ArrowLeft` in LTR, `ArrowRight` in RTL. Matches Radix's
+/// `SUB_CLOSE_KEYS[dir]` (same file, lines 44-47): `ArrowLeft` under LTR,
+/// `ArrowRight` under RTL, which is exactly the arrow
+/// [`Direction::resolve_horizontal`] maps to [`HorizontalNav::Prev`].
+///
+/// Unlike upstream, this crate's `*SubContentRendered` folds `Escape` into
+/// the *same* handler as this arrow key (a pre-existing design choice, not
+/// changed by this function) -- callers `matches!(key, Key::Escape) ||
+/// is_submenu_close_arrow_key(key, direction)`, rather than this function
+/// covering `Escape` itself, so it stays a precise, direction-only
+/// predicate a caller can also use standalone.
+pub(crate) fn is_submenu_close_arrow_key(key: &Key, direction: Direction) -> bool {
+    direction.resolve_horizontal(key) == Some(HorizontalNav::Prev)
+}
 
 /// A single cancellable delayed action, backed by `dioxus_sdk_time::sleep`
 /// + `spawn`/`Task` -- the same primitive `ContextMenuTrigger`'s long-press

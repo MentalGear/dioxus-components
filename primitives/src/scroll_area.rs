@@ -1,13 +1,25 @@
 //! Defines the [`ScrollArea`] component for creating scrollable areas with customizable scrollbars.
 
+use crate::direction::{use_direction, Direction};
 use dioxus::prelude::*;
 
 /// The props for the [`ScrollArea`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct ScrollAreaProps {
-    /// The scroll direction.
+    /// The scroll direction (which axis is scrollable) -- not to be
+    /// confused with [`Self::dir`] (text/layout direction).
     #[props(default)]
     pub direction: ReadSignal<ScrollDirection>,
+
+    /// The text direction. This crate wraps the browser's own native
+    /// scrollbar (no custom-drawn thumb, unlike Radix's `ScrollArea`), so
+    /// the CSS Overflow spec's own `dir`-relative behavior repositions the
+    /// scrollbar to the correct physical side for free -- see this lane's
+    /// own `$S/batch3/rtl-rust/reference.md`'s ScrollArea row. Defaults to
+    /// the nearest [`crate::direction::DirectionProvider`], or LTR if
+    /// there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Whether the scrollbars should be always visible.
     #[props(default)]
@@ -83,11 +95,13 @@ pub enum ScrollType {
 ///
 /// The [`ScrollArea`] component defines the following data attributes you can use to control styling:
 /// - `data-scroll-direction`: Indicates the scroll direction. Values are `vertical`, `horizontal`, or `both`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn ScrollArea(props: ScrollAreaProps) -> Element {
     let direction = props.direction;
     let scroll_type = props.scroll_type;
     let always_show = props.always_show_scrollbars;
+    let text_direction = use_direction(props.dir);
 
     let (overflow_x, overflow_y, scrollbar_width) = match scroll_type() {
         ScrollType::Auto => match direction() {
@@ -121,11 +135,13 @@ pub fn ScrollArea(props: ScrollAreaProps) -> Element {
             overflow_x,
             overflow_y,
             "scrollbar-width": scrollbar_width,
+            dir: text_direction.as_str(),
             "data-scroll-direction": match direction() {
                 ScrollDirection::Vertical => "vertical",
                 ScrollDirection::Horizontal => "horizontal",
                 ScrollDirection::Both => "both",
             },
+            "data-direction": text_direction.as_str(),
             ..props.attributes,
 
             {props.children}

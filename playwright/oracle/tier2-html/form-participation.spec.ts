@@ -106,11 +106,12 @@
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const gotoForm = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=form&", {
+  page.goto(`${BASE_URL}/component/?name=form&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });

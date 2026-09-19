@@ -60,13 +60,22 @@
 //! ignores its own collection item's `tabindex` and hard-codes `"0"`
 //! instead; this module does the same.
 //!
-//! Left/Right between top-level items is optional in APG and implemented
-//! here (`disclosure-navigation-hybrid.html`'s own keyboard table includes
-//! it); Home/End and Up/Down-within-an-open-panel's own list of links are
-//! also optional and are **not** implemented, since Tab already reaches
-//! every one of those targets and neither is exercised by this round's
-//! oracle/smoke coverage -- a future round can add them without changing
-//! any existing contract.
+//! Left/Right between top-level items, Home/End to the first/last top-level
+//! item, and Up/Down within an open panel's own list of links are all
+//! optional in APG and all implemented here
+//! (`disclosure-navigation-hybrid.html`'s own keyboard table includes every
+//! one of them) -- even though Tab alone already reaches every one of
+//! those same targets, exactly as this section's own citation above
+//! describes. Not implemented: Home/End *within* an open panel (the
+//! reference table's own Home/End rows cover this too, but this round's
+//! own brief scoped Home/End to top-level items only) and treating
+//! ArrowUp/ArrowDown on a top-level item as aliases for Left/Right (the
+//! reference table conflates them one row apiece; kept separate here so
+//! ArrowDown on a top-level trigger unambiguously means "open/enter this
+//! panel," never "also move to the next item" -- see
+//! [`NavigationMenuTrigger`]'s own doc for that choice). Both are cheap,
+//! cited, backward-compatible follow-ups for a future round or a user
+//! report, not implemented this round.
 //!
 //! # Hover intent and the pointer contract
 //!
@@ -110,8 +119,8 @@
 //!
 //! # Top layer
 //!
-//! [`NavigationMenuContent`]'s web-arm leaf promotes to the top layer the
-//! same way `NavbarContent` does -- `crate::top_layer::use_popover_sync` +
+//! [`NavigationMenuContent`]'s web-arm leaf promotes to the top layer
+//! broadly the way `NavbarContent` does --
 //! `crate::top_layer::anchored_content_attributes` with a
 //! `dx-anchor-navigation-menu` marker class (added next to every existing
 //! `dx-anchor-navbar` entry in `top_layer.rs`'s shared anchor-positioning
@@ -122,9 +131,14 @@
 //! `crate::hover_card` document for `Manual` (`top_layer.rs`'s
 //! `PopoverKind::Manual` doc) -- native `auto` light-dismiss firing
 //! instantly on outside focus/click would fight this module's own delayed,
-//! debounced open/close instead of the two ever agreeing.
+//! debounced open/close instead of the two ever agreeing. Unlike
+//! `NavbarContent`, this content's own popover lifecycle sync is
+//! `crate::top_layer::use_popover_shown_while_mounted`, not
+//! `crate::top_layer::use_popover_sync` -- see
+//! `NavigationMenuContentRendered`'s own doc for why (this content, like
+//! `NavbarContent`, renders through `use_animated_open` and needs its exit
+//! animation not to be cut short by an instant `hidePopover()`).
 
-use std::rc::Rc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
@@ -326,19 +340,30 @@ struct NavigationMenuItemContext {
     /// and so Escape-from-content can return focus to it. Mirrors
     /// `NavbarNavContext::trigger_id`.
     trigger_id: Signal<String>,
-    /// Filled by the first [`NavigationMenuLink`] to mount inside this
-    /// item's open content (first-write-wins; reset to `None` whenever the
-    /// content closes). Together with `focus_first_link` below, this is
-    /// the whole mechanism behind ArrowDown-from-an-open-trigger jumping
-    /// into the panel's first link -- deliberately not the full
-    /// `crate::collection` roving-focus machinery, since nothing here
-    /// needs to roam *among* content links (Tab already does; see this
-    /// module's doc) or know any content link's position, only "the
-    /// first one, whichever mounted first".
-    first_content_link: Signal<Option<Rc<MountedData>>>,
-    /// Set by the trigger's own ArrowDown handler; consumed (and cleared)
-    /// once `first_content_link` is available.
+    /// Set by the trigger's own ArrowDown handler when it opens a
+    /// previously-closed panel (or finds one already open); consumed once
+    /// `content_focus` has at least one link registered -- see
+    /// [`NavigationMenuContent`]'s own consumer effect. This is the whole
+    /// mechanism behind ArrowDown jumping into the panel's first link, for
+    /// either case.
     focus_first_link: Signal<bool>,
+    /// Roving-focus collection for this item's own OPEN content's links --
+    /// ArrowUp/ArrowDown move within them
+    /// (`disclosure-navigation-hybrid.html`'s own keyboard table, "Up
+    /// Arrow"/"Down Arrow" rows: "moves focus to the previous/next link"),
+    /// and it is also how `focus_first_link` above finds and focuses the
+    /// first one (`content_focus.first_available_index()` +
+    /// `content_focus.set_focus`, the exact mechanism Home/Left/Right
+    /// already use on the top-level collection below). Distinct from
+    /// `NavigationMenuContext::focus` (this item's own top-level
+    /// Left/Right/Home/End collection, shared across every
+    /// [`NavigationMenuItem`]) -- this one is scoped to a single item's own
+    /// panel, one instance per [`NavigationMenuItem`]. Never drives
+    /// `tabindex` (this module's own "Tab order: native, not roving" doc);
+    /// [`NavigationMenuLink`] reads only the focus-moving half of
+    /// `crate::collection::use_item`'s return value, exactly like the
+    /// top-level collection already does.
+    content_focus: CollectionState,
 }
 
 /// The props for the [`NavigationMenuItem`] component.
@@ -384,19 +409,32 @@ pub fn NavigationMenuItem(props: NavigationMenuItemProps) -> Element {
     let content_id = use_unique_id();
     let trigger_id = use_unique_id();
 
+    // Not `use_collection_provider` (which also provides `CollectionState`
+    // as its own bare context type): nothing here needs `content_focus`
+    // reachable that way, only as this struct's own field, and this item's
+    // panel content is unmounted/remounted far more often than this
+    // component itself, so the collection's identity must survive that
+    // (`use_hook`, exactly like `NavigationMenuLink`'s own pre-existing
+    // per-instance collection construction below).
+    let content_focus = use_hook(|| {
+        CollectionState::new(
+            ReadSignal::new(Signal::new(false)),
+            CollectionOptions::default(),
+        )
+    });
+
     let mut item_ctx = use_context_provider(|| NavigationMenuItemContext {
         index: props.index,
         is_open,
         disabled: props.disabled,
         content_id,
         trigger_id,
-        first_content_link: Signal::new(None),
         focus_first_link: Signal::new(false),
+        content_focus,
     });
 
     use_effect(move || {
         if !is_open() {
-            item_ctx.first_content_link.set(None);
             item_ctx.focus_first_link.set(false);
         }
     });
@@ -414,11 +452,14 @@ pub fn NavigationMenuItem(props: NavigationMenuItemProps) -> Element {
 /// Provided only by [`NavigationMenuContent`], so a [`NavigationMenuLink`]
 /// can tell whether it is a top-level item or a link inside an open panel
 /// (context-type presence, the same technique `NavbarItem` uses
-/// `try_use_context::<NavbarNavContext>()` for -- `navbar.rs`).
+/// `try_use_context::<NavbarNavContext>()` for -- `navbar.rs`). Carries no
+/// data of its own -- a content link's shared state
+/// (`content_focus`/`focus_first_link`) already lives on
+/// [`NavigationMenuItemContext`], reachable from both the trigger and every
+/// link regardless of nesting; this type exists purely so its *presence*
+/// (not any field on it) answers "am I nested in content."
 #[derive(Clone, Copy)]
-struct NavigationMenuContentContext {
-    register_first_link: Callback<Rc<MountedData>>,
-}
+struct NavigationMenuContentContext;
 
 /// The props for the [`NavigationMenuTrigger`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -516,6 +557,23 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
             },
             onfocus: move |_| {
                 ctx.blur_close.cancel();
+                // Sync native focus (Tab, a click, or a screen reader's own
+                // navigation -- anything that isn't this collection's own
+                // `focus_next`/`focus_prev`/`set_focus` call) back into
+                // `ctx.focus`'s own `recent`/`focused` state -- the same
+                // construction `toolbar.rs`/`tabs.rs` already use on their
+                // own identical collections (`ctx.focus.set_focus(Some(
+                // (props.index)()))`). Without this, `focus_next()`/
+                // `focus_prev()` compute their "current position" from
+                // whatever this collection last *itself* set focus to,
+                // which can go stale the moment focus arrives some other
+                // way -- confirmed by execution: Tab into a top-level item,
+                // then Left/Right, and the first press was silently a
+                // same-spot no-op (`next_index_after`/`prev_index_before`
+                // treat an unknown/`None` current position as "before the
+                // first item", so the first press only catches the
+                // collection up to where focus already was).
+                ctx.focus.set_focus(Some(index.cloned()));
             },
             onblur: move |_| {
                 ctx.blur_close.schedule(FOCUS_LEAVE_CLOSE_DELAY, move || {
@@ -536,11 +594,40 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
                     }
                     Key::ArrowLeft => ctx.focus.focus_prev(),
                     Key::ArrowRight => ctx.focus.focus_next(),
+                    // disclosure-navigation-hybrid.html's own keyboard
+                    // table, Home/End rows: "moves focus to the
+                    // first/last item" -- this collection is already
+                    // non-looping (see `NavigationMenu`'s own doc comment
+                    // on `focus`), so these are exactly `focus_first`/
+                    // `focus_last`, the same pair `NavigationMenuLink`'s
+                    // own top-level branch below (and, elsewhere in this
+                    // crate, `context_menu.rs`'s top-level Home/End) already
+                    // use for an identical collection.
+                    Key::Home => ctx.focus.focus_first(),
+                    Key::End => ctx.focus.focus_last(),
                     // "if focus is on a button and its dropdown is
                     // expanded, moves focus to the first link in the
                     // dropdown" -- disclosure-navigation-hybrid.html's
-                    // keyboard table.
-                    Key::ArrowDown if is_open.cloned() => {
+                    // keyboard table. Extended here, past that one
+                    // sentence, to also OPEN a still-*closed* panel first
+                    // -- this module's own choice, not the reference
+                    // table's literal text for a collapsed trigger (that
+                    // row instead sends a collapsed trigger's ArrowDown to
+                    // the *next* top-level item, same as ArrowRight;
+                    // deliberately not mirrored, since ArrowRight already
+                    // covers that and doing both would make the two keys
+                    // redundant with each other for half of what ArrowDown
+                    // does). A keyboard user pressing ArrowDown on a
+                    // collapsed trigger far more plausibly means "open this
+                    // and take me into it" than "skip it, take me to
+                    // whatever's next" -- the same one-key affordance a
+                    // native `<select>`/combobox already gives ArrowDown.
+                    Key::ArrowDown => {
+                        if !is_open.cloned() {
+                            ctx.hover_open.cancel();
+                            ctx.hover_close.cancel();
+                            ctx.set_open.call(Some(index.cloned()));
+                        }
                         item_ctx.focus_first_link.clone().set(true);
                     }
                     _ => return,
@@ -596,29 +683,40 @@ pub fn NavigationMenuContent(props: NavigationMenuContentProps) -> Element {
     let render = use_animated_open(id, item_ctx.is_open);
 
     // Consume a pending "focus the first link" request (the trigger's own
-    // ArrowDown) once both it and a first-registered link are available --
-    // see `NavigationMenuItemContext::first_content_link`'s doc.
+    // ArrowDown) once `content_focus` has at least one link registered --
+    // see `NavigationMenuItemContext::focus_first_link`'s doc. Moves focus
+    // through `content_focus.set_focus`, the exact mechanism Home/Left/
+    // Right already use to move focus on the top-level collection
+    // (`use_item`'s own `control_mount_focus`), not a hand-rolled
+    // `MountedData` tracker -- an earlier version of this used exactly
+    // that (`first_content_link`/`register_first_link`, "whichever content
+    // link mounts first, tracked via a `Signal::peek()`-then-`set()`
+    // guard") and found by execution that it was not reliable: a real,
+    // multi-link panel opened via ArrowDown always focused its *last*
+    // link, never its first. Root-caused to an assumption, not a race:
+    // that guard's "first-write-wins" logic implicitly assumed a content
+    // panel's children mount in source order, and confirmed by execution
+    // (a diagnostic build exposing each link's own assigned position) that
+    // they do not, for this shape -- reproducibly the exact *reverse* of
+    // source order, not a one-off flake. `content_focus`'s own
+    // `first_available_index()` sidesteps this entirely: it sorts by each
+    // registered item's own `index`, and `NavigationMenuLink`'s `index`
+    // for a content link is `props.content_index` -- a plain value fixed
+    // by the caller before any rendering happens (see that prop's own
+    // doc), not anything computed from mount order at all.
     use_effect(move || {
         if !(item_ctx.focus_first_link)() {
             return;
         }
-        let Some(md) = item_ctx.first_content_link.cloned() else {
+        let mut content_focus = item_ctx.content_focus;
+        let Some(first_index) = content_focus.first_available_index() else {
             return;
         };
         item_ctx.focus_first_link.set(false);
-        spawn(async move {
-            let _ = md.set_focus(true).await;
-        });
+        content_focus.set_focus(Some(first_index));
     });
 
-    let register_first_link = use_callback(move |data: Rc<MountedData>| {
-        if item_ctx.first_content_link.peek().is_none() {
-            item_ctx.first_content_link.set(Some(data));
-        }
-    });
-    use_context_provider(|| NavigationMenuContentContext {
-        register_first_link,
-    });
+    use_context_provider(|| NavigationMenuContentContext);
 
     rsx! {
         if render() {
@@ -634,6 +732,40 @@ pub fn NavigationMenuContent(props: NavigationMenuContentProps) -> Element {
 /// Web arm: promote to the top layer via `popover="manual"`, anchored to
 /// this item's own trigger -- see this module's doc, "Top layer", for why
 /// `manual` (not `auto`, unlike `NavbarContent`).
+///
+/// # Exit animation: `use_popover_shown_while_mounted`, not `use_popover_sync`
+///
+/// This content renders through [`use_animated_open`] (in
+/// [`NavigationMenuContent`] above), which deliberately keeps the element
+/// mounted with `data-state="closed"` for its whole exit transition (plus a
+/// settle hold) before actually unmounting it -- exactly the shape
+/// `crate::top_layer::use_popover_shown_while_mounted`'s own doc describes
+/// for `SelectList`/`ComboboxList`/`Toast`/`Popover`/`HoverCard`/`Tooltip`.
+/// An earlier version of this function used the plain
+/// `crate::top_layer::use_popover_sync` instead (mirroring `NavbarContent`'s
+/// own call, which does not need the animated-exit variant... except
+/// `NavbarContent` *also* renders through `use_animated_open` and has the
+/// same latent gap -- out of this module's scope to fix, see the module doc)
+/// -- that hook's "signal -> browser" effect calls `hidePopover()` the
+/// instant `open` goes `false`, which (per the UA popover stylesheet's
+/// `[popover]:not(:popover-open) { display: none }`) sets `display: none`
+/// on the content *before* `use_animated_open`'s own rAF-deferred
+/// `getAnimations()` check ever ran, so that check always observed zero
+/// running animations and finished the close cycle immediately -- the exit
+/// fade/scale was skipped outright, confirmed by execution (a live
+/// `dx serve` instance: the panel vanished within one 40ms sample of its
+/// `data-state` flipping to `"closed"`, instead of playing the ~150ms
+/// fade-and-scale-down this file's stylesheet declares, plus its ~250ms
+/// settle hold). This is `top_layer.rs`'s own documented "Bug 1 (animation
+/// race)" on `use_popover_shown_while_mounted`'s doc -- the exact bug class
+/// that hook exists to close. Switching to it here fixes the same way it
+/// already does for every other `use_animated_open`-rendered, `popover`-
+/// promoted consumer: `hidePopover()` is never called on this component's
+/// own closing path at all, only a real DOM removal (once
+/// `use_animated_open` itself has decided the animation and its hold are
+/// done) ever takes this content out of the top layer, so the exit
+/// animation plays out undisturbed on an element that is still very much
+/// `:popover-open` the whole time.
 #[cfg(feature = "web")]
 #[component]
 fn NavigationMenuContentRendered(
@@ -646,7 +778,7 @@ fn NavigationMenuContentRendered(
     let open = item_ctx.is_open;
     let index = item_ctx.index;
 
-    crate::top_layer::use_popover_sync(
+    crate::top_layer::use_popover_shown_while_mounted(
         id.clone(),
         open,
         Callback::new(move |is_open: bool| {
@@ -711,6 +843,28 @@ fn NavigationMenuContentRendered(
                 // collection (registered by `NavigationMenuTrigger`).
                 if event.key() == Key::Escape {
                     ctx.set_open.call(None);
+                    // `clear_focus()` immediately before `set_focus` --
+                    // not merely `set_focus(Some(index.cloned()))` alone --
+                    // because `ctx.focus`'s own `focused` field can already
+                    // equal this trigger's index from *before* focus ever
+                    // left it for `content_focus` (a link inside the panel
+                    // never touches `ctx.focus` at all, per this module's
+                    // two-collection design -- see this module's own doc,
+                    // "Tab order"), and `CollectionState::set_focus` only
+                    // notifies/re-drives DOM focus when the value actually
+                    // *changes* (its own doc: "A redundant clear ... must
+                    // not wake effects"). Setting the same already-current
+                    // value is therefore a silent no-op that leaves real
+                    // DOM focus exactly where it was -- confirmed by
+                    // execution: with real DOM focus on a link inside the
+                    // panel, `ctx.focus.set_focus(Some(trigger_index))`
+                    // alone never re-focused the trigger at all (focus fell
+                    // through to `<body>` once the closing content was
+                    // actually removed from the DOM, several hundred ms
+                    // later, past this animated exit's own hold). Clearing
+                    // first forces a real `None -> Some` transition, so the
+                    // very next line's `set_focus` is never a no-op.
+                    ctx.focus.clear_focus();
                     ctx.focus.set_focus(Some(index.cloned()));
                     event.prevent_default();
                 }
@@ -763,6 +917,11 @@ fn NavigationMenuContentRendered(
             onkeydown: move |event: Event<KeyboardData>| {
                 if event.key() == Key::Escape {
                     ctx.set_open.call(None);
+                    // `clear_focus()` before `set_focus` -- see the web
+                    // arm's identical Escape handler, just above in this
+                    // file, for the full account of why `set_focus` alone
+                    // can silently no-op here.
+                    ctx.focus.clear_focus();
                     ctx.focus.set_focus(Some(index.cloned()));
                     event.prevent_default();
                 }
@@ -786,6 +945,28 @@ pub struct NavigationMenuLinkProps {
     /// Whether this link is disabled.
     #[props(default)]
     pub disabled: ReadSignal<bool>,
+
+    /// This link's own position within its panel, for ArrowUp/ArrowDown to
+    /// move between links in the right order (this module's own doc, "Tab
+    /// order: native, not roving"). Ignored for a top-level link (a direct
+    /// child of [`NavigationMenuItem`], no [`NavigationMenuContent`]
+    /// ancestor) -- those instead key off their own [`NavigationMenuItem`]'s
+    /// `index` prop for Left/Right/Home/End, so leaving this at its default
+    /// there is correct, not merely tolerated. **Required** (in the same
+    /// sense [`NavigationMenuItemProps::index`] is -- no runtime check
+    /// enforces it) for a link nested inside [`NavigationMenuContent`]: set
+    /// it to that link's own position among its panel's siblings, `0`-based
+    /// in reading order. Deliberately not inferred from mount order --
+    /// confirmed by execution that Dioxus does not mount a content panel's
+    /// children in source order for this shape (a `use_hook`-assigned,
+    /// monotonic-counter version of this index was tried first; every
+    /// panel's links came back numbered in the exact *reverse* of their
+    /// visual order, reproducibly, not as a one-off race), so nothing
+    /// computed at a content link's own mount time can be trusted for this
+    /// -- only a value fixed by the caller, before any rendering happens,
+    /// the same way the top-level collection's own indices already are.
+    #[props(default)]
+    pub content_index: ReadSignal<usize>,
 
     /// Called when the link is activated (after this primitive's own
     /// close-the-open-panel handling runs).
@@ -820,42 +1001,37 @@ pub struct NavigationMenuLinkProps {
 #[component]
 pub fn NavigationMenuLink(props: NavigationMenuLinkProps) -> Element {
     let mut ctx: NavigationMenuContext = use_context();
-    let item_ctx: NavigationMenuItemContext = use_context();
+    let mut item_ctx: NavigationMenuItemContext = use_context();
     let content_ctx: Option<NavigationMenuContentContext> = try_use_context();
     let is_top_level = content_ctx.is_none();
     let disabled = move || (ctx.disabled)() || (item_ctx.disabled)() || (props.disabled)();
 
     // `use_item` is always called (Rules of Hooks: this component's hook
     // order must never depend on a runtime value) -- but only a top-level
-    // link is meant to participate in the top-level Left/Right collection.
-    // A content link instead gets a private, per-instance, never-queried
-    // collection (`use_hook`, stable across this instance's own
-    // re-renders): registering into it is inert bookkeeping nobody ever
-    // reads, simpler than branching the hook call itself. `is_top_level`
-    // cannot change for a mounted instance (it is fixed by where this
-    // component sits in the tree), so which branch runs is itself stable
-    // across this instance's re-renders either way.
-    let private_collection = use_hook(|| {
-        CollectionState::new(
-            ReadSignal::new(Signal::new(false)),
-            CollectionOptions::default(),
-        )
-    });
-    let collection = if is_top_level {
-        ctx.focus
+    // link is meant to participate in the top-level Left/Right/Home/End
+    // collection (`ctx.focus`, shared across every top-level item, keyed by
+    // its own `NavigationMenuItem`'s `index` prop). A content link instead
+    // participates in *this item's own* `content_focus` collection
+    // (ArrowUp/ArrowDown, and the trigger's own ArrowDown-to-first-link --
+    // see `NavigationMenuItemContext::content_focus`'s doc), keyed by
+    // `props.content_index` (see that prop's own doc for why this is a
+    // plain, caller-supplied value rather than anything computed from
+    // mount order). `is_top_level` cannot change for a mounted instance
+    // (it is fixed by where this component sits in the tree), so which of
+    // the two ends up used is itself stable across this instance's
+    // re-renders.
+    let (collection, own_index) = if is_top_level {
+        (ctx.focus, item_ctx.index)
     } else {
-        private_collection
+        (item_ctx.content_focus, props.content_index)
     };
-    let item = use_item(collection_item(collection, item_ctx.index).disabled(disabled));
+    let item = use_item(collection_item(collection, own_index).disabled(disabled));
     let mut onmounted_item = item.onmounted();
 
     rsx! {
         a {
             onmounted: move |evt: MountedEvent| {
                 onmounted_item(evt.clone());
-                if let Some(content_ctx) = content_ctx {
-                    content_ctx.register_first_link.call(evt.data());
-                }
             },
             aria_current: props.active.then_some("page"),
             // `<a>` has no native disabled semantics (unlike
@@ -881,6 +1057,16 @@ pub fn NavigationMenuLink(props: NavigationMenuLinkProps) -> Element {
             },
             onfocus: move |_| {
                 ctx.blur_close.cancel();
+                // Sync native focus back into whichever collection this
+                // link belongs to -- see `NavigationMenuTrigger`'s
+                // identical addition for the full account (Tab landing on
+                // a link never otherwise informs `content_focus`/`ctx.focus`
+                // that it is now the "current" item, so ArrowUp/ArrowDown
+                // -- or Left/Right for a top-level link -- would otherwise
+                // waste their first press catching the collection up
+                // instead of moving).
+                let mut collection = collection;
+                collection.set_focus(Some(own_index.cloned()));
             },
             onblur: move |_| {
                 ctx.blur_close.schedule(FOCUS_LEAVE_CLOSE_DELAY, move || {
@@ -888,13 +1074,39 @@ pub fn NavigationMenuLink(props: NavigationMenuLinkProps) -> Element {
                 });
             },
             onkeydown: move |event: Event<KeyboardData>| {
-                if !is_top_level {
-                    return;
-                }
-                match event.key() {
-                    Key::ArrowLeft => ctx.focus.focus_prev(),
-                    Key::ArrowRight => ctx.focus.focus_next(),
-                    _ => return,
+                if is_top_level {
+                    match event.key() {
+                        Key::ArrowLeft => ctx.focus.focus_prev(),
+                        Key::ArrowRight => ctx.focus.focus_next(),
+                        // disclosure-navigation-hybrid.html's own keyboard
+                        // table, Home/End rows: "moves focus to the
+                        // first/last item" -- mirrors
+                        // `NavigationMenuTrigger`'s identical addition (a
+                        // top-level item is a trigger or a plain link
+                        // interchangeably, and both share this same
+                        // collection).
+                        Key::Home => ctx.focus.focus_first(),
+                        Key::End => ctx.focus.focus_last(),
+                        _ => return,
+                    }
+                } else {
+                    match event.key() {
+                        // disclosure-navigation-hybrid.html's own keyboard
+                        // table, "Up Arrow"/"Down Arrow" rows: "If focus is
+                        // on a link within an expanded dropdown, and it is
+                        // not the first/last link, moves focus to the
+                        // previous/next link" -- explicitly conditional on
+                        // "not the first/last link", i.e. non-looping
+                        // (stops at the ends) rather than wrapping, the
+                        // same choice (and the same citation) this
+                        // module's top-level collection already makes --
+                        // see `NavigationMenu`'s own doc comment on
+                        // `focus`. `content_focus` is constructed
+                        // non-looping for the identical reason.
+                        Key::ArrowUp => item_ctx.content_focus.focus_prev(),
+                        Key::ArrowDown => item_ctx.content_focus.focus_next(),
+                        _ => return,
+                    }
                 }
                 event.prevent_default();
             },

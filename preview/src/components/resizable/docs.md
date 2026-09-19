@@ -38,6 +38,26 @@ ResizablePanelGroup {
 }
 ```
 
+## Handle grip
+
+A [`ResizableHandle`] renders whatever children you give it -- typically a small grip glyph, as
+in shadcn/ui's own Resizable demo, using `.dx-resizable-handle-grip`'s built-in styling and any
+icon:
+
+```rust
+use dioxus_icons::lucide::GripVertical;
+
+ResizableHandle {
+    index: 0usize,
+    aria_label: "Left panel",
+    span { class: "dx-resizable-handle-grip", GripVertical { size: "0.625rem" } }
+}
+```
+
+The grip is purely decorative (`pointer-events: none`) -- the handle `div` itself carries the
+drag/keyboard behavior -- and rotates automatically with the handle in a vertical-direction
+group. Omit it for a plain 1px divider line with no visible grip.
+
 ## Collapsible panels
 
 A panel can collapse below its own `min_size` -- down to `collapsed_size` (`0.0` by default) --
@@ -70,3 +90,7 @@ Per the APG Window Splitter pattern's own "Keyboard Interaction" section:
 
 A `ResizablePanel` can contain its own nested `ResizablePanelGroup` (typically on the other
 `direction`) to build a layout with more than one split axis.
+
+## Direction / RTL
+
+`ResizablePanelGroup` accepts a `dir: Option<Direction>` prop, consulted only when `direction: ResizableDirection::Horizontal` (a vertical group never mirrors). Under RTL, the group's own panels render in the browser's native `dir`-relative order (plain `flex-direction: row`, which the CSS Flexbox spec already mirrors under `dir="rtl"` -- deliberately *not* `row-reverse`, which would cancel that automatic mirroring), and each `ResizableHandle`'s `ArrowLeft`/`ArrowRight` swaps so a physical arrow key always moves the divider in that same physical direction. No Radix/shadcn original exists for this component to cite directly (shadcn's own `Resizable` wraps `react-resizable-panels`, not a Radix primitive) -- this is an extrapolation from the same arrow-key convention every other RTL-aware component in this library follows. See the `rtl` variant.

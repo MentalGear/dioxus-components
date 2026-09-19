@@ -39,6 +39,12 @@
       var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
   text-align: center;
+
+  /* rtl-physical: this content's own *modal* centering trick (this rule's
+     comment block above explains why `inset`/`margin` aren't reset here)
+     -- paired with the implicit `left: 50%; top: 50%` of its centered
+     positioning context, same family as dialog/alert_dialog's identical
+     note. */
   transform: translate(-50%, -50%);
   transform-origin: top;
   will-change: transform, opacity;
@@ -174,14 +180,18 @@
 /* Alignment styles for top and bottom */
 .dx-popover-content[data-side="top"][data-align="start"],
 .dx-popover-content[data-side="bottom"][data-align="start"] {
-  left: 0;
+  /* logical: `align="start"` is a reading-direction concept for a
+     top/bottom-placed overlay's cross axis (Radix's Floating UI resolves
+     align logically from `dir` -- packages/react/popper/src/popper.tsx,
+     radix-ui/primitives commit f7ecd5a). No transform to desync from
+     (`transform: none` below), so this is a plain, safe conversion. */
+  inset-inline-start: 0;
   transform: none;
 }
 
 .dx-popover-content[data-side="top"][data-align="end"],
 .dx-popover-content[data-side="bottom"][data-align="end"] {
-  right: 0;
-  left: auto;
+  inset-inline: auto 0;
   transform: none;
 }
 
@@ -232,7 +242,7 @@
 
   .dx-popover-content {
     max-width: 32rem;
-    text-align: left;
+    text-align: start;
   }
 }
 

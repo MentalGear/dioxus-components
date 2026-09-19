@@ -40,14 +40,14 @@
   padding: 0 var(--dx-space-2);
   color: var(--secondary-color-4);
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
 }
 
 .dx-table-head:has([role="checkbox"]) {
-  padding-right: 0;
+  padding-inline-end: 0;
 }
 
 .dx-table-cell {
@@ -59,7 +59,7 @@
 }
 
 .dx-table-cell:has([role="checkbox"]) {
-  padding-right: 0;
+  padding-inline-end: 0;
 }
 
 .dx-table-caption {

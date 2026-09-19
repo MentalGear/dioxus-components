@@ -358,9 +358,11 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             tabindex: if focused() { "0" } else { "-1" },
             aria_multiselectable: ctx.multi(),
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            dir: ctx.direction.as_str(),
 
             // Data attributes
             "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
 
             onmounted: move |evt| listbox_ref.set(Some(evt.data())),
             onkeydown,
@@ -429,9 +431,11 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             role: "listbox",
             tabindex: if focused() { "0" } else { "-1" },
             aria_multiselectable: ctx.multi(),
+            dir: ctx.direction.as_str(),
 
             // Data attributes
             "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
 
             onmounted: move |evt| listbox_ref.set(Some(evt.data())),
             onkeydown,

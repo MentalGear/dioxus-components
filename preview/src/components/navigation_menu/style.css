@@ -80,8 +80,21 @@
   position: absolute;
   z-index: var(--dx-z-overlay);
   top: 100%;
-  left: 0;
   overflow: visible;
+
+  /* Intrinsic sizing, by construction: this panel's box must never grow or
+   * shrink over the course of its own open/close animation (that would
+   * reflow every link's text as the box resizes around it -- the reported
+   * bug this whole block guards against). `width: max-content` states that
+   * intent explicitly rather than leaving it to an absolutely/fixed-
+   * positioned box's default shrink-to-fit `auto` sizing (which happens to
+   * land on the same value today, confirmed by execution across 14 sampled
+   * frames of a real open transition -- `rectWidth`/computed `width` never
+   * changed -- but is one accidental future layout change away from no
+   * longer being guaranteed). `min-width`/`max-width` below still clamp it
+   * either way; only `opacity`/`transform` are ever transitioned below --
+   * never this, never `padding`. */
+  width: max-content;
   min-width: 280px;
   max-width: calc(100vw - var(--dx-space-8));
   box-sizing: border-box;
@@ -91,24 +104,117 @@
   margin-top: var(--dx-space-2);
   background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-5));
   box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  inset-inline-start: 0;
   opacity: 0;
   pointer-events: none;
   transform-origin: top;
   will-change: transform, opacity;
 }
 
+/* `animation`+`@keyframes`, not `transition` -- deliberately mirroring
+ * `../dropdown_menu/style.css`'s (and `../menubar/style.css`'s,
+ * `../context_menu/style.css`'s) identical technique for their own content
+ * panels, not a stylistic preference. Root-caused by execution, in two
+ * layers:
+ *
+ * (1) A plain CSS tie: the shared, engine-injected anchor-positioning
+ * stylesheet's `.dx-anchor-navigation-menu[popover] { ...; transform: none;
+ * ... }` rule (primitives/src/top_layer.rs's `ANCHOR_POSITIONING_CSS_JS_
+ * LITERAL`, appended to `<head>` well after this file's own `<link>`) ties
+ * this file's own (then-`transition`-based) `[data-state]` rules at the
+ * exact same specificity (one class + one attribute each) and, being
+ * later-injected, was winning the cascade.
+ *
+ * (2) The deeper reason a plain CSS fix (even a higher-specificity one)
+ * cannot actually win: that engine rule's `transform: none` is only the
+ * *native*-anchor-positioning half of the contract. This component's
+ * `NavigationMenuContentRendered` never sets a `data-side`/`data-align`
+ * attribute (unlike `popover.rs`/`hover_card.rs`/`tooltip.rs`), so the
+ * engine stylesheet's per-side `anchor()` placement rules never match it at
+ * all -- meaning native CSS Anchor Positioning never actually places this
+ * content anywhere, and `crate::top_layer::use_anchor_position_fallback`'s
+ * own `matches()` self-check correctly concludes the native path failed and
+ * takes over with a JS-computed *inline* `style.transform = 'none'`
+ * (confirmed live: `el.getAttribute('style')` reading literally
+ * `"...; transform: none;"` on a real, positioned, `:popover-open`
+ * element). An inline style's specificity beats *any* selector, however
+ * specific -- the `[popover]`-qualified, higher-specificity version of the
+ * two rules below that an earlier pass of this fix tried is not enough,
+ * confirmed by execution (still `none` after that change). CSS Animations,
+ * though, sit in a cascade tier *above* normal author declarations --
+ * inline styles included, per the CSS Cascade spec's origin/importance
+ * ordering -- which is exactly why `dropdown_menu`/`menubar`/
+ * `context_menu`'s own top-layer content, using this same `animation`
+ * technique, was never vulnerable to this class at all. Switching here
+ * closes it the same proven way, rather than chasing specificity further
+ * or reaching for `!important`. (Wiring this component into the
+ * `[data-side]` native-positioning contract instead -- the other available
+ * fix, addressing the JS-fallback trigger itself -- was considered and set
+ * aside: several of that contract's own `[data-side][data-align="start"]`
+ * rules *also* set `transform: none` outright for that alignment, on the
+ * assumption that a consumer's own content transform is only ever used for
+ * anchor-centering -- true for tooltip/popover/hover-card, false for this
+ * component's own entrance/exit motion -- so it would trade one
+ * `transform: none` source for another rather than closing the class, and
+ * risks changing this component's positioning behavior along the way,
+ * which this fix does not need to touch.)
+ *
+ * `getAnimations()` (`use_animated_open` in `primitives/src/lib.rs`) treats
+ * a running `CSSAnimation` exactly like a `CSSTransition` -- both are
+ * `Animation` instances -- so this swap needs no Rust-side change. */
 .dx-navigation-menu-content[data-state="closed"] {
-  transform: translateY(var(--dx-space-2)) scale(0.98);
-  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease-in),
-    transform var(--dx-motion-duration-base) var(--dx-motion-ease-in);
+  animation: dx-navigation-menu-content-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+@keyframes dx-navigation-menu-content-animate-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(var(--dx-space-2)) scale(0.98);
+  }
 }
 
 .dx-navigation-menu-content[data-state="open"] {
-  opacity: 1;
+  animation: dx-navigation-menu-content-animate-in var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
-  transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
-    transform var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dx-navigation-menu-content-animate-in {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--dx-space-2)) scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* row 31a's shared `prefers-reduced-motion` layer (dx-components-theme.css)
+ * only covers interactive roots, not animated content (see that file's own
+ * comment, and dev-docs/backlog.md row 31/27's `Spinner` note) -- this
+ * content's open/close motion is animated content, so it needs its own
+ * override, matching the per-component convention `input_otp`/`spinner`/
+ * `../tooltip/style.css`/`../popover/style.css`/`../drawer/style.css`
+ * already carry. Both `animation-duration` (this file's `[data-state]`
+ * rules above) and `transition-duration` (the plain `background-color`/
+ * `rotate` transitions elsewhere in this file, e.g. the expand icon) --
+ * `../drawer/style.css`'s identical block sets both for the same reason:
+ * one component, more than one motion mechanism in play. `!important` so
+ * this wins regardless of specificity or cascade-origin ordering, the same
+ * reasoning this file's own root-cause comment above worked through in
+ * detail. */
+@media (prefers-reduced-motion: reduce) {
+  .dx-navigation-menu-content,
+  .dx-navigation-menu-expand-icon {
+    animation-duration: var(--dx-motion-duration-reduced) !important;
+    transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
 }
 
 /* The link grid a themed panel's children compose -- e.g.

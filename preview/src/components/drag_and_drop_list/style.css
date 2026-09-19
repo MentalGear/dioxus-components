@@ -7,9 +7,9 @@
 .dx-drag-and-drop-list-ul {
   display: flex;
   flex-direction: column;
-  padding-left: 0;
   margin: 0;
   gap: var(--dx-item-gap);
+  padding-inline-start: 0;
   perspective: 1200px;
 }
 
@@ -22,7 +22,6 @@
   box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
-  padding: var(--dx-space-3) 14px var(--dx-space-3) 10px;
   border: 1px solid var(--primary-color-6);
   border-radius: 10px;
   background-color: var(--light, #fff)
@@ -31,6 +30,8 @@
   cursor: grab;
   list-style: none;
   outline: none;
+  padding-block: var(--dx-space-3);
+  padding-inline: 10px 14px;
   transform: translateY(var(--gap-shift)) rotateX(var(--tilt));
   transform-style: preserve-3d;
   transition:
@@ -89,8 +90,8 @@
 
 .dx-drag-and-drop-list-item-icon {
   flex-shrink: 0;
-  margin-right: 6px;
   color: var(--secondary-color-6);
+  margin-inline-end: 6px;
   transition: color var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
@@ -119,10 +120,10 @@
   padding: 0;
   border-style: none;
   border-radius: var(--dx-radius-md);
-  margin-left: 10px;
   background-color: transparent;
   color: var(--secondary-color-6);
   cursor: pointer;
+  margin-inline-start: 10px;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
@@ -154,12 +155,11 @@
 .dx-drag-and-drop-list-item::before,
 .dx-drag-and-drop-list-item::after {
   position: absolute;
-  right: 10px;
-  left: 10px;
   height: 3px;
   border-radius: 999px;
   background-color: var(--focused-border-color);
   content: "";
+  inset-inline: 10px;
   opacity: 0;
   pointer-events: none;
   transform:

@@ -22,9 +22,16 @@ test("sidebar: preview page renders block", async ({ page }) => {
   });
   const iframe = page.locator("iframe").first();
   await expect(iframe).toBeVisible({ timeout: SIDEBAR_RENDER_TIMEOUT });
+  // Path-segment form (dev-docs/backlog.md row 46): `preview/src/main.rs`'s
+  // `BlockComponentVariantHighlight` now builds this iframe's `src` from the
+  // canonical, SSG-enumerable `Route::ComponentBlockDemoPath`
+  // (`/component/block/<name>/<variant>/`) rather than the legacy query
+  // form (`?name=...&variant=...`) -- the query form still works (it
+  // redirects client-side to this same path), but is no longer what this
+  // app's own internal links emit.
   await expect(iframe).toHaveAttribute(
     "src",
-    /component\/block\/\?name=sidebar&variant=main/,
+    /component\/block\/sidebar\/main\//,
     { timeout: SIDEBAR_RENDER_TIMEOUT },
   );
 

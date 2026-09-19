@@ -644,7 +644,17 @@ pub(crate) fn use_deferred_collection_focus(
             placement.set(None);
             return;
         }
-        let Some(placement_value) = placement() else {
+        // `.peek()`, not `()`: every caller sets `placement` before it
+        // flips `active` from false to true (`*Context::open_with_focus`'s
+        // "never the other order" doc, e.g. `dropdown_menu.rs`), so
+        // `active()` above is already this effect's trigger for a fresh
+        // request, and the retry once the collection has items to focus
+        // is driven by `try_focus_placement`'s own tracked reads of the
+        // collection below, not by re-reading `placement`. Tracking it
+        // here would subscribe this effect to the value it writes two
+        // lines down (`scripts/check-self-subscribing-effects.sh`,
+        // dev-docs/backlog.md row 73's class).
+        let Some(placement_value) = *placement.peek() else {
             return;
         };
         if collection.try_focus_placement(placement_value) {

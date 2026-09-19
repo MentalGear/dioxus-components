@@ -532,10 +532,63 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
     });
 
     use_effect(move || {
+        // `dragging()` -- deliberately NOT `.peek()` -- is this effect's
+        // only wake/sleep switch, and both halves of that are load-bearing:
+        //
+        // - WAKE: the only way this effect ever reacts to a NEW drag
+        //   starting (`dragging.set(true)` in `use_drawer_drag_start_gate`'s
+        //   callback, below) is by having read `dragging` with tracked
+        //   syntax on some PRIOR run. Dioxus's own docs are explicit about
+        //   the alternative: "If the `use_effect` call was skipped due to
+        //   an early return, the effect will no longer activate"
+        //   (dioxus-hooks `docs/side_effects.md`) -- `reset_and_run_in`
+        //   (dioxus-hooks `use_effect.rs`) rebuilds this effect's
+        //   subscriptions from scratch on every run, purely from what that
+        //   SAME run reads before returning. The very first run (mount,
+        //   `dragging` still `false`) hits the early return on the next
+        //   line with NO other read before it -- `.peek()` here would mean
+        //   that run subscribes to nothing at all, and no later
+        //   `dragging.set(true)` would ever wake this effect again. Proven
+        //   by reading dioxus-hooks 0.7.9's own source and docs, not
+        //   assumed; not re-proven by a live A/B run in this session.
+        // - SLEEP: symmetrically, once a drag ends (the `dragging.set(false)`
+        //   a few lines down), THAT write reschedules this same effect (it
+        //   is still subscribed, from reading `dragging()` earlier in this
+        //   very run) for exactly one more pass, which reads `dragging()`
+        //   as `false` and returns immediately -- shrinking this effect's
+        //   own subscriptions back down to just `{dragging}` until the next
+        //   drag. `scripts/check-self-subscribing-effects.sh` (another
+        //   lane's new guard, dev-docs/backlog.md row 73's class) flags
+        //   exactly this read+later-write pair; per that script's own
+        //   analysis this is real but bounded (one extra, terminating run,
+        //   not the unbounded self-retrigger `raw_offset` below was
+        //   actually fixed for) -- and, per the above, is not merely safe
+        //   but the mechanism this effect's wake/sleep lifecycle depends on.
+        //   Left as tracked syntax on purpose. `scripts/check-self-
+        //   subscribing-effects.sh` does carry a reviewed
+        //   `NON_SELF_TERMINATING` allowlist entry for exactly this
+        //   `("drawer.rs", "dragging")` pair (added at batch-2
+        //   integration) -- that is not the silent, unreasoned
+        //   "allowlist away" this comment meant to rule out when it was
+        //   first written, before that mechanism existed: the entry
+        //   quotes this same analysis rather than replacing it, so the
+        //   guard can say "seen, and here is why it is safe" instead of
+        //   either false-alarming on every run or silently ignoring a
+        //   read+later-write pair that would be a real bug in any other
+        //   effect. Read this comment and that entry together.
         if !dragging() {
             return;
         }
-        let Some(pointer_id) = active_pointer_id() else {
+        // `active_pointer_id`, unlike `dragging` just above, is read
+        // through `.peek()`: every place that writes it (`use_drawer_drag_
+        // start_gate`'s callback, and the release branch below) always
+        // writes `dragging` in the very same call, so `dragging`'s own
+        // tracked read already reschedules this effect at every moment
+        // `active_pointer_id` could matter -- tracking it too was pure
+        // duplication, and it fell into the exact read+write-in-the-same-
+        // run shape `check-self-subscribing-effects.sh` now flags, unlike
+        // `dragging` above, with no wake/sleep role of its own to lose.
+        let Some(pointer_id) = *active_pointer_id.peek() else {
             return;
         };
 

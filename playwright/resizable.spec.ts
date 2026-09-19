@@ -1,7 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
-const URL = 'http://127.0.0.1:8080/component/?name=resizable&';
+const URL = `${BASE_URL}/component/?name=resizable&`;
 
 /** The panel a handle's `aria-controls` names -- its "primary pane". */
 async function primaryPanel(page: Page, handleName: string) {
@@ -92,6 +93,39 @@ test('the nested vertical group\'s handle drags independently of the outer horiz
   // The nested group's own drag must not move the OUTER boundary at all.
   expect(sidebarAfter.width).toBeCloseTo(sidebarBefore.width, 0);
   await expect(outerHandle).toHaveAttribute('aria-valuenow', '50');
+});
+
+test.describe('Appearance (shadcn/ui v4 translation)', () => {
+  // Translates shadcn/ui v4's Resizable (react-resizable-panels) look onto this repo's own
+  // tokens (dev-docs/backlog.md's cheap-primitives-wave follow-up) -- a `w-px` handle with a
+  // `h-4 w-3` grip, replacing the old 4px-wide handle and 16x24px grip. Both values below are
+  // exact per-pixel translations of shadcn's own `w-px`/`h-4 w-3` (this repo's --dx-space-3/-4
+  // tokens), not approximations.
+  test('the handle is a 1px hairline with a ~12x16px grip', async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    const handle = page.getByRole('separator', { name: 'Sidebar' });
+    await expect(handle).toHaveCSS('width', '1px');
+
+    const grip = handle.locator('.dx-resizable-handle-grip');
+    await expect(grip).toHaveCSS('width', '12px');
+    await expect(grip).toHaveCSS('height', '16px');
+  });
+
+  test("the demo's container is a bordered, rounded, ~450px-wide box", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    const handle = page.getByRole('separator', { name: 'Sidebar' });
+    // The handle's own direct parent is the outer ResizablePanelGroup div (panels and handles
+    // are direct siblings inside it -- see primitives/src/resizable.rs's markup doc comment).
+    const container = handle.locator('xpath=..');
+    await expect(container).toHaveCSS('border-radius', '8px');
+
+    // shadcn: `max-w-md ... md:min-w-[450px]` -- before this translation the group had no width
+    // cap/floor at all and rendered at its own content-hugging width (~269px measured against
+    // this fixture), well short of shadcn's ~450px.
+    const box = await container.boundingBox();
+    if (!box) throw new Error('container has no bounding box');
+    expect(box.width).toBeGreaterThanOrEqual(440);
+  });
 });
 
 test.describe('Axe automated scan', () => {

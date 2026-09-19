@@ -81,19 +81,33 @@
  *      HTML of `/` contains NO start tag with the same attribute name
  *      written twice. (`/component/?name=top_layer&` and
  *      `/component/?name=dialog&` were the URLs this rule was specified
- *      against, but `name` is a *query* param
+ *      against, but at write time `name` was a *query* param
  *      (`#[route("/component/?:name&:iframe&:dark_mode")]`,
  *      `preview/src/main.rs`) and this app's `dx build --ssg` only
- *      prerenders a fixed path list that does not vary by query string --
+ *      prerendered a fixed path list that did not vary by query string --
  *      confirmed empirically: the built `server` binary run standalone
- *      serves byte-identical markup for `/component/?name=button&`,
+ *      served byte-identical markup for `/component/?name=button&`,
  *      `/component/?name=top_layer&`, and no query at all, all three
  *      being literally the `name=""` ("Component not found") prerendered
- *      page, and the documented local SSG lane (`docs/conformance-
- *      harness.md`) serves the same static snapshot even more plainly, via
- *      a bare `python3 -m http.server`. There is no locally-servable URL
- *      under this app's SSG build where `/component/?name=X&`'s *own*
- *      markup differs by `X`. `/` does not have this problem and is where
+ *      page. **UPDATE (dev-docs/backlog.md row 46, construction landed):**
+ *      that claim no longer holds -- `name` now lives in the URL PATH on
+ *      the canonical route (`ComponentDemoPath`, `/component/:name/`),
+ *      which `dx build --ssg` DOES enumerate one static file per
+ *      `components::DEMOS` entry for (see `server_static_routes` in
+ *      `preview/src/main.rs`), so `/component/button/` and
+ *      `/component/top_layer/` now serve genuinely different, real
+ *      markup. The "hydration parity — per-component pages" describe
+ *      block below is Rule 4's own extension to every one of those pages,
+ *      superseding this rule's original `/`-only scope for the
+ *      duplicate-attribute check specifically (Rule 4 here stays as
+ *      originally written, unchanged, as the narrower `/`-only
+ *      regression guard for the ORIGINAL five-component finding). The old
+ *      query-string route (`Route::ComponentDemo`) still exists for
+ *      backward compatibility and still serves the same name-agnostic
+ *      shell regardless of `X` by construction (see that route's own doc
+ *      comment in `preview/src/main.rs`) -- it is what the "legacy
+ *      query-URL redirect" describe block below exercises. `/` does not
+ *      have either problem and is where
  *      the fixtures actually live pre-JS: the whole component gallery is
  *      embedded directly on the home page (Rule 3's Dropdown Menu is the
  *      same pattern) -- it is also, not coincidentally, the exact page
@@ -212,12 +226,77 @@
  * lanes, unchanged by this fix (a real, separate, pre-existing behavior gap
  * once a caller overrides one of these ids -- out of scope here, which is
  * only about the served markup agreeing with the DOM).
+ *
+ * ## Row 46 extension (2026-09-19): every component page, not just `/`
+ *
+ * Rows 46 and 22 (dev-docs/backlog.md): every `/component/?name=X&` page
+ * used to prerender as the "Component not found" shell for every `X` (a
+ * query string can never become a distinct static file -- see
+ * `preview/src/main.rs`'s `Route::ComponentDemo` doc comment), so this file
+ * could only ever compare `/` and the dashboard/docs routes against their
+ * own server-rendered markup. Now that `name` lives in the URL PATH on the
+ * canonical `ComponentDemoPath` route (`/component/:name/`), `dx build
+ * --ssg` prerenders one real, distinct static file per
+ * `components::DEMOS` entry, and Rules 1-4b's underlying method (does the
+ * server-rendered markup agree with what the client hydrates against, with
+ * zero hydration errors and no duplicated attributes) extends to every one
+ * of them. Two new `describe` blocks below do that extension:
+ *
+ *   - "hydration parity — per-component pages": Rule 5 (no prerendered
+ *     component page served the not-found shell -- the row 46 regression
+ *     itself, made a black-box assertion) and Rule 2/Rule 4's own method
+ *     applied to every discovered page (zero hydration errors, no
+ *     duplicated attributes), enumerated from the BUILT OUTPUT itself
+ *     (`SSG_SITE_DIR`'s `component/*` subdirectories that have their own
+ *     `index.html`) rather than a hand-maintained name list that could
+ *     drift from `components::DEMOS`.
+ *   - "hydration parity — legacy query-URL redirect on a static host": Rule
+ *     6, the specific black-box case row 22 asks for -- a plain static
+ *     file host (no `dx serve`, no server-side redirect logic at all) can
+ *     still only ever serve ONE physical file for every `/component/?name=
+ *     X&` request regardless of `X` (the query string is invisible to
+ *     file-path resolution), so the OLD `ComponentDemo` route's client-side
+ *     redirect (`preview/src/main.rs`) is what has to resolve the real
+ *     component after hydration, not the server. Both blocks `test.skip`
+ *     (not fail) when `SSG_SITE_DIR` is unset, so this file still runs its
+ *     original, pre-row-46 rules 1-4b unchanged against an SSG build that
+ *     was not invoked through the env var this lane's CI job sets.
  */
 
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 const BASE = "http://127.0.0.1:8090";
+
+/**
+ * Every component page this build actually prerendered, discovered from the
+ * SSG output directory itself (row 46) rather than a hand-maintained name
+ * list that could drift from `components::DEMOS`
+ * (`preview/src/components/mod.rs`). Pass the site directory (the same one
+ * served on :8090) via `SSG_SITE_DIR` -- e.g.
+ * `SSG_SITE_DIR=$(pwd)/../target/dx/preview/release/web/public`. Excludes
+ * `block` (a route family -- `/component/block/<name>/<variant>/` -- not a
+ * component name itself) and any directory without its own `index.html`
+ * (would not be a real prerendered page). Returns `[]` when `SSG_SITE_DIR`
+ * is unset or does not exist, which every rule below treats as "skip this
+ * extension," not "fail."
+ */
+function discoverComponentNames(): string[] {
+  const siteDir = process.env.SSG_SITE_DIR;
+  if (!siteDir) return [];
+  const componentDir = path.join(siteDir, "component");
+  if (!fs.existsSync(componentDir)) return [];
+  return fs
+    .readdirSync(componentDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== "block")
+    .filter((entry) => fs.existsSync(path.join(componentDir, entry.name, "index.html")))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+const COMPONENT_NAMES = discoverComponentNames();
 
 /**
  * Rule 4 support: a minimal HTML start-tag tokenizer, just enough to answer
@@ -335,7 +414,18 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     expect(response.ok()).toBeTruthy();
     const html = await response.text();
 
-    const containerMatch = html.match(/<div[^>]*class="dx-toast-container-[^"]*"[^>]*>/);
+    // `\bdx-toast-container\b` (a whole class TOKEN anywhere in the
+    // attribute value), not `dx-toast-container-[^"]*` (a literal trailing
+    // hyphen then more characters): the latter was written against the old
+    // `#[css_module]`-hashed shape (`dx-toast-container-a1b2c3`) row 32
+    // (dev-docs/backlog.md) already migrated away from -- the class is now
+    // the plain, unhashed, multi-class `class="dx-toast-base-region
+    // dx-toast-container"`, which the old pattern can never match (it
+    // requires a literal "-" immediately after "container"). Found by
+    // actually executing this lane for the first time (row 22) -- this
+    // spec's own Rule 1 had silently never been re-verified against a
+    // post-row-32 build.
+    const containerMatch = html.match(/<div[^>]*class="[^"]*\bdx-toast-container\b[^"]*"[^>]*>/);
     expect(
       containerMatch,
       "expected a dx-toast-container element in the raw server-rendered HTML",
@@ -388,7 +478,21 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
         "(data-state never became 'open') — the literal user-reported " +
         "symptom this rule regression-tests",
     ).toHaveAttribute("data-state", "open");
-    await expect(page.getByRole("option", { name: "Edit" })).toBeVisible();
+    // `menuitem`, not `option`: DropdownMenu's items were `role="option"`
+    // (inherited listbox/option roles) until dev-docs/backlog.md row 24
+    // fixed them to the correct APG Menu Button pattern role
+    // (`menu-roles.spec.ts`) -- this rule's own locator was never updated
+    // to match and had gone unnoticed because the SSG lane it runs against
+    // had never been executed (row 22) until now. Scoped through
+    // `getByLabel("Open Menu")` (the popup's own accessible name, via
+    // `aria-labelledby` back to its trigger) rather than a bare
+    // page-wide `getByRole` -- with every component's gallery card mounted
+    // on `/`, `menubar`'s own demo ALSO has an "Edit" menuitem, and a
+    // page-wide locator hits a strict-mode "2 elements" violation across
+    // the two components' items (confirmed by execution).
+    await expect(
+      page.getByLabel("Open Menu").getByRole("menuitem", { name: "Edit" }),
+    ).toBeVisible();
   });
 
   // `/component/?name=top_layer&`/`/component/?name=dialog&` are not
@@ -501,4 +605,143 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
         `${avatarSpan!.raw}`,
     ).toBe("Error avatar");
   });
+});
+
+// Row 46 extension -- see this file's header ("Row 46 extension") for the
+// full rationale. Both describe blocks below skip (not fail) when
+// SSG_SITE_DIR is unset, so this file stays runnable exactly as it always
+// was against an SSG build invoked without that env var.
+test.describe("hydration parity — per-component pages (row 46)", () => {
+  test.skip(
+    COMPONENT_NAMES.length === 0,
+    "SSG_SITE_DIR not set -- export it to the SSG build's public/ dir (or run via this lane's CI job) to enumerate every prerendered component page; see this file's header.",
+  );
+
+  test("Rule 5: no prerendered component page served the not-found shell", async ({ request }) => {
+    const offenders: string[] = [];
+    for (const name of COMPONENT_NAMES) {
+      const response = await request.get(`${BASE}/component/${name}/`, { timeout: NAV_TIMEOUT });
+      expect(response.ok(), `${name}: expected the prerendered page to respond 200`).toBeTruthy();
+      const html = await response.text();
+      if (html.includes("dx-component-demo-not-found")) {
+        offenders.push(name);
+      }
+    }
+    expect(
+      offenders,
+      `component page(s) served the "Component not found" shell instead of their real content ` +
+        `-- this is the row 46 regression itself: ${offenders.join(", ")}`,
+    ).toHaveLength(0);
+  });
+
+  test("Rule 2 (extended): zero hydration errors on every prerendered component page", async ({
+    page,
+  }) => {
+    // One test, 62+ sequential navigations -- well past ssg.local.config.ts's
+    // 90s default test timeout even when every page is fast.
+    test.setTimeout(5 * 60 * 1000);
+
+    const failures: string[] = [];
+    for (const name of COMPONENT_NAMES) {
+      const consoleMessages: string[] = [];
+      const pageErrors: string[] = [];
+      const onConsole = (msg: { text(): string }) => consoleMessages.push(msg.text());
+      const onError = (err: Error) => pageErrors.push(err.message);
+      page.on("console", onConsole);
+      page.on("pageerror", onError);
+
+      // "load", not "networkidle" (Rule 2's own home-page-only test uses
+      // "networkidle" and that page settles fine): `top_layer`'s oracle
+      // fixture page is "a large probe surface" with its own ongoing
+      // timers/listeners by design (playwright/oracle/tier2-html/
+      // top-layer.spec.ts), so it may never reach network-idle at all --
+      // confirmed by execution, this loop timed out at 90s on exactly that
+      // page before this fix. A hydration mismatch surfaces during the
+      // synchronous hydration walk right after `load`, not from later
+      // background network activity, so "load" is both sufficient for what
+      // this rule checks and immune to a fixture page's own idle timers.
+      await page.goto(`${BASE}/component/${name}/`, { timeout: NAV_TIMEOUT, waitUntil: "load" });
+      // Shorter settle window than Rule 2's own 2s: this loop already pays
+      // one full navigation per component, and a hydration-mismatch
+      // recovery (the defect class this guards) surfaces within a tick or
+      // two of load, not seconds later.
+      await page.waitForTimeout(500);
+
+      page.off("console", onConsole);
+      page.off("pageerror", onError);
+
+      const hydrationMessages = consoleMessages.filter((m) => /hydrat/i.test(m));
+      if (hydrationMessages.length > 0 || pageErrors.length > 0) {
+        failures.push(
+          `${name}: hydration console messages=${JSON.stringify(hydrationMessages)} ` +
+            `page errors=${JSON.stringify(pageErrors)}`,
+        );
+      }
+    }
+    expect(failures, failures.join("\n")).toHaveLength(0);
+  });
+
+  test("Rule 4 (extended): no duplicated attribute names on any prerendered component page", async ({
+    request,
+  }) => {
+    const failures: string[] = [];
+    for (const name of COMPONENT_NAMES) {
+      const response = await request.get(`${BASE}/component/${name}/`, { timeout: NAV_TIMEOUT });
+      const html = await response.text();
+      const dupes = duplicateAttrTags(html);
+      if (dupes.length > 0) {
+        failures.push(`${name}: ${dupes.map((d) => `duplicate "${d.dup}" in ${d.raw}`).join("; ")}`);
+      }
+    }
+    expect(failures, failures.join("\n")).toHaveLength(0);
+  });
+});
+
+// A plain static file server (this lane's `python3 -m http.server`, and
+// GitHub Pages in production) resolves a URL to a file by PATH alone -- the
+// query string plays no part, so it can only ever serve ONE physical file
+// for every `/component/?name=X&` request regardless of `X`
+// (`preview/src/main.rs`'s `Route::ComponentDemo` doc comment). There is no
+// server-side redirect available at all in this deployment shape, so the
+// ONLY thing that can ever land a query-string deep link on the right
+// component is the client: `ComponentDemo`'s `use_effect` reading the real
+// query string once hydrated and calling `navigator().replace`. Sampled at
+// three fixed POSITIONS (first/middle/last of the discovered, sorted list)
+// rather than one, for broader but still cheap coverage; deterministic
+// across runs of the same build. Three always-listed tests (not a
+// dynamic-per-name loop over `COMPONENT_NAMES`, which would generate ZERO
+// tests -- silently, not even a visible "skipped" -- when `SSG_SITE_DIR` is
+// unset): each resolves its own sample name at RUNTIME and skips itself,
+// with a reason, when there is none.
+test.describe("hydration parity — legacy query-URL redirect on a static host (row 46/22)", () => {
+  const SAMPLE_POSITIONS = [
+    ["first", (names: string[]) => names[0]],
+    ["middle", (names: string[]) => names[Math.floor(names.length / 2)]],
+    ["last", (names: string[]) => names[names.length - 1]],
+  ] as const;
+
+  for (const [label, pick] of SAMPLE_POSITIONS) {
+    test(`Rule 6 (${label} component): a query-string deep link resolves client-side after hydration`, async ({
+      page,
+    }) => {
+      test.skip(
+        COMPONENT_NAMES.length === 0,
+        "SSG_SITE_DIR not set -- see this file's header.",
+      );
+      const name = pick(COMPONENT_NAMES);
+
+      await page.goto(`${BASE}/component/?name=${name}&`, {
+        timeout: NAV_TIMEOUT,
+        waitUntil: "load",
+      });
+
+      await expect(page).toHaveURL(new RegExp(`/component/${name}/`));
+
+      const displayName = name.replace(/_/g, " ");
+      await expect(
+        page.getByRole("heading", { name: displayName, exact: false }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      expect(await page.content()).not.toContain("dx-component-demo-not-found");
+    });
+  }
 });

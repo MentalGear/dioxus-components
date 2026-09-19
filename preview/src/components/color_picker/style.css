@@ -80,18 +80,23 @@
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
+
+    /* rtl-physical: this thumb's horizontal position is set inline by the
+       primitive (out of this lane's ownership, like slider/style.css's
+       identical note) -- `translate(-50%, -50%)` only self-centers the
+       thumb on whatever point that inline style lands it at. */
     transform: translate(-50%, -50%) scale(1);
     transition: transform var(--dx-motion-duration-base) var(--dx-motion-ease-out), box-shadow var(--dx-motion-duration-base) var(--dx-motion-ease-out), border-color var(--dx-motion-duration-base);
 }
 
 .dx-color-picker-slider-thumb:hover,
 .dx-color-picker-slider-thumb:focus-visible {
-    transform: translate(-50%, -50%) scale(1.15);
+    transform: translate(-50%, -50%) scale(1.15); /* rtl-physical: see comment above */
 }
 
 .dx-color-picker-slider-thumb[data-dragging="true"] {
     box-shadow: black 0 0 0 1px, black 0 0 0 1px inset, rgb(0 0 0 / 30%) 0 2px 6px;
-    transform: translate(-50%, -50%) scale(1.25);
+    transform: translate(-50%, -50%) scale(1.25); /* rtl-physical: see comment above */
 }
 
 .dx-color-picker-area-container {
@@ -125,6 +130,10 @@
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
+
+    /* rtl-physical: this thumb's 2D position (both axes) is set inline by
+       the primitive, same coordination note as `.dx-color-picker-slider-
+       thumb` above. */
     transform: translate(-50%, -50%) scale(1);
     transition: transform var(--dx-motion-duration-base) var(--dx-motion-ease-out), box-shadow var(--dx-motion-duration-base) var(--dx-motion-ease-out), border-color var(--dx-motion-duration-base);
 }
@@ -132,12 +141,12 @@
 .dx-color-picker-area-thumb:hover,
 .dx-color-picker-area-thumb:focus-visible,
 .dx-color-picker-area-thumb:has(:focus-visible) {
-    transform: translate(-50%, -50%) scale(1.15);
+    transform: translate(-50%, -50%) scale(1.15); /* rtl-physical: see comment above */
 }
 
 .dx-color-picker-area-thumb[data-dragging="true"] {
     box-shadow: black 0 0 0 1px, black 0 0 0 1px inset, rgb(0 0 0 / 30%) 0 2px 6px;
-    transform: translate(-50%, -50%) scale(1.25);
+    transform: translate(-50%, -50%) scale(1.25); /* rtl-physical: see comment above */
 }
 
 .dx-color-picker-area-input {
@@ -185,7 +194,6 @@
     position: absolute;
     z-index: var(--dx-z-overlay);
     top: 100%;
-    left: 0;
     display: block;
     border-radius: var(--dx-radius-lg);
     margin-top: var(--dx-space-1);
@@ -194,6 +202,7 @@
     box-shadow:
         inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7)),
         0 4px 16px rgb(0 0 0 / 15%);
+    inset-inline-start: 0;
 }
 
 /*

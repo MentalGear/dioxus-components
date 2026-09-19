@@ -3,7 +3,35 @@ use dioxus::prelude::*;
 fn main() {
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_dir = std::path::PathBuf::from(out_dir);
-    println!("cargo:rerun-if-changed=src/components");
+    // Deliberately NOT `cargo:rerun-if-changed=src/components`. That
+    // blanket, recursive directory watch made cargo rerun this script on
+    // ANY change under any component folder -- including `component.rs`/
+    // `style.css`/`variants/**`, none of which this script reads -- and
+    // `walk_markdown_dir` below unconditionally rewrites every component's
+    // `description.txt`/`docs.html` in `OUT_DIR` on every run regardless of
+    // which file triggered it. Since `components/mod.rs` `include_str!`s
+    // those two per component, their bumped mtimes made cargo treat
+    // `preview` itself as dirty too, compounding the separate compile-time
+    // CSS embed that `dev-docs/dev-loop.md`'s CSS section root-causes as
+    // the primary reason a component `style.css` edit forced a full
+    // rebuild instead of hot-reloading. This script only ever reads `*.md`
+    // and `component.json` files; each one already registers its own
+    // precise `cargo:rerun-if-changed` below (`process_markdown_to_html`/
+    // `read_component_description`), which is the complete, correct watch
+    // list for what this script actually does -- narrowing to just that
+    // removes the compounding, on top of the primary fix in `main.rs`/
+    // `components/mod.rs`.
+    //
+    // Known, accepted trade-off: a brand new `.md`/`component.json` file
+    // (one this script has never seen) isn't watched until something else
+    // causes it to rerun -- cargo has no "watch this directory for new
+    // entries only" primitive, only the recursive watch just removed.
+    // Self-healing in practice: adding a new component always also means
+    // editing `components/mod.rs` (a `.rs` file cargo already tracks
+    // directly), and the first build after that fails loudly with a clear
+    // "No such file" against the missing `OUT_DIR` output until this
+    // script reruns -- fixed by touching this file or `cargo clean -p
+    // preview`, not a silent bug.
     // Process all markdown files in each component folder.
     for folder in std::fs::read_dir("src/components").unwrap().flatten() {
         if !folder.file_type().unwrap().is_dir() {

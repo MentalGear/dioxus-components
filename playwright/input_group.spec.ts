@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=input_group&", { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=input_group&`, { timeout: 20 * 60 * 1000 });
   const search = page.getByPlaceholder("Search...");
   await expect(search).toBeVisible();
   await search.fill("hello");
@@ -15,7 +16,7 @@ test("test", async ({ page }) => {
 test.describe("Axe automated scan", () => {
   // Input Group has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=input_group&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=input_group&`, { timeout: 20 * 60 * 1000 });
     await expectNoAxeViolations(page, "input_group: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
@@ -41,7 +42,7 @@ test.describe("Axe automated scan", () => {
  * of the input's own) actually holds.
  */
 test("the input inside the group keeps its base class and shows no border of its own", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=input_group&", { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=input_group&`, { timeout: 20 * 60 * 1000 });
   const search = page.getByPlaceholder("Search...");
   await expect(search).toBeVisible();
 

@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
+import { BASE_URL } from './base-url';
 
 test('pointer navigation', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   await page.getByRole('button', { name: 'right click here' }).click({
     button: 'right'
   });
@@ -17,7 +18,7 @@ test('pointer navigation', async ({ page }) => {
 });
 
 test('menu lands at the tap coordinates on touch long-press', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
 
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
@@ -101,7 +102,7 @@ test('menu lands at the tap coordinates on touch long-press', async ({ page }) =
 // coordinates" test above already uses to control click coordinates
 // independent of the trigger element's own on-screen position.
 test('clamps the menu into the viewport for a mouse right-click near a corner', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
   const viewport = page.viewportSize();
@@ -139,7 +140,7 @@ test('clamps the menu into the viewport for a mouse right-click near a corner', 
 });
 
 test('clamps the menu into the viewport for a touch long-press near a corner', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
   const viewport = page.viewportSize();
@@ -181,7 +182,7 @@ test('clamps the menu into the viewport for a touch long-press near a corner', a
 test('touch long-press opens the context menu', async ({ page }) => {
   // iOS Safari does not fire `contextmenu` on long press, so the menu must
   // open from a held touch instead. Reproduces issue #262.
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
 
@@ -223,7 +224,7 @@ test('touch long-press opens the context menu', async ({ page }) => {
 });
 
 test('pen long-press opens the context menu', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
 
@@ -251,7 +252,7 @@ test('pen long-press opens the context menu', async ({ page }) => {
 });
 
 test('mouse pointerdown does not arm the long-press timer', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
 
   const box = await trigger.boundingBox();
@@ -281,7 +282,7 @@ test('mouse pointerdown does not arm the long-press timer', async ({ page }) => 
 });
 
 test('touch tap outside closes the open menu', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
 
@@ -330,7 +331,7 @@ test('pointerdown at the trigger location does not dismiss an open menu', async 
   // menu opened (either from a topology-change re-dispatch under the active
   // touch, or from compat-mouse promotion). The dismiss listener must treat
   // the trigger as "inside" the menu's root and ignore it.
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
   const contextMenu = page.getByRole('menu');
 
@@ -379,7 +380,7 @@ test('pointerdown at the trigger location does not dismiss an open menu', async 
 });
 
 test('touch released before long-press threshold does not open the menu', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
   const trigger = page.getByRole('button', { name: 'right click here' });
 
   const box = await trigger.boundingBox();
@@ -421,7 +422,7 @@ test('touch released before long-press threshold does not open the menu', async 
 });
 
 test('keyboard navigation', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   await page.getByRole('button', { name: 'right click here' }).click({
     button: 'right'
   });
@@ -456,7 +457,7 @@ test('keyboard navigation', async ({ page }) => {
 
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'right click here' })).toBeVisible();
@@ -468,7 +469,7 @@ test.describe('Axe automated scan', () => {
   // name (APG menu-and-menubar pattern requires one) -- this is exactly the
   // class of defect this round's axe coverage is meant to surface.
   test('menu open has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/component/?name=context_menu&', { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole('button', { name: 'right click here' }).click({ button: 'right' });
     await expect(page.getByRole('menu')).toBeVisible();
     await expectNoAxeViolations(page, 'context-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });

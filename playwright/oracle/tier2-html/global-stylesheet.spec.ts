@@ -20,11 +20,12 @@
  * property only it sets.
  */
 import { test, expect } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
 const ROUTES = [
-  "http://127.0.0.1:8080/",
-  "http://127.0.0.1:8080/component/?name=select&",
-  "http://127.0.0.1:8080/dashboard/email-client",
+  `${BASE_URL}/`,
+  `${BASE_URL}/component/?name=select&`,
+  `${BASE_URL}/dashboard/email-client`,
 ];
 
 for (const url of ROUTES) {

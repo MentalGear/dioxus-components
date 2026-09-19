@@ -1,6 +1,7 @@
 //! Defines the [`Toolbar`] component and its sub-components, which provide a container to group related buttons and controls with keyboard navigation.
 
 use crate::collection::{collection_item, use_collection_provider, use_item, CollectionState};
+use crate::direction::{use_direction, Direction, HorizontalNav};
 use dioxus::prelude::*;
 
 #[derive(Clone, Copy)]
@@ -13,6 +14,10 @@ struct ToolbarCtx {
 
     // Orientation
     horizontal: ReadSignal<bool>,
+
+    // Text direction, for `ArrowLeft`/`ArrowRight`'s roving-focus role --
+    // see `direction::Direction::resolve_horizontal`'s doc.
+    direction: Direction,
 }
 
 impl ToolbarCtx {
@@ -43,6 +48,12 @@ pub struct ToolbarProps {
     /// ARIA label for the toolbar
     #[props(default)]
     pub aria_label: Option<String>,
+
+    /// The text direction for `ArrowLeft`/`ArrowRight` roving focus.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none. See [`crate::direction::use_direction`].
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Additional attributes for the toolbar
     #[props(extends = GlobalAttributes)]
@@ -86,20 +97,25 @@ pub struct ToolbarProps {
 /// The [`Toolbar`] component defines the following data attributes you can use to control styling:
 /// - `data-orientation`: Indicates the orientation of the toolbar. Values are `horizontal` or `vertical`.
 /// - `data-disabled`: Indicates if the toolbar is disabled. Values are `true` or `false`.
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn Toolbar(props: ToolbarProps) -> Element {
+    let direction = use_direction(props.dir);
     let focus = use_collection_provider(ReadSignal::new(Signal::new(false)));
     let mut ctx = use_context_provider(|| ToolbarCtx {
         disabled: props.disabled,
         focus,
         horizontal: props.horizontal,
+        direction,
     });
 
     rsx! {
         div {
             role: "toolbar",
+            dir: direction.as_str(),
             "data-orientation": ctx.orientation(),
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
             aria_label: props.aria_label,
 
             onfocusout: move |_| ctx.focus.clear_focus(),
@@ -206,15 +222,19 @@ pub fn ToolbarButton(props: ToolbarButtonProps) -> Element {
                         let index = (props.index)();
                         ctx.set_focus(Some(index + 1));
                     }
-                    Key::ArrowLeft if horizontal => {
+                    Key::ArrowLeft | Key::ArrowRight if horizontal => {
                         let index = (props.index)();
-                        if index > 0 {
-                            ctx.set_focus(Some(index - 1));
+                        match ctx.direction.resolve_horizontal(&key) {
+                            Some(HorizontalNav::Prev) => {
+                                if index > 0 {
+                                    ctx.set_focus(Some(index - 1));
+                                }
+                            }
+                            Some(HorizontalNav::Next) => {
+                                ctx.set_focus(Some(index + 1));
+                            }
+                            None => {}
                         }
-                    }
-                    Key::ArrowRight if horizontal => {
-                        let index = (props.index)();
-                        ctx.set_focus(Some(index + 1));
                     }
                     Key::Home => {
                         ctx.set_focus(Some(0));

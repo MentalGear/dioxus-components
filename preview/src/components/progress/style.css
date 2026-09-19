@@ -20,12 +20,33 @@
     transition: width 250ms var(--dx-motion-ease);
 }
 
+/* rtl-physical: a physical left-to-right sweep (`translateX` is never
+   direction-aware). The determinate bar already mirrors for free (`width`
+   growth follows normal block/inline flow), but this indeterminate sweep
+   needs an explicit `[dir="rtl"]` counterpart below so it doesn't visibly
+   run backwards against a track that has otherwise mirrored. */
 @keyframes dx-indeterminate {
     0% {
-        transform: translateX(-100%);
+        transform: translateX(-100%); /* rtl-physical: see comment above */
     }
 
     100% {
-        transform: translateX(200%);
+        transform: translateX(200%); /* rtl-physical: see comment above */
+    }
+}
+
+[dir="rtl"] .dx-progress[data-state='indeterminate'] .dx-progress-indicator {
+    animation-name: dx-indeterminate-rtl;
+}
+
+/* rtl-physical: RTL counterpart of `dx-indeterminate` above, signs negated
+   so the sweep still runs start-to-end. */
+@keyframes dx-indeterminate-rtl {
+    0% {
+        transform: translateX(100%); /* rtl-physical */
+    }
+
+    100% {
+        transform: translateX(-200%); /* rtl-physical */
     }
 }

@@ -13,7 +13,11 @@ use std::{
 use dioxus_core::AttributeValue::{Bool, Text};
 use time::{ext::NumericalDuration, macros::date, Date, Month, OffsetDateTime, Weekday};
 
-use crate::{date_picker::DefaultCalendarProps, use_effect_cleanup, LocalDateExt as _};
+use crate::{
+    date_picker::DefaultCalendarProps,
+    direction::{use_direction, Direction, HorizontalNav},
+    use_effect_cleanup, LocalDateExt as _,
+};
 
 // A collection of [`Weekday`]s stored as a single byte
 // Implemented as a bitmask where bits 1-7 correspond to Monday-Sunday
@@ -188,6 +192,25 @@ fn nth_month_previous(date: Date, n: u8) -> Option<Date> {
     }
 }
 
+/// Resolve `ArrowLeft`/`ArrowRight` on the day grid to a `+1`/`-1` day step,
+/// honoring [`Direction`] the same way every other roving-focus consumer in
+/// this crate does (`Direction::resolve_horizontal`): the day "to the
+/// right" is always `+1` day in LTR and `-1` day in RTL, since a calendar's
+/// week row is itself a horizontal, direction-mirrored layout (the same
+/// spatial-arrow-key convention this lane found unanimous across every
+/// Radix source it read for roving focus, Slider, and the menu family --
+/// see `$S/batch3/rtl-rust/reference.md`; no Radix/shadcn Calendar exists
+/// to cite directly, since shadcn's own Calendar wraps `react-day-picker`,
+/// not a Radix primitive). `ArrowUp`/`ArrowDown` (`±7 days`, a full week
+/// row) are never direction-dependent and stay outside this function,
+/// exactly like every other consumer's vertical arrows.
+fn horizontal_day_step(key: &Key, direction: Direction) -> Option<i64> {
+    match direction.resolve_horizontal(key)? {
+        HorizontalNav::Next => Some(1),
+        HorizontalNav::Prev => Some(-1),
+    }
+}
+
 /// Calendar date range
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct DateRange {
@@ -337,6 +360,10 @@ pub struct BaseCalendarContext {
     first_day_of_week: Weekday,
     enabled_date_range: DateRange,
     view_registrations: Signal<Vec<CalendarViewRegistration>>,
+
+    /// Text direction, for the day grid's `ArrowLeft`/`ArrowRight` step --
+    /// see [`horizontal_day_step`]'s doc.
+    direction: Direction,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -521,6 +548,12 @@ pub struct CalendarProps {
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
 
+    /// The text direction for the day grid's `ArrowLeft`/`ArrowRight` step.
+    /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
+    /// LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Additional attributes to extend the calendar element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -587,6 +620,7 @@ impl DefaultCalendarProps for CalendarProps {
 pub fn Calendar(props: CalendarProps) -> Element {
     let available_ranges = use_memo(move || AvailableRanges::new(&props.disabled_ranges.read()));
     let view_registrations = use_signal(Vec::new);
+    let direction = use_direction(props.dir);
 
     // Create base context provider for child components
     let mut base_ctx = use_context_provider(|| BaseCalendarContext {
@@ -601,6 +635,7 @@ pub fn Calendar(props: CalendarProps) -> Element {
         first_day_of_week: props.first_day_of_week,
         enabled_date_range: DateRange::new(props.min_date, props.max_date),
         view_registrations,
+        direction,
     });
     // Create Calendar context provider for child components
     use_context_provider(|| CalendarContext {
@@ -612,7 +647,9 @@ pub fn Calendar(props: CalendarProps) -> Element {
         div {
             role: "application",
             aria_label: "Calendar",
+            dir: direction.as_str(),
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
             onkeydown: move |e| {
                 let Some(focused_date) = (base_ctx.focused_date)() else {
                     return;
@@ -642,13 +679,16 @@ pub fn Calendar(props: CalendarProps) -> Element {
                     }
                 };
                 match e.key() {
-                    Key::ArrowLeft => {
+                    Key::ArrowLeft | Key::ArrowRight => {
                         e.prevent_default();
-                        set_focused_date(focused_date.previous_day());
-                    }
-                    Key::ArrowRight => {
-                        e.prevent_default();
-                        set_focused_date(focused_date.next_day());
+                        if let Some(step) = horizontal_day_step(&e.key(), direction) {
+                            let target = if step > 0 {
+                                focused_date.next_day()
+                            } else {
+                                focused_date.previous_day()
+                            };
+                            set_focused_date(target);
+                        }
                     }
                     Key::ArrowUp => {
                         e.prevent_default();
@@ -777,6 +817,10 @@ pub struct RangeCalendarProps {
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
 
+    /// The text direction -- see [`CalendarProps::dir`]'s identical doc.
+    #[props(default)]
+    pub dir: Option<Direction>,
+
     /// Additional attributes to extend the calendar element
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -847,6 +891,7 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
     let highlighted_range = use_signal(|| (props.selected_range)());
     let available_ranges = use_memo(move || AvailableRanges::new(&props.disabled_ranges.read()));
     let view_registrations = use_signal(Vec::new);
+    let direction = use_direction(props.dir);
 
     // Create base context provider for child components
     let mut base_ctx = use_context_provider(|| BaseCalendarContext {
@@ -861,6 +906,7 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
         first_day_of_week: props.first_day_of_week,
         enabled_date_range: DateRange::new(props.min_date, props.max_date),
         view_registrations,
+        direction,
     });
 
     // Create RangeCalendar context provider for child components
@@ -874,7 +920,9 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
         div {
             role: "application",
             aria_label: "Calendar",
+            dir: direction.as_str(),
             "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
             onkeydown: move |e| {
                 let Some(mut focused_date) = (base_ctx.focused_date)() else {
                     return;
@@ -919,13 +967,16 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
                     }
                 };
                 match e.key() {
-                    Key::ArrowLeft => {
+                    Key::ArrowLeft | Key::ArrowRight => {
                         e.prevent_default();
-                        set_focused_date(focused_date.previous_day());
-                    }
-                    Key::ArrowRight => {
-                        e.prevent_default();
-                        set_focused_date(focused_date.next_day());
+                        if let Some(step) = horizontal_day_step(&e.key(), direction) {
+                            let target = if step > 0 {
+                                focused_date.next_day()
+                            } else {
+                                focused_date.previous_day()
+                            };
+                            set_focused_date(target);
+                        }
                     }
                     Key::ArrowUp => {
                         e.prevent_default();
@@ -1732,12 +1783,20 @@ pub fn CalendarGrid(props: CalendarGridProps) -> Element {
 }
 
 /// The root table element for a calendar grid.
+///
+/// ## Styling
+///
+/// - `data-direction`: The resolved text direction. Values are `ltr` or `rtl`.
 #[component]
 pub fn CalendarGridRoot(props: CalendarGridRootProps) -> Element {
+    let base_ctx: BaseCalendarContext = use_context();
+
     rsx! {
         table {
             role: "grid",
             id: props.id,
+            dir: base_ctx.direction.as_str(),
+            "data-direction": base_ctx.direction.as_str(),
             ..props.attributes,
             {props.children}
         }
@@ -2772,6 +2831,40 @@ mod tests {
     use std::cell::Cell;
     use time::macros::date;
 
+    #[test]
+    fn horizontal_day_step_ltr_matches_arrow_direction() {
+        assert_eq!(
+            horizontal_day_step(&Key::ArrowRight, Direction::Ltr),
+            Some(1)
+        );
+        assert_eq!(
+            horizontal_day_step(&Key::ArrowLeft, Direction::Ltr),
+            Some(-1)
+        );
+    }
+
+    #[test]
+    fn horizontal_day_step_rtl_swaps_left_and_right() {
+        assert_eq!(
+            horizontal_day_step(&Key::ArrowRight, Direction::Rtl),
+            Some(-1)
+        );
+        assert_eq!(
+            horizontal_day_step(&Key::ArrowLeft, Direction::Rtl),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn horizontal_day_step_ignores_vertical_keys_both_directions() {
+        for direction in [Direction::Ltr, Direction::Rtl] {
+            assert_eq!(horizontal_day_step(&Key::ArrowUp, direction), None);
+            assert_eq!(horizontal_day_step(&Key::ArrowDown, direction), None);
+            assert_eq!(horizontal_day_step(&Key::Home, direction), None);
+            assert_eq!(horizontal_day_step(&Key::End, direction), None);
+        }
+    }
+
     #[component]
     fn ConsecutiveCalendarViews() -> Element {
         rsx! {
@@ -3695,6 +3788,7 @@ mod tests {
             first_day_of_week: Weekday::Monday,
             enabled_date_range,
             view_registrations: use_signal(Vec::new),
+            direction: Direction::Ltr,
         }
     }
 
@@ -3717,6 +3811,7 @@ mod tests {
             first_day_of_week: Weekday::Monday,
             enabled_date_range,
             view_registrations: use_signal(Vec::new),
+            direction: Direction::Ltr,
         }
     }
 

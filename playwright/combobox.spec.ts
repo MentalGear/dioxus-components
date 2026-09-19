@@ -1,9 +1,10 @@
 import { test, expect, devices, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
-const URL = "http://127.0.0.1:8080/component/?name=combobox&";
+const URL = `${BASE_URL}/component/?name=combobox&`;
 const variantUrl = (variant: string) =>
-    `http://127.0.0.1:8080/component/?name=combobox&variant=${variant}&`;
+    `${BASE_URL}/component/?name=combobox&variant=${variant}&`;
 
 const input = (page: Page) =>
     page.getByRole("combobox", { name: "Select framework" });

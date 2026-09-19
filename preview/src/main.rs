@@ -56,7 +56,7 @@ struct ComponentDemoData {
     description: &'static str,
     docs: &'static str,
     component: HighlightedCode,
-    style: HighlightedCode,
+    style: CssHighlight,
     variants: &'static [ComponentVariantDemoData],
 }
 
@@ -65,7 +65,7 @@ struct ComponentDemoData {
 struct ComponentVariantDemoData {
     name: &'static str,
     rs_highlighted: HighlightedCode,
-    css_highlighted: Option<HighlightedCode>,
+    css_highlighted: Option<CssHighlight>,
     component: fn() -> Element,
 }
 
@@ -102,22 +102,67 @@ fn main() {
         // server function ends up under `/<base>/api/static_routes`, but the SSG
         // step POSTs to the unprefixed `/api/static_routes` and fails to parse
         // the empty body. Expose a shim at the root that returns the route list.
+        //
+        // This shim is ALSO the fix for dev-docs/backlog.md row 46 -- see
+        // `server_static_routes`'s own doc comment for why.
         let router = Router::new()
             .route(
                 "/api/static_routes",
-                post(|| async {
-                    Json(
-                        Route::static_routes()
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<String>>(),
-                    )
-                }),
+                post(|| async { Json(server_static_routes()) }),
             )
             .serve_dioxus_application(cfg, App);
 
         Ok(router)
     })
+}
+
+/// The full list of routes `dx build --ssg` should prerender, as route
+/// strings (`Route::to_string()`). Served by the `/api/static_routes` shim
+/// above, which is the only caller.
+///
+/// `Route::static_routes()` (dioxus-router-0.7.9's own default,
+/// `routable.rs`) only ever enumerates route variants whose path is made
+/// ENTIRELY of literal segments -- it `filter_map`s away any variant
+/// containing a `Dynamic`/`CatchAll` segment, so it can never expand
+/// `ComponentDemoPath`'s `:name` (or `ComponentBlockDemoPath`'s
+/// `:name`/`:variant`) into one concrete entry per `components::DEMOS` item;
+/// it would just silently omit those routes entirely (dev-docs/backlog.md
+/// row 46). Appending one resolved route string per demo (and per
+/// block-demo variant) below is what actually makes every component page
+/// SSG-enumerable. `Route::static_routes()` still supplies every genuinely
+/// all-static route: `/`, `/docs`, `/demos`, `/dashboard/email-client`, and
+/// the legacy bare `/component/`/`/component/block/` query-form shells (see
+/// `ComponentDemo`/`ComponentBlockDemo`'s own doc comments for why those two
+/// stay deliberately name-agnostic rather than being enumerated here too).
+#[cfg(feature = "server")]
+fn server_static_routes() -> Vec<String> {
+    let mut routes: Vec<String> = Route::static_routes()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    for demo in components::DEMOS {
+        routes.push(
+            Route::ComponentDemoPath {
+                name: demo.name.to_string(),
+                iframe: None,
+                dark_mode: None,
+            }
+            .to_string(),
+        );
+        if demo.r#type == ComponentType::Block {
+            for variant in demo.variants {
+                routes.push(
+                    Route::ComponentBlockDemoPath {
+                        name: demo.name.to_string(),
+                        variant: variant.name.to_string(),
+                        dark_mode: None,
+                    }
+                    .to_string(),
+                );
+            }
+        }
+    }
+    routes
 }
 
 #[component]
@@ -148,17 +193,54 @@ pub enum Route {
     Docs { dark_mode: Option<bool> },
     #[route("/demos?:dark_mode")]
     Demos { dark_mode: Option<bool> },
+    // Legacy query-string deep link (dev-docs/backlog.md row 46). Kept ONLY
+    // so old bookmarks/external links/the hundreds of existing Playwright
+    // specs using this URL form keep working -- it is NOT SSG-enumerable by
+    // construction (a query string can never become a distinct static FILE:
+    // `dioxus-server-0.7.9`'s `FileSystemCache::map_path` strips everything
+    // from `?` onward before mapping a route to a file path, so every
+    // `name=X` value would collide onto the same `component/index.html`
+    // even if this app's `/api/static_routes` enumerated every X). Renders a
+    // name-agnostic loading shell (see `ComponentDemo`'s doc comment) and
+    // redirects client-side to `ComponentDemoPath` once mounted.
     #[route("/component/?:name&:iframe&:dark_mode")]
     ComponentDemo {
         name: String,
         iframe: Option<bool>,
         dark_mode: Option<bool>,
     },
+    // Canonical, SSG-enumerable component page (row 46's construction):
+    // `name` lives in the PATH, so every `components::DEMOS` entry maps to
+    // its own static file (`component/<name>/index.html`) instead of every
+    // one collapsing onto a single query-keyed file. Every internal link
+    // (`Route::component`) points here; `ComponentDemo` above only exists to
+    // catch old links and hand them off to this route.
+    #[route("/component/:name/?:iframe&:dark_mode")]
+    ComponentDemoPath {
+        name: String,
+        iframe: Option<bool>,
+        dark_mode: Option<bool>,
+    },
     #[end_layout]
+    // Legacy query-string block-demo deep link -- same reasoning and same
+    // redirect-shell construction as `ComponentDemo` above;
+    // `ComponentBlockDemoPath` is the canonical form.
     #[route("/component/block/?:name&:variant&:dark_mode")]
     ComponentBlockDemo {
         name: String,
         variant: Option<String>,
+        dark_mode: Option<bool>,
+    },
+    // Canonical, SSG-enumerable block-demo page: both `name` AND `variant`
+    // are path segments (`variant` required, unlike the legacy query form's
+    // `Option` -- the canonical route has no "default variant" concept of
+    // its own; `ComponentBlockDemo`'s redirect resolves that default before
+    // handing off here), so every (demo, variant) pair -- not just every
+    // demo -- gets its own static file.
+    #[route("/component/block/:name/:variant/?:dark_mode")]
+    ComponentBlockDemoPath {
+        name: String,
+        variant: String,
         dark_mode: Option<bool>,
     },
     #[route("/dashboard/email-client?:dark_mode")]
@@ -172,7 +254,9 @@ impl Route {
             Route::Docs { .. } => None,
             Route::Demos { .. } => None,
             Route::ComponentDemo { iframe, .. } => *iframe,
+            Route::ComponentDemoPath { iframe, .. } => *iframe,
             Route::ComponentBlockDemo { .. } => None,
+            Route::ComponentBlockDemoPath { .. } => None,
             Route::EmailClientDashboard { .. } => None,
         }
     }
@@ -188,7 +272,9 @@ impl Route {
             Route::Docs { dark_mode, .. } => *dark_mode,
             Route::Demos { dark_mode, .. } => *dark_mode,
             Route::ComponentDemo { dark_mode, .. } => *dark_mode,
+            Route::ComponentDemoPath { dark_mode, .. } => *dark_mode,
             Route::ComponentBlockDemo { dark_mode, .. } => *dark_mode,
+            Route::ComponentBlockDemoPath { dark_mode, .. } => *dark_mode,
             Route::EmailClientDashboard { dark_mode, .. } => *dark_mode,
         }
     }
@@ -214,17 +300,72 @@ impl Route {
         Self::Demos { dark_mode }
     }
 
+    /// The canonical component-page link every internal caller (sidebar,
+    /// home gallery cards, the navbar demo fixture) should use --
+    /// `ComponentDemoPath` (row 46), never the legacy query-string
+    /// `ComponentDemo`, so every link this app renders itself is already
+    /// SSG-enumerable.
     pub fn component(name: impl ToString) -> Self {
         let iframe = Self::in_iframe();
         let dark_mode = Self::in_dark_mode();
-        Self::ComponentDemo {
+        Self::ComponentDemoPath {
             name: name.to_string(),
             iframe,
             dark_mode,
         }
     }
+
+    /// The canonical block-demo iframe-content link (mirrors `component`
+    /// above) -- `ComponentBlockDemoPath`, used by
+    /// `BlockComponentVariantHighlight` to build the `<iframe src>` for a
+    /// given demo's variant.
+    pub fn component_block(name: impl ToString, variant: impl ToString) -> Self {
+        let dark_mode = Self::in_dark_mode();
+        Self::ComponentBlockDemoPath {
+            name: name.to_string(),
+            variant: variant.to_string(),
+            dark_mode,
+        }
+    }
 }
 
+/// The outermost layout, applied to EVERY route (never popped by an
+/// `#[end_layout]` anywhere in `Route`) -- this is deliberately where
+/// `GlobalHead` renders (dev-docs/backlog.md row 46 finding, below), not
+/// `NavigationLayout`, precisely because it stays mounted across a
+/// client-side transition between ANY two routes in the app, including two
+/// routes that both sit outside `NavigationLayout`
+/// (`ComponentBlockDemo`/`ComponentBlockDemoPath`/`EmailClientDashboard`).
+///
+/// **Row 46 finding:** before this construction, those three routes each
+/// called `GlobalHead {}` themselves (the same shape, three separate call
+/// sites -- CLAUDE.md's "two or more occurrences is a class" case). That
+/// was harmless as long as the ONLY way to reach any of them was a hard
+/// page load, but `ComponentBlockDemo`'s new client-side redirect (this
+/// same row) to `ComponentBlockDemoPath` made it the first construction in
+/// this app to ever SPA-navigate between two routes that each mount their
+/// own independent `GlobalHead` instance -- and doing so silently dropped
+/// `main.css`/`dx-components-theme.css`/the Google Fonts `<link>`s
+/// entirely (confirmed by reading `document.styleSheets` before/after:
+/// present on a hard load of the destination route directly, absent after
+/// the redirect transition) rather than erroring, a hydration-adjacent
+/// silent-CSS-loss defect of the exact same *class* `oracle/tier2-html/
+/// global-stylesheet.spec.ts` already exists to catch for the `@import`
+/// case. Root cause: `document::Link`'s own head-tag bookkeeping does not
+/// re-insert a href it believes is already present, and unmounting the
+/// FIRST `GlobalHead` instance (when the "from" route's tree is torn down)
+/// does not clear that bookkeeping, so the SECOND instance's identical
+/// `document::Link`s silently no-op. Fixed by construction, not by patching
+/// each call site: `GlobalHead` now mounts exactly once, here, and simply
+/// never unmounts for the lifetime of the app, so there is no unmount+
+/// remount pair for the bug to trigger on, regardless of which route
+/// transitions to which. Subsumes all three prior call sites
+/// (`NavigationLayout`, `ComponentBlockDemo`/`ComponentBlockDemoPath`,
+/// `EmailClientDashboard`); does not need a matching fix for
+/// `NavigationLayout`'s own `hero.css` link, which stays where it is --
+/// no evidence of the same defect there (nothing outside `NavigationLayout`
+/// ever needed `hero.css`, so no cross-layout transition has ever unmounted
+/// it under a sibling that also renders it).
 #[component]
 fn AppLayout() -> Element {
     use_effect(move || {
@@ -235,6 +376,7 @@ fn AppLayout() -> Element {
     });
 
     rsx! {
+        GlobalHead {}
         Outlet::<Route> {}
     }
 }
@@ -260,7 +402,6 @@ fn NavigationLayout() -> Element {
     });
 
     rsx! {
-        GlobalHead {}
         document::Link { rel: "stylesheet", href: asset!("/assets/hero.css") }
         Outlet::<Route> {}
         Footer {}
@@ -284,7 +425,10 @@ fn NavigationLayout() -> Element {
 #[component]
 fn Navbar() -> Element {
     let in_iframe = Route::in_iframe().unwrap_or_default();
-    let in_component = matches!(router().current(), Route::ComponentDemo { .. });
+    let in_component = matches!(
+        router().current(),
+        Route::ComponentDemo { .. } | Route::ComponentDemoPath { .. }
+    );
     let has_sidebar = try_consume_context::<SidebarCtx>().is_some();
     if in_iframe {
         return rsx! {
@@ -457,6 +601,126 @@ fn PreviewCode(source: HighlightedSource) -> Element {
     }
 }
 
+/// The Style tab's CSS source for one component file (`style.css`, or a
+/// Block-kind variant's `demo.css`).
+///
+/// In release/SSG builds this carries the text highlighted (and embedded)
+/// at compile time via `dioxus_code::code!()`, exactly like
+/// `HighlightedCode` -- unchanged from before this type existed. In debug
+/// builds (`dx serve`'s own dev loop) `code!()` is deliberately NOT used:
+/// it expands to `include_str!(path)`, which makes rustc track the `.css`
+/// file as a source dependency of this crate. `dx serve`'s file watcher
+/// checks that dependency list (dioxus-cli's
+/// `serve/runner.rs::handle_file_change`, via the compiled artifact's own
+/// rustc dep-info `.d` file) and, finding the edited file listed there,
+/// classifies the edit as `needs_full_rebuild` -- a full ~30-60s rebuild,
+/// instead of the sub-second asset hot-reload every *other* `style.css`
+/// edit already gets from its own separate `asset!()` stylesheet link
+/// (`hotreload_bundled_assets`, checked first, but overridden once
+/// `needs_full_rebuild` is also true for that same file). Measured
+/// before/after and the full mechanism: `dev-docs/dev-loop.md`'s CSS
+/// section. Debug builds instead carry only the file's own bundled
+/// `asset!()` URL -- `asset!()` does not embed the file's text at compile
+/// time, so referencing it costs nothing extra; `CssCodeBlock` below
+/// fetches and highlights that URL's text lazily, client-side, the first
+/// time the Style tab is rendered.
+#[derive(Clone, PartialEq)]
+struct CssHighlight {
+    /// Pre-highlighted content -- release/SSG builds only.
+    #[cfg(not(debug_assertions))]
+    embedded: HighlightedCode,
+    /// This file's own bundled asset URL -- debug builds only.
+    #[cfg(debug_assertions)]
+    asset: Asset,
+}
+
+/// Renders a CSS Style tab from a [`CssHighlight`]. Release/SSG builds
+/// show the compile-time-highlighted text directly, identical to
+/// `CodeBlock`.
+#[cfg(not(debug_assertions))]
+#[component]
+fn CssCodeBlock(source: CssHighlight) -> Element {
+    rsx! {
+        CodeBlock { source: source.embedded }
+    }
+}
+
+/// Debug builds' half of [`CssCodeBlock`]: fetch the CSS from its own
+/// asset URL and highlight it at runtime instead of at compile time --
+/// see `CssHighlight`'s doc comment for why.
+#[cfg(debug_assertions)]
+#[component]
+fn CssCodeBlock(source: CssHighlight) -> Element {
+    rsx! {
+        LazyCssCodeBlock { asset: source.asset }
+    }
+}
+
+/// Fetches `asset`'s own text over HTTP -- the same URL its
+/// `document::Link`/`document::Stylesheet` sibling already loads as a live
+/// stylesheet -- and highlights it client-side once it arrives, so a
+/// `style.css` edit is visible here exactly like the live stylesheet
+/// already is: via `dx serve`'s asset hot-reload, not a crate rebuild.
+#[cfg(debug_assertions)]
+#[component]
+fn LazyCssCodeBlock(asset: Asset) -> Element {
+    let url = asset.to_string();
+    let css = use_resource(move || {
+        let url = url.clone();
+        async move { fetch_asset_text(url).await }
+    });
+
+    // Fully qualified rather than imported: this file already has its own,
+    // unrelated local `enum Language` (the i18n language switcher above),
+    // and importing `dioxus_code::Language` under that same bare name
+    // shadows it -- confirmed live: it breaks the i18n enum's own inherent
+    // `impl` block ("cannot define inherent `impl` for a type outside of
+    // the crate") the moment both are in scope together.
+    let placeholder = |text: &'static str| HighlightedCode {
+        source: HighlightedSource::from_static_parts(text, dioxus_code::Language::Css, &[]),
+    };
+
+    // Cloned out of the resource's read guard into an owned value up front
+    // (rather than matching on `&*css.read()` directly) so the guard drops
+    // immediately, before any of the `rsx!` arms below run -- avoids tying
+    // the returned `Element` to that guard's borrow.
+    let state: Option<Option<String>> = css.read().clone();
+
+    match state {
+        Some(Some(text)) => rsx! {
+            CodeBlock {
+                source: HighlightedCode {
+                    source: dioxus_code::SourceCode::new(dioxus_code::Language::Css, text).into(),
+                },
+            }
+        },
+        Some(None) => rsx! { CodeBlock { source: placeholder("/* failed to load style.css */") } },
+        None => rsx! { CodeBlock { source: placeholder("/* loading style.css... */") } },
+    }
+}
+
+/// One-shot fetch of a same-origin asset's raw text, used only by
+/// [`LazyCssCodeBlock`] (debug builds). Mirrors this codebase's other
+/// one-shot `document::eval` helpers (e.g. `primitives/src/input_otp.rs`'s
+/// `snap_caret_to_slot`) -- a scoped async JS snippet, not a persistent
+/// listener.
+#[cfg(debug_assertions)]
+async fn fetch_asset_text(url: String) -> Option<String> {
+    let mut eval = document::eval(
+        r#"
+        const url = await dioxus.recv();
+        try {
+            const res = await fetch(url);
+            dioxus.send(res.ok ? await res.text() : null);
+        } catch (e) {
+            dioxus.send(null);
+        }
+        "#,
+    );
+    let _ = eval.send(url);
+    eval.recv::<Option<String>>().await.ok().flatten()
+}
+
 #[component]
 fn CopyButton(#[props(extends=GlobalAttributes)] attributes: Vec<Attribute>) -> Element {
     let mut copied = use_signal(|| false);
@@ -584,7 +848,7 @@ fn LanguageSelect() -> Element {
 #[component]
 fn ComponentCode(
     rs_highlighted: HighlightedCode,
-    css_highlighted: HighlightedCode,
+    css_highlighted: CssHighlight,
     #[props(default = ComponentType::Normal)] component_type: ComponentType,
 ) -> Element {
     rsx! {
@@ -622,7 +886,7 @@ fn ComponentCode(
                     value: "style.css",
                     width: "100%",
                     position: "relative",
-                    CodeBlock { source: css_highlighted }
+                    CssCodeBlock { source: css_highlighted }
                 }
                 if component_type != ComponentType::Block {
                     TabContent {
@@ -631,7 +895,7 @@ fn ComponentCode(
                         value: "dx-components-theme.css",
                         width: "100%",
                         position: "relative",
-                        CodeBlock { source: THEME_CSS }
+                        CssCodeBlock { source: THEME_CSS }
                     }
                 }
             }
@@ -1035,8 +1299,45 @@ fn Demos(dark_mode: Option<bool>) -> Element {
     }
 }
 
+/// Legacy query-string deep link (`/component/?name=<x>&`, dev-docs/
+/// backlog.md row 46). Renders the SAME markup regardless of `name` -- a
+/// generic, name-agnostic loading shell -- on every platform, so there is
+/// nothing for a server prerender and a client hydration to ever disagree
+/// on structurally (unlike the old behavior this replaces, which tried to
+/// resolve `name` against `components::DEMOS` here and rendered the
+/// "Component not found" shell server-side for every X, since `dx build
+/// --ssg` only ever prerenders this route with an EMPTY query -- see
+/// `Route::ComponentDemo`'s own doc comment). Once mounted client-side (in
+/// a real browser, where `name` IS available from the real URL), redirects
+/// to the canonical `ComponentDemoPath` route so old links/bookmarks/specs
+/// keep landing on the right component.
 #[component]
 fn ComponentDemo(iframe: Option<bool>, dark_mode: Option<bool>, name: String) -> Element {
+    let nav = navigator();
+    use_effect(move || {
+        nav.replace(Route::ComponentDemoPath {
+            name: name.clone(),
+            iframe,
+            dark_mode,
+        });
+    });
+
+    rsx! {
+        Navbar {}
+        main { class: "dx-component-demo-redirect", role: "main",
+            p { "Loading component…" }
+        }
+    }
+}
+
+/// Canonical, SSG-enumerable component page (`/component/<name>/`, row 46).
+/// `name` is a PATH segment here, so the server prerender for a given `name`
+/// and the client's initial render for that same URL always resolve to the
+/// same branch below -- unlike the legacy `ComponentDemo` query route, a
+/// genuinely nonexistent `name` shows "Component not found" identically on
+/// both sides rather than on every name unconditionally.
+#[component]
+fn ComponentDemoPath(iframe: Option<bool>, dark_mode: Option<bool>, name: String) -> Element {
     let route = router().current::<Route>();
     tracing::info!("route: {route}");
     let Some(demo) = components::DEMOS
@@ -1154,7 +1455,7 @@ fn ComponentInstallCommand(name: &'static str) -> Element {
 }
 
 #[component]
-fn ManualComponentInstallation(component: HighlightedCode, style: HighlightedCode) -> Element {
+fn ManualComponentInstallation(component: HighlightedCode, style: CssHighlight) -> Element {
     rsx! {
         div { class: "dx-component-manual-copy",
             p { class: "dx-docs-muted",
@@ -1271,12 +1572,11 @@ fn BlockComponentVariantHighlight(
         component: _,
     } = variant;
 
-    let route_path = Route::ComponentBlockDemo {
-        name: component_name.to_string(),
-        variant: Some(name.to_string()),
-        dark_mode: Route::in_dark_mode(),
-    }
-    .to_string();
+    // The canonical, SSG-enumerable path route (row 46) -- NOT the legacy
+    // `Route::ComponentBlockDemo` query form, so every block demo's iframe
+    // content this app renders itself is already a page `dx build --ssg`
+    // can prerender per (name, variant) pair.
+    let route_path = Route::component_block(component_name, name).to_string();
 
     let iframe_src = match router().prefix() {
         Some(prefix) => format!("{prefix}{route_path}"),
@@ -1455,8 +1755,10 @@ fn GlobalHead() -> Element {
 
 #[component]
 fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
+    // `GlobalHead` renders once, in `AppLayout` (this route's own ancestor
+    // layout) -- see that component's doc comment (row 46) for why it moved
+    // there rather than being called per-route as it used to be here.
     rsx! {
-        GlobalHead {}
         dashboard::views::email_client::EmailClient {}
     }
 }
@@ -1470,31 +1772,74 @@ fn EmailClientDashboard(dark_mode: Option<bool>) -> Element {
 // instead), and this fix's own file lane does not include any stylesheet.
 const SR_ONLY_STYLE: &str = "position: absolute; overflow: hidden; width: 1px; height: 1px; padding: 0; border: 0; margin: -1px; clip-path: inset(50%); white-space: nowrap;";
 
+/// Legacy query-string block-demo deep link (`/component/block/?name=<x>&
+/// variant=<y>&`, dev-docs/backlog.md row 46) -- same reasoning as
+/// `ComponentDemo`'s doc comment: a name-agnostic loading shell, identical
+/// on server and client, that redirects to the canonical
+/// `ComponentBlockDemoPath` once mounted in a real browser. Resolves the
+/// same "no variant specified -> use the demo's first (\"main\") variant"
+/// default the old direct-render code used to apply, so an old link that
+/// never named a variant still redirects to the content it used to render
+/// directly.
 #[component]
 fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<bool>) -> Element {
+    let nav = navigator();
+    use_effect(move || {
+        let name = name.clone();
+        let resolved_variant = variant.clone().unwrap_or_else(|| {
+            components::DEMOS
+                .iter()
+                .find(|d| d.name == name)
+                .map(|d| d.variants[0].name.to_string())
+                .unwrap_or_default()
+        });
+        nav.replace(Route::ComponentBlockDemoPath {
+            name,
+            variant: resolved_variant,
+            dark_mode,
+        });
+    });
+
+    // `GlobalHead` renders once, in `AppLayout` (see that component's doc
+    // comment, row 46) -- NOT called here. This route's own redirect to
+    // `ComponentBlockDemoPath` is exactly the transition that finding
+    // documents: calling `GlobalHead` independently in both of two routes a
+    // client-side navigation can move between silently drops its `<link>`s
+    // on the destination once the source unmounts, which a per-route call
+    // here would reintroduce.
+    rsx! {
+        main {
+            style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
+            p { "Loading component…" }
+        }
+    }
+}
+
+/// Canonical, SSG-enumerable block-demo page
+/// (`/component/block/<name>/<variant>/`, row 46): both `name` and `variant`
+/// are PATH segments -- unlike the legacy `ComponentBlockDemo` query route's
+/// `Option<String>` variant with an implicit "first variant" default, this
+/// route always names a concrete variant, so every (demo, variant) pair gets
+/// its own static file and its own server/client-agreeing render.
+#[component]
+fn ComponentBlockDemoPath(name: String, variant: String, dark_mode: Option<bool>) -> Element {
+    // `GlobalHead` renders once, in `AppLayout` -- not per-route here; see
+    // `AppLayout`'s doc comment (row 46) for why.
     let Some(demo) = components::DEMOS.iter().find(|d| d.name == name).cloned() else {
         return rsx! {
-            GlobalHead {}
             main {
                 h1 { "Block component not found" }
             }
         };
     };
 
-    let variant = match variant.as_deref() {
-        Some(wanted) => match demo.variants.iter().find(|v| v.name == wanted) {
-            Some(v) => v,
-            None => {
-                return rsx! {
-                    GlobalHead {}
-                    main {
-                        style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
-                        h1 { "Variant content not found: {wanted}" }
-                    }
-                };
+    let Some(variant) = demo.variants.iter().find(|v| v.name == variant) else {
+        return rsx! {
+            main {
+                style: "min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem;",
+                h1 { "Variant content not found: {variant}" }
             }
-        },
-        None => &demo.variants[0],
+        };
     };
 
     let Comp = variant.component;
@@ -1529,7 +1874,6 @@ fn ComponentBlockDemo(name: String, variant: Option<String>, dark_mode: Option<b
     };
 
     rsx! {
-        GlobalHead {}
         header {
             h1 { style: "{SR_ONLY_STYLE}", "{heading}" }
         }
@@ -2553,6 +2897,20 @@ fn GotoIcon(mut props: LinkProps) -> Element {
     Link(props)
 }
 
-const THEME_CSS: HighlightedCode = HighlightedCode {
-    source: dioxus_code::code!("/assets/dx-components-theme.css"),
+// Same class as `CssHighlight` (see its doc comment): this shared theme
+// stylesheet lives under `preview/assets/`, not a component folder, but it
+// is *also* embedded via `dioxus_code::code!()` for this same Style tab --
+// so editing it hits the identical rustc-dep-info full-rebuild path a
+// component's own `style.css` does, for the identical reason. It gets the
+// identical fix.
+#[cfg(not(debug_assertions))]
+const THEME_CSS: CssHighlight = CssHighlight {
+    embedded: HighlightedCode {
+        source: dioxus_code::code!("/assets/dx-components-theme.css"),
+    },
+};
+
+#[cfg(debug_assertions)]
+const THEME_CSS: CssHighlight = CssHighlight {
+    asset: asset!("/assets/dx-components-theme.css"),
 };

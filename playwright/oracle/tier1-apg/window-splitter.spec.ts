@@ -61,8 +61,9 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
-const BASE = "http://127.0.0.1:8080/component/?name=resizable&";
+const BASE = `${BASE_URL}/component/?name=resizable&`;
 const goto = (page: Page) => page.goto(BASE, { timeout: 20 * 60 * 1000 });
 
 /** The panel element a handle's `aria-controls` names (its "primary pane"). */

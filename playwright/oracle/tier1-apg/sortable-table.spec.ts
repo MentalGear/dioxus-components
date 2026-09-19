@@ -78,6 +78,7 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { BASE_URL } from "../../base-url";
 
 const sortableTableUrl = pathToFileURL(
   path.resolve(
@@ -87,7 +88,7 @@ const sortableTableUrl = pathToFileURL(
 ).href;
 
 const gotoDataTable = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=data_table&", { timeout: 20 * 60 * 1000 });
+  page.goto(`${BASE_URL}/component/?name=data_table&`, { timeout: 20 * 60 * 1000 });
 
 /**
  * R1: every locator in `sortableHeaders` exposes a valid `aria-sort` state,
@@ -105,6 +106,19 @@ const gotoDataTable = (page: Page) =>
  * *effective*, not literal, attribute.
  */
 async function assertExactlyOneActiveSort(sortableHeaders: Locator, label: string): Promise<void> {
+  // `.all()` below is a one-shot, non-retrying DOM snapshot -- unlike an
+  // `expect(locator)...` assertion, it never waits for anything to
+  // render. Every OTHER goto helper in this suite (e.g. `data_table.
+  // spec.ts`'s own `goto`) is protected from the CSR app's async
+  // wasm-render race purely incidentally, by an auto-retrying
+  // `expect(...).toBeVisible()`-style call always being the first thing
+  // a test does after navigating; `gotoDataTable` above has no such
+  // call before this helper's `.all()`, so this is the first place in
+  // this file that actually needs one. Found by execution: two of three
+  // isolated re-runs of the DataTable "R1" case failed with "expected
+  // at least one sortable column header, Received: 0" -- not a sorting
+  // defect, a page that had not finished its first render yet.
+  await expect(sortableHeaders.first()).toBeAttached();
   const headers = await sortableHeaders.all();
   expect(headers.length, `${label}: expected at least one sortable column header`).toBeGreaterThan(0);
 

@@ -31,11 +31,12 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { BASE_URL } from "./base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const open = (page: Page, name: string) =>
-  page.goto(`http://127.0.0.1:8080/component/?name=${name}&`, {
+  page.goto(`${BASE_URL}/component/?name=${name}&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });

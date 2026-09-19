@@ -833,6 +833,26 @@ fn date_segment_key_effects<T: Integer + Copy + FromStr>(
             };
             effects.push(DateSegmentEffect::EmitValue(Some(value)));
         }
+        // `aria-valuemin`/`aria-valuemax` are unconditionally present on every
+        // `DateSegment` (see its `rsx!` below), so per the APG Spin Button
+        // pattern's Keyboard Interaction section (non-optional, unlike Page
+        // Up/Down which that same list marks "(Optional)"):
+        // "Home: If the spinbutton has a minimum value, sets the value to
+        // its minimum." / "End: ... sets the value to its maximum."
+        // (`$S/aria-practices` content/patterns/spinbutton/spinbutton-
+        // pattern.html#keyboard_interaction, commit 7e4034b -- the current,
+        // non-deprecated pattern doc, not the deprecated `datepicker-
+        // spinbuttons.html` example, which predates this rule and has no
+        // Home/End support of its own to conflict with it). Previously
+        // unhandled (fell through to the wildcard arm below), confirmed by
+        // execution against this repo's dev server before this fix: Home/End
+        // on a focused segment left `aria-valuenow` completely unchanged.
+        Key::Home => {
+            effects.push(DateSegmentEffect::EmitValue(Some(min)));
+        }
+        Key::End => {
+            effects.push(DateSegmentEffect::EmitValue(Some(max)));
+        }
         _ => (),
     }
     effects
@@ -922,7 +942,6 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
 
     let span_id = use_unique_id();
     let id = use_memo(move || format!("span-{span_id}"));
-    let label_id = format!("{id}-label");
 
     rsx! {
         span {
@@ -931,7 +950,34 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
             aria_valuemin: props.min.to_string(),
             aria_valuemax: props.max.to_string(),
             aria_valuenow: now_value.to_string(),
-            aria_labelledby: "{label_id}",
+            // No `aria-labelledby` here: per the APG Spin Button pattern's
+            // own Roles/States/Properties section ("If the spinbutton has a
+            // visible label, it is referenced by aria-labelledby ... .
+            // Otherwise, the spinbutton element has a label provided by
+            // aria-label" -- `$S/aria-practices` content/patterns/
+            // spinbutton/spinbutton-pattern.html#roles_states_properties,
+            // commit 7e4034b), and every caller here (`DatePickerYearSegment`
+            // etc., below) always passes a plain `aria_label: "year"`/
+            // `"month"`/`"day"` -- there never is a separate *visible* label
+            // element for `aria-labelledby` to reference. This span used to
+            // also render `aria-labelledby="{id}-label"`, but nothing in
+            // this module (or its preview consumers) ever rendered an
+            // element with that id -- confirmed by execution before this
+            // fix: every one of a live page's spinbuttons carried a
+            // dangling reference (`document.getElementById(idref)` ===
+            // `null`). Chromium's own accessible-name computation happens
+            // to fall back to `aria-label` when `aria-labelledby`'s IDREFs
+            // don't resolve (confirmed live via Playwright's
+            // `ariaSnapshot()`, and axe-core's ruleset does not flag it
+            // either), so this was not user-visible in this repo's own
+            // harness -- but it is dead, misleading markup that contradicts
+            // the cited rule outright (an `aria-labelledby` with nothing to
+            // reference is not "referencing a visible label"), and relying
+            // on a fallback another AT/browser might implement differently
+            // is exactly the kind of fragility the cited either/or rule
+            // exists to avoid. `aria-label` alone (already present via
+            // `props.attributes`, spread below) is the correct, sufficient
+            // source per that rule.
             inputmode: "numeric",
             contenteditable: !(ctx.read_only)(),
             spellcheck: false,
@@ -1225,6 +1271,36 @@ struct DateRangeInputContext {
     on_format_year_placeholder: Callback<(), String>,
 }
 
+impl DateRangeInputContext {
+    /// Sets the start date, but only if it actually differs from the
+    /// current value -- the single choke point every producer of
+    /// `start_date` (the calendar-driven sync effect in
+    /// `DateRangePickerInputValue` and the segment-driven `DateElement` for
+    /// the start side) must go through, mirroring the guard
+    /// `DatePickerContext::set_date` / `DateRangePickerContext::set_range`
+    /// already use one level up. Without it, `start_date` and
+    /// `DateElement`'s own `year_value`/`month_value`/`day_value` echo an
+    /// unchanged value back and forth forever the instant all three
+    /// segments first resolve (`DateElement`'s "sync down from
+    /// selected_date" effect writes the segment signals, whose "sync up via
+    /// on_date_change" effect writes this signal right back) -- see
+    /// dev-docs/backlog.md's range-hang account for the full trace and the
+    /// live reproduction (CPU pinned, RSS growing ~4MB/s, until the tab
+    /// crashes) that confirmed it.
+    fn set_start_date(&mut self, date: Option<Date>) {
+        if *self.start_date.peek() != date {
+            self.start_date.set(date);
+        }
+    }
+
+    /// See [`Self::set_start_date`]; the same choke point for `end_date`.
+    fn set_end_date(&mut self, date: Option<Date>) {
+        if *self.end_date.peek() != date {
+            self.end_date.set(date);
+        }
+    }
+}
+
 #[derive(Props, Clone, PartialEq)]
 struct DateElementProps {
     /// The start index (used for focus)
@@ -1265,10 +1341,36 @@ fn DateElement(props: DateElementProps) -> Element {
     let mut year_value = use_signal(move || selected_date.map(|date| date.year()));
 
     use_effect(move || {
+        // Sync down from `props.selected_date` into the three editable
+        // segment signals -- but only where the decomposed value actually
+        // differs from what the segment already holds. `on_date_change`
+        // below re-derives `props.selected_date` from these same three
+        // signals and calls back up through it every time all three
+        // resolve; for a `DateRangePicker` side, that callback writes
+        // straight back into the very signal this effect reads
+        // (`DateRangeInputContext::set_start_date`/`set_end_date`). An
+        // unconditional `.set()` here (the previous behavior) closes that
+        // into an unbounded cycle the instant a date first completes, even
+        // though `set_start_date`/`set_end_date` themselves already
+        // no-op an unchanged value -- Dioxus's `Signal::set` marks a
+        // signal dirty (and reschedules every subscriber) regardless of
+        // whether the new value equals the old one, so the *other* half of
+        // a two-way sync has to refuse the redundant write too, or the
+        // "no-op" write still wakes this effect for nothing. See
+        // dev-docs/backlog.md's range-hang account.
         let date = (props.selected_date)();
-        year_value.set(date.map(|d| d.year()));
-        month_value.set(date.map(|d| d.month() as u8));
-        day_value.set(date.map(|d| d.day()));
+        let new_year = date.map(|d| d.year());
+        if *year_value.peek() != new_year {
+            year_value.set(new_year);
+        }
+        let new_month = date.map(|d| d.month() as u8);
+        if *month_value.peek() != new_month {
+            month_value.set(new_month);
+        }
+        let new_day = date.map(|d| d.day());
+        if *day_value.peek() != new_day {
+            day_value.set(new_day);
+        }
     });
 
     use_effect(move || {
@@ -1340,13 +1442,26 @@ pub fn DateRangePickerInputValue(props: DateRangePickerInputValueProps) -> Eleme
     let mut ctx = use_context::<DateRangePickerContext>();
     let selected_range = ctx.date_range.peek().cloned();
 
-    let mut start_date = use_signal(move || selected_range.map(|range| range.start()));
-    let mut end_date = use_signal(move || selected_range.map(|range| range.end()));
+    let start_date = use_signal(move || selected_range.map(|range| range.start()));
+    let end_date = use_signal(move || selected_range.map(|range| range.end()));
+    // Built once, up front, so both this component's own sync-down effect
+    // and every `DateElement` child (via the context provider below) write
+    // `start_date`/`end_date` through the exact same guarded choke point --
+    // see `DateRangeInputContext::set_start_date`'s doc comment for why an
+    // unconditional write here forms an unbounded cycle with `DateElement`'s
+    // own effects the instant a range first completes.
+    let mut range_ctx = DateRangeInputContext {
+        start_date,
+        end_date,
+        on_format_day_placeholder: props.on_format_day_placeholder,
+        on_format_month_placeholder: props.on_format_month_placeholder,
+        on_format_year_placeholder: props.on_format_year_placeholder,
+    };
 
     use_effect(move || {
         let date_range = ctx.date_range.cloned();
-        start_date.set(date_range.map(|r| r.start()));
-        end_date.set(date_range.map(|r| r.end()));
+        range_ctx.set_start_date(date_range.map(|r| r.start()));
+        range_ctx.set_end_date(date_range.map(|r| r.end()));
     });
 
     use_effect(move || {
@@ -1369,13 +1484,7 @@ pub fn DateRangePickerInputValue(props: DateRangePickerInputValueProps) -> Eleme
         };
     });
 
-    use_context_provider(|| DateRangeInputContext {
-        start_date,
-        end_date,
-        on_format_day_placeholder: props.on_format_day_placeholder,
-        on_format_month_placeholder: props.on_format_month_placeholder,
-        on_format_year_placeholder: props.on_format_year_placeholder,
-    });
+    use_context_provider(|| range_ctx);
 
     let children = props.children.unwrap_or_else(|| {
         rsx! {
@@ -1400,7 +1509,7 @@ pub fn DateRangePickerStartValue(props: DateRangePickerStartValueProps) -> Eleme
     rsx! {
         DateElement {
             selected_date: ctx.start_date,
-            on_date_change: move |date| ctx.start_date.set(date),
+            on_date_change: move |date| ctx.set_start_date(date),
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
@@ -1418,7 +1527,7 @@ pub fn DateRangePickerEndValue(props: DateRangePickerEndValueProps) -> Element {
         DateElement {
             start_index: 3,
             selected_date: ctx.end_date,
-            on_date_change: move |date| ctx.end_date.set(date),
+            on_date_change: move |date| ctx.set_end_date(date),
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
@@ -1601,6 +1710,30 @@ mod tests {
         assert!(!html.contains("YYYY"));
         assert!(!html.contains("MM"));
         assert!(!html.contains("DD"));
+    }
+
+    #[test]
+    fn date_segment_renders_aria_label_and_no_dangling_aria_labelledby() {
+        // Regression guard for the `aria-labelledby` fix -- SSR-level rather
+        // than the browser-level `playwright/date-picker.spec.ts` check, so
+        // this runs (and was run, red-then-green) without needing a `dx
+        // serve --web` build: this repo's own sandbox hit severe, batch-
+        // wide disk pressure while this lane worked (see this lane's
+        // report), so this cargo-only check is the primary evidence for the
+        // RSX shape here, with the browser-level test as the fuller
+        // (still-current-code, not yet server-verified) companion.
+        let mut dom = VirtualDom::new(ControlledDatePicker);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(
+            html.contains(r#"aria-label="year""#),
+            "aria-label must still be present: {html}"
+        );
+        assert!(
+            !html.contains("aria-labelledby"),
+            "aria-labelledby must not be rendered at all (no visible label element exists to reference): {html}"
+        );
     }
 
     #[test]
@@ -2121,6 +2254,68 @@ mod tests {
             10,
         );
         assert_eq!(down, vec![DateSegmentEffect::EmitValue(Some(7))]);
+    }
+
+    // -----------------------------------------------------------------
+    // Home/End (APG spinbutton-pattern.html #keyboard_interaction --
+    // playwright/date-picker.spec.ts's "Home/End" describe block is the
+    // browser-level regression guard for the same fix; these are its pure-
+    // function-level counterpart, mirroring every other `key_effects_*`
+    // test above).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn key_effects_home_sets_the_minimum_regardless_of_current_value() {
+        let (ctrl, meta, alt) = no_modifiers();
+        let effects = key_effects(
+            &Key::Home,
+            ctrl,
+            meta,
+            alt,
+            "15",
+            2,
+            false,
+            Some(15),
+            1,
+            1,
+            31,
+        );
+        assert_eq!(
+            effects,
+            vec![DateSegmentEffect::EmitValue(Some(1))],
+            "Home sets the value to the minimum, per the cited APG rule"
+        );
+
+        // Also true with no current value yet (the field still has a
+        // well-defined `min`, so the rule still applies).
+        let effects = key_effects(&Key::Home, ctrl, meta, alt, "", 2, false, None, 1, 1, 31);
+        assert_eq!(effects, vec![DateSegmentEffect::EmitValue(Some(1))]);
+    }
+
+    #[test]
+    fn key_effects_end_sets_the_maximum_regardless_of_current_value() {
+        let (ctrl, meta, alt) = no_modifiers();
+        let effects = key_effects(
+            &Key::End,
+            ctrl,
+            meta,
+            alt,
+            "15",
+            2,
+            false,
+            Some(15),
+            1,
+            1,
+            31,
+        );
+        assert_eq!(
+            effects,
+            vec![DateSegmentEffect::EmitValue(Some(31))],
+            "End sets the value to the maximum, per the cited APG rule"
+        );
+
+        let effects = key_effects(&Key::End, ctrl, meta, alt, "", 2, false, None, 1, 1, 31);
+        assert_eq!(effects, vec![DateSegmentEffect::EmitValue(Some(31))]);
     }
 
     #[test]

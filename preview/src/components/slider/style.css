@@ -54,14 +54,29 @@
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
+
+    /* rtl-physical: the thumb's horizontal position (`left: X%`, the value
+       -> track-position mapping) is set inline by the primitive
+       (primitives/src/slider.rs, out of this lane's ownership), not by this
+       stylesheet -- this rule only supplies the `-50%` self-centering
+       compensation for whatever inline position lands. Converting only the
+       CSS half without knowing which physical/logical property the
+       primitive writes (and whether it already flips for RTL) risks
+       desyncing the pair; flagged as a coordination item with the RTL
+       primitives lane rather than guessed at here. */
     transform: translate3d(-50%, -50%, 0);
     transition: box-shadow var(--dx-motion-duration-base);
     will-change: left, bottom, transform;
 }
 
 .dx-slider[data-orientation="vertical"] .dx-slider-thumb {
+    /* rtl-physical: cross-axis centering for a *vertical* slider -- `dir`
+       only affects the inline (horizontal) axis's start/end mapping, and
+       centering (50%) is symmetric regardless of which edge is "start", but
+       the transform's fixed `-50%` sign must stay paired with a physical
+       `left` (see alert_dialog/style.css's identical centering note). */
     left: 50%;
-    transform: translate3d(-50%, 50%, 0);
+    transform: translate3d(-50%, 50%, 0); /* rtl-physical: see comment above */
 }
 
 .dx-slider-thumb:focus-visible[data-dragging="true"],

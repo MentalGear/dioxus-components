@@ -93,6 +93,25 @@
  *     does not, since a toast is not clipped by an ancestor the way a
  *     trigger-anchored popup is (it is viewport-region positioned, not
  *     positioned relative to any particular trigger element).
+ *   - `NavigationMenu`'s panel (docs/backlog.md row 72 follow-up) also
+ *     renders `popover="manual"`, for the same reason as Tooltip/HoverCard/
+ *     ContextMenu/Menubar above: it owns its entire open/close lifecycle
+ *     (hover-intent timers, a focus-leave debounce, its own Escape handler
+ *     with APG-style per-trigger refocus) -- see
+ *     `primitives/src/navigation_menu.rs`'s module doc, "Top layer", for the
+ *     full reasoning. It implements a *different* APG pattern from `Navbar`
+ *     (Disclosure Navigation, not Menu/Menubar), but shares the identical
+ *     top-layer/anchor-positioning engine, so it is checked wherever Navbar
+ *     is: Rule 1 (clipping), the axe sweep, Rule 5 (bottom-edge flip -- no
+ *     `side` prop, same as Navbar), Rule 11 (self-overlap/iOS keyboard, both
+ *     `ANCHORED_OVERLAYS` and `CONFORMING_CASES`), Rule 13 (fit-content
+ *     width), and Rule 14 (aria-labelledby resync) -- the identical rule set
+ *     Navbar carries, for the identical reason (both are hover-opened,
+ *     trigger-anchored `use_anchor_position_fallback` consumers). Not
+ *     checked by rules 2/3 (light dismiss/Escape, `manual`-mode scoped to
+ *     `Popover` alone) or rules 4/6/8/9/12/15 (single-subject or
+ *     `side`-prop-dependent rules Navbar is equally excluded from, for the
+ *     same reasons already documented on those rules).
  *
  * Rules implemented (see this session's report for the full red/green
  * ledger per rule per component, both before and after the Phase 4.4
@@ -152,11 +171,12 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const gotoFixture = (page: Page) =>
-  page.goto("http://127.0.0.1:8080/component/?name=top_layer&", {
+  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });
@@ -211,12 +231,32 @@ async function escapesClip(
   ancestorSelector: string,
 ): Promise<{ escapes: boolean; reason?: string; x?: number; y?: number; hit?: string | null }> {
   return page.evaluate(
-    ({ contentSelector, ancestorSelector }) => {
+    async ({ contentSelector, ancestorSelector }) => {
       const content = document.querySelector(contentSelector) as HTMLElement | null;
       const ancestor = document.querySelector(ancestorSelector) as HTMLElement | null;
       if (!content || !ancestor) {
         return { escapes: false, reason: `missing element(s): content=${!!content} ancestor=${!!ancestor}` };
       }
+      // Wait out any entrance animation on `content` itself before probing
+      // -- same idiom `toast.spec.ts` already uses. Found by construction,
+      // via NavigationMenu's own instance of this exact call (row 72's
+      // fix, `08a14d8`, made its dead entrance animation actually run):
+      // `document.elementFromPoint` at the content's own top-left corner
+      // returned the page's "Clipping escape" `<h2>` instead of the
+      // (correctly top-layered, `position:fixed`, `z-index:1000`) content,
+      // reproducibly, every time the probe ran before this wait existed --
+      // never once after adding it. Every one of this describe block's 11
+      // `escapesClip` calls shares this same "probe immediately after
+      // hover/click, before any entrance animation settles" shape; only
+      // NavigationMenu's own animation happened to be slow/real enough
+      // (`--dx-motion-duration-slow`, and genuinely running rather than
+      // dead) to make the race land often enough to fail here first, but
+      // nothing about the mechanism is specific to it -- fixed for all 11
+      // by construction, in the shared helper, rather than adding a wait
+      // to one call site.
+      await Promise.all(
+        content.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined)),
+      );
       const c = content.getBoundingClientRect();
       const a = ancestor.getBoundingClientRect();
       const inset = 2;
@@ -380,6 +420,25 @@ test.describe("Rule 1 — clipping escape (an ancestor with overflow:hidden + tr
     const result = await escapesClip(page, "#clip-navbar-content", "#clip-box");
     expect(result.escapes, JSON.stringify(result)).toBe(true);
   });
+
+  // docs/backlog.md row 72 follow-up: `NavigationMenuContent`'s web arm ->
+  // `popover="manual"`, anchored to its own trigger
+  // (`NavigationMenuContentRendered`, `navigation_menu.rs`) -- the same
+  // top-layer engine `NavbarContent` uses (`dx-anchor-navigation-menu`,
+  // already wired alongside `dx-anchor-navbar` in `top_layer.rs`'s shared
+  // anchor-positioning stylesheet). `NavigationMenu` implements a
+  // *different* APG pattern from `Navbar` (Disclosure Navigation, not
+  // Menu/Menubar -- see `primitives/src/navigation_menu.rs`'s module doc),
+  // but shares the same hover/click-opened, trigger-anchored top-layer
+  // shape this rule checks, so it gets an identical clip-* fixture
+  // instance and open step to the Navbar case just above.
+  test("NavigationMenu content escapes the clip", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-navigation-menu-trigger").hover();
+    await expect(page.locator("#clip-navigation-menu-content")).toBeVisible();
+    const result = await escapesClip(page, "#clip-navigation-menu-content", "#clip-box");
+    expect(result.escapes, JSON.stringify(result)).toBe(true);
+  });
 });
 
 /**
@@ -464,6 +523,15 @@ test.describe("axe: every overlay open (top-layer fixture)", () => {
     await page.locator("#clip-navbar-trigger").hover();
     await expect(page.locator("#clip-navbar-content")).toBeVisible();
     await expectNoAxeViolations(page, "top-layer fixture: Navbar open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // docs/backlog.md row 72 follow-up: added alongside the NavigationMenu
+  // oracle coverage above.
+  test("NavigationMenu content open has no automatically detectable a11y issues", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#clip-navigation-menu-trigger").hover();
+    await expect(page.locator("#clip-navigation-menu-content")).toBeVisible();
+    await expectNoAxeViolations(page, "top-layer fixture: NavigationMenu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
 
@@ -705,6 +773,19 @@ test.describe("Rule 5 — block-axis flip: a bottom-edge trigger with side=\"bot
     await expect(page.locator("#edge-bottom-navbar-content")).toBeVisible();
     await assertFlippedAbove(page, "#edge-bottom-navbar-trigger", "#edge-bottom-navbar-content");
   });
+
+  // docs/backlog.md row 72 follow-up. Like Navbar just above,
+  // `NavigationMenuContent` has no `side` prop (always below/start-aligned
+  // -- see `primitives/src/navigation_menu.rs`'s
+  // `NavigationMenuContentRendered`, hardcoded `ContentSide::Bottom`/
+  // `ContentAlign::Start`), so this pins the *trigger* at the bottom edge
+  // instead, the same construction as the Navbar case.
+  test("NavigationMenu content flips above its bottom-edge trigger", async ({ page }) => {
+    await gotoFixture(page);
+    await page.locator("#edge-bottom-navigation-menu-trigger").hover();
+    await expect(page.locator("#edge-bottom-navigation-menu-content")).toBeVisible();
+    await assertFlippedAbove(page, "#edge-bottom-navigation-menu-trigger", "#edge-bottom-navigation-menu-content");
+  });
 });
 
 test.describe("Rule 6 — inline-axis flip: a right-edge trigger with side=\"right\" renders its content fully inside the viewport, to the left of the trigger (W3C CSS Anchor Positioning, position-try-fallbacks: flip-inline, https://www.w3.org/TR/css-anchor-position-1/#fallback-var)", () => {
@@ -854,7 +935,7 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
   });
 
   test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=color_picker&", {
+    await page.goto(`${BASE_URL}/component/?name=color_picker&`, {
       timeout: NAV_TIMEOUT,
       waitUntil: "networkidle",
     });
@@ -1367,6 +1448,22 @@ const ANCHORED_OVERLAYS: AnchoredOverlay[] = [
       await page.locator("#clip-navbar-trigger").hover();
     },
   },
+  {
+    // docs/backlog.md row 72 follow-up: `NavigationMenuContent` also calls
+    // `use_anchor_position_fallback` (see this module's own "Top layer"
+    // doc), so the same iOS keyboard/self-overlap contract applies here
+    // too, mirroring the Navbar entry above exactly (`.hover()`, not
+    // `.click()`, plus `reengage` for the same hover-driven reason).
+    name: "NavigationMenu",
+    triggerId: "clip-navigation-menu-trigger",
+    contentId: "clip-navigation-menu-content",
+    open: async (page) => {
+      await page.locator("#clip-navigation-menu-trigger").hover();
+    },
+    reengage: async (page) => {
+      await page.locator("#clip-navigation-menu-trigger").hover();
+    },
+  },
 ];
 
 async function assertNoSelfOverlapWithinViewport(page: Page, overlay: AnchoredOverlay) {
@@ -1579,6 +1676,29 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
           "execution for Navbar in this environment (docs/backlog.md rows 36/41's own report) -- a future " +
           "execution pass should confirm or correct this.",
       },
+      {
+        // docs/backlog.md row 72 follow-up. Same structural inference as
+        // the Navbar entry above (added to `ANCHORED_OVERLAYS` for parts
+        // (a)/(b), not previously carried into this `CONFORMING_CASES`
+        // table): NavigationMenu opens the same way here as in
+        // `ANCHORED_OVERLAYS` above -- `.hover()` on its trigger, with a
+        // `reengage` step after the keyboard-simulation resize -- the
+        // identical hover-driven shape that makes Tooltip/HoverCard/Navbar
+        // genuinely close via a real pointerleave when the resize moves
+        // the trigger out from under the stationary synthetic cursor,
+        // before this fix's logic ever runs.
+        name: "NavigationMenu",
+        supported: false,
+        reason:
+          "same as Tooltip/HoverCard/Navbar above -- ANCHORED_OVERLAYS opens NavigationMenu via .hover() with " +
+          "a reengage step after the keyboard-simulation resize, the same hover-driven shape that makes those " +
+          "three genuinely close via a real pointerleave when the resize moves the trigger out from under the " +
+          "stationary synthetic cursor, before this fix's logic ever runs. This is the same structural " +
+          "inference the Navbar bullet above draws, not an independent execution run against the specific " +
+          "'conforming at open' shape this test needs for NavigationMenu (it is skipped, like Navbar, by " +
+          "test.skip(!kase.supported, ...) below, so this reason itself is never exercised by a normal run) " +
+          "-- a future execution pass could confirm or correct it, the same standard the Navbar entry is held to.",
+      },
     ];
 
     for (const kase of CONFORMING_CASES) {
@@ -1679,7 +1799,7 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
 test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider than the room its trigger has on one side stays within the viewport horizontally (no CSS Anchor Positioning engine)", () => {
   test("ColorPicker popover (home page widget masonry) stays within the viewport horizontally", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto("http://127.0.0.1:8080/?", { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
     await stripAnchorSupportsBlock(page);
 
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
@@ -1833,6 +1953,13 @@ test.describe("Rule 13 — fit-content width (not full page width)", () => {
       contentId: "clip-navbar-content",
       open: (page) => page.locator("#clip-navbar-trigger").hover(),
     },
+    {
+      // docs/backlog.md row 72 follow-up.
+      name: "NavigationMenu",
+      triggerId: "clip-navigation-menu-trigger",
+      contentId: "clip-navigation-menu-content",
+      open: (page) => page.locator("#clip-navigation-menu-trigger").hover(),
+    },
   ];
 
   for (const kase of WIDTH_CASES) {
@@ -1956,6 +2083,20 @@ test.describe("Rule 14 — aria-labelledby resolves to the caller-overridden tri
       triggerId: "clip-navbar-trigger",
       contentId: "clip-navbar-content",
       open: (page) => page.locator("#clip-navbar-trigger").hover(),
+    },
+    {
+      // docs/backlog.md row 72 follow-up: `NavigationMenuContent` labels
+      // itself from `item_ctx.trigger_id` (`navigation_menu.rs`) and
+      // `NavigationMenuTrigger` already feeds a caller override into that
+      // same signal via `use_id_or`, the identical construction row 36's
+      // fix gave the other five components above -- built correctly from
+      // the start (this primitive postdates that fix), so this case is
+      // expected to pass without needing a corresponding fix, unlike the
+      // five above.
+      name: "NavigationMenu",
+      triggerId: "clip-navigation-menu-trigger",
+      contentId: "clip-navigation-menu-content",
+      open: (page) => page.locator("#clip-navigation-menu-trigger").hover(),
     },
   ];
 

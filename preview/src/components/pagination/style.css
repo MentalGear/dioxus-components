@@ -84,9 +84,8 @@
 
 .dx-pagination-link[data-kind="previous"],
 .dx-pagination-link[data-kind="next"] {
-  padding-right: 0.625rem;
-  padding-left: 0.625rem;
   gap: var(--dx-space-1);
+  padding-inline: 0.625rem;
 }
 
 .dx-pagination-label {

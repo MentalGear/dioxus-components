@@ -57,27 +57,62 @@
  *   instead of competing for the same cascade slot, so both apply at
  *   once with no extra timing coordination.
  */
+
+/* Full-bleed anchoring for a real `<dialog>` (web arm only -- the native
+ * arm is a plain, unpositioned `div` and never had any of this). Chromium's
+ * UA sheet gives `dialog`/`dialog:modal` FOUR things that all fight a
+ * bottom/top/left/right-anchored sheet, not just the max-width/max-height
+ * cap `.dx-sheet` already documents and undoes (preview/src/components/
+ * sheet/style.css) -- stylelint's own required declaration order (`width`/
+ * `max-width`/`height`/`max-height` up here; `margin`/`inset` are further
+ * down, alphabetized in with the rest) splits the four apart in the rule
+ * below, so this one comment up top covers all four together:
+ *   1. `width`/`height: fit-content` (from the base, non-`:modal` `dialog`
+ *      rule -- `:modal` never touches either) -- undone by `width`/
+ *      `height: auto` right below.
+ *   2. The max-width/max-height cap itself -- undone by `max-width`/
+ *      `max-height: none` right below (pre-existing).
+ *   3. `margin: auto` on every side -- undone by this rule's `margin: 0`
+ *      further down.
+ *   4. `inset-block: 0` (`top`/`bottom` both `0`) but NO `inset-inline` at
+ *      all, so `left`/`right` are whatever position:absolute's default
+ *      static-position algorithm picks -- undone by this rule's `inset: 0`
+ *      further down, which gives EVERY side a real baseline so each
+ *      `[data-side]` rule below only has to re-open the one edge that must
+ *      float free.
+ * With ALL FOUR of `top`/`right`/`bottom`/`left` simultaneously pinned to a
+ * real value (per side below) but `width`/`height` still `fit-content` (a
+ * definite, non-`auto` value, NOT equivalent to `auto` for the CSS2.1
+ * absolute-position algorithm) and margins `auto`, the auto margins from
+ * (3) don't get zeroed out -- they absorb the leftover space and CENTER
+ * the content-sized box inside that full inset, on both axes. Proven by
+ * execution: the pre-fix computed style for `[data-side="bottom"]` was
+ * `margin: 223px 496.594px` (both axes centered, not flush to any edge) on
+ * an 800px-tall/1280px-wide viewport holding a 354x271.8px panel -- a
+ * floating card, not an edge-anchored sheet, on every side. (1) is
+ * unrelated to (2) -- undoing the max-width/max-height cap alone, which is
+ * all `.dx-sheet` already did, did nothing for (1)/(3)/(4) on its own,
+ * confirmed live: this bug reproduced even with that cap already
+ * removed. */
 .dx-drawer {
   position: fixed;
   z-index: var(--dx-z-overlay-raised);
   display: flex;
   overflow: auto;
-
-  /* Same UA `dialog:modal` max-width/max-height cap `.dx-sheet` documents
-   * and undoes (preview/src/components/sheet/style.css) -- the web arm's
-   * modal Dialog renders this as a real `<dialog>`, and a full-bleed
-   * drawer needs its own max-width/max-height to keep Chromium's default
-   * cap from shrinking it away from the edges it is meant to span. */
+  width: auto;
   max-width: none;
+  height: auto;
   max-height: none;
   box-sizing: border-box;
   flex-direction: column;
   border: none;
+  margin: 0;
   background: var(--primary-color-2);
   box-shadow: var(--dx-shadow-xl);
   color: var(--secondary-color-4);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   gap: var(--dx-space-4);
+  inset: 0;
 
   /* The live drag offset (see this file's own top comment); no transition
    * while an active drag is in progress (below) so it tracks the pointer
@@ -88,59 +123,115 @@
 
 .dx-drawer[data-dragging="true"] {
   transition: none;
+
+  /* A drag gesture starts from a `pointerdown` anywhere on the content not
+   * gated out (primitives/src/drawer.rs's `use_drawer_drag_start_gate`),
+   * which very much includes ordinary text (a title, a description) --
+   * unlike a `mousedown` confined to the decorative handle, there is no
+   * single element to scope this to, so it applies here, to the whole
+   * dragging content, inherited down to every descendant. Reproduced
+   * live pre-fix: a slow horizontal `mousedown`+move sweep across
+   * `DrawerDescription`'s text made `window.getSelection().toString()`
+   * return the full sentence. No `-webkit-user-select`: this repo's own
+   * `stylelint-config-standard` (`property-no-vendor-prefix`) flags it as
+   * no-longer-needed by this project's supported-browser data (Safari has
+   * shipped unprefixed `user-select` since 15.4) -- confirmed by running
+   * it, not assumed. */
+  user-select: none;
 }
 
-/* Bottom (default): full-bleed width, rounded top corners. */
+/* Bottom (default): full-bleed width, rounded top corners. `right`/
+ * `bottom`/`left: 0` already hold from the base `inset: 0` above --
+ * `top: auto` is the ONE edge this side must re-open, letting the panel
+ * hug the bottom and grow upward with its own content (bounded by
+ * `max-height` below) instead of stretching (or, pre-fix, centering)
+ * between two pinned edges. */
 .dx-drawer[data-side="bottom"] {
-  right: 0;
-  bottom: 0;
-  left: 0;
+  top: auto;
   max-height: 80%;
   padding-bottom: env(safe-area-inset-bottom, 0);
   border-top: 1px solid var(--primary-color-6);
   border-top-left-radius: var(--dx-radius-2xl);
   border-top-right-radius: var(--dx-radius-2xl);
+
+  /* Overdrag-away-from-edge never opens a gap (see `primitives/src/
+   * drawer.rs`'s `damped_display_offset`/`RUBBER_BAND_MAX_PX`): dragging
+   * UP past the resting position is deliberately rubber-banded, not
+   * hard-clamped to 0 (a real, protected unit test requires the give --
+   * `damped_display_offset_rubber_bands_overshoot_instead_of_hard_
+   * clamping_to_zero`), so the panel's own box genuinely moves up to
+   * `RUBBER_BAND_MAX_PX` (24px) away from the viewport's bottom edge.
+   * Vaul's own fix for the identical shape of problem isn't to forbid
+   * that motion, it's to make the panel's painted area taller than its
+   * layout box so the reveal never reaches bare backdrop. A hard, 0-blur
+   * `drop-shadow` (not `box-shadow`: this element's own `overflow: auto`
+   * above would clip a `box-shadow`/`::after` child at the exact edge
+   * that needs to bleed past it, since `.dx-drawer` is the containing
+   * block for both -- `filter` is a distinct, post-layout paint effect
+   * that is never clipped by the element's own overflow) offset 40px
+   * *further* past the already-flush bottom edge, solid-filled with this
+   * panel's own background, comfortably covers any reveal up to that
+   * 24px cap with 16px to spare. Invisible at rest (fully below the
+   * viewport) and never mistaken for a drop shadow (0 blur, exact panel
+   * color, no visible edge of its own). */
+  filter: drop-shadow(0 40px 0 var(--primary-color-2));
   touch-action: pan-x;
   transform: translateY(100%);
 }
 
-/* Top: full-bleed width, rounded bottom corners. */
+/* Top: full-bleed width, rounded bottom corners. `right`/`left: 0` already
+ * hold from the base `inset: 0`; `bottom: auto` is this side's one
+ * re-opened edge (mirrors "bottom" above, upside down). */
 .dx-drawer[data-side="top"] {
-  top: 0;
-  right: 0;
-  left: 0;
+  bottom: auto;
   max-height: 80%;
   border-bottom: 1px solid var(--primary-color-6);
   border-bottom-left-radius: var(--dx-radius-2xl);
   border-bottom-right-radius: var(--dx-radius-2xl);
+
+  /* See "bottom" above for the full reasoning -- mirrored upward: an
+   * overdrag away from the top edge is dragging DOWN, so the extension
+   * bleeds further UP, past the already-flush top edge. */
+  filter: drop-shadow(0 -40px 0 var(--primary-color-2));
   touch-action: pan-x;
   transform: translateY(-100%);
 }
 
-/* Right: full-bleed height, rounded left corners. */
+/* Right: full-bleed height, rounded left corners. `top`/`bottom: 0`
+ * already hold from the base `inset: 0`; `left: auto` is this side's one
+ * re-opened edge, so `width: 100%` (capped by `max-width`) hugs from the
+ * right instead of stretching edge-to-edge. */
 .dx-drawer[data-side="right"] {
-  top: 0;
-  right: 0;
-  bottom: 0;
+  left: auto;
   width: 100%;
   max-width: 24rem;
   border-left: 1px solid var(--primary-color-6);
   border-bottom-left-radius: var(--dx-radius-2xl);
   border-top-left-radius: var(--dx-radius-2xl);
+
+  /* See "bottom" above (same construction, rotated 90 degrees): an
+   * overdrag away from the right edge drags LEFT, so the extension
+   * bleeds further RIGHT, past the already-flush right edge. */
+  filter: drop-shadow(40px 0 0 var(--primary-color-2));
   touch-action: pan-y;
   transform: translateX(100%);
 }
 
-/* Left: full-bleed height, rounded right corners. */
+/* Left: full-bleed height, rounded right corners. `top`/`bottom: 0`
+ * already hold from the base `inset: 0`; `right: auto` is this side's one
+ * re-opened edge. */
 .dx-drawer[data-side="left"] {
-  top: 0;
-  bottom: 0;
-  left: 0;
+  right: auto;
   width: 100%;
   max-width: 24rem;
   border-right: 1px solid var(--primary-color-6);
   border-bottom-right-radius: var(--dx-radius-2xl);
   border-top-right-radius: var(--dx-radius-2xl);
+
+  /* See "bottom" above: an overdrag away from the left edge drags RIGHT,
+   * so the extension bleeds further LEFT, past the already-flush left
+   * edge. */
+  filter: drop-shadow(-40px 0 0 var(--primary-color-2));
   touch-action: pan-y;
   transform: translateX(-100%);
 }
@@ -231,6 +322,11 @@
 
 @keyframes dx-drawer-slide-in-right {
   from {
+    /* rtl-physical: side (top/right/bottom/left) is a screen-geometry
+       fact, not a reading-direction one -- see drawer.rs's DrawerSide
+       doc. A side="right" drawer always slides from the physical right
+       edge, in LTR or RTL alike (each side already has its own named
+       keyframes, so there is no sign to flip). */
     transform: translateX(100%);
   }
 
@@ -245,13 +341,13 @@
   }
 
   to {
-    transform: translateX(100%);
+    transform: translateX(100%); /* rtl-physical: see the note above */
   }
 }
 
 @keyframes dx-drawer-slide-in-left {
   from {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 
   to {
@@ -265,7 +361,7 @@
   }
 
   to {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 }
 
@@ -278,10 +374,35 @@
   margin: var(--dx-space-3) auto 0;
   background: var(--primary-color-7);
 
-  /* The one surface allowed to fully disable native touch gestures
-   * (primitives/src/drawer.rs's brief): it is never itself scrollable
-   * content, only a drag affordance. */
-  touch-action: none;
+  /* This bar has no text of its own, but a `mousedown`+drag starting here
+   * still hits whatever's *underneath* in selection terms on some
+   * engines (and a user's drag routinely overshoots onto neighboring
+   * text) -- always off, not just while `[data-dragging]` (below), since
+   * a drag can only ever START from a `pointerdown`, before `dragging`
+   * flips true. No `-webkit-user-select` -- see `.dx-drawer[data-dragging=
+   * "true"]`'s identical note above. */
+  user-select: none;
+}
+
+/* `touch-action` here must track the SAME per-side drag axis as `.dx-drawer`
+ * itself (`pan-x` for the vertical top/bottom drag axis, `pan-y` for the
+ * horizontal left/right one) -- restricting only the axis this crate's own
+ * pointer-drag gesture actually reads (`primitives/src/drawer.rs`'s
+ * `dismiss_oriented_delta`), same as the panel's own per-`[data-side]`
+ * rules above. A blanket `touch-action: none` here previously blocked
+ * BOTH axes, which -- per `preview/assets/main.css`'s own load-bearing
+ * comment on this exact tradeoff ("`touch-action: none` must never be
+ * used, it breaks scrolling") -- unnecessarily stopped a touch user from
+ * panning the page by starting a touch on this handle at all, on either
+ * axis, not just the one the drag gesture owns. */
+.dx-drawer[data-side="bottom"] .dx-drawer-handle,
+.dx-drawer[data-side="top"] .dx-drawer-handle {
+  touch-action: pan-x;
+}
+
+.dx-drawer[data-side="right"] .dx-drawer-handle,
+.dx-drawer[data-side="left"] .dx-drawer-handle {
+  touch-action: pan-y;
 }
 
 .dx-drawer-header {
@@ -310,6 +431,57 @@
   margin: 0;
   color: var(--secondary-color-5);
   font-size: var(--dx-text-sm);
+}
+
+/* `DrawerClose`'s default rendering (no `as` override -- e.g. this
+ * component's own `main` demo variant's top-side drawer, `DrawerClose {
+ * "Close" }`) had NO rule at all here, unlike `.dx-sheet-close`
+ * (preview/src/components/sheet/style.css). `color` (inherited) landed
+ * fine -- `rgb(17,17,17)`/`rgb(212,212,212)` in light/dark, exactly
+ * `--secondary-color-4`, since browsers inherit a `<button>`'s `color`
+ * from its ancestors same as any other element -- but `background-color`
+ * is never inherited, and a `<button>`'s own UA default for it
+ * (`ButtonFace`) does not react to this app's `data-theme` at all: it
+ * measured `rgb(239,239,239)` in BOTH modes, live. In light mode that
+ * coincidentally reads fine (near-black text, light background); in dark
+ * mode it is `rgb(212,212,212)` text on that SAME near-white
+ * `rgb(239,239,239)` background -- light-on-light, an axe `color-contrast`
+ * violation and, per the bug report, actually unreadable. Values below
+ * mirror `.dx-button[data-style="outline"]`
+ * (preview/src/components/button/style.css) exactly -- the same
+ * already-audited light/dark recipe, not a new one-off pair.
+ *
+ * `:not([data-style])`: `merge_attributes`/`join_class`
+ * (primitives/src/lib.rs) CONCATENATES `class`, it doesn't replace it, so
+ * a `DrawerClose` substituted via its `as` prop for a themed `Button` (the
+ * "Cancel" action in this component's own `main` demo variant) still
+ * carries `dx-drawer-close` alongside `dx-button` on the same element --
+ * this rule must not compete with that button's own, separately themed
+ * and already-audited styling. `[data-style]` (not a literal
+ * `:not(.dx-button)`) is the exclusion signal: `Button` always sets its
+ * own `data-style="<variant>"` (preview/src/components/button/
+ * component.rs) and the plain default `<button>` this rule actually
+ * targets never has one, and unlike `.dx-button` this spells no *class*
+ * name at all, so it can't trip `scripts/check-dx-class-prefix.sh` (which
+ * flags any `.<name>` in a component's own stylesheet that isn't
+ * `dx-drawer-...` -- confirmed by running it: `:not(.dx-button)` failed
+ * that gate outright, exactly as designed, since `.dx-button` is a
+ * foreign component's namespace). */
+.dx-drawer-close:not([data-style]) {
+  padding: var(--dx-space-2) var(--dx-space-4);
+  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  border-radius: var(--dx-radius-md);
+  background-color: var(--light, var(--primary-color)) var(--dark, color-mix(in oklab, var(--primary-color-7) 30%, transparent));
+  color: var(--secondary-color-4);
+  cursor: pointer;
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  transition: background-color var(--dx-motion-duration-base) var(--dx-motion-ease), color var(--dx-motion-duration-base) var(--dx-motion-ease);
+}
+
+.dx-drawer-close:not([data-style]):hover {
+  background-color: var(--light, var(--primary-color-5)) var(--dark, color-mix(in oklab, var(--primary-color-7) 50%, transparent));
+  color: var(--secondary-color-1);
 }
 
 /* Explicit requirement (primitives/src/drawer.rs's brief): this panel's

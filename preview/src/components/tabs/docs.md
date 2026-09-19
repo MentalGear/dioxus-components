@@ -28,3 +28,7 @@ Tabs {
     }
 }
 ```
+
+## Direction / RTL
+
+`Tabs` accepts a `dir: Option<Direction>` prop (defaulting to the nearest `DirectionProvider`, or LTR). Under RTL, `TabTrigger`'s `ArrowLeft`/`ArrowRight` roving focus swaps: `ArrowLeft` moves to the *next* tab, `ArrowRight` to the *previous* one (matching Radix's shared `RovingFocusGroup` behavior). See the `rtl` variant.

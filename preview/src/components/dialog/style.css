@@ -42,6 +42,9 @@
   position: fixed;
   z-index: var(--dx-z-overlay-raised);
   top: 50%;
+
+  /* rtl-physical: viewport-centering, paired with `transform: translate(-50%,
+     -50%)` below -- see alert_dialog/style.css's identical note. */
   left: 50%;
   display: flex;
   width: 100%;
@@ -59,7 +62,7 @@
     Arial, sans-serif;
   gap: var(--dx-space-4);
   text-align: center;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%); /* rtl-physical: see comment above */
 }
 
 .dx-dialog-title {
@@ -78,14 +81,13 @@
 @media (width >= 40rem) {
   .dx-dialog {
     max-width: 32rem;
-    text-align: left;
+    text-align: start;
   }
 }
 
 .dx-dialog-close {
   position: absolute;
   top: 1rem;
-  right: 1rem;
   align-self: flex-start;
   padding: 0;
   border: none;
@@ -94,6 +96,7 @@
   color: var(--secondary-color-3);
   cursor: pointer;
   font-size: var(--dx-text-lg);
+  inset-inline-end: 1rem;
   line-height: 1;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */

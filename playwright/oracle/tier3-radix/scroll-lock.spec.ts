@@ -43,6 +43,12 @@
  * this on.
  * `Menubar` is correctly excluded throughout -- it is never modal.
  *
+ * UPDATE 2026-09-18 (docs/backlog.md row 72, following up on row 9's own
+ * "NOT COVERED HERE" note): the `scroll_lock=false` opt-out itself now has a
+ * fixture and a case too -- see "Select scroll_lock=false opt-out releases
+ * page scroll" below, against a new labelled instance on the `top_layer`
+ * fixture page (`preview/src/components/top_layer/component.rs`).
+ *
  * KNOWN GAP, both in the dq base and here (see
  * docs/recommended-implementations.md §5): no iOS momentum-scroll handling.
  * Radix delegates that to `react-remove-scroll`, which this crate has no
@@ -71,11 +77,12 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const goto = (page: Page, name: string) =>
-  page.goto(`http://127.0.0.1:8080/component/?name=${name}&`, {
+  page.goto(`${BASE_URL}/component/?name=${name}&`, {
     timeout: NAV_TIMEOUT,
     waitUntil: "networkidle",
   });
@@ -370,16 +377,65 @@ test.describe("Select locks and releases page scroll", () => {
     await assertNoHorizontalShift(page, rightBefore, "after the select listbox closes and scroll unlocks");
   });
 
-  // NOT COVERED HERE: the `scroll_lock=false` opt-out itself (the prop's
-  // default is `true`, exercised above). No fixture route currently wires a
-  // query param through to `Select`'s `scroll_lock` prop the way this file's
-  // other opt-outs aren't covered either (`DropdownMenu`/`ContextMenu`'s own
-  // `modal` prop has no dedicated opt-out case in this file). The prop is
-  // unit-level plumbing (`primitives/src/select/components/select.rs` ->
-  // `SelectContext::scroll_lock` -> `SelectListRendered`'s
-  // `scroll_lock_active` memo, `list.rs`) verified by `cargo check`/`cargo
-  // test`, not by a Playwright fixture; adding one is follow-up work if a
-  // real caller needs to exercise it end-to-end.
+  /**
+   * docs/backlog.md rows 9/72: the `scroll_lock=false` opt-out itself had no
+   * fixture exercising it (see this file's own former "NOT COVERED HERE"
+   * note, which this test replaces). `preview/src/components/top_layer/
+   * component.rs`'s "Select scroll_lock opt-out" section adds a labelled,
+   * distinct `Select` instance with `scroll_lock: false` explicitly set --
+   * the `top_layer` fixture page is used here (not `select`'s own gallery
+   * page, which the default-`true` case above already uses) because it is
+   * already taller than the viewport (every other overlay section on it),
+   * satisfying `assertPageIsScrollable` for free, and it gives this new
+   * instance its own trigger id with no risk of colliding with the
+   * default-Select case's own role/text-based locator above.
+   */
+  test("scroll_lock=false leaves the page scrollable while the listbox is open", async ({ page }) => {
+    await goto(page, "top_layer");
+    await assertPageIsScrollable(page);
+    const rightBefore = await rightEdgeMarkerRight(page);
+
+    // `.evaluate((el) => el.click())`, not Playwright's own `.click()` --
+    // same technique `top-layer.spec.ts` already uses for its own
+    // fixed/off-screen triggers (e.g. `#stack-popover-trigger`,
+    // `#edge-bottom-popover-trigger`): this fixture's new "Select
+    // scroll_lock opt-out" section is the LAST thing on the page, so a real
+    // `.click()`'s own actionability auto-scroll (`scrollIntoViewIfNeeded`)
+    // lands the page at its maximum scrollY -- confirmed by execution, this
+    // left no further room for the wheel-scroll assertion below to move
+    // `window.scrollY` at all, regardless of whether the lock was actually
+    // suppressed (a test-methodology bug, not a product one; see this
+    // repo's own `dev-docs/dx-serve-hot-reload.md` for the general class).
+    // Clicking via raw JS bypasses that auto-scroll entirely, leaving the
+    // page at its initial scrollY (0) with the whole page below still free
+    // to scroll into.
+    const trigger = page.locator("#scroll-lock-select-trigger");
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    const listbox = page.locator("#scroll-lock-select-content");
+    await expect(listbox).toHaveAttribute("data-state", "open");
+    await assertNoHorizontalShift(page, rightBefore, "while the scroll_lock=false listbox is open");
+
+    // The opt-out itself: reuses `assertScrollIsUnlocked` as-is (it resets
+    // scrollY to 0 and wheel-scrolls on each attempt, exactly the shape
+    // this case needs, and already retries against the same settling delay
+    // this assertion would otherwise have to duplicate -- confirmed by a
+    // standalone repro that a bespoke single-shot `wheel()` -> immediate
+    // `scrollY` read here is genuinely racy: `window.scrollY` does not
+    // always update synchronously the instant `page.mouse.wheel()`
+    // resolves, occasionally landing a couple hundred ms later even
+    // outside this sandbox's own CPU contention -- the same class of
+    // settling delay `assertScrollIsUnlocked`'s own doc and Rule 8's
+    // `waitForTimeout` in `top-layer.spec.ts` already document elsewhere).
+    // Unlike every *other* call to this helper in this file (which follows
+    // a real lock releasing), here nothing was ever locking in the first
+    // place -- proving the identical thing: a wheel scroll succeeds while
+    // this listbox is open, `scroll_lock: false` suppresses the lock
+    // rather than merely being accepted and ignored.
+    await assertScrollIsUnlocked(page);
+
+    await page.keyboard.press("Escape");
+    await expect(listbox).toHaveCount(0);
+  });
 });
 
 test.describe("Dialog does not leave the page permanently scrolled after a lock cycle", () => {

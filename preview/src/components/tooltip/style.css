@@ -50,6 +50,12 @@
   position: absolute;
   border-width: var(--dx-space-1);
   border-style: solid;
+
+  /* rtl-physical: unconditional half-arrow-width centering compensator,
+     shared across all four `[data-side]` variants below -- for the
+     top/bottom variants it is paired with their own physical `left: 50%`
+     (see those rules), so it cannot become `margin-inline-start` without
+     desyncing from that pairing. */
   margin-left: calc(-1 * var(--dx-space-1));
   content: " ";
   rotate: 45deg;
@@ -119,14 +125,18 @@
 /* Alignment styles for top and bottom */
 .dx-tooltip-content[data-side="top"][data-align="start"],
 .dx-tooltip-content[data-side="bottom"][data-align="start"] {
-  left: 0;
+  /* logical: `align="start"` is a reading-direction concept for a
+     top/bottom-placed overlay's cross axis (Radix's Floating UI resolves
+     align logically from `dir` -- packages/react/popper/src/popper.tsx,
+     radix-ui/primitives commit f7ecd5a). No transform to desync from
+     (`transform: none` below), so this is a plain, safe conversion. */
+  inset-inline-start: 0;
   transform: none;
 }
 
 .dx-tooltip-content[data-side="top"][data-align="end"],
 .dx-tooltip-content[data-side="bottom"][data-align="end"] {
-  right: 0;
-  left: auto;
+  inset-inline: auto 0;
   transform: none;
 }
 

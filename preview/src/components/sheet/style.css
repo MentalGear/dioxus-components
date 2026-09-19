@@ -1,4 +1,9 @@
-/* Sheet Root */
+/* Sheet Root -- shadcn/ui v4's `SheetOverlay` (`fixed inset-0 z-50
+ * bg-black/50`, fading in/out with `data-[state]`). This is also the
+ * non-web (Blitz) arm's own overlay element, since that arm's `.dx-sheet`
+ * is a plain `div` with no native backdrop -- see the `:has(> dialog)` rule
+ * and the `.dx-sheet::backdrop` block below for why the web arm's tint
+ * moves off of this element once a real `<dialog>` exists. */
 .dx-sheet-root {
   position: fixed;
   z-index: var(--dx-z-overlay);
@@ -8,13 +13,31 @@
   will-change: opacity;
 }
 
+/* Web arm only: `.dx-sheet` is a real `<dialog>` (a direct child of this
+ * element -- primitives/src/dialog.rs's `DialogContentModal`, `feature =
+ * "web"`), shown via `showModal()`. That promotes it into the browser's top
+ * layer with its own native `::backdrop` pseudo-element, which now carries
+ * the `bg-black/50` treatment (below) -- so this element's own manual tint
+ * is suppressed here, purely to avoid stacking two semi-transparent black
+ * layers into a visibly darker ~75% tint. Confirmed live before this fix:
+ * Chromium's own UA default for an unstyled `dialog::backdrop` is already
+ * `rgba(0 0 0 / 10%)`, so the un-suppressed pairing was already rendering
+ * ~55% instead of the intended 50% on this arm. Every other combination
+ * (`is_modal: false` on any target, or the non-web/Blitz build regardless
+ * of `is_modal`) renders `.dx-sheet` as a plain `div` -- no `::backdrop`
+ * pseudo-element is ever generated for those, so this selector simply never
+ * matches and this element keeps its own tint, unchanged. */
+.dx-sheet-root:has(> dialog) {
+  background: transparent;
+}
+
 .dx-sheet-root[data-state="closed"] {
   animation: dx-sheet-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
   pointer-events: none;
 }
 
 .dx-sheet-root[data-state="open"] {
-  animation: dx-sheet-root-in var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-sheet-root-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
 }
 
 @keyframes dx-sheet-root-in {
@@ -37,29 +60,77 @@
   }
 }
 
+/* The web arm's real `::backdrop` (see the `:has(> dialog)` comment above) --
+ * same `bg-black/50` treatment and the same fade keyframes as
+ * `.dx-sheet-root`, just applied to the pseudo-element that actually paints
+ * on this arm. Reuses `dx-sheet-root-in`/`-out` rather than duplicating them:
+ * the animation is identical, only the element differs. The `[data-state]`
+ * attribute lives on `.dx-sheet-root` (a sibling ancestor of the `<dialog>`
+ * in the light DOM, not the backdrop itself), so it's read via the same
+ * descendant-selector pattern the slide animations below already use. */
+.dx-sheet::backdrop {
+  background: rgb(0 0 0 / 50%);
+  opacity: 0;
+}
+
+.dx-sheet-root[data-state="open"] .dx-sheet::backdrop {
+  animation: dx-sheet-root-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+}
+
+/* KNOWN GAP, same mechanism and same construction as the slide-out comment
+ * further down: closing calls `dialog.close()` immediately, which tears
+ * down the native backdrop synchronously -- this close-fade is defined for
+ * symmetry and so it starts working for free if that gap is ever closed at
+ * the primitives level, but it does not currently get a chance to play. */
+.dx-sheet-root[data-state="closed"] .dx-sheet::backdrop {
+  animation: dx-sheet-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+/* Chromium's UA stylesheet ships `dialog:modal { position: fixed; inset: 0;
+ * margin: auto; width/height: fit-content; max-width/max-height: calc(100%
+ * - 6px - 2em); }`. Two separate problems follow from that, both reset
+ * below rather than patched per property:
+ *
+ * 1. The `max-width`/`max-height` cap: author rules always win over UA
+ *    ones, but only per property, so a sheet that stretches to full
+ *    height/width purely via `top`/`bottom`/`left`/`right` (below) still
+ *    needs its own `max-width`/`max-height` to keep that UA cap from
+ *    silently shrinking it away from the edges it's meant to span.
+ * 2. `inset: 0` + `margin: auto` + `fit-content` sizing: overriding only
+ *    the ONE edge a given side needs (e.g. `right: 0` below) leaves the
+ *    UA's OWN `inset: 0` still supplying the opposite edge (`left: 0`)
+ *    uncontested -- with `width` also definite, that makes
+ *    `left`/`width`/`right` all non-auto at once, an over-constrained box
+ *    the UA resolves by centering it into its own auto margins, not by
+ *    anchoring it. Confirmed live: a `right`-side sheet computed
+ *    `margin: … 440.5px` and sat centered instead of flush against the
+ *    edge; a `top`/`bottom` sheet computed `height: 800px` (full viewport)
+ *    instead of sizing to its content -- the same mechanism on the other
+ *    axis (`top`/`bottom` both left at the UA's `inset: 0` with
+ *    `height: auto` stretches to fill, rather than the one intended offset
+ *    floating free).
+ *
+ * Reset every one of these to a known, non-auto baseline here, then let
+ * each `[data-side]` rule below re-open (set back to `auto`) exactly the
+ * one edge it doesn't pin, and only that one. */
 .dx-sheet {
   position: fixed;
   z-index: var(--dx-z-overlay-raised);
   display: flex;
-
-  /* The web arm's modal Dialog (docs/plan.md Phase 4.2) renders this as a
-   * real `<dialog>`. Chromium's UA stylesheet caps a top-layer `dialog:modal`
-   * at `max-width`/`max-height: calc(100% - 6px - 2em)` for elements that
-   * don't set their own -- author rules always win over UA ones, but only
-   * per property, so a sheet that stretches to full height/width purely via
-   * `top`/`bottom`/`left`/`right` (below) still needs its own `max-width`/
-   * `max-height` to keep that UA cap from silently shrinking it away from
-   * the edges it's meant to span. */
+  width: auto;
   max-width: none;
+  height: auto;
   max-height: none;
   box-sizing: border-box;
   flex-direction: column;
   border: none;
+  margin: 0;
   background: var(--primary-color-2);
-  box-shadow: 0 4px 20px rgb(0 0 0 / 20%);
+  box-shadow: var(--dx-shadow-lg);
   color: var(--secondary-color-4);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   gap: var(--dx-space-4);
+  inset: 0;
   will-change: transform;
 }
 
@@ -68,16 +139,31 @@
   top: 0;
   bottom: 0;
   width: 75%;
-  max-width: 24rem;
+}
+
+/* shadcn's `sm:max-w-sm` -- the 24rem (384px) cap only applies at Tailwind's
+ * `sm` breakpoint and up; a viewport under it gets the plain `w-3/4` with no
+ * cap. Only observable between roughly 512px and 640px wide (below 512px,
+ * 75% is already under 384px on its own); gated to match rather than
+ * capping unconditionally. `40rem` is `--dx-breakpoint-sm`'s own value --
+ * copied here, not `var()`'d, per that token's own doc comment (a media
+ * query can't consume a custom property). */
+@media (width >= 40rem) {
+  .dx-sheet[data-side="right"],
+  .dx-sheet[data-side="left"] {
+    max-width: 24rem;
+  }
 }
 
 .dx-sheet[data-side="right"] {
   right: 0;
+  left: auto;
   border-left: 1px solid var(--primary-color-6);
   transform: translateX(100%);
 }
 
 .dx-sheet[data-side="left"] {
+  right: auto;
   left: 0;
   border-right: 1px solid var(--primary-color-6);
   transform: translateX(-100%);
@@ -87,34 +173,46 @@
 .dx-sheet[data-side="bottom"] {
   right: 0;
   left: 0;
+  height: auto;
 }
 
 .dx-sheet[data-side="top"] {
   top: 0;
+  bottom: auto;
   border-bottom: 1px solid var(--primary-color-6);
   transform: translateY(-100%);
 }
 
 .dx-sheet[data-side="bottom"] {
+  top: auto;
   bottom: 0;
   border-top: 1px solid var(--primary-color-6);
   transform: translateY(100%);
 }
 
+/* shadcn's `SheetContent`: `transition ease-in-out data-[state=open]:duration-500
+ * data-[state=closed]:duration-300` -- this repo's token set has no
+ * `ease-in-out` value (only the directional `--dx-motion-ease-in`/`-out`,
+ * used above for the overlay/backdrop fade) and animates the slide via
+ * `animation`, not `transition`, so `ease-in-out` is written literally
+ * here rather than forced onto a mismatched token. 500ms has no matching
+ * token either (this scale tops out at `--dx-motion-duration-slower`,
+ * 300ms) and is likewise literal; 300ms on the close side below is an exact
+ * match for that token. */
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="right"] {
-  animation: dx-slide-in-right var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-slide-in-right 500ms ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="left"] {
-  animation: dx-slide-in-left var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-slide-in-left 500ms ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="top"] {
-  animation: dx-slide-in-top var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-slide-in-top 500ms ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="open"] .dx-sheet[data-side="bottom"] {
-  animation: dx-slide-in-bottom var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-slide-in-bottom 500ms ease-in-out forwards;
 }
 
 /* KNOWN GAP (docs/plan.md Phase 4.2; same treatment as docs/backlog.md row
@@ -126,30 +224,39 @@
  * *root* wrapper's own fade animation, a sibling in the DOM, unaffected)
  * has elapsed. The four slide-out animations below are defined on `.dx-sheet`
  * itself, so they no longer get to play on close: the panel now disappears
- * instantly instead of sliding out, while the backdrop's opacity fade (on
- * `.dx-sheet-root`, not a `<dialog>`) still plays in full. Purely cosmetic;
- * not fixed in this slice for the same reason row 19 wasn't -- it would need
- * `use_animated_open`-style coordination with the browser's own close event,
- * out of scope here. Native (Blitz) arm unaffected (plain `div`, no
- * `<dialog>`). No oracle rule currently checks animation duration. */
+ * instantly instead of sliding out. The overlay/backdrop close-fade is the
+ * same story on this arm (see the `::backdrop` block above) -- only
+ * `.dx-sheet-root`'s OWN fade (invisible here now that its background is
+ * transparent behind a real `<dialog>`, but still the entire visible
+ * overlay on the non-web/Blitz arm) is a sibling in the DOM and unaffected,
+ * still playing in full there. Purely cosmetic; not fixed in this slice for
+ * the same reason row 19 wasn't -- it would need `use_animated_open`-style
+ * coordination with the browser's own close event, out of scope here.
+ * Native (Blitz) arm unaffected (plain `div`, no `<dialog>`). No oracle rule
+ * currently checks animation duration. */
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="right"] {
-  animation: dx-slide-out-right var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-slide-out-right var(--dx-motion-duration-slower) ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="left"] {
-  animation: dx-slide-out-left var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-slide-out-left var(--dx-motion-duration-slower) ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="top"] {
-  animation: dx-slide-out-top var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-slide-out-top var(--dx-motion-duration-slower) ease-in-out forwards;
 }
 
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="bottom"] {
-  animation: dx-slide-out-bottom var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-slide-out-bottom var(--dx-motion-duration-slower) ease-in-out forwards;
 }
 
 @keyframes dx-slide-in-right {
   from {
+    /* rtl-physical: side (top/right/bottom/left) is a screen-geometry
+       fact, not a reading-direction one -- see this component's
+       SheetSide doc. A side="right" sheet always slides from the
+       physical right edge, in LTR or RTL alike (each side already has
+       its own named keyframes, so there is no sign to flip). */
     transform: translateX(100%);
   }
 
@@ -164,13 +271,13 @@
   }
 
   to {
-    transform: translateX(100%);
+    transform: translateX(100%); /* rtl-physical: see the note above */
   }
 }
 
 @keyframes dx-slide-in-left {
   from {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 
   to {
@@ -184,7 +291,7 @@
   }
 
   to {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 }
 
@@ -243,10 +350,19 @@
   gap: var(--dx-space-2);
 }
 
+/* shadcn's `SheetTitle` is `text-foreground font-semibold` only -- no
+ * explicit text-size class, unlike `DialogTitle`'s `text-lg` (this repo's
+ * `.dx-dialog-title` keeps that size). Tailwind's preflight resets heading
+ * elements' `font-size` to `inherit`, so an unstyled shadcn `<h2>` here
+ * actually renders at the surrounding base text size, not the UA default;
+ * this repo has no such global reset, so the faithful translation is an
+ * explicit `--dx-text-base` rather than omitting font-size altogether
+ * (which would fall through to the browser's own, much larger, default
+ * `h2` size instead). */
 .dx-sheet-title {
   margin: 0;
   color: var(--secondary-color-4);
-  font-size: var(--dx-text-lg);
+  font-size: var(--dx-text-base);
   font-weight: 600;
 }
 
@@ -256,10 +372,21 @@
   font-size: var(--dx-text-sm);
 }
 
+/* shadcn: `absolute top-4 right-4 rounded-xs opacity-70 ... hover:opacity-100
+ * focus:ring-2 ...`. The button box itself stays a fixed 24x24px hit target
+ * (unchanged from before this pass, not part of the shadcn class list --
+ * shadcn's own close button is sized by its `size-4` (16px) icon alone with
+ * no padding of its own, under WCAG 2.5.8's 24px target-size guidance this
+ * repo otherwise takes seriously, e.g. docs/backlog.md row 60's Input OTP
+ * hit-target fix); the icon inside was resized to 16px
+ * (`sheet/component.rs`'s `SheetContentClose`) to match `size-4` exactly.
+ * Opacity replaces the previous color-swap-on-hover: shadcn dims/brightens
+ * the whole control (icon and any future content alike) rather than
+ * recoloring text, so `color` is no longer set here at all and the button
+ * inherits `.dx-sheet`'s own `color: var(--secondary-color-4)`. */
 .dx-sheet-close {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: var(--dx-space-4);
   display: flex;
   width: 24px;
   height: 24px;
@@ -267,16 +394,21 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: var(--dx-radius-sm);
+  border-radius: var(--dx-radius-xs);
   background: none;
-  color: var(--primary-color-7);
   cursor: pointer;
+  inset-inline-end: var(--dx-space-4);
+  opacity: 0.7;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  transition: color var(--dx-motion-duration-base) var(--dx-motion-ease), background-color var(--dx-motion-duration-base) var(--dx-motion-ease);
+  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
 .dx-sheet-close:hover {
-  color: var(--secondary-color-4);
+  opacity: 1;
+}
+
+.dx-sheet-close:focus-visible {
+  box-shadow: var(--dx-ring);
 }

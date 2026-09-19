@@ -87,13 +87,14 @@ import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
+import { BASE_URL } from "../../base-url";
 
 const REFERENCE_ROOT = path.resolve(__dirname, "../reference/7e4034b/content/patterns");
 const comboboxSelectOnlyUrl = pathToFileURL(
   path.join(REFERENCE_ROOT, "combobox/examples/combobox-select-only.html"),
 ).href;
 
-const BASE = "http://127.0.0.1:8080/component/?name=";
+const BASE = `${BASE_URL}/component/?name=`;
 const goto = (page: Page, name: string) =>
   page.goto(`${BASE}${name}&`, { waitUntil: "networkidle", timeout: 20 * 60 * 1000 });
 

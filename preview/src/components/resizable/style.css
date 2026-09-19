@@ -1,8 +1,14 @@
 /* Layout (display:flex/flex-direction on the group; flex-basis/grow/shrink on each panel) is
    structural and lives on the primitive itself (primitives/src/resizable.rs), the same way
    SliderThumb/SliderRange inline their own percentage-based position styles -- it has to work
-   with zero theme CSS applied. Everything below is purely visual. */
+   with zero theme CSS applied. Everything below is purely visual: a translation of shadcn/ui
+   v4's Resizable (react-resizable-panels reference) onto this repo's own tokens. Each rule below
+   names the shadcn utility class(es) it stands in for; every value is one of this repo's own
+   design tokens (dev-docs/backlog.md row 31b) except the handle's own `1px` bar thickness and
+   the hit-area/grip's `after:`/`z-10` offsets, which shadcn itself also leaves untokenized. */
 
+/* shadcn: `flex h-full w-full` (`data-[panel-group-direction=vertical]:flex-col` is this
+   primitive's own inline `flex-direction`, set structurally above -- not a class here). */
 .dx-resizable-panel-group {
   width: 100%;
   height: 100%;
@@ -13,13 +19,18 @@
   min-height: 0;
 }
 
+/* shadcn: `bg-border relative flex w-px items-center justify-center`. `--primary-color-6`/`-7`
+   (light/dark) is this repo's own established "border" token pair -- the same one `.dx-card`,
+   `.dx-separator`, and `.dx-button[data-style="outline"]` already use for a divider/outline
+   color, as opposed to `--secondary-color-3/4`'s much higher-contrast foreground-ish gray this
+   rule used before (the likely source of the reported "looks different"). */
 .dx-resizable-handle {
   position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  background: var(--secondary-color-3);
+  background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
   outline: none;
 
   /* Full-viewport drag tracking (primitives/src/move_interaction.rs) means the handle itself
@@ -28,21 +39,47 @@
 }
 
 .dx-resizable-handle[data-orientation="horizontal"] {
-  width: var(--dx-space-1);
+  width: 1px;
   cursor: col-resize;
 }
 
 .dx-resizable-handle[data-orientation="vertical"] {
   width: 100%;
-  height: var(--dx-space-1);
+  height: 1px;
   cursor: row-resize;
 }
 
-.dx-resizable-handle:hover,
-.dx-resizable-handle[data-state="dragging"] {
-  background: var(--secondary-color-4);
+/* shadcn: the handle's own `after:` hit-area -- a comfortably wide invisible pointer target
+   behind the 1px visible bar (`after:absolute after:inset-y-0 after:left-1/2 after:w-1
+   after:-translate-x-1/2`). */
+.dx-resizable-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+
+  /* rtl-physical: centers this hit-area on its own parent's inline
+     midpoint, paired with `transform: translateX(-50%)` below -- a
+     symmetric 50%+matching-negative-translate pair, not a reading-
+     direction concept -- see dialog/style.css's identical left:50%+
+     translate centering note. */
+  left: 50%;
+  width: var(--dx-space-1);
+  content: "";
+  transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
+/* shadcn: `data-[panel-group-direction=vertical]:after:inset-x-0 after:top-1/2 after:h-1
+   after:w-full after:-translate-y-1/2` -- the hit area rotates onto the other axis. */
+.dx-resizable-handle[data-orientation="vertical"]::after {
+  width: 100%;
+  height: var(--dx-space-1);
+  inset: 50% 0 auto;
+  transform: translateY(-50%);
+}
+
+/* shadcn: `focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1
+   focus-visible:outline-hidden` -- translated to the shared --dx-ring token every other
+   component's own :focus-visible rule already uses (dev-docs/backlog.md row 31a). */
 .dx-resizable-handle:focus-visible {
   box-shadow: var(--dx-ring);
 }
@@ -53,37 +90,38 @@
   pointer-events: none;
 }
 
+/* shadcn: the optional grip -- `bg-border z-10 flex h-4 w-3 items-center justify-center
+   rounded-xs border` around a `GripVerticalIcon` at `size-2.5` (the icon's own size is set
+   where it's rendered, preview/src/components/resizable/variants/main/mod.rs). */
 .dx-resizable-handle-grip {
   position: absolute;
+  z-index: var(--dx-z-local-sm);
   top: 50%;
+
+  /* rtl-physical: centers the grip on its own parent handle, paired with
+     `transform: translate(-50%, -50%)` below -- see dialog/style.css's
+     identical left:50%+translate centering note. */
   left: 50%;
   display: flex;
-  width: var(--dx-space-4);
-  height: var(--dx-space-6);
+  width: var(--dx-space-3);
+  height: var(--dx-space-4);
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--secondary-color-3);
-  border-radius: var(--dx-radius-sm);
-  background: var(--primary-color-1);
+  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  border-radius: var(--dx-radius-xs);
+  background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
   color: var(--secondary-color-5);
 
   /* Purely decorative -- the handle div itself (not the grip) carries the interactive
      role/handlers, so a pointer landing on the grip must fall through to it. */
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%); /* rtl-physical: see comment above */
 }
 
+/* shadcn: `[&[data-panel-group-direction=vertical]>div]:rotate-90` rotates the WHOLE grip --
+   and, being a descendant, its icon along with it -- rather than swapping width/height or
+   rotating only the icon; one transform does both jobs, and the grip's own on-screen footprint
+   swaps to match the vertical handle's own w<->h swap for free. */
 .dx-resizable-handle[data-orientation="vertical"] .dx-resizable-handle-grip {
-  width: var(--dx-space-6);
-  height: var(--dx-space-4);
-}
-
-.dx-resizable-handle[data-orientation="vertical"] .dx-resizable-handle-grip svg {
-  transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .dx-resizable-handle {
-    transition: background-color var(--dx-motion-duration-fast);
-  }
+  transform: translate(-50%, -50%) rotate(90deg); /* rtl-physical: same centering as .dx-resizable-handle-grip above, plus a vertical-orientation rotation */
 }

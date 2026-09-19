@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=radio_group&", { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=radio_group&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   await page.getByRole('radio', { name: 'Blue' }).click();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('radio', { name: 'Red' })).toBeFocused();
@@ -12,7 +13,7 @@ test("test", async ({ page }) => {
 
 test.describe("Axe automated scan", () => {
   test("loaded (none selected) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=radio_group&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=radio_group&`, { timeout: 20 * 60 * 1000 });
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('radio', { name: 'Blue' })).toBeVisible();
@@ -20,7 +21,7 @@ test.describe("Axe automated scan", () => {
   });
 
   test("an item selected has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=radio_group&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=radio_group&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole('radio', { name: 'Blue' }).click();
     await expectNoAxeViolations(page, "radio-group: Blue selected", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });

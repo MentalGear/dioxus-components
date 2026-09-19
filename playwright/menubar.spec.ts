@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { BASE_URL } from "./base-url";
 
 test("pointer navigation", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=menubar&", { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   const fileMenuButton = page.getByRole("menuitem", { name: "File" });
   await fileMenuButton.click();
   // Assert the menu is open
@@ -26,8 +27,8 @@ test("pointer navigation", async ({ page }) => {
 });
 
 test("keyboard navigation", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=menubar&", { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
-  await page.getByRole("menubar").focus();
+  await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
+  await page.locator("#component-preview-frame").first().getByRole("menubar").focus();
   const fileMenuButton = page.getByRole("menuitem", { name: "File" });
   // Go right with the keyboard
   await page.keyboard.press("ArrowRight");
@@ -58,7 +59,7 @@ test("keyboard navigation", async ({ page }) => {
 
 test.describe("Axe automated scan", () => {
   test("loaded (menus closed) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=menubar&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole("menuitem", { name: "File" })).toBeVisible();
@@ -69,7 +70,7 @@ test.describe("Axe automated scan", () => {
   // aria-labelledby/aria-label at all, so an open menu has no accessible
   // name (APG menu-and-menubar pattern requires one).
   test("File menu open has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=menubar&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole("menuitem", { name: "File" }).click();
     const fileMenuContent = page.getByRole("menu").filter({ has: page.getByRole("menuitem", { name: "New" }) }).last();
     await expect(fileMenuContent).toHaveAttribute("data-state", "open");

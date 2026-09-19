@@ -48,5 +48,11 @@ NavigationMenu {
   a panel is open) through its links, in page order.
 - `Left` / `Right` arrow (optional in APG, supported here): move between
   top-level items.
-- `Down` arrow on an open trigger: moves focus into the panel's first link.
+- `Home` / `End` (optional in APG, supported here): move to the first/last
+  top-level item.
+- `Down` arrow on a trigger: opens its panel (if not already open) and
+  moves focus into its first link.
+- `Up` / `Down` arrow on a link inside an open panel (optional in APG,
+  supported here): move to the previous/next link in that panel, stopping
+  at the first/last link rather than wrapping.
 - Moving focus out of the whole navigation menu closes an open panel.

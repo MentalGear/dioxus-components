@@ -29,3 +29,7 @@ Menubar {
     }
 }
 ```
+
+## Direction / RTL
+
+`Menubar` accepts a `dir: Option<Direction>` prop. Its top-level trigger row is always horizontal, so `ArrowLeft`/`ArrowRight` between menus always swaps under RTL. See the `rtl` variant.

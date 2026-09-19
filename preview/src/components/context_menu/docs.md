@@ -61,3 +61,7 @@ ContextMenuContent {
     }
 }
 ```
+
+## Direction / RTL
+
+`ContextMenu` accepts a `dir: Option<Direction>` prop, inherited by every `ContextMenuSub`. Same open/close-key and side flip as `DropdownMenu`'s -- see that component's note. See the `rtl` variant.

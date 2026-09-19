@@ -25,7 +25,7 @@ use dioxus_primitives::merge_attributes;
 #[path = "state.rs"]
 mod state;
 
-pub use state::{filter_rows, paginate, sort_rows, SortDirection};
+pub use state::{filter_rows, includes_string, paginate, sort_rows, SortDirection};
 
 /// Props for [`DataTableColumnHeader`].
 #[derive(Props, Clone, PartialEq)]

@@ -21,9 +21,10 @@
  */
 import { test, type Page } from "@playwright/test";
 import { assertCloseAnimationReachesZero, Sample } from "./assert-close-animation";
+import { BASE_URL } from "./base-url";
 
 const APP_URL =
-  process.env.ACCORDION_URL ?? "http://127.0.0.1:8080/component/?name=accordion&";
+  process.env.ACCORDION_URL ?? `${BASE_URL}/component/?name=accordion&`;
 const MODE = process.env.ACCORDION_MODE ?? "app";
 const LOAD_TIMEOUT = 20 * 60 * 1000;
 

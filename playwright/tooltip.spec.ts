@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
+import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
-  await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
+  await page.goto(`${BASE_URL}/component/?name=tooltip&`);
   let tooltip = page.getByRole("tooltip");
   // tabbing to the trigger element should show the tooltip
   await page.locator("#component-preview-frame").focus();
@@ -24,12 +25,12 @@ test("test", async ({ page }) => {
 
 test.describe("Axe automated scan", () => {
   test("loaded (tooltip closed) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
+    await page.goto(`${BASE_URL}/component/?name=tooltip&`);
     await expectNoAxeViolations(page, "tooltip: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
   test("tooltip open has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=tooltip&");
+    await page.goto(`${BASE_URL}/component/?name=tooltip&`);
     await page.locator("#component-preview-frame").first().getByText("Rich content").hover();
     await expect(page.getByRole("tooltip")).toBeVisible();
     await expectNoAxeViolations(page, "tooltip: open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
@@ -51,7 +52,7 @@ test.describe("Axe automated scan", () => {
 // through the animation that CSS defines (row 7).
 test.describe("Close-fade animation (docs/backlog.md rows 19, 7)", () => {
   test("content fades out (opacity -> 0, still popover-open) before unmounting", async ({ page }) => {
-    await page.goto("http://127.0.0.1:8080/component/?name=tooltip&", { timeout: 20 * 60 * 1000 });
+    await page.goto(`${BASE_URL}/component/?name=tooltip&`, { timeout: 20 * 60 * 1000 });
     const trigger = page.locator("#component-preview-frame").first().getByText("Rich content");
     await trigger.hover();
     const tooltip = page.getByRole("tooltip");

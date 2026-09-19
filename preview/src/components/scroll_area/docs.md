@@ -11,3 +11,7 @@ ScrollArea {
     {children}
 }
 ```
+
+## Direction / RTL
+
+`ScrollArea` accepts a `dir: Option<Direction>` prop, emitted as `dir`/`data-direction` on the root. This component wraps the browser's own native scrollbar (not a custom-drawn one), so the CSS Overflow spec's own `dir`-relative behavior repositions the scrollbar to the correct physical side automatically -- no additional logic is needed. See the `rtl` variant.

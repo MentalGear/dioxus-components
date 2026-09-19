@@ -121,8 +121,9 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { BASE_URL } from "../../base-url";
 
-const BASE = "http://127.0.0.1:8080/component/?name=";
+const BASE = `${BASE_URL}/component/?name=`;
 const goto = (page: Page, name: string) =>
   page.goto(`${BASE}${name}&`, { waitUntil: "networkidle", timeout: 20 * 60 * 1000 });
 
