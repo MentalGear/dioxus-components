@@ -128,8 +128,8 @@ pub struct SliderProps {
 
     /// The text direction, for a horizontal slider's pointer/keyboard value
     /// mapping and which physical edge its thumb/range anchor to. Never
-    /// consulted for a vertical slider (matches Radix -- see
-    /// [`mirror_horizontal`]'s doc). Defaults to the nearest
+    /// consulted for a vertical slider (matches Radix -- see this file's
+    /// own `mirror_horizontal` helper doc). Defaults to the nearest
     /// [`crate::direction::DirectionProvider`], or LTR if there is none.
     #[props(default)]
     pub dir: Option<Direction>,

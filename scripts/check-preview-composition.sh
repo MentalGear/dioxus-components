@@ -127,6 +127,14 @@ declare -A allowed_qualified=(
     ["calendar::DateRange"]=1     # plain type, not markup -- calendar & date_picker
                                    # range/multi_month/unavailable_dates variants
     ["scroll_area::ScrollDirection"]=1 # plain enum, not markup -- scroll_area/variants/main
+    ["direction::Direction"]=1    # plain enum, not markup -- every RTL fixture
+                                   # (preview/src/components/*/variants/rtl/mod.rs)
+    ["direction::DirectionProvider"]=1 # context-provider component with no DOM
+                                   # element of its own (renders only
+                                   # `props.children` -- primitives/src/direction.rs):
+                                   # no visual surface for a themed wrapper to
+                                   # attach a class to, same category as the
+                                   # plain-value entries above. Same call sites.
 )
 declare -A allowed_root=(
     ["ContentSide"]=1 # plain enum re-exported off the crate root, not markup --
