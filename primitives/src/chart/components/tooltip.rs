@@ -208,10 +208,12 @@ mod tests {
             ChartDatum {
                 label: "January".to_string(),
                 values: vec![Some(186.0), Some(80.0)],
+                ..Default::default()
             },
             ChartDatum {
                 label: "February".to_string(),
                 values: vec![Some(305.0), None],
+                ..Default::default()
             },
         ]
     }
@@ -342,6 +344,7 @@ mod tests {
                 vec![ChartDatum {
                     label: "X".to_string(),
                     values: vec![Some(100.0)],
+                    ..Default::default()
                 }]
             });
             rsx! {
