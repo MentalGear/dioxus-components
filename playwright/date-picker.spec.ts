@@ -739,7 +739,18 @@ test.describe("Range picker (DateRangePicker, variant=range)", () => {
     await startMonth.click();
     await page.keyboard.press("Home");
     await startDay.click();
-    await page.keyboard.press("Home", { timeout: 5000 });
+    // `page.keyboard.press()` has no `timeout` option of its own (unlike a
+    // locator action) -- an earlier version of this test passed one and it
+    // was silently ignored, so the confirmed hang ran out the full 5-minute
+    // *test* timeout instead of failing fast, which `test.fail()` does not
+    // treat as an "expected" failure (a timeout aborts the test rather than
+    // rejecting the assertion `test.fail()` is watching for). Race it
+    // against a manual timeout instead, so this fails in 5s the same way
+    // the calendar-completion guard above does.
+    await Promise.race([
+      page.keyboard.press("Home"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Home on the day segment did not resolve within 5s (confirmed hang)")), 5000)),
+    ]);
   });
 });
 
