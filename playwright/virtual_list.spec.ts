@@ -11,7 +11,7 @@ async function testScrollHeightStability(
     timeout: 20 * 60 * 1000,
   });
 
-  const container = page.getByRole("list").first();
+  const container = page.locator(".dx-virtual-list-container").first();
   await expect(container).toBeVisible({ timeout: 30000 });
 
   // Wait for initial render
@@ -100,7 +100,7 @@ test("scrollHeight stable with random heights variant", async ({ page }) => {
     timeout: 20 * 60 * 1000,
   });
 
-  const container = page.getByRole("list").first();
+  const container = page.locator(".dx-virtual-list-container").first();
   await expect(container).toBeVisible({ timeout: 30000 });
 
   // Verify variant is loaded by checking for variant-specific content
@@ -171,7 +171,7 @@ test("scrollHeight stable with random heights variant", async ({ page }) => {
 test("virtual list virtualizes rows and updates on scroll", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=virtual_list&`, { timeout: 20 * 60 * 1000 });
 
-  const cards = page.getByRole("listitem");
+  const cards = page.locator(".dx-virtual-list-container").getByRole("listitem");
   await expect(cards.first()).toBeVisible({ timeout: 30000 });
 
   const initialCount = await cards.count();
@@ -223,7 +223,7 @@ test("resize churn while scrolling does not panic (holds no borrow across resize
     timeout: 20 * 60 * 1000,
   });
 
-  const container = page.getByRole("list").first();
+  const container = page.locator(".dx-virtual-list-container").first();
   await expect(container).toBeVisible({ timeout: 30000 });
   await page.waitForTimeout(500);
 
@@ -256,7 +256,7 @@ test.describe("Axe automated scan", () => {
   // Virtual list has no overlay/expand/select interaction -- one state to scan.
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=virtual_list&`, { timeout: 20 * 60 * 1000 });
-    await expect(page.getByRole("list").first()).toBeVisible({ timeout: 30000 });
+    await expect(page.locator(".dx-virtual-list-container").first()).toBeVisible({ timeout: 30000 });
     await expectNoAxeViolations(page, "virtual_list: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
