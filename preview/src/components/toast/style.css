@@ -1,9 +1,9 @@
 .dx-toast-container {
   position: fixed;
   z-index: var(--dx-z-top);
-  right: var(--dx-space-5);
   bottom: var(--dx-space-5);
   max-width: 350px;
+  inset-inline-end: var(--dx-space-5);
 }
 
 /*
@@ -43,12 +43,15 @@
   background: none;
   color: inherit;
 
-  /* top right bottom left -- see this rule's own comment above for why all
-     four sides are set in one shorthand declaration rather than mixing it
-     with the `right`/`bottom` longhands above: a single declaration has no
-     internal source-order hazard the way a shorthand plus overlapping
-     longhands would. */
-  inset: auto var(--dx-space-5) var(--dx-space-5) auto;
+  /* block/inline split of the same reset (top right bottom left -> auto,
+     space-5, space-5, auto) -- see this rule's own comment above for why
+     all sides are restated in a shorthand rather than mixed with the
+     longhands above; split into `inset-block`/`inset-inline` instead of a
+     single physical `inset` shorthand so the end-corner tracks reading
+     direction (`inset-inline-end`, above) instead of always meaning
+     "right". */
+  inset-block: auto var(--dx-space-5);
+  inset-inline: auto var(--dx-space-5);
 }
 
 .dx-toast-container ol {
@@ -198,7 +201,7 @@
 
 .dx-toast-content {
   flex: 1;
-  margin-right: var(--dx-space-2);
+  margin-inline-end: var(--dx-space-2);
   transition: filter var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
