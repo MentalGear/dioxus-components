@@ -90,7 +90,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
         | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "chart"
-        | "resizable" => ComponentCategory::DataDisplay,
+        | "chart_tooltip" | "resizable" => ComponentCategory::DataDisplay,
         _ => ComponentCategory::DataDisplay,
     }
 }
@@ -219,6 +219,7 @@ examples!(
     calendar[simple, internationalized, range, multi_month, unavailable_dates, rtl],
     card,
     chart[bar, line, stacked],
+    chart_tooltip[indicator_none, label_none, label_formatter],
     checkbox,
     collapsible,
     color_picker,
