@@ -22,3 +22,7 @@ Calendar {
 ```
 
 The styled `Calendar` and `RangeCalendar` render a complete month view by default, including the header, navigation, month/year selectors, and date grid.
+
+## Direction / RTL
+
+`Calendar`/`RangeCalendar` accept a `dir: Option<Direction>` prop. Under RTL, the day grid's `ArrowLeft`/`ArrowRight` swap (`ArrowLeft` moves to the next day, `ArrowRight` to the previous one); `ArrowUp`/`ArrowDown` (+/-7 days) are unaffected. No Radix Calendar exists to cite (shadcn's own wraps `react-day-picker`) -- this follows the same arrow-key convention as every other RTL-aware component here, and matches standard calendar-widget RTL practice generally. See the `rtl` variant.

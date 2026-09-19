@@ -29,3 +29,7 @@ Navbar {
     }
 }
 ```
+
+## Direction / RTL
+
+`Navbar` accepts a `dir: Option<Direction>` prop. Its top-level trigger row is always horizontal, so `ArrowLeft`/`ArrowRight` between nav items always swaps under RTL, matching `Menubar`'s identical shape. See the `rtl` variant.

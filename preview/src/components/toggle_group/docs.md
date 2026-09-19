@@ -16,3 +16,7 @@ ToggleGroup {
     }
 }
 ```
+
+## Direction / RTL
+
+`ToggleGroup` accepts a `dir: Option<Direction>` prop. When `horizontal: true`, `ToggleItem`'s `ArrowLeft`/`ArrowRight` roving focus swaps under RTL. See the `rtl` variant.

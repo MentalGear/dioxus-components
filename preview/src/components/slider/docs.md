@@ -22,3 +22,7 @@ RangeSlider {
     },
 }
 ```
+
+## Direction / RTL
+
+`Slider`/`RangeSlider` accept a `dir: Option<Direction>` prop, consulted only when `horizontal: true` (a vertical slider never mirrors, matching Radix). Under RTL: a click near the left end of the track resolves to a value near `max` (not `min`); `ArrowLeft` increases the value and `ArrowRight` decreases it (the opposite of LTR); the thumb and the filled range visually anchor to the opposite edge. `ArrowUp`/`ArrowDown` are never affected. See the `rtl` variant.

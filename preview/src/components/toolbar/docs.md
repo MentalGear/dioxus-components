@@ -26,3 +26,7 @@ Toolbar {
     }
 }
 ```
+
+## Direction / RTL
+
+`Toolbar` accepts a `dir: Option<Direction>` prop. When `horizontal: true` (the default), `ToolbarButton`'s `ArrowLeft`/`ArrowRight` roving focus swaps under RTL. See the `rtl` variant.

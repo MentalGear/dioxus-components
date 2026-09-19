@@ -22,3 +22,7 @@ RadioGroup {
     }
 }
 ```
+
+## Direction / RTL
+
+`RadioGroup` accepts a `dir: Option<Direction>` prop. When `horizontal: true`, `RadioItem`'s `ArrowLeft`/`ArrowRight` roving focus swaps under RTL the same way `Tabs`' does. See the `rtl` variant.
