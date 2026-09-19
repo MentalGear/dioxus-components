@@ -90,7 +90,7 @@ pub fn category_of(name: &str) -> ComponentCategory {
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
         | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "chart"
-        | "resizable" => ComponentCategory::DataDisplay,
+        | "bar_chart" | "resizable" => ComponentCategory::DataDisplay,
         _ => ComponentCategory::DataDisplay,
     }
 }
@@ -213,6 +213,7 @@ examples!(
     aspect_ratio,
     avatar,
     badge,
+    bar_chart[multiple, stacked, stacked_legend, interactive],
     breadcrumb,
     button[size, icon],
     button_group,
