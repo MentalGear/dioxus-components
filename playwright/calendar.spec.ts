@@ -303,3 +303,86 @@ test("left arrow key navigates through all days of the month in reverse", async 
 }) => {
   await testArrowKeyNavigation(page, "ArrowLeft", "last", "descending");
 });
+
+test.describe("selected/range state outranks :hover (user report, calendar-state lane)", () => {
+  // Dark mode specifically: the bug this guards against (line255's old
+  // `[data-selected="true"]:hover` re-declaring background-color/color
+  // instead of leaving the plain [data-selected="true"] rule in place) only
+  // showed up in dark mode -- its light-mode branch happened to match the
+  // plain selected color already. Light mode alone would stay green on the
+  // unfixed code and not actually guard against a regression.
+  test("a selected day keeps its selected background while the pointer is still over it (dark mode)", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=calendar&dark_mode=true`, {
+      timeout: 20 * 60 * 1000,
+    });
+    await page.waitForLoadState("networkidle");
+
+    const calendar = page.locator("#component-preview-frame").first();
+    const day = calendar
+      .locator('.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"])')
+      .first();
+    const otherDay = calendar
+      .locator('.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"])')
+      .nth(1);
+
+    // Read the plain (unselected) hover color first, from a day that will
+    // never be selected in this test -- this is the "wrong answer" the bug
+    // produces on the day that WAS just selected.
+    await otherDay.hover();
+    const plainHoverBg = await otherDay.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // Click a day: Playwright's .click() leaves the pointer resting on the
+    // element afterwards, exactly the "clicked it, mouse hasn't moved" case
+    // the user reported ("date picker: active state on selected date must
+    // be over hover state, otherwise active states are not visible after
+    // click").
+    await day.click();
+    await expect(day).toHaveAttribute("data-selected", "true");
+    expect(await day.evaluate((el) => el.matches(":hover"))).toBe(true);
+    const selectedAndHoveredBg = await day.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // Move the pointer off the day and read the "true" selected background.
+    const dayHeader = calendar.locator(".dx-calendar-grid-day-header").first();
+    await dayHeader.hover();
+    const selectedAtRestBg = await day.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    expect(selectedAndHoveredBg).toBe(selectedAtRestBg); // selected look survives hover
+    expect(selectedAndHoveredBg).not.toBe(plainHoverBg); // and isn't just the plain hover color
+    // Still visually selected once the pointer has moved on, in the
+    // strongest sense: the data-selected attribute AND its rendered color.
+    await expect(day).toHaveAttribute("data-selected", "true");
+  });
+
+  // The other real instance the sweep found: a range's in-between days (not
+  // an endpoint) had NO hover companion at all, so the generic day-hover
+  // rule -- which used to carry higher specificity than
+  // [data-selection-between="true"] -- won outright and made a hovered
+  // in-range day look like a plain single-selected endpoint instead of
+  // keeping its muted "between" look. /component/block/... isolates one
+  // variant per page, avoiding the multi-panel ambiguity every other test
+  // in this file works around with #component-preview-frame.first().
+  test("a range's in-between day keeps its muted look while hovered, not the endpoint look", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/block/calendar/range/`, {
+      timeout: 20 * 60 * 1000,
+    });
+    await page.waitForLoadState("networkidle");
+
+    const days = page.locator('.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"])');
+    const start = days.nth(4); // day "5"
+    const end = days.nth(11); // day "12"
+    const between = days.nth(7); // day "8", strictly inside 5..12
+
+    await start.click();
+    await end.click();
+    await expect(between).toHaveAttribute("data-selection-between", "true");
+
+    const restBg = await between.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const endpointBg = await start.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(restBg).not.toBe(endpointBg); // between and endpoint are meant to look different
+
+    await between.hover();
+    const hoveredBg = await between.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(hoveredBg).toBe(restBg); // hovering must not snap it to the endpoint look
+    expect(hoveredBg).not.toBe(endpointBg);
+  });
+});

@@ -170,7 +170,30 @@
     touch-action: manipulation;
 }
 
-.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"]):hover {
+/* :where() by construction, not source order: a hover/interaction rule must
+   never be able to outrank a persistent-state rule (selected, range
+   start/between/end, today), on this element or any other themed component's.
+   Wrapping the WHOLE compound selector in :where() forces its specificity to
+   (0,0,0) -- literally the lowest a selector can have -- while matching the
+   exact same elements, so every plain state selector below (each at least
+   one class + one attribute, i.e. (0,2,0) or higher) wins regardless of
+   which rule comes first in the file. This is deliberately not the
+   alternative the task brief also allows, scoping hover with
+   `:not([data-selected])` chains: that only fixes the attributes it
+   enumerates today and silently stops covering the next one (range/today
+   were exactly the ones missed the first time around, see the removed
+   `[data-selected="true"]:hover` rule below). shadcn's own calendar.tsx
+   (`CalendarDayButton`) gets the same outcome a different way -- Tailwind
+   always emits a plain `hover:` utility before a `data-[...]:` one in its
+   generated stylesheet, so on the equal specificity Tailwind utilities
+   always have (each is exactly one class), the later, state rule wins by
+   source order. That scheme depends on Tailwind's centrally-controlled emit
+   order and on every utility staying single-condition; neither invariant
+   holds for hand-written compound selectors like this file's (this exact
+   rule already carries a `:not([data-disabled="true"])` clause that pushes
+   its specificity to (0,4,0), tying or beating some state rules below by
+   accident), so :where() is used instead -- it needs no such invariant. */
+:where(.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"]):hover) {
     background-color: var(--primary-color-4);
 }
 
@@ -252,11 +275,26 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
     border-start-end-radius: var(--dx-radius-lg);
 }
 
-.dx-calendar-grid-cell[data-month="current"][data-selected="true"]:hover {
-    background-color: var(--light, var(--secondary-color-2))
-        var(--dark, var(--primary-color-5));
-    color: var(--light, var(--primary-color))
-        var(--dark, var(--secondary-color-1));
+/* Bug fixed here (user report, calendar-state lane): the pointer is still
+   over a day right after clicking it -- selecting it does not teleport the
+   mouse -- so ":hover" and "just-selected" are the common case, not an edge
+   case. This rule used to re-declare background-color/color for that case
+   instead of just leaving the plain [data-selected="true"] rule above in
+   place, and its own light/dark branches had drifted apart: the light
+   branch matched that rule's --secondary-color-2/--primary-color, but the
+   dark branch substituted --primary-color-5/--secondary-color-1 -- values
+   close to this file's plain, UNselected hover color (--primary-color-4;
+   #262626 vs #1a1a1a), so in dark mode the high-contrast "selected" pill
+   (#e6e6e6 on black) visually vanished into a near-plain-hover dark square
+   the moment the pointer landed on it, i.e. exactly "active state ... not
+   visible after click". The generic hover rule above is now :where()-wrapped
+   (specificity (0,0,0)), so the plain state rules already above it in this
+   file -- [data-selected="true"], [data-selection-start/-between/-end], the
+   [data-today="true"] one below -- outrank it by construction and need no
+   hover-specific color re-declaration (or re-declaration to keep in sync)
+   at all; only the light-mode bold-on-hover nicety is worth keeping, and it
+   is harmless at zero specificity since nothing else sets font-weight here. */
+:where(.dx-calendar-grid-cell[data-month="current"][data-selected="true"]:hover) {
     font-weight: var(--light, 550) var(--dark, inherit);
 }
 

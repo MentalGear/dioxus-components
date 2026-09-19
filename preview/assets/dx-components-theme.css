@@ -213,6 +213,35 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-z-chrome-raised: 1200;
   --dx-z-top: 9999;             /* toast, top_layer's absolute ceiling */
 
+  /* Chart categorical palette (dev-docs/research/chart-2026-09-19.md §6.3,
+   * $S/chart-api.md "Tokens"). This repo's first component that needs
+   * distinguishable series hues -- no prior token set to reuse. Validated
+   * with the `dataviz` skill's own `validate_palette.js` against this
+   * theme's real card surfaces, not generic reference surfaces:
+   *   light (surface #fbfbfb, this file's --primary-color-1 light value):
+   *     lightness band PASS, chroma floor PASS, CVD separation PASS (worst
+   *     adjacent dE 9.1), normal-vision floor PASS (dE 19.6), contrast WARN
+   *     (3 of 8 slots < 3:1 -- relieved by construction: a legend is always
+   *     shown for >=2 series and the tooltip always shows a text value next
+   *     to the swatch, per the dataviz skill's own "legend always present
+   *     for >=2 series" rule -- never dismissed, satisfied by the design).
+   *   dark (surface #0e0e0e, this file's --primary-color-1 dark value):
+   *     ALL CHECKS PASS (worst adjacent dE 8.4, normal-vision dE 19.3,
+   *     contrast all >= 3:1).
+   * `--dx-chart-grid`/`--dx-chart-axis-text` reuse existing grayscale
+   * tokens rather than inventing new ones -- grid lines and axis labels are
+   * chrome, not data, and already have a home on this theme's neutral scale. */
+  --dx-chart-1: var(--dark, #3987e5) var(--light, #2a78d6);
+  --dx-chart-2: var(--dark, #d95926) var(--light, #eb6834);
+  --dx-chart-3: var(--dark, #199e70) var(--light, #1baf7a);
+  --dx-chart-4: var(--dark, #c98500) var(--light, #eda100);
+  --dx-chart-5: var(--dark, #d55181) var(--light, #e87ba4);
+  --dx-chart-6: var(--dark, #008300) var(--light, #008300);
+  --dx-chart-7: var(--dark, #9085e9) var(--light, #4a3aa7);
+  --dx-chart-8: var(--dark, #e66767) var(--light, #e34948);
+  --dx-chart-grid: var(--primary-color-6);
+  --dx-chart-axis-text: var(--secondary-color-4);
+
   /* Shared interaction affordances -- feeds the `[data-dx-interactive]`
    * layer below. `--dx-opacity-disabled` is a straight read of the
    * existing convention: 21 components already write `opacity: 0.5` on

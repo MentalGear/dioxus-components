@@ -1,0 +1,13 @@
+{
+  "name": "chart",
+  "description": "A themed, data-driven SVG chart (area, bar, line) with tooltip, legend, and an accessible hidden data table.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

@@ -19,6 +19,7 @@ pub mod alert_dialog;
 pub mod aspect_ratio;
 pub mod avatar;
 pub mod calendar;
+pub mod chart;
 pub mod checkbox;
 pub mod collapsible;
 mod collection;
