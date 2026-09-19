@@ -29,8 +29,8 @@
 //! with no dependency on this crate's other modules and no Dioxus types --
 //! see its own module doc for why (in short: it is meant to be offered
 //! upstream to `dioxus-community/dioxus-charts` once this component has
-//! landed and proven itself here). `Chart`, `ChartContainer`,
-//! `ChartTooltip`, and `ChartLegend` (this module's `components`, plus
+//! landed and proven itself here). [`Chart`], [`ChartContainer`],
+//! [`ChartTooltip`], and [`ChartLegend`] (this module's `components`, plus
 //! [`ChartContext`]/[`use_chart`] bridging `engine`'s data into this
 //! crate's reactivity) are the Dioxus-specific layer built on top of it.
 //! This split is purely internal: every public item from both layers is
@@ -38,11 +38,11 @@
 //! `dioxus_primitives::chart::ChartConfig`, ...), so it changes nothing
 //! about how this crate's own consumers use the module.
 //!
-//! This module is under construction, landing in a sequence of small
-//! commits per this repo's own `CLAUDE.md`/lane convention -- [`engine`]
-//! (unit-tested in isolation, no `dioxus` types) and [`ChartContext`]/
-//! [`use_chart`] land first so a themed `preview` package can build
-//! against the data model while the rendering components land. See each
+//! This module landed in a sequence of small commits per this repo's own
+//! `CLAUDE.md`/lane convention -- [`engine`] (unit-tested in isolation, no
+//! `dioxus` types) and [`ChartContext`]/[`use_chart`] first so a themed
+//! `preview` package could build against the data model while the
+//! rendering components landed. See each
 //! commit's message for what's newly available.
 //!
 //! ## Example
@@ -59,7 +59,10 @@ mod components;
 mod context;
 pub mod engine;
 
-pub use components::{Chart, ChartContainer, ChartContainerProps, ChartProps};
+pub use components::{
+    Chart, ChartContainer, ChartContainerProps, ChartLegend, ChartLegendProps, ChartProps,
+    ChartTooltip, ChartTooltipProps, LegendAlign,
+};
 pub use context::{use_chart, ChartContext};
 pub use engine::{
     area_between_path, area_path, line_path, nice_domain, stack, BandScale, ChartConfig,
