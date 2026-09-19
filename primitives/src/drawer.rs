@@ -564,8 +564,18 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
         //   not the unbounded self-retrigger `raw_offset` below was
         //   actually fixed for) -- and, per the above, is not merely safe
         //   but the mechanism this effect's wake/sleep lifecycle depends on.
-        //   Left as tracked syntax on purpose; not something to allowlist
-        //   away either, since it is not incidental.
+        //   Left as tracked syntax on purpose. `scripts/check-self-
+        //   subscribing-effects.sh` does carry a reviewed
+        //   `NON_SELF_TERMINATING` allowlist entry for exactly this
+        //   `("drawer.rs", "dragging")` pair (added at batch-2
+        //   integration) -- that is not the silent, unreasoned
+        //   "allowlist away" this comment meant to rule out when it was
+        //   first written, before that mechanism existed: the entry
+        //   quotes this same analysis rather than replacing it, so the
+        //   guard can say "seen, and here is why it is safe" instead of
+        //   either false-alarming on every run or silently ignoring a
+        //   read+later-write pair that would be a real bug in any other
+        //   effect. Read this comment and that entry together.
         if !dragging() {
             return;
         }
