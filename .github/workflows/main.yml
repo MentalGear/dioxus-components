@@ -79,6 +79,15 @@ jobs:
       - name: Enforce no signal read with tracked syntax and written in the same use_effect
         run: scripts/check-self-subscribing-effects.sh
 
+  css-logical-properties:
+    if: github.event.pull_request.draft == false
+    name: CSS logical-properties guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce logical (not physical) inline-axis CSS properties outside the documented allowlist
+        run: scripts/check-css-logical-properties.sh
+
   test:
     if: github.event.pull_request.draft == false
     name: Test Suite

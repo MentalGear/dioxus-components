@@ -107,7 +107,8 @@ specs need Chromium launched with `--no-sandbox` — see
 Several source-level guard scripts enforce conventions that would
 otherwise regress one component or change at a time. Some run in CI
 (`.github/workflows/main.yml`: `check-cfg-axis.sh`,
-`check-hooks-in-closures.sh`, `check-self-subscribing-effects.sh`), and
+`check-hooks-in-closures.sh`, `check-self-subscribing-effects.sh`,
+`check-css-logical-properties.sh`), and
 all of them are cheap enough to run on every relevant change locally,
 CI job or not:
 
@@ -146,6 +147,16 @@ scripts/check-hooks-in-closures.sh
 # dev-docs/backlog.md row 73 for the Drawer drag-hang incident this
 # guards against.
 scripts/check-self-subscribing-effects.sh
+
+# a themed stylesheet may not hard-code a physical inline-axis CSS value
+# (margin-left/right, left/right, border-*-left/right*, text-align: left/
+# right, a non-zero translateX(), ...) where a logical property would
+# express the same rule and mirror correctly under dir="rtl" -- see
+# dev-docs/backlog.md row 13. Two escape hatches: any rule selector
+# mentioning `data-side=` (a screen-geometry fact, not a reading-direction
+# one), or a `/* rtl-physical: <reason> */` comment -- see the script's own
+# header for the full allowlist.
+scripts/check-css-logical-properties.sh
 ```
 
 ### Running the preview
