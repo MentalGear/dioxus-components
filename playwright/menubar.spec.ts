@@ -28,7 +28,7 @@ test("pointer navigation", async ({ page }) => {
 
 test("keyboard navigation", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
-  await page.getByRole("menubar").focus();
+  await page.locator("#component-preview-frame").first().getByRole("menubar").focus();
   const fileMenuButton = page.getByRole("menuitem", { name: "File" });
   // Go right with the keyboard
   await page.keyboard.press("ArrowRight");

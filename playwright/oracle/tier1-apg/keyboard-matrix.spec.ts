@@ -358,7 +358,7 @@ test.describe("APG Menu and Menubar pattern — Menubar", () => {
   });
 
   test("Menubar — Right Arrow: \"When focus is in a menubar, moves focus to the next item, optionally wrapping from the last to the first\"", async ({ page }) => {
-    await page.getByRole("menubar").focus();
+    await page.locator("#component-preview-frame").first().getByRole("menubar").focus();
     const fileButton = page.getByRole("menuitem", { name: "File" });
     const editButton = page.getByRole("menuitem", { name: "Edit" });
     await page.keyboard.press("ArrowRight");
@@ -372,7 +372,7 @@ test.describe("APG Menu and Menubar pattern — Menubar", () => {
   });
 
   test("Menubar — Left Arrow: \"moves focus to the previous item, optionally wrapping from the first to the last\"", async ({ page }) => {
-    await page.getByRole("menubar").focus();
+    await page.locator("#component-preview-frame").first().getByRole("menubar").focus();
     const editButton = page.getByRole("menuitem", { name: "Edit" });
     // Focus starts on "File" (the first/default item) -- ArrowLeft from the
     // first item should wrap to the LAST item ("Edit" in this two-item demo).

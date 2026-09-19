@@ -34,7 +34,7 @@ test('mobile navigation', async ({ page }) => {
 
 test('keyboard navigation', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=navbar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
-  await page.getByRole('menubar').focus();
+  await page.locator('#component-preview-frame').first().getByRole('menubar').focus();
   // Go right with the keyboard
   await page.keyboard.press('ArrowRight');
   // Assert the focus is on the information menu item
