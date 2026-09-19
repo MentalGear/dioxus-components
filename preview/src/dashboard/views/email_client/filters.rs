@@ -1,3 +1,4 @@
+use crate::components::data_table::includes_string;
 use crate::dashboard::common::{lookup_message, FolderId, MessageState, MessageTag, TabId};
 
 pub(super) fn message_matches_folder(state: &MessageState, folder_id: FolderId) -> bool {
@@ -19,16 +20,15 @@ pub(super) fn message_matches_tab(state: &MessageState, tab_id: TabId) -> bool {
 }
 
 pub(super) fn message_matches_search(state: &MessageState, query: &str) -> bool {
-    let query = query.trim().to_lowercase();
-    if query.is_empty() {
-        return true;
-    }
     let m = lookup_message(state.source_index);
-    m.sender.name.to_lowercase().contains(&query)
-        || m.sender.addr.to_lowercase().contains(&query)
-        || m.subject.to_lowercase().contains(&query)
-        || state.tags.iter().any(|tag| tag.label().contains(&query))
-        || (m.has_attachment && "attachment".contains(&query))
+    includes_string(m.sender.name, query)
+        || includes_string(m.sender.addr, query)
+        || includes_string(&m.subject, query)
+        || state
+            .tags
+            .iter()
+            .any(|tag| includes_string(tag.label(), query))
+        || (m.has_attachment && includes_string("attachment", query))
 }
 
 pub(super) fn message_matches_selected_tags(
