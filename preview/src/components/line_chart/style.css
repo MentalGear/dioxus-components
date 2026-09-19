@@ -1,0 +1,57 @@
+/*
+ * Line chart gallery -- extra layout for the one demo that needs anything
+ * beyond `chart/style.css` (already loaded by `ChartContainer`/`Chart`/
+ * `ChartTooltip`/`ChartLegend`, which this package re-exports unchanged --
+ * see component.rs). Every other variant (default, linear, step, multiple,
+ * dots, ...) composes those pieces directly and needs no rule here.
+ *
+ * `interactive` (`chart-line-interactive.tsx`) is the exception: its
+ * "which series" header is a small cluster of two toggle buttons shadcn
+ * renders as bare `<button data-active>` (not their `Button` component --
+ * the compact stacked label+total layout has no equivalent `Button` size),
+ * ported the same way here as plain `button` elements (still real,
+ * focusable, `type="button"` controls -- not a styled `div`) with
+ * `data-active` driving the pressed-look highlight. Namespaced under this
+ * component's own `dx-line-chart` prefix (scripts/check-dx-class-prefix.sh).
+ */
+
+.dx-line-chart-toggle-row {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-radius: var(--dx-radius-lg);
+}
+
+.dx-line-chart-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--dx-space-2) var(--dx-space-4);
+  border: none;
+  background-color: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  gap: var(--dx-space-1);
+  text-align: start;
+}
+
+.dx-line-chart-toggle + .dx-line-chart-toggle {
+  border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+}
+
+.dx-line-chart-toggle:hover,
+.dx-line-chart-toggle[data-active="true"] {
+  background-color: var(--primary-color-4);
+}
+
+.dx-line-chart-toggle-label {
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-xs);
+}
+
+.dx-line-chart-toggle-value {
+  font-size: var(--dx-text-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
