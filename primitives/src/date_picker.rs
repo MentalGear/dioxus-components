@@ -1271,6 +1271,36 @@ struct DateRangeInputContext {
     on_format_year_placeholder: Callback<(), String>,
 }
 
+impl DateRangeInputContext {
+    /// Sets the start date, but only if it actually differs from the
+    /// current value -- the single choke point every producer of
+    /// `start_date` (the calendar-driven sync effect in
+    /// `DateRangePickerInputValue` and the segment-driven `DateElement` for
+    /// the start side) must go through, mirroring the guard
+    /// `DatePickerContext::set_date` / `DateRangePickerContext::set_range`
+    /// already use one level up. Without it, `start_date` and
+    /// `DateElement`'s own `year_value`/`month_value`/`day_value` echo an
+    /// unchanged value back and forth forever the instant all three
+    /// segments first resolve (`DateElement`'s "sync down from
+    /// selected_date" effect writes the segment signals, whose "sync up via
+    /// on_date_change" effect writes this signal right back) -- see
+    /// dev-docs/backlog.md's range-hang account for the full trace and the
+    /// live reproduction (CPU pinned, RSS growing ~4MB/s, until the tab
+    /// crashes) that confirmed it.
+    fn set_start_date(&mut self, date: Option<Date>) {
+        if *self.start_date.peek() != date {
+            self.start_date.set(date);
+        }
+    }
+
+    /// See [`Self::set_start_date`]; the same choke point for `end_date`.
+    fn set_end_date(&mut self, date: Option<Date>) {
+        if *self.end_date.peek() != date {
+            self.end_date.set(date);
+        }
+    }
+}
+
 #[derive(Props, Clone, PartialEq)]
 struct DateElementProps {
     /// The start index (used for focus)
@@ -1311,10 +1341,36 @@ fn DateElement(props: DateElementProps) -> Element {
     let mut year_value = use_signal(move || selected_date.map(|date| date.year()));
 
     use_effect(move || {
+        // Sync down from `props.selected_date` into the three editable
+        // segment signals -- but only where the decomposed value actually
+        // differs from what the segment already holds. `on_date_change`
+        // below re-derives `props.selected_date` from these same three
+        // signals and calls back up through it every time all three
+        // resolve; for a `DateRangePicker` side, that callback writes
+        // straight back into the very signal this effect reads
+        // (`DateRangeInputContext::set_start_date`/`set_end_date`). An
+        // unconditional `.set()` here (the previous behavior) closes that
+        // into an unbounded cycle the instant a date first completes, even
+        // though `set_start_date`/`set_end_date` themselves already
+        // no-op an unchanged value -- Dioxus's `Signal::set` marks a
+        // signal dirty (and reschedules every subscriber) regardless of
+        // whether the new value equals the old one, so the *other* half of
+        // a two-way sync has to refuse the redundant write too, or the
+        // "no-op" write still wakes this effect for nothing. See
+        // dev-docs/backlog.md's range-hang account.
         let date = (props.selected_date)();
-        year_value.set(date.map(|d| d.year()));
-        month_value.set(date.map(|d| d.month() as u8));
-        day_value.set(date.map(|d| d.day()));
+        let new_year = date.map(|d| d.year());
+        if *year_value.peek() != new_year {
+            year_value.set(new_year);
+        }
+        let new_month = date.map(|d| d.month() as u8);
+        if *month_value.peek() != new_month {
+            month_value.set(new_month);
+        }
+        let new_day = date.map(|d| d.day());
+        if *day_value.peek() != new_day {
+            day_value.set(new_day);
+        }
     });
 
     use_effect(move || {
@@ -1386,13 +1442,26 @@ pub fn DateRangePickerInputValue(props: DateRangePickerInputValueProps) -> Eleme
     let mut ctx = use_context::<DateRangePickerContext>();
     let selected_range = ctx.date_range.peek().cloned();
 
-    let mut start_date = use_signal(move || selected_range.map(|range| range.start()));
-    let mut end_date = use_signal(move || selected_range.map(|range| range.end()));
+    let start_date = use_signal(move || selected_range.map(|range| range.start()));
+    let end_date = use_signal(move || selected_range.map(|range| range.end()));
+    // Built once, up front, so both this component's own sync-down effect
+    // and every `DateElement` child (via the context provider below) write
+    // `start_date`/`end_date` through the exact same guarded choke point --
+    // see `DateRangeInputContext::set_start_date`'s doc comment for why an
+    // unconditional write here forms an unbounded cycle with `DateElement`'s
+    // own effects the instant a range first completes.
+    let mut range_ctx = DateRangeInputContext {
+        start_date,
+        end_date,
+        on_format_day_placeholder: props.on_format_day_placeholder,
+        on_format_month_placeholder: props.on_format_month_placeholder,
+        on_format_year_placeholder: props.on_format_year_placeholder,
+    };
 
     use_effect(move || {
         let date_range = ctx.date_range.cloned();
-        start_date.set(date_range.map(|r| r.start()));
-        end_date.set(date_range.map(|r| r.end()));
+        range_ctx.set_start_date(date_range.map(|r| r.start()));
+        range_ctx.set_end_date(date_range.map(|r| r.end()));
     });
 
     use_effect(move || {
@@ -1415,13 +1484,7 @@ pub fn DateRangePickerInputValue(props: DateRangePickerInputValueProps) -> Eleme
         };
     });
 
-    use_context_provider(|| DateRangeInputContext {
-        start_date,
-        end_date,
-        on_format_day_placeholder: props.on_format_day_placeholder,
-        on_format_month_placeholder: props.on_format_month_placeholder,
-        on_format_year_placeholder: props.on_format_year_placeholder,
-    });
+    use_context_provider(|| range_ctx);
 
     let children = props.children.unwrap_or_else(|| {
         rsx! {
@@ -1446,7 +1509,7 @@ pub fn DateRangePickerStartValue(props: DateRangePickerStartValueProps) -> Eleme
     rsx! {
         DateElement {
             selected_date: ctx.start_date,
-            on_date_change: move |date| ctx.start_date.set(date),
+            on_date_change: move |date| ctx.set_start_date(date),
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
@@ -1464,7 +1527,7 @@ pub fn DateRangePickerEndValue(props: DateRangePickerEndValueProps) -> Element {
         DateElement {
             start_index: 3,
             selected_date: ctx.end_date,
-            on_date_change: move |date| ctx.end_date.set(date),
+            on_date_change: move |date| ctx.set_end_date(date),
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
