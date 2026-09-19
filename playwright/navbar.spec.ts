@@ -14,16 +14,22 @@ test('hover navigation', async ({ page }) => {
   await calendar.evaluate((element) => {
     (element as HTMLElement).click();
   });
-  // Assert the url changed to the calendar component
-  await expect(page).toHaveURL(/.*name=calendar/);
+  // Assert the url changed to the calendar component. Path-segment form
+  // (dev-docs/backlog.md row 46): `navbar`'s own demo fixture
+  // (preview/src/components/navbar/variants/main/mod.rs) links via
+  // `Route::component`, which now builds the canonical, SSG-enumerable
+  // `/component/<name>/` route rather than the legacy `?name=...` query
+  // form (still supported -- it redirects client-side to this same path).
+  await expect(page).toHaveURL(/\/component\/calendar\//);
 });
 
 test('mobile navigation', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=navbar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
   await page.getByRole('menuitem', { name: 'Inputs' }).tap();
   await page.getByRole('menuitem', { name: 'Calendar' }).tap();
-  // Assert the url changed to the calendar component
-  await expect(page).toHaveURL(/.*name=calendar/);
+  // Assert the url changed to the calendar component (path-segment form,
+  // see "hover navigation"'s identical comment above).
+  await expect(page).toHaveURL(/\/component\/calendar\//);
 });
 
 test('keyboard navigation', async ({ page }) => {
@@ -46,8 +52,9 @@ test('keyboard navigation', async ({ page }) => {
   await expect(page.getByRole('menuitem', { name: 'Checkbox' })).toBeFocused();
   // Click the focused menu item
   await page.keyboard.press('Enter');
-  // Assert the url changed to the checkbox component
-  await expect(page).toHaveURL(/.*name=checkbox/);
+  // Assert the url changed to the checkbox component (path-segment form,
+  // see "hover navigation"'s identical comment above).
+  await expect(page).toHaveURL(/\/component\/checkbox\//);
 });
 
 test.describe('Axe automated scan', () => {
