@@ -672,12 +672,13 @@ test.describe("Range picker (DateRangePicker, variant=range)", () => {
     expect(activeId).toBe(endYearId);
   });
 
-  test("typing into the start and end year/month segments updates each independently (stops short of completing either date -- see the known-hang guard below)", async ({ page }) => {
+  test("typing into the start and end year/month segments updates each independently (stops short of completing either date -- see the regression guard below)", async ({ page }) => {
     // `DateRangePickerInputValue`'s own commit effect (`date_picker.rs`)
     // only calls `on_date_change`/touches the calendar once a side's
     // year+month+day all resolve to `Some` -- this exercises everything up
-    // to but not including that point, which is unaffected by the hang
-    // documented below (confirmed: this test passes green on its own).
+    // to but not including that point, which used to be where the hang
+    // documented in the regression guard below kicked in (confirmed: this
+    // test passes green on its own, both before and after that fix).
     await gotoDatePicker(page);
     const start = { year: rangeSegment(page, "start", "year", "range"), month: rangeSegment(page, "start", "month", "range") };
     const end = { year: rangeSegment(page, "end", "year", "range"), month: rangeSegment(page, "end", "month", "range") };
@@ -697,42 +698,34 @@ test.describe("Range picker (DateRangePicker, variant=range)", () => {
     await expect(end.month).toHaveText("09");
   });
 
-  test.fail("completing a full date on the start side via the segments (year+month already filled, then Home on day) hangs the tab, independent of any calendar interaction", async ({ page }) => {
-    // CONFIRMED DEFECT, root cause not found, NOT fixed by this lane --
-    // reported. Discovered while writing the test above: filling
-    // start.year + start.month, then giving start.day *any* real value --
-    // by typing a 2nd digit (which also auto-advances focus into the end
-    // side, so that was this lane's first hypothesis) **or by pressing
-    // `Home`, which never advances focus at all** -- hangs the page
-    // indefinitely the moment a full start date is first constructed
-    // (`DateElement`'s own effect, `date_picker.rs`), with NO calendar
-    // open and the end side never touched. Ruling out the focus-advance
-    // hypothesis: `Home` only ever calls `EmitValue`, never `FocusNext`
-    // (see the Home/End fix above), yet it reproduces identically -- so
-    // this is about *completing a date on one side of a range picker* by
-    // itself, not about crossing the start/end boundary.
-    //
-    // This lane's one attempt at a fix -- guarding `DateRangeInputContext`'s
-    // `start_date`/`end_date` writes against re-emitting an unchanged value
-    // (mirroring `DatePickerContext::set_date`/`DateRangePickerContext::
-    // set_range`, which already guard this way and are the reason the
-    // *single*-date `DatePicker` and the calendar-driven commit path don't
-    // exhibit this) -- was verified NOT to fix it (rebuilt, re-ran the
-    // exact repro, still hung) and was reverted rather than left in as a
-    // fix that doesn't fix anything. The true mechanism is still open.
-    //
-    // Confirmed by execution the same way as the calendar-completion hang
-    // below: the page stops responding to a trivial `page.evaluate(() => 1
-    // + 1)` issued right after, not just to the triggering action itself --
-    // a real hang, not a slow response. Possibly the same root cause as
-    // that other hang (both involve a `DateRangePicker` side's date being
-    // completed for the first time), possibly not; not confirmed either
-    // way given this lane's time budget. Kept fast and bounded (short
-    // timeouts) rather than left to hit the full test timeout on every run.
+  test("completing a full date on the start side via the segments (year+month, then Home on day) resolves promptly and commits only the start side", async ({ page }) => {
+    // Regression guard for a confirmed page hang (dev-docs/backlog.md's
+    // range-hang account). Root cause: the moment a `DateRangePicker`
+    // side's year/month/day segments first all resolved, `DateElement`'s
+    // own two effects (`date_picker.rs`) and `DateRangeInputContext`'s
+    // `start_date`/`end_date` signals formed an unconditional two-way
+    // sync -- `DateElement`'s "sync down from selected_date" effect wrote
+    // the segment signals, whose "sync up via on_date_change" effect wrote
+    // `start_date` right back, and neither hop checked whether the value
+    // it was about to write actually differed from what was already
+    // there. `Signal::set` marks a signal dirty (rescheduling every
+    // subscriber) regardless of whether the new value equals the old one,
+    // so the round trip re-triggered itself forever: confirmed live, the
+    // render thread pinned near 100% CPU and its RSS grew ~4MB/s
+    // (unthrottled allocation on every iteration) until the tab crashed --
+    // with no calendar open and the end side never touched, ruling out any
+    // popover/focus-advance involvement. Fixed by construction: every
+    // write to `start_date`/`end_date` now goes through one guarded choke
+    // point (`DateRangeInputContext::set_start_date`/`set_end_date`,
+    // mirroring the equality guard `DatePickerContext::set_date`/
+    // `DateRangePickerContext::set_range` already use one level up), and
+    // `DateElement`'s own sync-down effect only writes a segment signal
+    // when its decomposed value actually changes.
     await gotoDatePicker(page);
     const startYear = rangeSegment(page, "start", "year", "range");
     const startMonth = rangeSegment(page, "start", "month", "range");
     const startDay = rangeSegment(page, "start", "day", "range");
+    const endYear = rangeSegment(page, "end", "year", "range");
 
     await startYear.click();
     await pressEach(page, ["2", "0", "2", "6"]);
@@ -740,17 +733,24 @@ test.describe("Range picker (DateRangePicker, variant=range)", () => {
     await page.keyboard.press("Home");
     await startDay.click();
     // `page.keyboard.press()` has no `timeout` option of its own (unlike a
-    // locator action) -- an earlier version of this test passed one and it
-    // was silently ignored, so the confirmed hang ran out the full 5-minute
-    // *test* timeout instead of failing fast, which `test.fail()` does not
-    // treat as an "expected" failure (a timeout aborts the test rather than
-    // rejecting the assertion `test.fail()` is watching for). Race it
-    // against a manual timeout instead, so this fails in 5s the same way
-    // the calendar-completion guard above does.
+    // locator action), so a regression here would hang the whole test file
+    // for the 5-minute *test* timeout instead of failing fast -- race it
+    // against a manual timeout so a reintroduction of the bug still fails
+    // in 5s.
     await Promise.race([
       page.keyboard.press("Home"),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Home on the day segment did not resolve within 5s (confirmed hang)")), 5000)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Home on the day segment did not resolve within 5s (regression -- see this test's own comment)")), 5000)
+      ),
     ]);
+
+    await expect(startYear).toHaveText("2026");
+    await expect(startMonth).toHaveText("01");
+    await expect(startDay).toHaveText("01");
+    // The end side was never touched.
+    await expect(endYear).toHaveText("YYYY");
+    // The page as a whole is still responsive, not just this one action.
+    expect(await page.evaluate(() => 1 + 1)).toBe(2);
   });
 });
 
@@ -826,66 +826,36 @@ test.describe("Unavailable dates variant (variant=unavailable_dates)", () => {
   });
 });
 
-test.describe("Known defect: completing a range selection via the calendar hangs the tab", () => {
-  // NOT fixed by this lane -- reported, per this lane's brief, rather than
-  // guessed at: `date_picker.rs` (this lane's own file) is confirmed clean
-  // up to and including the moment of commit (see below); the mechanism
-  // lives somewhere in the interaction between closing an `is_modal: false`
-  // popover (`popover.rs`/`top_layer.rs`, not owned by any lane this batch)
-  // and `RangeCalendar` unmounting (`calendar.rs`, owned by the parallel
-  // rtl-rust lane this batch -- reported to that lane's queue rather than
-  // edited here).
-  //
-  // Repro, confirmed by direct execution against this repo's dev server,
-  // TWICE, under two different load conditions (this sandbox's own load
-  // average was ~7.8 on 4 cores for the first repro, ~idle for the second
-  // -- ruling out CPU contention as the cause):
-  //   1. Open the "range" variant's popover, click day 5 (sets the anchor;
-  //      the popover stays open -- confirmed fine, fast).
-  //   2. Click day 10 (a *different* day -- completes the range). The
-  //      demo's `on_range_change` callback fires and logs the fully correct
-  //      committed range (`Some(DateRange { start: 2026-09-05, end:
-  //      2026-09-10 })`) within ~300ms of the click starting -- the
-  //      application-level state update is correct and fast.
-  //   3. The click action itself then never resolves. Confirmed with a
-  //      70-second explicit timeout (twice): still pending. Confirmed
-  //      afterward that the whole page, not just this one action, stops
-  //      responding: a trivial `page.evaluate(() => 1 + 1)` issued right
-  //      after also never returned (measured for 5+ minutes before this
-  //      probe was killed) -- this rules out "just a Playwright click-
-  //      tracking quirk" and points at the page's own JS thread genuinely
-  //      stuck, not merely slow.
-  //   4. Isolated the *single*-date `DatePicker`'s own "click a day, select
-  //      and close" flow (same popover machinery, same `is_modal: false`
-  //      wiring, same `base_ctx.open.set(false)` call in this lane's own
-  //      `date_picker.rs`): completes cleanly and fast. Isolated the bare
-  //      `RangeCalendar` primitive's own two-click range completion with NO
-  //      popover involved at all (`/component/?name=calendar&variant=
-  //      range&`, inline, never promoted to the top layer): also completes
-  //      cleanly and fast. Both rule out `date_picker.rs`'s own callback
-  //      shape (`ctx.set_range(range); base_ctx.open.set(false);` -- the
-  //      exact same shape as the single-date arm that works) and rule out
-  //      `RangeCalendar`'s own selection logic in isolation -- the defect
-  //      only reproduces in the combination of the two: a range completion
-  //      *while inside a closing popover*.
-  //   5. A read-only look at `top_layer.rs` (not owned by this lane) found
-  //      a multi-frame `requestAnimationFrame`-driven "settle" loop
-  //      (`reposition()`, used on every engine per `dev-docs/backlog.md`
-  //      row 10's `--dx-anchor-width` account, not just the non-native-
-  //      anchor fallback path) that measures the popover content's own
-  //      size across frames -- a plausible mechanism if its exit condition
-  //      never stabilizes once the measured element's subtree unmounts
-  //      mid-settle, but this lane did not instrument it far enough to
-  //      confirm that is the actual mechanism, only that it exists and is
-  //      the most plausible candidate found without a CPU profiler.
-  //
-  // Kept as a fast, bounded `test.fail()` regression guard (a short 5s
-  // click timeout, not the 70s used to confirm the hang above) rather than
-  // a silently-red test: this documents a real, confirmed defect without
-  // slowing down every future run of this file by a minute, and will flip
-  // to an unexpected pass (Playwright fails the run and says so) the day
-  // whichever lane owns the real fix lands it.
-  test.fail("clicking a second, different calendar day to complete a range selection resolves", async ({ page }) => {
+test.describe("Completing a range selection via the calendar", () => {
+  // This used to hang the tab -- same root cause as, and fixed by the same
+  // construction as, the segments-only guard above (dev-docs/backlog.md's
+  // range-hang account), not the popover-closing/top_layer mechanism
+  // originally suspected. What actually happens once a calendar click
+  // completes a range: `DateRangePickerCalendar`'s `on_range_change` calls
+  // the already-guarded `DateRangePickerContext::set_range`, which flows
+  // back down through `props.selected_range` into
+  // `DateRangePickerInputValue`'s own sync-down effect -- which
+  // (unconditionally, before this fix) wrote the *same* `start_date`/
+  // `end_date` signals `DateElement`'s segments for the start AND end side
+  // both read, tripping the identical unbounded two-effect cycle the
+  // segments-only guard above documents, for both sides at once. The
+  // popover-closing call (`base_ctx.open.set(false)`) sits one statement
+  // after the range-commit call in the same handler, so from the outside
+  // it looked correlated with "closing a popover"; it never actually got
+  // a chance to run before this fix, since the interpreter never returned
+  // from the effect cascade the *preceding* statement (`ctx.set_range`)
+  // touched off. Confirmed live before this fix: the demo's
+  // `on_range_change` callback logs the fully correct committed range
+  // within ~300ms, then the click action itself never resolves and the
+  // whole page stops responding to a trivial `page.evaluate(() => 1 + 1)`
+  // -- a real hang, not a slow response, with the render thread pinned
+  // near 100% CPU and RSS growing until the tab crashed (same signature as
+  // the segments-only case). Fixed by the same construction: every write
+  // to `start_date`/`end_date` (including this sync-down effect's) now
+  // goes through the guarded `DateRangeInputContext::set_start_date`/
+  // `set_end_date` choke point. No change was needed in `calendar.rs`,
+  // `popover.rs`, or `top_layer.rs`.
+  test("clicking a second, different calendar day to complete a range selection resolves, closes the popover, and syncs the segments", async ({ page }) => {
     await gotoDatePicker(page);
     await pickerTrigger(page, "range").click();
     const dialog = pickerContent(page, "range");
@@ -893,5 +863,27 @@ test.describe("Known defect: completing a range selection via the calendar hangs
 
     await dayCell(dialog, 5).click({ timeout: 5000 });
     await dayCell(dialog, 10).click({ timeout: 5000 });
+
+    await expect(dialog).toBeHidden();
+    // The calendar defaults to the current month/year (days 5 and 10 of it
+    // are always in view, spillover-free, regardless of which day of the
+    // month "today" actually is) -- computed rather than hardcoded, per
+    // this file's own established convention (see the aria-valuenow test
+    // above and calendar.spec.ts).
+    const today = await page.evaluate(() => {
+      const now = new Date();
+      return { year: now.getFullYear(), month: now.getMonth() + 1 };
+    });
+    const yyyy = String(today.year);
+    const mm = String(today.month).padStart(2, "0");
+    const start = { year: rangeSegment(page, "start", "year", "range"), month: rangeSegment(page, "start", "month", "range"), day: rangeSegment(page, "start", "day", "range") };
+    const end = { year: rangeSegment(page, "end", "year", "range"), month: rangeSegment(page, "end", "month", "range"), day: rangeSegment(page, "end", "day", "range") };
+    await expect(start.year).toHaveText(yyyy);
+    await expect(start.month).toHaveText(mm);
+    await expect(start.day).toHaveText("05");
+    await expect(end.year).toHaveText(yyyy);
+    await expect(end.month).toHaveText(mm);
+    await expect(end.day).toHaveText("10");
+    expect(await page.evaluate(() => 1 + 1)).toBe(2);
   });
 });
