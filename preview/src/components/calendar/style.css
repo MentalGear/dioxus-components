@@ -51,12 +51,27 @@
     touch-action: manipulation;
 }
 
+/* rtl-physical: matches shadcn's own calendar.tsx RTL treatment exactly
+   (`apps/v4/registry/new-york-v4/ui/calendar.tsx`, radix-ui/ui commit
+   a87a63b: `rtl:**:[.rdp-button_next>svg]:rotate-180` /
+   `..._previous>svg]:rotate-180`) -- button position stays physical, only
+   the chevron glyph rotates in RTL (see the `[dir="rtl"] ... svg` rule
+   below). Every other shadcn component checked (dialog close button,
+   breadcrumb separator, pagination prev/next, dropdown/context-menu
+   submenu chevrons) has *no* RTL treatment at all; this is the one
+   concrete precedent shadcn ships, so it is replicated verbatim rather
+   than inventing a position-swap upstream never demonstrated. */
 .dx-calendar-nav-prev {
-    left: 0.75rem;
+    left: 0.75rem; /* rtl-physical: see comment above */
 }
 
 .dx-calendar-nav-next {
-    right: 0.75rem;
+    right: 0.75rem; /* rtl-physical: see comment above */
+}
+
+[dir="rtl"] .dx-calendar-nav-prev svg,
+[dir="rtl"] .dx-calendar-nav-next svg {
+    transform: rotate(180deg);
 }
 
 .dx-calendar-nav-prev:hover,
@@ -100,6 +115,19 @@
     display: flex;
     width: 100%;
     flex-direction: column;
+}
+
+/* Cross-lane handoff (rtl-rust, $S/batch3/rtl-rust/css-needs.md): the day
+   grid's own column order must mirror under RTL to stay spatially
+   consistent with the Rust-side ArrowLeft/Right day-step flip
+   (`horizontal_day_step`) -- `direction: rtl` reverses this table's visual
+   column order without needing its markup/template rewritten. Keyed on
+   `[data-direction="rtl"]` (the attribute rtl-rust confirmed is emitted on
+   this exact grid element), not just inherited `dir`, since a table's own
+   `direction` property does not otherwise affect column order unless set
+   directly on it. */
+.dx-calendar-grid[data-direction="rtl"] {
+  direction: rtl;
 }
 
 .dx-calendar-grid {
@@ -180,18 +208,17 @@
 }
 
 .dx-calendar-grid-week td {
-    padding-right: 0;
-    padding-left: 0;
+    padding-inline: 0;
 }
 
 .dx-calendar-grid-week td:first-child .dx-calendar-grid-cell {
-    border-bottom-left-radius: var(--dx-radius-lg);
-    border-top-left-radius: var(--dx-radius-lg);
+    border-end-start-radius: var(--dx-radius-lg);
+    border-start-start-radius: var(--dx-radius-lg);
 }
 
 .dx-calendar-grid-week td:last-child .dx-calendar-grid-cell {
-    border-bottom-right-radius: var(--dx-radius-lg);
-    border-top-right-radius: var(--dx-radius-lg);
+    border-end-end-radius: var(--dx-radius-lg);
+    border-start-end-radius: var(--dx-radius-lg);
 }
 
 .dx-calendar-grid-cell[data-month="last"][data-selection-between="true"],
@@ -212,8 +239,8 @@ td:has(.dx-calendar-grid-cell[data-selection-start="true"]) {
     margin-top: 1px;
     margin-bottom: 1px;
     background-color: var(--primary-color-5);
-    border-bottom-left-radius: var(--dx-radius-lg);
-    border-top-left-radius: var(--dx-radius-lg);
+    border-end-start-radius: var(--dx-radius-lg);
+    border-start-start-radius: var(--dx-radius-lg);
 }
 
 td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
@@ -221,8 +248,8 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
     margin-top: 1px;
     margin-bottom: 1px;
     background-color: var(--primary-color-5);
-    border-bottom-right-radius: var(--dx-radius-lg);
-    border-top-right-radius: var(--dx-radius-lg);
+    border-end-end-radius: var(--dx-radius-lg);
+    border-start-end-radius: var(--dx-radius-lg);
 }
 
 .dx-calendar-grid-cell[data-month="current"][data-selected="true"]:hover {
