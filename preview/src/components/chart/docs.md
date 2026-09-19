@@ -37,6 +37,8 @@ ChartContainer {
         aria_label: "Visitors by month, desktop and mobile",
         stacked: false,
         show_dots: false, // Line only
+        x_label: "Month", // hidden table's corner <th> -- default "Category"
+        max_x_ticks: 12, // thin x-axis labels on a dense chart -- see below
     }
 
     // Optional: the hover tooltip. Rendered even when closed (CSS hides
@@ -71,7 +73,12 @@ nor Radix defines a chart pattern to justify it. Instead:
   Graphics Module 1.0's own definition of that role.
 - A real, visually-hidden `<table>` mirrors the exact same series/category/value data as the
   chart's actual screen-reader-facing path — one row per data point, one column per series,
-  natively and correctly keyboard-navigable with zero bespoke widget behavior to get wrong.
+  natively and correctly keyboard-navigable with zero bespoke widget behavior to get wrong. Its
+  corner cell (`<th scope="col">`) carries `Chart`'s `x_label` prop (default `"Category"`) rather
+  than being left empty — an empty `<th>` has no accessible name and fails axe's
+  `empty-table-header` rule, since a screen-reader user browsing by column has no way to tell what
+  the first column represents. Set it to whatever the x-axis actually is (`"Date"`, `"Month"`,
+  `"Product"`, ...).
 - Legend swatches carry `role="graphics-symbol"` (the Graphics Module's own role for an atomic,
   repeated glyph) plus an `aria-label` naming the series.
 - Optional arrow-key stepping of the visual tooltip (`Chart`'s `keyboard` prop, on by default) is
@@ -91,3 +98,14 @@ focusable (`tabindex="0"`, `role="group"`, `aria-roledescription="chart"`):
 Hovering a data point's invisible hit-band does the same thing via pointer input — both paths
 drive the same `active_index` state, so the tooltip and the visual cursor line always agree with
 whichever input method is in use.
+
+## Dense x-axes
+
+A chart with many data points (e.g. 90 daily values) would draw one x-axis tick label per datum by
+default and overlap them into an unreadable smear. `Chart`'s `max_x_ticks` prop (default `12`)
+caps how many tick *labels* are drawn — it labels only every `ceil(n / max_x_ticks)`-th datum
+(always including the first), leaving every hit band, mark, and hidden-table row exactly as before;
+this thins the visible axis labels only, never the underlying data or interactivity. This is MVP
+count-based thinning, not width-aware — a chart with unusually long labels at a narrow viewport can
+still overlap even within this limit; deriving the count from estimated rendered label width
+instead of a fixed count is the natural follow-up (see `dev-docs/research/chart-forks-2026-09-19.md`).
