@@ -2,8 +2,9 @@
 
 use dioxus::prelude::*;
 
+use crate::chart::config::ChartConfig;
 use crate::chart::context::{ChartContext, ChartLayout};
-use crate::chart::engine::{ChartConfig, ChartDatum, ChartKind};
+use crate::chart::engine::{ChartDatum, ChartKind};
 use crate::{use_id_or, use_unique_id};
 
 /// The props for the [`ChartContainer`] component.
@@ -65,7 +66,7 @@ pub struct ChartContainerProps {
 ///             .series("mobile", "Mobile", "var(--dx-chart-2)")
 ///     });
 ///     let data = use_signal(|| {
-///         vec![ChartDatum { label: "January".to_string(), values: vec![Some(186.0), Some(80.0)] }]
+///         vec![ChartDatum { label: "January".to_string(), values: vec![Some(186.0), Some(80.0)], ..Default::default() }]
 ///     });
 ///
 ///     rsx! {

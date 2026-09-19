@@ -119,6 +119,7 @@ mod tests {
                 vec![ChartDatum {
                     label: "January".to_string(),
                     values: vec![Some(186.0), Some(80.0)],
+                    ..Default::default()
                 }]
             });
             rsx! {
