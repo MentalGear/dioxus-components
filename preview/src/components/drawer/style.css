@@ -322,6 +322,11 @@
 
 @keyframes dx-drawer-slide-in-right {
   from {
+    /* rtl-physical: side (top/right/bottom/left) is a screen-geometry
+       fact, not a reading-direction one -- see drawer.rs's DrawerSide
+       doc. A side="right" drawer always slides from the physical right
+       edge, in LTR or RTL alike (each side already has its own named
+       keyframes, so there is no sign to flip). */
     transform: translateX(100%);
   }
 
@@ -336,13 +341,13 @@
   }
 
   to {
-    transform: translateX(100%);
+    transform: translateX(100%); /* rtl-physical: see the note above */
   }
 }
 
 @keyframes dx-drawer-slide-in-left {
   from {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 
   to {
@@ -356,7 +361,7 @@
   }
 
   to {
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* rtl-physical: see the note above */
   }
 }
 

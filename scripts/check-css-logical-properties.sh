@@ -57,9 +57,12 @@
 #     no-op), so flagging them would be noise, not signal.
 #   - Batch-2-owned stylesheets (drawer, tag_group, sheet, resizable,
 #     navigation_menu) and the date-picker/data_table/top_layer lanes'
-#     stylesheets are out of scope for this migration (see this lane's own
-#     report for their RTL findings as follow-ups) -- excluded from the
-#     scan the same way check-css-literals.sh excludes non-member folders.
+#     stylesheets were out of scope for the rtl-css lane itself, but were
+#     finished at batch-3 integration (drawer/sheet's per-side slide
+#     keyframes and resizable's transform-paired centering allowlisted;
+#     navigation_menu's anchor reset and tag_group's tag/remove-button gap
+#     converted to logical properties; date_picker/data_table/top_layer had
+#     no hits) -- no folder is excluded from the scan any more.
 #
 # Usage: scripts/check-css-logical-properties.sh
 # Exit status: 0 if clean, 1 if any unallowlisted physical property remains.
@@ -77,13 +80,15 @@ import json
 
 THEME = "preview/assets/dx-components-theme.css"
 
-# Batch-2-owned and other-lane-owned component folders: never this lane's to
-# fix (see this script's header). Same exclusion list as the lane brief's
-# ownership section, not a duplicate policy.
-EXCLUDE = {
-    "drawer", "tag_group", "sheet", "resizable", "navigation_menu",
-    "data_table", "top_layer", "date_picker",
-}
+# Component folders excluded from the scan. Empty: the batch-2-owned
+# stylesheets and the date-picker/data_table/top_layer lanes' stylesheets
+# (originally excluded here, out of the rtl-css lane's own editable scope)
+# were audited and finished at batch-3 integration -- see this script's
+# header. Kept as a set, not removed outright, so a future lane can name a
+# folder here again if it ever needs a deliberate, reviewed exemption from
+# the whole scan (rather than allowlisting each line) -- see this script's
+# header for why that must stay a rare, named exception, not a default.
+EXCLUDE = set()
 
 members = set()
 for m in json.load(open("component.json"))["members"]:

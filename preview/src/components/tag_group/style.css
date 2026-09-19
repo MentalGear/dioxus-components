@@ -62,10 +62,10 @@
   padding: 0;
   border-style: none;
   border-radius: var(--dx-radius-md);
-  margin-left: var(--dx-space-1);
   background-color: transparent;
   color: var(--secondary-color-6);
   cursor: pointer;
+  margin-inline-start: var(--dx-space-1);
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;

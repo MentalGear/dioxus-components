@@ -56,10 +56,16 @@
   position: absolute;
   top: 0;
   bottom: 0;
+
+  /* rtl-physical: centers this hit-area on its own parent's inline
+     midpoint, paired with `transform: translateX(-50%)` below -- a
+     symmetric 50%+matching-negative-translate pair, not a reading-
+     direction concept -- see dialog/style.css's identical left:50%+
+     translate centering note. */
   left: 50%;
   width: var(--dx-space-1);
   content: "";
-  transform: translateX(-50%);
+  transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
 /* shadcn: `data-[panel-group-direction=vertical]:after:inset-x-0 after:top-1/2 after:h-1
@@ -91,6 +97,10 @@
   position: absolute;
   z-index: var(--dx-z-local-sm);
   top: 50%;
+
+  /* rtl-physical: centers the grip on its own parent handle, paired with
+     `transform: translate(-50%, -50%)` below -- see dialog/style.css's
+     identical left:50%+translate centering note. */
   left: 50%;
   display: flex;
   width: var(--dx-space-3);
@@ -105,7 +115,7 @@
   /* Purely decorative -- the handle div itself (not the grip) carries the interactive
      role/handlers, so a pointer landing on the grip must fall through to it. */
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%); /* rtl-physical: see comment above */
 }
 
 /* shadcn: `[&[data-panel-group-direction=vertical]>div]:rotate-90` rotates the WHOLE grip --
@@ -113,5 +123,5 @@
    rotating only the icon; one transform does both jobs, and the grip's own on-screen footprint
    swaps to match the vertical handle's own w<->h swap for free. */
 .dx-resizable-handle[data-orientation="vertical"] .dx-resizable-handle-grip {
-  transform: translate(-50%, -50%) rotate(90deg);
+  transform: translate(-50%, -50%) rotate(90deg); /* rtl-physical: same centering as .dx-resizable-handle-grip above, plus a vertical-orientation rotation */
 }
