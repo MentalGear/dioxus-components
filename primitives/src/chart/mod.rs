@@ -23,13 +23,27 @@
 //! (`https://www.w3.org/TR/graphics-aria-1.0/` -- an atomic, presentational-
 //! children image role, the textbook fit for a color swatch).
 //!
+//! ## An engine, and a components layer built on it
+//!
+//! [`engine`] holds every pure computation and the plain chart data model,
+//! with no dependency on this crate's other modules and no Dioxus types --
+//! see its own module doc for why (in short: it is meant to be offered
+//! upstream to `dioxus-community/dioxus-charts` once this component has
+//! landed and proven itself here). `Chart`, `ChartContainer`,
+//! `ChartTooltip`, and `ChartLegend` (this module's `components`, plus
+//! [`ChartContext`]/[`use_chart`] bridging `engine`'s data into this
+//! crate's reactivity) are the Dioxus-specific layer built on top of it.
+//! This split is purely internal: every public item from both layers is
+//! re-exported flatly here (`dioxus_primitives::chart::LinearScale`,
+//! `dioxus_primitives::chart::ChartConfig`, ...), so it changes nothing
+//! about how this crate's own consumers use the module.
+//!
 //! This module is under construction, landing in a sequence of small
-//! commits per this repo's own `CLAUDE.md`/lane convention -- the pure
-//! scale/path math (unit-tested in isolation with no `dioxus` types, see
-//! [`LinearScale`]/[`BandScale`]/[`line_path`]/[`area_path`]/[`stack`]/
-//! [`nice_domain`]) lands first so a themed `preview` package can build
-//! against it while the rest of the component lands. See each commit's
-//! message for what's newly available.
+//! commits per this repo's own `CLAUDE.md`/lane convention -- [`engine`]
+//! (unit-tested in isolation, no `dioxus` types) and [`ChartContext`]/
+//! [`use_chart`] land first so a themed `preview` package can build
+//! against the data model while the rendering components land. See each
+//! commit's message for what's newly available.
 //!
 //! ## Example
 //!
@@ -41,6 +55,13 @@
 //! assert!(path.starts_with('M'));
 //! ```
 
-mod scale;
+mod components;
+mod context;
+pub mod engine;
 
-pub use scale::{area_path, line_path, nice_domain, stack, BandScale, Curve, LinearScale};
+pub use components::{ChartContainer, ChartContainerProps};
+pub use context::{use_chart, ChartContext};
+pub use engine::{
+    area_path, line_path, nice_domain, stack, BandScale, ChartConfig, ChartDatum, ChartKind,
+    ChartSeries, Curve, LinearScale,
+};
