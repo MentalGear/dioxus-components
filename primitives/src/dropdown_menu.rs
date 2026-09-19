@@ -14,6 +14,7 @@ use crate::{
         collection_item, use_collection_provider, use_deferred_collection_focus, use_item,
         CollectionPlacement, CollectionState,
     },
+    direction::{use_direction, Direction},
     has_own_accessible_name, merge_attributes, use_animated_open, use_controlled, use_id_or,
     use_unique_id,
 };
@@ -81,6 +82,13 @@ struct DropdownMenuContext {
     // `DropdownMenuSub`'s own comment for how this count is kept accurate
     // across open, close, and an ancestor unmounting a still-open submenu.
     submenu_open_count: Signal<usize>,
+
+    // Text direction, read by `DropdownMenuSubTrigger`/
+    // `DropdownMenuSubContentRendered` to resolve the submenu open/close
+    // arrow key and which side a submenu opens on -- see
+    // `crate::menu_sub::is_submenu_open_arrow_key`/
+    // `is_submenu_close_arrow_key`'s doc.
+    direction: Direction,
 }
 
 impl DropdownMenuContext {
@@ -123,6 +131,12 @@ pub struct DropdownMenuProps {
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
+
+    /// The text direction for a [`DropdownMenuSub`]'s open/close arrow key
+    /// and which side it opens on. Defaults to the nearest
+    /// [`crate::direction::DirectionProvider`], or LTR if there is none.
+    #[props(default)]
+    pub dir: Option<Direction>,
 
     /// Additional attributes to apply to the dropdown menu element.
     #[props(extends = GlobalAttributes)]
@@ -200,6 +214,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
     use_effect(crate::scroll_lock::ensure_scrollbar_gutter_baseline);
 
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
+    let direction = use_direction(props.dir);
 
     let disabled = props.disabled;
     let trigger_id = use_unique_id();
@@ -221,6 +236,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         modal: props.modal,
         interacted_outside,
         submenu_open_count,
+        direction,
     });
 
     // docs/backlog.md row 53 (the "open-index container" band): this effect
@@ -358,8 +374,10 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
 
     rsx! {
         div {
+            dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
+            "data-direction": ctx.direction.as_str(),
             onkeydown: handle_keydown,
             ..props.attributes,
             {props.children}
@@ -1259,17 +1277,18 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
             if disabled() {
                 return;
             }
-            match event.key() {
-                // APG (see this component's doc): ArrowRight/Enter/Space
-                // open the submenu and move focus to its first item.
-                Key::ArrowRight | Key::Enter => {
-                    sub.open_with_focus(CollectionPlacement::First);
-                }
-                Key::Character(c) if c == " " => {
-                    sub.open_with_focus(CollectionPlacement::First);
-                }
-                _ => return,
+            let key = event.key();
+            // APG (see this component's doc): ArrowRight/Enter/Space open
+            // the submenu and move focus to its first item -- the arrow is
+            // direction-aware (`ArrowLeft` in RTL): see
+            // `crate::menu_sub::is_submenu_open_arrow_key`'s doc.
+            let opens = matches!(key, Key::Enter)
+                || matches!(&key, Key::Character(c) if c == " ")
+                || crate::menu_sub::is_submenu_open_arrow_key(&key, ctx.direction);
+            if !opens {
+                return;
             }
+            sub.open_with_focus(CollectionPlacement::First);
             event.prevent_default();
             event.stop_propagation();
         },
@@ -1377,6 +1396,7 @@ fn DropdownMenuSubContentRendered(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let ctx: DropdownMenuContext = use_context();
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
     // See `SubMenuState::hover_close`'s doc: this submenu's own content
@@ -1418,11 +1438,20 @@ fn DropdownMenuSubContentRendered(
     // and a zero gap directly abuts the two elements, shrinking the
     // physical dead zone `SUBMENU_CLOSE_GRACE_DELAY` (`crate::menu_sub`)
     // exists to cover for a diagonal mouse move from trigger into content.
+    // Side: the inline-axis-forward direction -- `Right` in LTR, `Left` in
+    // RTL (Radix `menu.tsx` L1245: `side={dir===RTL?'left':'right'}`). The
+    // position-try-fallbacks flip (see the comment above) still applies on
+    // top of whichever side this resolves to, for viewport overflow.
+    let sub_side = if ctx.direction == Direction::Rtl {
+        crate::ContentSide::Left
+    } else {
+        crate::ContentSide::Right
+    };
     crate::top_layer::use_anchor_position_fallback(
         id.clone(),
         id.clone(),
         open,
-        crate::ContentSide::Right,
+        sub_side,
         crate::ContentAlign::Start,
         0,
     );
@@ -1484,31 +1513,40 @@ fn DropdownMenuSubContentRendered(
     // root-owns-navigation one, since `DropdownMenuSub` deliberately
     // renders no wrapper element of its own to hang a root handler on.
     let onkeydown = move |event: Event<KeyboardData>| {
-        match event.key() {
-            Key::Escape | Key::ArrowLeft => {
-                sub.set_open.call(false);
-                sub.focus.clear_focus();
-                let trigger_id = trigger_id.cloned();
-                dioxus::document::eval(&format!(
-                    "var e=document.getElementById('{trigger_id}');if(e)e.focus()"
-                ));
-            }
-            Key::ArrowDown => sub.focus.focus_next(),
-            Key::ArrowUp => sub.focus.focus_prev(),
-            Key::Home => sub.focus.focus_first(),
-            Key::End => sub.focus.focus_last(),
-            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
-            // `DropdownMenu`'s identical arm for the full APG citation.
-            // Scoped to `sub.focus`, this submenu's own items, never the
-            // enclosing menu's -- matches every other navigation key in
-            // this same handler.
-            Key::Character(_) => {
-                let entries = sub.focus.text_entries();
-                if !typeahead.handle_key(sub.focus, &entries, &event) {
-                    return;
+        let key = event.key();
+        // The close key is direction-aware (`ArrowRight` in RTL) -- see
+        // `crate::menu_sub::is_submenu_close_arrow_key`'s doc for why
+        // `Escape` stays a plain, direction-independent literal here
+        // (folded into the same arm as a pre-existing, unrelated design
+        // choice this lane preserves rather than changes).
+        let closes = matches!(key, Key::Escape)
+            || crate::menu_sub::is_submenu_close_arrow_key(&key, ctx.direction);
+        if closes {
+            sub.set_open.call(false);
+            sub.focus.clear_focus();
+            let trigger_id = trigger_id.cloned();
+            dioxus::document::eval(&format!(
+                "var e=document.getElementById('{trigger_id}');if(e)e.focus()"
+            ));
+        } else {
+            match key {
+                Key::ArrowDown => sub.focus.focus_next(),
+                Key::ArrowUp => sub.focus.focus_prev(),
+                Key::Home => sub.focus.focus_first(),
+                Key::End => sub.focus.focus_last(),
+                // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+                // `DropdownMenu`'s identical arm for the full APG citation.
+                // Scoped to `sub.focus`, this submenu's own items, never
+                // the enclosing menu's -- matches every other navigation
+                // key in this same handler.
+                Key::Character(_) => {
+                    let entries = sub.focus.text_entries();
+                    if !typeahead.handle_key(sub.focus, &entries, &event) {
+                        return;
+                    }
                 }
+                _ => return,
             }
-            _ => return,
         }
         event.prevent_default();
         event.stop_propagation();
@@ -1519,7 +1557,9 @@ fn DropdownMenuSubContentRendered(
             id: id.clone(),
             role: crate::menu_semantics::MENU_ROLE,
             popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
             onkeydown,
             // See `SubMenuState::hover_close`'s doc: mirrors
             // `DropdownMenuSubTrigger`'s identical pair on the same shared
@@ -1560,6 +1600,7 @@ fn DropdownMenuSubContentRendered(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let ctx: DropdownMenuContext = use_context();
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
     // See `SubMenuState::hover_close`'s doc: this arm still gets the same
@@ -1581,32 +1622,39 @@ fn DropdownMenuSubContentRendered(
     let attributes = merge_attributes(vec![attributes, labelledby]);
 
     let trigger_id = sub.trigger_id;
+    // See the web arm's identical construction (above) for why the close
+    // key is resolved via `is_submenu_close_arrow_key` rather than a plain
+    // `Key::ArrowLeft` literal.
     let onkeydown = move |event: Event<KeyboardData>| {
-        match event.key() {
-            Key::Escape | Key::ArrowLeft => {
-                sub.set_open.call(false);
-                sub.focus.clear_focus();
-                let trigger_id = trigger_id.cloned();
-                dioxus::document::eval(&format!(
-                    "var e=document.getElementById('{trigger_id}');if(e)e.focus()"
-                ));
-            }
-            Key::ArrowDown => sub.focus.focus_next(),
-            Key::ArrowUp => sub.focus.focus_prev(),
-            Key::Home => sub.focus.focus_first(),
-            Key::End => sub.focus.focus_last(),
-            // docs/backlog.md row 11 (Phase 6, typeahead) -- see
-            // `DropdownMenu`'s identical arm for the full APG citation.
-            // Scoped to `sub.focus`, this submenu's own items, never the
-            // enclosing menu's -- matches every other navigation key in
-            // this same handler.
-            Key::Character(_) => {
-                let entries = sub.focus.text_entries();
-                if !typeahead.handle_key(sub.focus, &entries, &event) {
-                    return;
+        let key = event.key();
+        let closes = matches!(key, Key::Escape)
+            || crate::menu_sub::is_submenu_close_arrow_key(&key, ctx.direction);
+        if closes {
+            sub.set_open.call(false);
+            sub.focus.clear_focus();
+            let trigger_id = trigger_id.cloned();
+            dioxus::document::eval(&format!(
+                "var e=document.getElementById('{trigger_id}');if(e)e.focus()"
+            ));
+        } else {
+            match key {
+                Key::ArrowDown => sub.focus.focus_next(),
+                Key::ArrowUp => sub.focus.focus_prev(),
+                Key::Home => sub.focus.focus_first(),
+                Key::End => sub.focus.focus_last(),
+                // docs/backlog.md row 11 (Phase 6, typeahead) -- see
+                // `DropdownMenu`'s identical arm for the full APG citation.
+                // Scoped to `sub.focus`, this submenu's own items, never
+                // the enclosing menu's -- matches every other navigation
+                // key in this same handler.
+                Key::Character(_) => {
+                    let entries = sub.focus.text_entries();
+                    if !typeahead.handle_key(sub.focus, &entries, &event) {
+                        return;
+                    }
                 }
+                _ => return,
             }
-            _ => return,
         }
         event.prevent_default();
         event.stop_propagation();
@@ -1616,7 +1664,9 @@ fn DropdownMenuSubContentRendered(
         div {
             id,
             role: crate::menu_semantics::MENU_ROLE,
+            dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
             onkeydown,
             onmouseenter: move |_| {
                 hover_open.cancel();
