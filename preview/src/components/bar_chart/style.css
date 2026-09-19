@@ -1,0 +1,106 @@
+/* Bar Chart gallery -- shadcn/ui `chart-bar-*` demo parity
+ * (dev-docs/research/chart-2026-09-19.md §1.2). Every demo composes the
+ * installable `chart` package's own themed pieces (Chart/ChartContainer/
+ * ChartTooltip/ChartLegend, styled by `chart/style.css`) plus `Card`; the
+ * rules below only cover this gallery's OWN bespoke chrome that neither of
+ * those two packages provides -- shadcn's own repeated "trending" footer
+ * (`BarChartTrendFooter`, `component.rs`) and the `interactive` variant's
+ * split header (title/description beside a per-series total toggle, shadcn's
+ * own `chart-bar-interactive.tsx`). Classes namespaced `dx-bar-chart-*`
+ * (scripts/check-dx-class-prefix.sh's rule for the `bar_chart` folder).
+ *
+ * Simplification, stated plainly: shadcn's own interactive header bleeds
+ * edge-to-edge (`<Card className="py-0">`, a zero-padding-block override) so
+ * its bottom border spans the card's full width including the corners'
+ * curvature. This port keeps `Card`'s own block padding instead of
+ * overriding it -- a purely cosmetic difference (the header's rule sits
+ * slightly inset rather than flush) that leaves every other component's
+ * `Card` usage, and `Card`'s own stylesheet, untouched. The two-zone layout,
+ * the per-series total, and the `data-active` highlight are otherwise
+ * unchanged from shadcn's demo.
+ */
+
+.dx-bar-chart-footer {
+  flex-direction: column;
+  align-items: start;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+.dx-bar-chart-footer-trend {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  gap: var(--dx-space-2);
+  line-height: 1;
+}
+
+.dx-bar-chart-footer-caption {
+  color: var(--secondary-color-5);
+  line-height: 1;
+}
+
+.dx-bar-chart-interactive-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 1px solid var(--primary-color-6);
+  padding-block-end: var(--dx-space-4);
+}
+
+@media (width >= 40rem) {
+  .dx-bar-chart-interactive-header {
+    flex-direction: row;
+  }
+}
+
+.dx-bar-chart-interactive-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--dx-space-1);
+}
+
+.dx-bar-chart-interactive-toggles {
+  display: flex;
+}
+
+.dx-bar-chart-interactive-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: start;
+  justify-content: center;
+  padding: var(--dx-space-3) var(--dx-space-4);
+  border-radius: 0;
+  background-color: transparent;
+  border-inline-start: 1px solid var(--primary-color-6);
+  gap: var(--dx-space-1);
+  text-align: start;
+}
+
+.dx-bar-chart-interactive-toggle:first-child {
+  border-inline-start: none;
+}
+
+.dx-bar-chart-interactive-toggle[data-active="true"] {
+  background-color: var(--primary-color-4);
+}
+
+.dx-bar-chart-interactive-toggle-label {
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-xs);
+}
+
+.dx-bar-chart-interactive-toggle-total {
+  font-size: var(--dx-text-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+@media (width >= 40rem) {
+  .dx-bar-chart-interactive-toggle-total {
+    font-size: var(--dx-text-3xl);
+  }
+}

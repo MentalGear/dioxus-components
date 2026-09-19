@@ -1,0 +1,14 @@
+{
+  "name": "bar_chart",
+  "description": "A gallery of bar chart configurations: default, horizontal, multiple series, stacked, negative values, mixed colors, labels, an active bar, and an interactive series toggle.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["chart", "card"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
