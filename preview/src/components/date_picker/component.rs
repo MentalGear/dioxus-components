@@ -86,6 +86,12 @@ pub struct DatePickerProps {
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
 
+    /// Locale-aware month name for the month segment's `aria-valuetext`
+    /// (backlog row 84 finding 2) -- see
+    /// `dioxus_primitives::date_picker::DateElementProps::on_format_month`.
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
+
     /// Specify how many months are visible at once
     #[props(default = 1)]
     pub month_count: u8,
@@ -140,6 +146,10 @@ pub struct DateRangePickerProps {
     /// Callback when display year placeholder
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
+
+    /// See `DatePickerProps::on_format_month` (backlog row 84 finding 2).
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
 
     /// Specify how many months are visible at once
     #[props(default = 1)]
@@ -199,6 +209,7 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
                         on_format_day_placeholder: props.on_format_day_placeholder,
                         on_format_month_placeholder: props.on_format_month_placeholder,
                         on_format_year_placeholder: props.on_format_year_placeholder,
+                        on_format_month: props.on_format_month,
                     }
                 }
             }
@@ -237,6 +248,7 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
                         on_format_day_placeholder: props.on_format_day_placeholder,
                         on_format_month_placeholder: props.on_format_month_placeholder,
                         on_format_year_placeholder: props.on_format_year_placeholder,
+                        on_format_month: props.on_format_month,
                     }
                 }
             }
@@ -263,6 +275,7 @@ pub(crate) fn DatePickerInput(props: DatePickerInputProps) -> Element {
                 on_format_day_placeholder: props.on_format_day_placeholder,
                 on_format_month_placeholder: props.on_format_month_placeholder,
                 on_format_year_placeholder: props.on_format_year_placeholder,
+                on_format_month: props.on_format_month,
                 DatePickerYearSegment {}
                 DatePickerSeparator {}
                 DatePickerMonthSegment {}
@@ -303,6 +316,7 @@ pub(crate) fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
                 on_format_day_placeholder: props.on_format_day_placeholder,
                 on_format_month_placeholder: props.on_format_month_placeholder,
                 on_format_year_placeholder: props.on_format_year_placeholder,
+                on_format_month: props.on_format_month,
                 DateRangePickerStartValue {
                     DatePickerYearSegment {}
                     DatePickerSeparator {}

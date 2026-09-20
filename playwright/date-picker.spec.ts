@@ -232,12 +232,18 @@ test.describe("Axe automated scan", () => {
  * marked "(Optional)" there, unlike Page Up/Down); (2) every segment
  * rendered a dangling `aria-labelledby` referencing an id nothing ever
  * rendered, contradicting that same pattern's own either/or labelling rule.
- * Several other gaps against the cited text were found and are deliberately
- * NOT fixed here (documented in the tests that touch them, and in the
- * report): no `aria-valuetext` on the month segment (a bare 1-12 number,
- * arguably "not user-friendly" per the pattern's own example), and
- * `aria-valuenow` reporting today's date rather than being omitted when no
- * date has been chosen yet.
+ * Several other gaps against the cited text were found and were deliberately
+ * NOT fixed in that pass (documented in the tests that touched them, and in
+ * that lane's report): no `aria-valuetext` on the month segment (a bare
+ * 1-12 number, arguably "not user-friendly" per the pattern's own example),
+ * and `aria-valuenow` reporting today's date rather than being omitted when
+ * no date has been chosen yet. Both (plus two related findings from the
+ * same investigation -- `Calendar`'s unavailable days having no
+ * `aria-disabled`, and Up/Down wrapping the year segment instead of
+ * clamping it) were recorded together as `dev-docs/backlog.md` row 84 and
+ * are fixed by the tests below this comment (the "aria-valuenow /
+ * aria-valuetext" and "Arrow keys" describe blocks) -- see each test's own
+ * comment for the red-before/green-after account.
  */
 
 /**
@@ -342,7 +348,16 @@ test.describe("Segment typing (digit entry, spinbutton-pattern.html #keyboard_in
     await month.click();
     await page.keyboard.press("x");
 
-    await expect(month).toHaveAttribute("aria-valuenow", valueBefore!);
+    // `valueBefore` is `null` on this fresh page as of backlog row 84
+    // finding 3's fix (an untouched segment now omits `aria-valuenow`
+    // entirely instead of defaulting it) -- `toHaveAttribute` has no way to
+    // assert "still absent" from a `null` expected value, so branch
+    // explicitly instead of assuming it's always a string.
+    if (valueBefore === null) {
+      expect(await month.getAttribute("aria-valuenow")).toBeNull();
+    } else {
+      await expect(month).toHaveAttribute("aria-valuenow", valueBefore);
+    }
     await expect(month).toHaveText(textBefore!);
     // `Key::Character` still calls `prevent_default`/`stop_propagation` for
     // a non-digit (matches `key_effects_non_digit_character_still_blocks_
@@ -444,14 +459,11 @@ test.describe("Arrow keys: Up/Down step the value; Home/End jump to the bounds",
     await expect(year).toHaveAttribute("aria-valuenow", "2050");
   });
 
-  test("Up wraps from the maximum to the minimum and Down wraps from the minimum to the maximum, including on the year segment", async ({ page }) => {
-    // `roll_value` (date_picker.rs) applies the same wrap to every segment
-    // type with no year-specific exception -- APG's base spinbutton pattern
-    // is silent on wrap-vs-clamp (its own deprecated date example wraps day
-    // and month, the only two it discusses, and never mentions year at
-    // all), so wrapping a *year* value (2050 -> 1925) is a genuine, cited
-    // finding, not a violation -- recorded here as current, deliberate(-ish)
-    // behavior rather than asserted as if the crate had no choice.
+  test("Up wraps from the maximum to the minimum and Down wraps from the minimum to the maximum on month (a cyclical unit)", async ({ page }) => {
+    // Month and day are cyclical -- backlog row 84 finding 4's calibration
+    // (`date_segment_key_effects`'s own doc): matches native Chromium
+    // `<input type="date">`'s month/day sub-fields. Unchanged by this
+    // lane's fix.
     await gotoDatePicker(page);
     const month = segment(page, "month");
     await month.click();
@@ -461,15 +473,30 @@ test.describe("Arrow keys: Up/Down step the value; Home/End jump to the bounds",
     await page.keyboard.press("Home");
     await page.keyboard.press("ArrowDown");
     await expect(month).toHaveAttribute("aria-valuenow", "12");
+  });
 
+  test("Up clamps at the maximum and Down clamps at the minimum on the year segment (not cyclical) -- backlog row 84 finding 4", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix): `roll_value`
+    // applied the same wrap to every segment type with no year-specific
+    // exception, so End -> ArrowUp on the year segment reported
+    // aria-valuenow="1925" (wrapped to the minimum) instead of staying at
+    // "2050". Fixed by threading an explicit per-segment wrap policy through
+    // `date_segment_key_effects` (`SegmentValueBounds.wrap`): month/day keep
+    // wrapping (see the sibling test above), the year segment now clamps --
+    // matches native Chromium `<input type="date">`'s year sub-field, which
+    // does not wrap either. GREEN after the fix: both assertions below hold.
+    await gotoDatePicker(page);
     const year = segment(page, "year");
     await year.click();
     await page.keyboard.press("End");
-    await page.keyboard.press("ArrowUp");
-    await expect(year).toHaveAttribute("aria-valuenow", "1925");
-    await page.keyboard.press("Home");
-    await page.keyboard.press("ArrowDown");
     await expect(year).toHaveAttribute("aria-valuenow", "2050");
+    await page.keyboard.press("ArrowUp");
+    await expect(year).toHaveAttribute("aria-valuenow", "2050");
+
+    await page.keyboard.press("Home");
+    await expect(year).toHaveAttribute("aria-valuenow", "1925");
+    await page.keyboard.press("ArrowDown");
+    await expect(year).toHaveAttribute("aria-valuenow", "1925");
   });
 });
 
@@ -555,54 +582,110 @@ test.describe("Tab order", () => {
 });
 
 test.describe("aria-valuenow / aria-valuetext, and the fixed dangling aria-labelledby", () => {
-  test("aria-valuenow mirrors the live value on every arrow-key change (already exercised above); before any date is chosen it reports today's date, not empty, while the visible text still shows the placeholder", async ({ page }) => {
-    // `now_value` in `date_picker.rs` is `value().unwrap_or(default)`,
-    // and `default` is today's year/month/day -- so an untouched segment's
-    // `aria-valuenow` is never blank, even though `display_value` shows the
-    // YYYY/MM/DD placeholder because `value()` itself is still `None`.
-    // Documented finding, not fixed here: the base spinbutton pattern's
-    // properties list only ever describes `aria-valuenow` as holding "the
-    // current value of the spinbutton" -- it has no stated convention for
-    // "no value yet" (unlike, e.g., `aria-valuenow`'s own omission being
-    // the ARIA-wide way other range-like roles represent an indeterminate
-    // value) -- so this isn't a cited violation, but it is a real, user-
-    // observable mismatch between what's spoken (a concrete date) and what
-    // both sighted users and screen-reader users could reasonably interpret
-    // as "nothing chosen yet" that whoever picks this up next should know
-    // about before assuming the two always agree.
+  test("aria-valuenow mirrors the live value on every arrow-key change (already exercised above); before any date is chosen it is entirely absent, not today's date -- backlog row 84 finding 3", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix): `now_value`
+    // in `date_picker.rs` was `value().unwrap_or(default)`, and `default` is
+    // today's year/month/day -- so an untouched segment's `aria-valuenow`
+    // was never blank (it reported e.g. today's actual year), even though
+    // `display_value` correctly showed the YYYY/MM/DD placeholder because
+    // `value()` itself was still `None`. That silently claimed a value the
+    // user never set. Fixed by making `aria-valuenow` mirror `props.value`'s
+    // own `Option` faithfully: present once the segment actually holds a
+    // value, omitted while it doesn't (the ARIA-wide convention for "no
+    // value yet", matching how other range-like roles represent an
+    // indeterminate value) -- see `DateSegment`'s `now_value` doc for the
+    // full account, including why this also fixes finding 6 (tested below).
     await gotoDatePicker(page);
-    const today = await page.evaluate(() => {
-      const now = new Date();
-      return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
-    });
-
     const year = segment(page, "year");
     const month = segment(page, "month");
     const day = segment(page, "day");
     await expect(year).toHaveText("YYYY");
     await expect(month).toHaveText("MM");
     await expect(day).toHaveText("DD");
-    await expect(year).toHaveAttribute("aria-valuenow", String(today.year));
-    await expect(month).toHaveAttribute("aria-valuenow", String(today.month));
-    await expect(day).toHaveAttribute("aria-valuenow", String(today.day));
+    expect(await year.getAttribute("aria-valuenow")).toBeNull();
+    expect(await month.getAttribute("aria-valuenow")).toBeNull();
+    expect(await day.getAttribute("aria-valuenow")).toBeNull();
+
+    // And once a value actually exists, it reports the real value -- typing
+    // into the year segment must not disturb the still-untouched month/day.
+    await year.click();
+    await pressEach(page, ["1", "9", "9", "9"]);
+    await expect(year).toHaveAttribute("aria-valuenow", "1999");
+    expect(await month.getAttribute("aria-valuenow")).toBeNull();
+    expect(await day.getAttribute("aria-valuenow")).toBeNull();
   });
 
-  test("no aria-valuetext is set on the month segment, even though its bare 1-12 number is arguably not self-explanatory", async ({ page }) => {
-    // `spinbutton-pattern.html`'s Roles/States/Properties section: "If the
-    // value of aria-valuenow is not user-friendly, e.g., the day of the
-    // week is represented by a number, the aria-valuetext property is set
-    // ... to a string that makes the spinbutton value understandable."
-    // A bare month number (1-12) is arguably the same class of "not
-    // user-friendly" case as that example. Documented finding, not fixed
-    // here: doing it properly needs a locale-aware month-name string (this
-    // component already threads `on_format_month`/`weekday_abbreviation`
-    // callbacks for the *calendar* header, but `DateSegment` is generic
-    // over any `Integer` and has no month-name concept of its own to reuse)
-    // -- a real behavior addition, not the kind of one-line, self-contained
-    // fix this lane's brief scopes it to fixing directly.
+  test("the month segment's aria-valuetext is a locale-aware month name once it has a value, and absent while untouched -- backlog row 84 finding 2", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix): no
+    // `aria-valuetext` was ever rendered on any segment -- `DateSegment` is
+    // generic over any `Integer` and had no month-name concept of its own,
+    // and nothing threaded the calendar grid's own `on_format_month`
+    // callback down to it. `spinbutton-pattern.html`'s Roles/States/
+    // Properties section: "If the value of aria-valuenow is not
+    // user-friendly, e.g., the day of the week is represented by a number,
+    // the aria-valuetext property is set ... to a string that makes the
+    // spinbutton value understandable" -- a bare month number (1-12) is
+    // exactly that case. Fixed by threading a new `on_format_month`
+    // callback (defaulting to `Month::to_string()`, i18n-overridable
+    // exactly like the calendar grid's own) down to `DatePickerMonthSegment`
+    // and gating it on the same "has a value" check as aria-valuenow, so
+    // the two stay in lockstep.
     await gotoDatePicker(page);
     const month = segment(page, "month");
     expect(await month.getAttribute("aria-valuetext")).toBeNull();
+
+    await month.click();
+    await page.keyboard.press("Home");
+    await expect(month).toHaveAttribute("aria-valuenow", "1");
+    await expect(month).toHaveAttribute("aria-valuetext", "January");
+
+    await page.keyboard.press("End");
+    await expect(month).toHaveAttribute("aria-valuenow", "12");
+    await expect(month).toHaveAttribute("aria-valuetext", "December");
+
+    // Year and day are plain numbers -- no aria-valuetext on either, even
+    // once they have values (this finding is scoped to the month segment).
+    const year = segment(page, "year");
+    const day = segment(page, "day");
+    await year.click();
+    await page.keyboard.press("Home");
+    await day.click();
+    await page.keyboard.press("Home");
+    expect(await year.getAttribute("aria-valuetext")).toBeNull();
+    expect(await day.getAttribute("aria-valuetext")).toBeNull();
+  });
+
+  test("the first Up/Down keypress on a never-touched segment is a real, detectable transition, not a silent no-op -- backlog row 84 finding 6", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix): finding 3
+    // meant an untouched segment's `aria-valuenow` already equaled
+    // `default` (e.g. today's month) before any key was pressed;
+    // `date_segment_key_effects`'s `None => default` branch then committed
+    // exactly that same `default` on the first Up/Down press -- so
+    // `aria-valuenow` read identically before and after (both "today's
+    // month"), which is indistinguishable from a dropped keystroke. Fixed
+    // as a direct consequence of finding 3's fix: once "no value" stops
+    // being reported as "= default", the untouched state has NO
+    // aria-valuenow at all, so the first press's `default` commit is a
+    // genuine attribute-absent -> attribute-present transition. This test
+    // deliberately does NOT press Home first (unlike the general Up/Down
+    // test above), specifically to exercise the never-touched, first-ever
+    // keypress case findings 3 and 6 are both about.
+    await gotoDatePicker(page);
+    const month = segment(page, "month");
+    const today = await page.evaluate(() => new Date().getMonth() + 1);
+    expect(await month.getAttribute("aria-valuenow")).toBeNull();
+
+    await month.click();
+    await page.keyboard.press("ArrowDown");
+
+    const after = await month.getAttribute("aria-valuenow");
+    expect(after, "the first keypress must produce a real aria-valuenow, not leave it absent").not.toBeNull();
+    // `date_segment_key_effects`'s `None => default` branch is unchanged by
+    // this fix (only the *reporting* of "no value yet" changed) -- the
+    // committed value is still exactly `default` (today's month), just now
+    // genuinely new information rather than a repeat of what was already
+    // being announced.
+    expect(Number(after)).toBe(today);
   });
 
   test("every spinbutton's aria-labelledby, if present, references an element that exists (fix regression guard)", async ({ page }) => {
@@ -773,16 +856,14 @@ test.describe("Internationalized variant (variant=internationalized)", () => {
     expect(labels).toEqual(["year", "month", "day"]);
   });
 
-  test("the internationalized variant's placeholders match the default variant's, since the site's language switcher does not change the active locale yet", async ({ page }) => {
-    // `preview/src/main.rs`'s `LanguageSelect` `onchange` handler has
-    // `i18n().set_language(id)` commented out -- `use_init_i18n` fixes the
-    // app at `en-US` for the life of the page regardless of what the
-    // dropdown shows selected. `en-US.ftl`'s `D_Abbr`/`M_Abbr`/`Y_Abbr` are
-    // "D"/"M"/"Y" -- byte-identical to `main`'s own hardcoded placeholder
-    // callbacks (`preview/src/components/date_picker/component.rs`). This
-    // locks in *today's* behavior; it will need updating (not by this
-    // lane -- `main.rs` is out of this lane's owned files) once that
-    // switcher is wired up for real.
+  test("the internationalized variant's placeholders match the default variant's on first load (both start at en-US)", async ({ page }) => {
+    // `en-US.ftl`'s `D_Abbr`/`M_Abbr`/`Y_Abbr` are "D"/"M"/"Y" -- byte-
+    // identical to `main`'s own hardcoded placeholder callbacks
+    // (`preview/src/components/date_picker/component.rs`). True both
+    // before and after backlog row 84 finding 5's fix (the app's initial
+    // locale was always, and still is, `en-US` -- see
+    // `use_init_i18n(|| I18nConfig::new(langid!("en-US")) ...)` in
+    // `main.rs`); the *switcher actually working* is the next test.
     await gotoDatePicker(page);
     const placeholders = async (variant?: string) => ({
       year: await segment(page, "year", variant).textContent(),
@@ -791,6 +872,53 @@ test.describe("Internationalized variant (variant=internationalized)", () => {
     });
     expect(await placeholders("internationalized")).toEqual(await placeholders(undefined));
     expect(await placeholders(undefined)).toEqual({ year: "YYYY", month: "MM", day: "DD" });
+  });
+
+  test("the language switcher actually changes the active locale -- backlog row 84 finding 5", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix):
+    // `preview/src/main.rs`'s `LanguageSelect` `onchange` handler had
+    // `i18n().set_language(id)` commented out, so `use_init_i18n` kept the
+    // app fixed at `en-US` for the life of the page no matter what the
+    // dropdown showed selected -- the control was dead. Fixed by
+    // uncommenting the call (wiring it up for real was a contained,
+    // two-line change: import `i18n` and make the call) rather than
+    // removing the control, since `dioxus_i18n::prelude::i18n()` reads the
+    // exact `I18n` context `use_init_i18n` already provides in `App`, and
+    // `set_language` writes its reactively-read `active_bundle` signal --
+    // no larger plumbing was needed. The internationalized date_picker
+    // variant's `on_format_day_placeholder: || tid!("D_Abbr")` etc. (and,
+    // as of finding 2's fix, `on_format_month`) read that same bundle, so
+    // switching to French should change "D_Abbr" from "D" (en-US) to "J"
+    // (fr-FR, per `fr-FR.ftl`) live, with no reload. The plain "main"
+    // variant's placeholders are hardcoded in `component.rs` (not
+    // `tid!`-driven at all -- see `variants/main/mod.rs`), so they must NOT
+    // change -- this isolates "the switcher recompiled translated text" from
+    // "the whole page reloaded" or some other unrelated effect.
+    await gotoDatePicker(page);
+    const languageSelect = page.getByRole("combobox", { name: "Language" });
+    await expect(languageSelect).toBeVisible();
+
+    // Placeholder text repeats the formatter's letter `max_length` times
+    // (`DateSegment::display_value`) -- "DD" for the 2-character day
+    // segment, matching this file's own established convention (e.g. the
+    // "renders the same fixed year -> month -> day segment order" test's
+    // `{ year: "YYYY", month: "MM", day: "DD" }`).
+    const mainDayBefore = await segment(page, "day", undefined).textContent();
+    expect(mainDayBefore).toBe("DD");
+    const intlDayBefore = await segment(page, "day", "internationalized").textContent();
+    expect(intlDayBefore).toBe("DD");
+
+    await languageSelect.selectOption("French");
+
+    // Day ("D" -> "J") and year ("Y" -> "A") both change between en-US and
+    // fr-FR, so either alone would prove the switch took effect; month is
+    // deliberately not asserted here since fr-FR's own `M_Abbr` is ALSO
+    // "M" (`fr-FR.ftl`) -- it would pass whether or not the switch worked,
+    // so it isn't discriminating evidence either way.
+    await expect(segment(page, "day", "internationalized")).toHaveText("JJ");
+    await expect(segment(page, "year", "internationalized")).toHaveText("AAAA");
+    // The non-internationalized variant is untouched by the locale change.
+    await expect(segment(page, "day", undefined)).toHaveText("DD");
   });
 });
 

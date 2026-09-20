@@ -386,3 +386,42 @@ test.describe("selected/range state outranks :hover (user report, calendar-state
     expect(hoveredBg).not.toBe(endpointBg);
   });
 });
+
+test.describe("aria-disabled on unavailable/disabled days -- backlog row 84 finding 1", () => {
+  test("a day inside a disabled range carries aria-disabled=true; an available day still carries an explicit aria-disabled=false", async ({ page }) => {
+    // RED on the unmodified tree (verified live before this fix): unavailable
+    // days had no native `disabled` attribute (deliberately, so the grid
+    // keeps a single roving tabstop -- `handle_day_select` early-returns
+    // instead) and no `aria-disabled` either -- only `data-disabled`/
+    // `data-unavailable` plus CSS communicated it, so assistive tech had no
+    // signal at all that the day could not be chosen. Fixed by adding
+    // `aria-disabled` to `calendar_day_attributes` (primitives/src/
+    // calendar.rs), mirroring `data-disabled` exactly (same source value,
+    // unconditionally present) -- `aria-disabled` (unlike a real `disabled`
+    // attribute) does not remove the element from the tab order, matching
+    // this crate's own "focusable but not operable" convention elsewhere
+    // (e.g. combobox/select/command options).
+    //
+    // `unavailable_dates`'s own demo (preview/src/components/calendar/
+    // variants/unavailable_dates/mod.rs) opens directly on May 2026 with
+    // 2026-05-15..2026-05-18 disabled, so no navigation is needed and
+    // "Friday, May 15, 2026" is a fixed, known-unavailable date (matches
+    // date-picker.spec.ts's own already-verified value for the same date).
+    await page.goto(`${BASE_URL}/component/?name=calendar&`, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState("networkidle");
+
+    const frame = page.locator("#component-preview-frame-unavailable_dates");
+    const may15 = frame.locator('[data-unavailable="true"]').first();
+    await expect(may15).toHaveAttribute("aria-label", "Friday, May 15, 2026");
+    await expect(may15).toHaveAttribute("aria-disabled", "true");
+    // Not a native disabled control -- still focusable/tabbable, per the
+    // roving-tabstop design this fix deliberately preserves.
+    await expect(may15).toHaveJSProperty("disabled", false);
+
+    const may20 = frame
+      .locator('.dx-calendar-grid-cell[data-month="current"]')
+      .filter({ hasText: /^20$/ });
+    await expect(may20).not.toHaveAttribute("data-unavailable", "true");
+    await expect(may20).toHaveAttribute("aria-disabled", "false");
+  });
+});

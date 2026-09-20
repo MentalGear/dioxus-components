@@ -27,7 +27,7 @@ use crate::components::{
 use core::panic;
 use dioxus::prelude::{dioxus_router::LinkProps, *};
 use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
-use dioxus_i18n::prelude::{use_init_i18n, I18nConfig};
+use dioxus_i18n::prelude::{i18n, use_init_i18n, I18nConfig};
 use dioxus_icons::lucide::{
     ArrowRight, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronLeft, ChevronsUpDown,
     Compass, Copy, ExternalLink, FileText, Hash, House, Layers, LayoutGrid, Mail, Pause, Play,
@@ -822,7 +822,22 @@ fn LanguageSelect() -> Element {
                         }
                         let id = current_lang.read().id();
                         tracing::info!("Current lang: {id}");
-                        // i18n().set_language(id);
+                        // backlog row 84 finding 5: this call was commented
+                        // out, so the dropdown changed its own displayed
+                        // selection but never touched the app's actual
+                        // locale -- every `tid!`/`t!` call site (e.g. the
+                        // date_picker/calendar internationalized demos'
+                        // `on_format_month`/`on_format_*_placeholder`
+                        // callbacks) stayed on `en-US` regardless. `i18n()`
+                        // (`dioxus_i18n::prelude`) reads the same `I18n`
+                        // context `use_init_i18n` provided in `App` above;
+                        // `set_language` writes its `active_bundle` signal,
+                        // which every `tid!` call reads reactively
+                        // (`I18n::try_translate_with_args`'s own
+                        // `self.active_bundle.read()`), so this now
+                        // propagates live to every already-mounted
+                        // translated string, not just future ones.
+                        i18n().set_language(id);
                     },
                     for lang in Language::iter() {
                         option {
