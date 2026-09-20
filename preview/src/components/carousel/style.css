@@ -61,6 +61,24 @@
     height: var(--dx-space-4);
 }
 
+/* A chevron-style icon inside Previous/Next points a physical direction
+   (e.g. lucide's ChevronLeft/ChevronRight), so under RTL -- horizontal
+   only; a vertical carousel's Up/Down icons have nothing to do with text
+   direction -- the *icon itself* needs the same physical-side mirroring
+   `inset-inline-*` already gives the *button's position*, or a caller
+   who reuses one icon component regardless of direction (as this
+   package's own `rtl` demo variant does, deliberately, to prove this
+   rule) ends up with a "<" chevron sitting on the physical right and a
+   ">" sitting on the physical left -- confirmed live, see
+   $S/round4/carousel/variant-rtl-light.png before this rule existed.
+   `scaleX(-1)` is a pure mirror (not a directional offset), so it needs
+   no `rtl-physical` allowlist comment -- it is exactly as direction-safe
+   as flipping is supposed to be. */
+.dx-carousel[data-orientation="horizontal"][data-direction="rtl"] .dx-carousel-previous svg,
+.dx-carousel[data-orientation="horizontal"][data-direction="rtl"] .dx-carousel-next svg {
+    transform: scaleX(-1);
+}
+
 .dx-carousel-previous:disabled,
 .dx-carousel-next:disabled {
     cursor: not-allowed;
@@ -77,15 +95,13 @@
    inline edges -- logical properties so these mirror correctly under
    `dir="rtl"` (Previous stays at the *start* edge, Next at the *end*
    edge, whichever physical side that resolves to). */
-.dx-carousel[data-orientation="horizontal"] .dx-carousel-previous,
-.dx-carousel:not([data-orientation="vertical"]) .dx-carousel-previous {
+.dx-carousel[data-orientation="horizontal"] .dx-carousel-previous {
     inset-block-start: 50%;
     inset-inline-start: var(--dx-space-2);
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
 }
 
-.dx-carousel[data-orientation="horizontal"] .dx-carousel-next,
-.dx-carousel:not([data-orientation="vertical"]) .dx-carousel-next {
+.dx-carousel[data-orientation="horizontal"] .dx-carousel-next {
     inset-block-start: 50%;
     inset-inline-end: var(--dx-space-2);
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */

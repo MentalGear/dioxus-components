@@ -16,7 +16,7 @@ pub fn Demo() -> Element {
     rsx! {
         div { dir: "rtl", style: "max-width: 20rem; margin: 0 auto;",
             DirectionProvider { direction: Direction::Rtl,
-                Carousel { aria_label: "RTL carousel demo",
+                Carousel { aria_label: "Right-to-left slideshow demo",
                     CarouselPrevious { ChevronLeft {} }
                     CarouselNext { ChevronRight {} }
                     CarouselContent {

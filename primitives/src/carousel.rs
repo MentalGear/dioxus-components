@@ -564,6 +564,19 @@ pub struct CarouselContentProps {
 ///
 /// This must be used inside a [`Carousel`] component.
 ///
+/// Carries `tabindex="0"`, unconditionally: like [`crate::scroll_area::ScrollArea`]'s
+/// own doc puts it, "if you don't have any focusable content within the
+/// scroll area, you should make the scroll area focusable" -- a
+/// [`CarouselItem`] is not itself focusable unless its own content
+/// happens to be, and axe's `scrollable-region-focusable` rule (WCAG
+/// 2.1.1/2.1.3) confirms this by execution: without it, a keyboard user
+/// who has no pointer at all has no way to reach this element's own
+/// native scroll (arrow keys/Page Up/Page Down once focused) at all --
+/// [`CarouselPrevious`]/[`CarouselNext`] page one slide at a time, but
+/// axe is still right that the scrollable region itself should be
+/// independently reachable, e.g. for finer scroll control than a full
+/// slide-step in the `multiple`-per-view layout.
+///
 /// ## Styling
 ///
 /// The [`CarouselContent`] component defines the following data
@@ -609,6 +622,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         div {
             id,
             style,
+            tabindex: "0",
             "data-orientation": orientation.as_str(),
             ..rest_attrs,
 
@@ -783,10 +797,7 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
             aria_controls,
             disabled,
 
-            onclick: move |_| {
-                let ctx = ctx;
-                ctx.set_selected.call(next_selected((ctx.selected)(), (ctx.count)()))
-            },
+            onclick: move |_| ctx.set_selected.call(next_selected((ctx.selected)(), (ctx.count)())),
             ..props.attributes,
 
             {props.children}
