@@ -10,6 +10,10 @@ package-lock.json
 /playwright/test-results/
 /blob-report/
 /playwright/.cache/
+# Session-local Playwright config: hardcodes one container's Chromium path and
+# dev-server port, so it is per-session by design. dev-docs/dev-loop.md documents
+# how to recreate it.
+/playwright/session.local.config.ts
 **/._*
 
 # macOS
@@ -17,3 +21,9 @@ package-lock.json
 
 # cargo-mutants report artifacts
 mutants.out*/
+
+# Subagent lane scratch (local to a session's container, never committed):
+# git worktrees under .claude/worktrees/agent-<id> and their isolated
+# CARGO_TARGET_DIR siblings. `target` above does not cover `target-lane-*`.
+.claude/worktrees/
+target-lane-*/
