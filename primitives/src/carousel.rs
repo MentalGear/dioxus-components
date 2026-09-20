@@ -840,97 +840,6 @@ pub fn Carousel(props: CarouselProps) -> Element {
     }
 }
 
-/// The `<style>` tag text [`CarouselContent`] renders as a sibling of its
-/// own scroll-snap track, scoped to that track's own `id` alone -- never a
-/// shared/global stylesheet, so multiple carousels on the same page each
-/// get their own independent rule and none of them can affect another's.
-///
-/// ## What this is for
-///
-/// `scroll-snap-stop: always` requires this scroll container to stop at
-/// the *first* snap position a scroll operation would otherwise pass,
-/// rather than skipping over several to settle on whichever is numerically
-/// nearest -- the user's own explicit call: express embla-carousel's
-/// default (non-`dragFree`, non-`skipSnaps`) "never skip past more than one
-/// slide" outcome natively, without reimplementing its velocity model, and
-/// accepting that a native-scroll engine will not *feel* identical to a
-/// transform-based one. Measured (not assumed) to cap a genuine
-/// browser-animated scroll operation -- a caller's own
-/// `el.scrollBy({ left, behavior: 'smooth' })`, and by extension a native
-/// wheel/trackpad fling, since both are the same "smooth scrolling
-/// operation" the CSS Scroll Snap spec's own `scroll-snap-stop` language
-/// describes -- to exactly one slide of travel regardless of the
-/// requested distance.
-///
-/// ## Known limitation, measured rather than assumed: this crate's own
-/// pointer-drag path does *not* get this guarantee
-///
-/// [`CAROUSEL_DRAG_JS`]'s mouse/pen drag moves the track with many
-/// discrete `scrollBy({ behavior: 'instant' })` calls while
-/// `scroll-snap-type` is suspended for the gesture's own duration (see
-/// that constant's own doc for why), so a long or fast drag's raw
-/// position at release can land several slide-widths from the origin with
-/// no scrolling operation having passed through the intervening snap
-/// points at all -- each jump was independently instant and unsnapped.
-/// Restoring `scroll-snap-type` afterward is not itself treated as "a
-/// scrolling operation resuming past skipped snap points"; it is a fresh,
-/// static re-evaluation of an already-stationary position, which this
-/// property does not appear to constrain on this engine (Chromium):
-/// confirmed live, isolated from this crate's own JS entirely (raw
-/// `el.scrollBy({ behavior: 'instant' })` in a loop with
-/// `scroll-snap-type` suspended, then restored, on an element whose child
-/// already computes `scroll-snap-stop: always`) -- the settle still lands
-/// on whichever slide is numerically nearest the raw position, identical
-/// to what happens with the property absent altogether. A same-tick
-/// zero-distance and 1px `behavior: 'smooth'` nudge issued immediately
-/// after restoring `scroll-snap-type`, tried as a cheap way to route the
-/// correction through the constrained "smooth scroll" path instead, did
-/// not change this. This is a real, currently-open gap for this crate's
-/// own pointer-drag feature specifically -- not for wheel/trackpad/native
-/// scrolling on the same track, and not for a caller's own `scrollBy`,
-/// both of which this property does correctly constrain.
-///
-/// ## Why a scoped `<style>` tag, not a fourth inline declaration
-///
-/// Every other layout-critical property on this track/its slides
-/// (`scroll-snap-type`, `scroll-snap-align`, the flex layout) is a plain
-/// inline `style` declaration, matching this module's own "works with
-/// zero theme CSS" convention (module doc, "Engine" section).
-/// `scroll-snap-stop` is the one property here that needs conditional
-/// application -- "only if the browser supports it" was the user's own
-/// explicit requirement -- and `@supports` is a stylesheet at-rule with no
-/// equivalent inside a plain `style="..."` attribute value at all (there
-/// is no syntax for an at-rule there). A scoped `<style>` tag is the
-/// minimal construction that can express it while keeping the same
-/// "lives on the primitive, works with zero theme CSS" property every
-/// other layout-critical rule here already has. Scoped to this element's
-/// own `id` -- never a shared marker class or a global, once-per-page
-/// injected stylesheet, unlike `top_layer.rs`'s own
-/// `@supports (anchor-name: --a)` construction -- because this rule has
-/// no cross-component contract to maintain: it only ever needs to reach
-/// this one track's own direct children, so the simplest correct scope is
-/// used rather than the broadest one.
-///
-/// `> *` (every direct child of the track), rather than a class or
-/// attribute selector naming [`CarouselItem`] specifically: this
-/// component's own contract already says its children *are*
-/// [`CarouselItem`]s (see [`CarouselContentProps::children`]'s doc), so
-/// there is nothing else for `> *` to over-match inside this element in
-/// normal use. This tag is rendered as the track's own preceding
-/// *sibling*, not the track's child, so `#id > *` (children of the track
-/// this selector's `id` names) never matches the `<style>` tag itself.
-///
-/// No JS, no `document::eval`, no `feature = "web"` branch: a `<style>`
-/// tag is plain markup, identical in SSR and CSR, so this needs none of
-/// [`CAROUSEL_DRAG_JS`]'s own escape hatches and does not disturb this
-/// module's own "rendered markup never branches on `feature = \"web\"`"
-/// property (module doc, "Engine" section).
-fn no_skip_supports_css(content_id: &str) -> String {
-    format!(
-        "@supports (scroll-snap-stop: always) {{ #{content_id} > * {{ scroll-snap-stop: always; }} }}"
-    )
-}
-
 /// The props for the [`CarouselContent`] component.
 #[derive(Props, Clone, PartialEq)]
 pub struct CarouselContentProps {
@@ -1011,14 +920,15 @@ pub struct CarouselContentProps {
 /// On release, the browser's own scroll-snap machinery settles the track
 /// on whichever slide is numerically nearest, exactly as it would after a
 /// native trackpad/touch scroll -- no separate "settle" step is needed,
-/// but also (measured, see this element's own rendered `<style>` tag,
-/// `no_skip_supports_css`'s own doc, "Known limitation") no guarantee that
-/// "nearest" is close: a drag whose raw distance covers several slide
-/// widths can settle several slides from the origin, the same as before
-/// this crate declared `scroll-snap-stop: always` on every slide -- that
-/// property does correctly cap a wheel/trackpad fling or a caller's own
-/// `scrollBy` on this same track to one slide, just not this crate's own
-/// pointer-drag release specifically, for the reason that doc explains.
+/// but also (measured, see this component's own "scroll-snap-stop"
+/// section below, "Known limitation") no guarantee that "nearest" is
+/// close: a drag whose raw distance covers several slide widths can
+/// settle several slides from the origin, the same as before this crate
+/// declared `scroll-snap-stop: always` on every slide -- that property
+/// does correctly cap a wheel/trackpad fling or a caller's own `scrollBy`
+/// on this same track to one slide, just not this crate's own
+/// pointer-drag release specifically, for the reason that section
+/// explains.
 /// That settle (like every other native scroll) is what
 /// `use_carousel_scroll_tracking` (already
 /// attached to this same element) picks up to update `selected`, so a
@@ -1034,6 +944,104 @@ pub struct CarouselContentProps {
 /// read this construction needs (the container's own starting scroll
 /// offset) is implicit in `scrollBy`'s own *relative* delta, so it is
 /// never taken at all, on either side of the bridge.
+///
+/// ## scroll-snap-stop
+///
+/// Every [`CarouselItem`] declares `scroll-snap-stop: always` as a plain
+/// inline `style` property, right next to its own `scroll-snap-align`
+/// (see that component's own source) -- matching every other
+/// layout-critical property on this track/its slides (`scroll-snap-type`
+/// here, `scroll-snap-align`/the flex layout there), this module's own
+/// "works with zero theme CSS" convention (module doc, "Engine" section).
+///
+/// ### What this is for
+///
+/// `scroll-snap-stop: always` requires this scroll container to stop at
+/// the *first* snap position a scroll operation would otherwise pass,
+/// rather than skipping over several to settle on whichever is numerically
+/// nearest -- the user's own explicit call: express embla-carousel's
+/// default (non-`dragFree`, non-`skipSnaps`) "never skip past more than one
+/// slide" outcome natively, without reimplementing its velocity model, and
+/// accepting that a native-scroll engine will not *feel* identical to a
+/// transform-based one. Measured (not assumed) to cap a genuine
+/// browser-animated scroll operation -- a caller's own
+/// `el.scrollBy({ left, behavior: 'smooth' })`, and by extension a native
+/// wheel/trackpad fling, since both are the same "smooth scrolling
+/// operation" the CSS Scroll Snap spec's own `scroll-snap-stop` language
+/// describes -- to exactly one slide of travel regardless of the
+/// requested distance.
+///
+/// ### Why a plain inline declaration, not `@supports`
+///
+/// An earlier version of this gated the property behind a scoped
+/// `<style>` tag rendered as this element's own preceding sibling --
+/// `@supports (scroll-snap-stop: always) { #id > * { ... } }` -- reasoning
+/// that "only if the browser supports it" (the user's own explicit
+/// requirement) has no equivalent inside a plain `style="..."` attribute,
+/// since `@supports` is a stylesheet at-rule. That construction shipped
+/// broken, and its own regression test was a false green. Dioxus emits
+/// hydration marker comments *inside* a `<style>` element's own text
+/// content (`<!--node-id413-->...<!--#-->`); `<!--`/`-->` are CDO/CDC
+/// tokens that a stylesheet's top level normally ignores, but the ident
+/// immediately following the opening one (`node-id413`) begins a
+/// qualified rule whose prelude then swallows the real `@supports` rule
+/// and takes its own `{...}` block as that rule's block, so the browser's
+/// CSS parser drops the whole thing. Measured live against a hydrated
+/// release SSG build: the `<style>` tag was present with the correct
+/// `id`, matching the live element, and yet
+/// `styleElement.sheet.cssRules.length` read `0` and
+/// `getComputedStyle(slide).scrollSnapStop` read `"normal"` on every
+/// slide -- a hydration-marker/CSS-parser hazard, not an id-scoping or
+/// timing bug. (This would have worked in pure CSR, where Dioxus emits no
+/// hydration markers at all -- very likely why it was originally believed
+/// to work.) The test that shipped alongside it scrolled 2.5 slide widths
+/// and asserted landing on slide 2, which nearest-snap settling alone
+/// already gives regardless of whether the property applies at all, so it
+/// never had the power to catch this.
+///
+/// No conditional gating is actually needed to satisfy "only if the
+/// browser supports it": an unrecognized property inside a `style="..."`
+/// attribute is simply dropped by the browser's own CSS parser by
+/// definition, so a browser without `scroll-snap-stop` support silently
+/// keeps today's behavior -- the same fallback `@supports` would have
+/// produced, with no stylesheet, no id scoping, and no hydration-marker
+/// hazard to get wrong.
+///
+/// ### Known limitation, measured rather than assumed: this crate's own
+/// pointer-drag path does *not* get this guarantee
+///
+/// `CAROUSEL_DRAG_JS`'s mouse/pen drag moves the track with many
+/// discrete `scrollBy({ behavior: 'instant' })` calls while
+/// `scroll-snap-type` is suspended for the gesture's own duration (see
+/// that constant's own doc for why), so a long or fast drag's raw
+/// position at release can land several slide-widths from the origin with
+/// no scrolling operation having passed through the intervening snap
+/// points at all -- each jump was independently instant and unsnapped.
+/// Restoring `scroll-snap-type` afterward is not itself treated as "a
+/// scrolling operation resuming past skipped snap points"; it is a fresh,
+/// static re-evaluation of an already-stationary position, which this
+/// property does not appear to constrain on this engine (Chromium):
+/// confirmed live, isolated from this crate's own JS entirely (raw
+/// `el.scrollBy({ behavior: 'instant' })` in a loop with
+/// `scroll-snap-type` suspended, then restored, on an element whose child
+/// already computes `scroll-snap-stop: always`) -- the settle still lands
+/// on whichever slide is numerically nearest the raw position, identical
+/// to what happens with the property absent altogether. A same-tick
+/// zero-distance and 1px `behavior: 'smooth'` nudge issued immediately
+/// after restoring `scroll-snap-type`, tried as a cheap way to route the
+/// correction through the constrained "smooth scroll" path instead, did
+/// not change this. This is a real, currently-open gap for this crate's
+/// own pointer-drag feature specifically -- not for wheel/trackpad/native
+/// scrolling on the same track, and not for a caller's own `scrollBy`,
+/// both of which this property does correctly constrain.
+///
+/// Also not covered, and unreachable by construction rather than merely
+/// unimplemented: a short, fast flick that settles back to its origin
+/// instead of advancing is a velocity-shaped symptom, and no CSS property
+/// can observe release speed. Closing it would mean a JS
+/// distance-or-speed threshold -- i.e. reintroducing the velocity model
+/// under another name -- which the user explicitly declined; see
+/// `dev-docs/backlog.md` row 96 for the fuller history.
 ///
 /// ## Styling
 ///
@@ -1082,33 +1090,17 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         "{axis_style}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
-    // See `no_skip_supports_css`'s own doc for what this is and why it is
-    // a scoped `<style>` tag rather than a third inline declaration
-    // alongside `axis_style` above.
-    let no_skip_css = no_skip_supports_css(&id());
 
     rsx! {
-        Fragment {
-            // Explicit `Fragment` (mirroring `drag_and_drop_list.rs`'s own
-            // multi-root usage), not two bare top-level siblings: found by
-            // execution (this component's own doc, "no_skip_supports_css"
-            // section, has the write-up) that two un-fragmented roots
-            // render correctly on the very first pass (SSR, or a test's
-            // own single `rebuild_in_place`) but silently lose the first
-            // one -- this `<style>` tag -- the moment any later re-render
-            // happens, which every real mount does almost immediately
-            // (this component's own registration/tracking effects).
-            style { {no_skip_css} }
-            div {
-                id,
-                style,
-                tabindex: "0",
-                "data-orientation": orientation.as_str(),
-                "data-draggable": draggable,
-                ..rest_attrs,
+        div {
+            id,
+            style,
+            tabindex: "0",
+            "data-orientation": orientation.as_str(),
+            "data-draggable": draggable,
+            ..rest_attrs,
 
-                {props.children}
-            }
+            {props.children}
         }
     }
 }
@@ -1186,9 +1178,13 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     let has_name = has_own_accessible_name(&props.attributes);
     let default_label = (!has_name && count > 0).then(|| slide_label(index(), count));
 
+    // `scroll-snap-stop:always` -- see `CarouselContent`'s own doc, "##
+    // scroll-snap-stop" section, for what this is, its known limitations,
+    // and why this is a plain inline declaration rather than a stylesheet
+    // gated by `@supports`.
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let style = format!(
-        "flex:0 0 100%;scroll-snap-align:start;min-width:0;min-height:0;{}",
+        "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -1812,42 +1808,27 @@ mod ssr_tests {
     }
 
     #[test]
-    fn no_skip_style_tag_is_present_on_the_very_first_render() {
+    fn slide_declares_scroll_snap_stop_always_inline() {
+        // `scroll-snap-stop: always` used to be applied via a scoped
+        // `<style>` tag rendered as `CarouselContent`'s own preceding
+        // sibling, gated by `@supports` -- removed; see `CarouselContent`'s
+        // own doc, "scroll-snap-stop" section ("Why a plain inline
+        // declaration, not `@supports`"), for the full write-up. Measured
+        // live against a hydrated release SSG build, that construction
+        // never took effect at all: Dioxus's own hydration marker comments
+        // inside the `<style>` tag's text content corrupted the CSS parse,
+        // so `styleElement.sheet.cssRules.length` was `0` and every slide
+        // computed `scroll-snap-stop: normal` regardless. It is now a
+        // plain inline declaration on each slide, alongside
+        // `scroll-snap-align`, matching every other layout-critical
+        // property this module already sets this way. This is the
+        // SSR-checkable half of that fix; the computed-style/behavioral
+        // half needs a real browser -- `playwright/carousel.spec.ts`'s own
+        // "scroll-snap-stop" describe block.
         let html = render(ThreeSlideCarousel);
-        assert!(html.contains("<style>"));
-        assert!(html.contains("@supports (scroll-snap-stop: always)"));
-        assert!(html.contains("scroll-snap-stop: always"));
-    }
-
-    #[test]
-    fn no_skip_style_tag_survives_the_post_effect_re_render() {
-        // Regression: `CarouselContent` used to render its `<style>` tag
-        // and its track `<div>` as two bare top-level rsx siblings with no
-        // explicit `Fragment` wrapper. That rendered fine on the very
-        // first pass (`rebuild_in_place` alone, no effects flushed --
-        // `no_skip_style_tag_is_present_on_the_very_first_render` above
-        // still covers exactly that shape) but silently dropped the
-        // `<style>` tag the moment any later render happened -- which
-        // every real mount does almost immediately, since this
-        // component's own registration/tracking effects fire right after
-        // mount. Confirmed live in a real browser (a built release SSG
-        // page) before finding this: `document.querySelectorAll('style')`
-        // found none, and `getComputedStyle` on a slide reported
-        // `scroll-snap-stop: normal`, even though this exact same
-        // component's bare `rebuild_in_place`-only SSR output (no
-        // `render_immediate` loop) already contained the tag correctly --
-        // the discrepancy was the give-away, not a CSS problem. Mirrors
-        // `next_button_becomes_enabled_once_items_have_registered`'s own
-        // `render_immediate` loop shape so this class of "survives a
-        // second render" regression has a standing test, not just this
-        // one instance of it.
-        let mut dom = VirtualDom::new(ThreeSlideCarousel);
-        dom.rebuild_in_place();
-        for _ in 0..4 {
-            dom.render_immediate(&mut dioxus::core::NoOpMutations);
-        }
-        let html = dioxus_ssr::render(&dom);
-        assert!(html.contains("<style>"));
-        assert!(html.contains("scroll-snap-stop: always"));
+        assert!(html.contains("scroll-snap-stop:always"));
+        // The earlier, broken `<style>`-tag construction is gone entirely,
+        // not just replaced with a working version of itself.
+        assert!(!html.contains("<style>"));
     }
 }

@@ -605,16 +605,31 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
 });
 
 /**
- * `scroll-snap-stop: always` (`primitives/src/carousel.rs`, a scoped
- * `<style>` tag rendered alongside the track -- see that file's own
- * `no_skip_supports_css` doc, including its "Known limitation" section)
- * requires this track to stop at the first snap position a scroll
- * operation would otherwise pass, rather than skipping over several to
- * settle on whichever is numerically nearest. Measured to genuinely cap a
- * browser-animated smooth scroll -- a caller's own `scrollBy(...,
- * {behavior: 'smooth'})`, and by the same CSS Scroll Snap Spec language a
- * native wheel/trackpad fling -- to one slide of travel regardless of the
- * requested distance, which is what this test exercises directly.
+ * `scroll-snap-stop: always` (`primitives/src/carousel.rs`, a plain inline
+ * `style` declaration on each slide, right alongside `scroll-snap-align`
+ * -- see that file's own `CarouselContent` doc, "scroll-snap-stop"
+ * section) requires this track to stop at the first snap position a
+ * scroll operation would otherwise pass, rather than skipping over
+ * several to settle on whichever is numerically nearest. Measured to
+ * genuinely cap a browser-animated smooth scroll -- a caller's own
+ * `scrollBy(..., {behavior: 'smooth'})`, and by the same CSS Scroll Snap
+ * Spec language a native wheel/trackpad fling -- to one slide of travel
+ * regardless of the requested distance, which is what this test exercises
+ * directly.
+ *
+ * The distance matters. An earlier version of this test scrolled 2.5
+ * slide widths and asserted landing on slide 2 -- a false green, because
+ * "settle on whichever snap point is numerically nearest" (the un-capped
+ * behaviour, indistinguishable from this property being entirely inert)
+ * *also* lands on slide 2 at that distance. That version measured 54/54
+ * passing against a build where `scroll-snap-stop` was inert on every
+ * slide (a broken `<style>`-tag/`@supports` construction -- see
+ * `CarouselContent`'s own doc for that history). Three slide widths is
+ * used instead because it discriminates: uncapped, an exact 3.0-pitch
+ * scroll has no rounding ambiguity and settles on slide 4; capped, the
+ * scroll must stop at the very first snap position it would otherwise
+ * pass, landing on slide 2 -- two different, separately checkable
+ * predictions.
  *
  * Deliberately **not** exercised here via this crate's own pointer-drag
  * gesture (`dragBy`): measured directly (isolated `page.evaluate` against
@@ -628,12 +643,12 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
  * this exact test was red on this same build/property (settled 2 slides
  * from the origin, not 1) before this test was rewritten to test the
  * mechanism this property actually delivers, rather than the one this
- * lane originally hoped it would also cover. See `no_skip_supports_css`'s
- * own doc for the full write-up; that gap is being reported, not silently
+ * lane originally hoped it would also cover. See `CarouselContent`'s own
+ * doc for the full write-up; that gap is being reported, not silently
  * worked around here.
  */
 test.describe("Carousel: scroll-snap-stop caps a smooth scroll to one slide", () => {
-  test("a smooth scroll covering multiple slide widths lands exactly one slide away, never more", async ({ page }) => {
+  test("a smooth scroll covering three slide widths lands exactly one slide away, not three", async ({ page }) => {
     await goto(page, "main");
     const frame = demoFrame(page, "main");
     const content = frame.locator(".dx-carousel-content");
@@ -642,19 +657,19 @@ test.describe("Carousel: scroll-snap-stop caps a smooth scroll to one slide", ()
 
     const pitch = await slidePitch(slide(1));
     const contentId = await content.getAttribute("id");
-    // 2.5 slides' worth -- comfortably enough that "settle on whichever is
-    // numerically nearest" (the pre-existing, still-current behaviour for
-    // this crate's own drag path -- see this describe block's own header)
-    // would land on slide 3, not slide 2.
+    // 3 slides' worth -- see this describe block's own header for why this
+    // distance (not the previous 2.5) is the one that actually
+    // discriminates a working `scroll-snap-stop` from an inert one.
     await page.evaluate(
       ({ id, distance }) => {
         document.getElementById(id)!.scrollBy({ left: distance, behavior: "smooth" });
       },
-      { id: contentId, distance: pitch * 2.5 },
+      { id: contentId, distance: pitch * 3 },
     );
 
     await expectSnappedToBoundary(content, slide(2));
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
     await expect(slide(3)).toHaveAttribute("data-selected", "false");
+    await expect(slide(4)).toHaveAttribute("data-selected", "false");
   });
 });
