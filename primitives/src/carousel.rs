@@ -152,6 +152,24 @@ fn slide_label(index: usize, count: usize) -> String {
     format!("{} of {}", index + 1, count)
 }
 
+/// Whether [`Carousel`]'s own mount-time scroll-into-view effect (below,
+/// in its component body) should ask [`CAROUSEL_SCROLL_INTO_VIEW_JS`] for
+/// an instant jump
+/// (`true`) rather than a smooth transition (`false`) on this run.
+///
+/// `true` on exactly one run per mount: the first one where `has_items`
+/// is `true` (registration has completed), regardless of `is_first`'s
+/// *own* history of early-returning runs before that point -- see the
+/// effect's own doc for why gating on `has_items` rather than "did this
+/// particular id lookup succeed" is what makes it impossible for a real
+/// user navigation to ever inherit this `true` (round5's own fixed bug).
+/// Never `true` again afterward, once the caller has also set `is_first`
+/// to `false` on any run where `has_items` was `true` (this function
+/// itself is pure and does not do that write -- see the call site).
+fn is_mount_settle(is_first: bool, has_items: bool) -> bool {
+    has_items && is_first
+}
+
 /// Resolve a keydown on (or bubbled up to) the [`Carousel`] root to a
 /// paging intent, or `None` for every other key.
 ///
@@ -486,17 +504,63 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // effect never subscribes to its own write, matching
     // `scripts/check-self-subscribing-effects.sh`'s construction) forces
     // an instant jump on mount so a non-zero `default_value` never
-    // visibly animates in on page load.
+    // visibly animates in on page load, and must be consumed *exactly*
+    // once, by that mount-time settle -- never by a later navigation.
+    //
+    // It used to be consumed by "the first run that finds a valid item
+    // id," which silently assumed that run was always the mount settle.
+    // That assumption broke for the overwhelmingly common
+    // `default_value == 0` case: `clamp_selected(0, count)` is `0` both
+    // before and after registration, so `selected()`'s own *value* never
+    // changes when items register, and (since `item_ids` below is read
+    // through `.peek()`, deliberately not a tracked dependency) this
+    // effect was never scheduled to re-run once they did. Its very first
+    // execution -- mount, before any `CarouselItem` has registered --
+    // early-returned with `is_first` still `true`, and nothing ran this
+    // effect again until the user's first real navigation, which then
+    // found a valid id for the first time and inherited that stale
+    // `instant: true` by mistake. Reproduced live (round5,
+    // `$S/round5/carousel-drag/item1-repro-{main,rtl}.log`): clicking
+    // Next from slide 1 sent `{instant: true, behavior: 'auto'}` while
+    // every later click sent `{instant: false, behavior: 'smooth'}`, on
+    // an unmodified tree, with the test browser reporting
+    // `prefers-reduced-motion: no-preference` and `.dx-carousel-content`
+    // itself computing `scroll-behavior: auto` throughout (the global
+    // `html { scroll-behavior: smooth }` rule in
+    // `preview/assets/main.css` never reaches it -- `scroll-behavior` is
+    // not an inherited property, and this element is its own independent
+    // scroll container) -- ruling out both cheap alternative
+    // explanations before accepting this one.
+    //
+    // Fixed by construction, not by timing: `count()` below is read with
+    // tracked syntax (unlike the `item_ids.peek()` a few lines down), so
+    // registration completing re-runs this effect the instant it does,
+    // even though `selected()`'s own clamped value stayed the same --
+    // and `is_first` is consumed unconditionally the moment `count() > 0`
+    // on *that* run, regardless of whether this particular index's id
+    // happens to resolve this same tick. So the flag can never survive
+    // past the first post-registration run of this effect -- which,
+    // since registration is itself effect-driven and completes
+    // synchronously within the same initial render/effect-flush wave
+    // that mounts this component (long before a user could physically
+    // interact with it), can never coincide with a genuine navigation.
+    // This subsumes both the `default_value == 0` case above (the leak
+    // this construction closes) and the already-correct nonzero-
+    // `default_value` case (still instant, still consumed at the same
+    // conceptual point, just via a value change rather than a `count()`
+    // retry).
     let mut is_first = use_signal(|| true);
     use_effect(move || {
         let index = selected();
-        let id = item_ids.peek().get(index).cloned();
-        let Some(id) = id else {
+        let has_items = count() > 0;
+        let first = is_mount_settle(*is_first.peek(), has_items);
+        if has_items {
+            is_first.set(false);
+        }
+        let Some(id) = item_ids.peek().get(index).cloned() else {
             return;
         };
         let orientation_str = orientation().as_str().to_string();
-        let first = *is_first.peek();
-        is_first.set(false);
         let eval = document::eval(CAROUSEL_SCROLL_INTO_VIEW_JS);
         let _ = eval.send((id, orientation_str, first));
     });
@@ -949,6 +1013,44 @@ mod tests {
     fn slide_label_is_one_based_n_of_m() {
         assert_eq!(slide_label(0, 6), "1 of 6");
         assert_eq!(slide_label(5, 6), "6 of 6");
+    }
+
+    // `is_mount_settle` -- round5's fix for "slide 1 -> 2 jumps instead of
+    // animating" (see the function's own doc, and `Carousel`'s
+    // mount-time effect, for the construction). The pre-fix bug was
+    // exactly the case `mount_settle_is_false_before_any_items_have_registered`
+    // below combined with `mount_settle_is_true_the_instant_items_exist`
+    // *not* being reachable before a real navigation -- gating on
+    // `has_items` rather than "did this particular id lookup succeed" is
+    // what makes `mount_settle_is_false_on_a_real_navigation_after_mount`
+    // hold unconditionally.
+    #[test]
+    fn mount_settle_is_false_before_any_items_have_registered() {
+        // The mount effect's own early runs, before `CarouselItem`
+        // registration completes -- `is_first` is still `true`, but there
+        // is nothing to scroll to yet, so this must not consume it.
+        assert!(!is_mount_settle(true, false));
+    }
+
+    #[test]
+    fn mount_settle_is_true_the_instant_items_exist() {
+        // The first run where `has_items` flips `true` -- whether that is
+        // this effect's very first execution (items already registered
+        // by the time it runs) or a later retry once registration
+        // completes (the common `default_value == 0` case, where
+        // `selected()`'s own value never changes) -- this is always the
+        // mount-time settle, and must be instant.
+        assert!(is_mount_settle(true, true));
+    }
+
+    #[test]
+    fn mount_settle_is_false_on_a_real_navigation_after_mount() {
+        // Once the caller has set `is_first` to `false` (which it does on
+        // every run where `has_items` is `true`, per this function's own
+        // doc), no later run -- including every genuine user navigation --
+        // can ever read `true` again, regardless of `has_items`.
+        assert!(!is_mount_settle(false, true));
+        assert!(!is_mount_settle(false, false));
     }
 
     #[test]

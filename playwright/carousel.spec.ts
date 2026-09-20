@@ -59,6 +59,61 @@ async function expectSnappedToBoundary(content: Locator, item: Locator, orientat
   }).toPass({ timeout: 3000 });
 }
 
+/**
+ * Samples `.dx-carousel-content`'s own scroll position at animation-frame
+ * cadence for ~600ms starting just before `trigger()` runs, so a caller
+ * can tell an animated transition (the position passes through a value
+ * strictly between where it started and where it ended) from an instant
+ * jump (it skips straight from start to end) -- see this file's own
+ * "actually animates" describe block below, which is the reason this
+ * exists: asserting the code *chose* `behavior: 'smooth'` is not the same
+ * claim as the motion actually being animated, and only this sampling
+ * proves the latter.
+ */
+async function sampleScrollDuring(
+  page: Page,
+  contentId: string,
+  axis: "scrollLeft" | "scrollTop",
+  trigger: () => Promise<void>,
+): Promise<number[]> {
+  await page.evaluate(
+    ({ id, axis }) => {
+      (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples = [];
+      const el = document.getElementById(id) as unknown as Record<string, number>;
+      const t0 = performance.now();
+      const tick = () => {
+        (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples.push(el[axis]);
+        if (performance.now() - t0 < 600) {
+          requestAnimationFrame(tick);
+        }
+      };
+      requestAnimationFrame(tick);
+    },
+    { id: contentId, axis },
+  );
+  await trigger();
+  await page.waitForTimeout(700);
+  return page.evaluate(() => (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples);
+}
+
+/**
+ * True if `samples` pass strictly through a value between its own first
+ * and last entry. An instant jump never does (it sits at the start value,
+ * then the end value, with nothing in between); a genuine smooth-scroll
+ * transition always does -- the honest "was this actually animated"
+ * check per this file's own "actually animates" describe block.
+ */
+function passesThroughAnIntermediateValue(samples: number[]): boolean {
+  const start = samples[0];
+  const end = samples[samples.length - 1];
+  const lo = Math.min(start, end);
+  const hi = Math.max(start, end);
+  if (hi - lo < 2) {
+    return false;
+  }
+  return samples.some((v) => v > lo + 1 && v < hi - 1);
+}
+
 for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
   test.describe(`Carousel (${variant} variant): smoke + a11y attributes`, () => {
     test(`region has role=region, aria-roledescription=carousel, and an accessible name that doesn't contain the word "carousel"`, async ({ page }) => {
@@ -252,5 +307,44 @@ test.describe("Axe automated scan", () => {
     await expectNoAxeViolations(page, "carousel: all variants", {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
+  });
+});
+
+/**
+ * round5 regression: switching from slide 1 to slide 2 used to jump
+ * instantly instead of animating (every later transition already
+ * animated correctly) -- see `primitives/src/carousel.rs`'s own mount-time
+ * effect doc for the root cause and construction. Confirmed live before
+ * fixing it (round5, `$S/round5/carousel-drag/item1-repro-{main,rtl}.log`):
+ * the first click sent `CAROUSEL_SCROLL_INTO_VIEW_JS` `{instant: true,
+ * behavior: 'auto'}` while every later click sent `{instant: false,
+ * behavior: 'smooth'}`, on an unmodified tree with the test browser
+ * reporting `prefers-reduced-motion: no-preference` throughout -- so this
+ * asserts the actual, sampled scroll motion rather than "the code chose
+ * smooth", which the pre-fix code could still have passed by coincidence
+ * of wording.
+ */
+test.describe("Carousel: the first paged transition actually animates (round5 regression)", () => {
+  test("clicking Next from slide 1 passes through an intermediate scroll position, not an instant jump", async ({ page }) => {
+    await goto(page, "main");
+    const reducedMotion = await page.evaluate(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    test.skip(
+      reducedMotion,
+      "test browser reports prefers-reduced-motion: reduce -- CAROUSEL_SCROLL_INTO_VIEW_JS deliberately forces an instant scroll in that case (WCAG 2.3.3 territory), so whether the transition animates cannot be asked honestly in this environment",
+    );
+
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const contentId = (await content.getAttribute("id"))!;
+    const next = frame.getByRole("button", { name: "Next slide" });
+
+    const samples = await sampleScrollDuring(page, contentId, "scrollLeft", () => next.click());
+
+    expect(
+      passesThroughAnIntermediateValue(samples),
+      `expected an intermediate scrollLeft strictly between the first (${samples[0]}) and last (${samples[samples.length - 1]}) sample; got: ${JSON.stringify(samples)}`,
+    ).toBe(true);
   });
 });
