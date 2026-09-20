@@ -1,6 +1,6 @@
 {
   "name": "carousel",
-  "description": "A slideshow you page through with prev/next buttons, arrow keys, or by scrolling.",
+  "description": "A slideshow you page through with prev/next buttons, arrow keys, or by dragging/scrolling the track.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

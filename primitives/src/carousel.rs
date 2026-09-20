@@ -27,8 +27,14 @@
 //! position under `dir="rtl"`. A second, independent JS bridge
 //! (`use_carousel_scroll_tracking`, a private helper) keeps `CarouselContext`'s own `selected`
 //! correct after a *native* drag/wheel/trackpad scroll the caller's own
-//! buttons/keyboard never drove -- both are the only two `document::eval`
-//! call sites this module has, and both no-op harmlessly off a real
+//! buttons/keyboard never drove. A third (`use_carousel_drag`, also
+//! private -- see [`CarouselContent`]'s own "Pointer drag" doc) adds a
+//! mouse/pen drag-to-scroll gesture on top of the *same* track, moving it
+//! with plain `scrollBy` calls rather than a parallel transform-based
+//! engine; every `scrollBy` it issues is native scrolling as far as the
+//! browser (and the second bridge above) is concerned, so dragging is
+//! never a second source of truth for `selected`. All three are
+//! `document::eval` call sites, and all three no-op harmlessly off a real
 //! document (native/Blitz, or a plain `cargo test`), the same as every
 //! other un-gated `document::eval` helper in `crate::lib` (`use_outside_dismiss`,
 //! `use_form_reset_listener`, ...): this module's rendered markup never
@@ -335,6 +341,238 @@ fn use_carousel_scroll_tracking(
     });
 }
 
+/// Movement, in CSS pixels, a mouse/pen pointer must travel from its
+/// `pointerdown` origin before [`CAROUSEL_DRAG_JS`] treats the gesture as
+/// a drag rather than a click -- see [`CarouselContent`]'s own "Pointer
+/// drag" doc for what this threshold is for.
+const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
+
+/// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
+/// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
+/// track [`CAROUSEL_SCROLL_INTO_VIEW_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
+/// already use -- not a second, competing engine. See [`CarouselContent`]'s
+/// own "Pointer drag" doc for the construction and why each piece is
+/// shaped the way it is; the short version: every `scrollBy` this issues
+/// fires the exact same native `scroll` events [`CAROUSEL_SCROLL_TRACKING_JS`]
+/// (already attached to the same element) already listens for, so a drag
+/// settles on `CarouselContext`'s `selected` through that one existing
+/// bridge, never a second source of truth for the index.
+///
+/// Mirrors [`CAROUSEL_SCROLL_TRACKING_JS`]'s own long-lived shape: an
+/// initial `dioxus.send` of static config, then `await dioxus.recv()`
+/// again only for teardown -- everything in between is real
+/// `addEventListener`s this script installs and removes itself, driving
+/// no Rust-side state at all while active (see the module doc's "Engine"
+/// section for why `document::eval` is this crate's established escape
+/// hatch for DOM access -- `setPointerCapture` and a real, ordered
+/// capture-phase `click` listener -- that Dioxus's synthetic event props
+/// don't reach, the same reasoning `drawer.rs`'s own drag gesture
+/// documents for its own escape to `crate::pointer`).
+///
+/// One non-obvious piece, found only by driving a real drag (round5):
+/// `scroll-snap-type: ... mandatory` re-snaps after *every* scroll
+/// operation it considers complete, and a plain `scrollBy` -- with
+/// nothing telling the browser that many small ones in a row are one
+/// continuous gesture, the way a real touch/wheel drag is -- counts as
+/// one. Left enabled during the drag, this fought every single
+/// `scrollBy` call and sent a short, slow real-mouse drag flying several
+/// slides past where the pointer actually stopped. So the drag
+/// temporarily sets `el.style.scrollSnapType = 'none'` the moment it
+/// starts (after the movement threshold, alongside `data-dragging`) and
+/// restores the exact value this element is always rendered with on
+/// release -- which is also what makes the release "settle on a slide"
+/// at all: once snapping is back on, the browser glides to the nearest
+/// slide by itself, the same as it would after releasing a real
+/// touch/trackpad drag, with no hand-rolled offset math here to get
+/// wrong.
+const CAROUSEL_DRAG_JS: &str = "\
+    const [id, orientation, thresholdPx, enabled] = await dioxus.recv();
+    const el = document.getElementById(id);
+    if (!el || !enabled) {
+        await dioxus.recv();
+        return;
+    }
+    const thresholdSq = thresholdPx * thresholdPx;
+    let pointerId = null;
+    let originX = 0;
+    let originY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let dragging = false;
+    let suppressNextClick = false;
+
+    const onPointerDown = (e) => {
+        // Mouse and pen only -- touch already scrolls this track natively
+        // (this module's own 'never intercept touch' rule -- touch-action
+        // is never set to 'none' here, see style.css's own comment), and a
+        // second pointer going down while one is already tracked is
+        // ignored rather than restarting the gesture from the new one.
+        if (e.pointerType === 'touch' || pointerId !== null || e.button !== 0) {
+            return;
+        }
+        suppressNextClick = false;
+        pointerId = e.pointerId;
+        originX = lastX = e.clientX;
+        originY = lastY = e.clientY;
+        dragging = false;
+    };
+
+    const onPointerMove = (e) => {
+        if (e.pointerId !== pointerId) {
+            return;
+        }
+        if (!dragging) {
+            const dxFromOrigin = e.clientX - originX;
+            const dyFromOrigin = e.clientY - originY;
+            if (dxFromOrigin * dxFromOrigin + dyFromOrigin * dyFromOrigin < thresholdSq) {
+                return;
+            }
+            dragging = true;
+            el.setAttribute('data-dragging', 'true');
+            try { el.setPointerCapture(pointerId); } catch (err) {}
+            // `scroll-snap-type: ... mandatory` (set inline by this same
+            // element's own Rust-rendered `style`) re-snaps after EVERY
+            // individual scroll operation it sees as complete -- and each
+            // `scrollBy` below is exactly that, since nothing tells the
+            // browser these many small instant scrolls are one ongoing
+            // gesture the way a real touch/wheel drag would. Confirmed
+            // live (round5): left enabled, a single ~80px drag snapped
+            // forward one slide per `scrollBy` call and landed 4 slides
+            // away instead of 1. Suspending it for the drag's own
+            // duration lets these calls move the track freely; restoring
+            // the exact value this element is always rendered with (never
+            // just clearing it -- see `endDrag` below) on release is what
+            // makes the browser glide to the nearest slide by itself, the
+            // same native settle a real trackpad/touch drag gets, with no
+            // hand-rolled offset math of this module's own.
+            el.style.scrollSnapType = 'none';
+        }
+        // Only reached once dragging -- a still-below-threshold move never
+        // calls this, so a plain click's own tiny jitter never suppresses
+        // text selection/native drag-ghost for nothing.
+        e.preventDefault();
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        // scrollBy's own delta is always physical-pixel, regardless of
+        // `dir` -- unlike reading/writing `scrollLeft` itself, whose
+        // zero-point and sign this module's own doc already warns has
+        // historically disagreed across browsers, `scrollBy`'s relative
+        // delta does not. So this formula never branches on direction --
+        // and still gets the well-known RTL swap for free, the same way
+        // this module's own keyboard handler does (`carousel_key_intent`/
+        // `Direction::resolve_horizontal`, no scrollBy/scrollLeft
+        // involved there either): dragging is direct manipulation (the
+        // content tracks the pointer 1:1), and content tracking the
+        // pointer is itself a physical, dir-independent relationship --
+        // it is *which physical direction reveals 'the next slide'* that
+        // flips under RTL (DOM order never changes, but RTL lays later
+        // slides physically further left, the mirror of LTR), exactly
+        // like the familiar swipe-left-for-next vs. swipe-right-for-next
+        // split between LTR and RTL photo galleries/story viewers.
+        // Verified live (round5, both directions on the same `rtl`
+        // variant): dragging left from slide 1 hit the start boundary and
+        // never moved (correct -- there is nothing before slide 1);
+        // dragging right produced the identical `scrollLeft` change
+        // (`0 -> -153`) the Next button's own `scrollIntoView` produces.
+        if (orientation === 'horizontal') {
+            el.scrollBy({ left: -dx, behavior: 'instant' });
+        } else {
+            el.scrollBy({ top: -dy, behavior: 'instant' });
+        }
+    };
+
+    const endDrag = (e) => {
+        if (e.pointerId !== pointerId) {
+            return;
+        }
+        if (dragging) {
+            suppressNextClick = true;
+            el.removeAttribute('data-dragging');
+            try { el.releasePointerCapture(pointerId); } catch (err) {}
+            // Restore -- never just clear -- the exact snap-type this
+            // element is always rendered with (see onPointerMove's own
+            // comment on why it was suspended); this is what makes the
+            // browser glide to the nearest slide on its own the instant
+            // dragging stops, and it must happen synchronously here
+            // rather than waiting for Rust to notice the settled scroll
+            // position and re-render, or the browser would have nothing
+            // to snap *with* the moment the gesture actually ends.
+            el.style.scrollSnapType = orientation === 'horizontal' ? 'x mandatory' : 'y mandatory';
+        }
+        pointerId = null;
+        dragging = false;
+    };
+
+    // Capture phase, attached to this element itself (an ancestor of
+    // every slide, so this still only ever sees clicks that landed
+    // somewhere inside this carousel's own content): fires before the
+    // click reaches whatever child it landed on (a link, a button) and
+    // before Dioxus's own delegated bubble-phase handling, so both a
+    // native default action (link navigation) and any `onclick` a caller
+    // attached are suppressed together -- exactly once, only immediately
+    // after a real drag, never for a plain click that never crossed the
+    // threshold.
+    const onClickCapture = (e) => {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
+
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    el.addEventListener('lostpointercapture', endDrag);
+    el.addEventListener('click', onClickCapture, true);
+    await dioxus.recv();
+    el.removeEventListener('pointerdown', onPointerDown);
+    el.removeEventListener('pointermove', onPointerMove);
+    el.removeEventListener('pointerup', endDrag);
+    el.removeEventListener('pointercancel', endDrag);
+    el.removeEventListener('lostpointercapture', endDrag);
+    el.removeEventListener('click', onClickCapture, true);";
+
+/// Attach [`CAROUSEL_DRAG_JS`] to the element with the given `id` for as
+/// long as the calling component stays mounted and `enabled()` is `true`
+/// -- mirrors [`use_carousel_scroll_tracking`]'s own shape exactly (an
+/// initial `eval.send(..)`, teardown via a second send read by the
+/// script's own trailing `await dioxus.recv()`), one layer simpler since
+/// this bridge reports nothing back to Rust at all (see [`CAROUSEL_DRAG_JS`]'s
+/// own doc for why: every `scrollBy` it issues is picked up by
+/// [`use_carousel_scroll_tracking`]'s own listener on the same element).
+///
+/// `enabled` is read with tracked syntax so toggling
+/// [`CarouselContentProps::draggable`] at runtime actually attaches/tears
+/// down the listeners, not just the initial mount value -- the gate itself
+/// lives in the script (`if (!el || !enabled) { ...; return; }`) rather
+/// than in whether this hook installs an eval at all, so every path
+/// through this function sends the exact same shape of config and returns
+/// the exact same shape of cleanup closure.
+fn use_carousel_drag(
+    id: impl Readable<Target = String> + Copy + 'static,
+    orientation: ReadSignal<CarouselOrientation>,
+    enabled: ReadSignal<bool>,
+) {
+    crate::use_effect_with_cleanup(move || {
+        let id = id.cloned();
+        let orientation_str = orientation().as_str().to_string();
+        let eval = document::eval(CAROUSEL_DRAG_JS);
+        // No spawned receive loop here, unlike `use_carousel_scroll_tracking`
+        // just above -- this script never `dioxus.send`s anything back (see
+        // this function's own doc), so there is nothing to poll for until
+        // the cleanup closure's own teardown `send` below, which needs no
+        // receiver on this side to take effect.
+        let _ = eval.send((id, orientation_str, CAROUSEL_DRAG_THRESHOLD_PX, enabled()));
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
 /// Shared state and actions, provided by [`Carousel`] and consumed by
 /// every sub-component plus [`use_carousel`].
 #[derive(Clone, Copy)]
@@ -608,6 +846,12 @@ pub struct CarouselContentProps {
     /// The ID of the carousel content element.
     pub id: ReadSignal<Option<String>>,
 
+    /// Whether a mouse/pen pointer drag on the track pages the carousel --
+    /// see this component's own "Pointer drag" doc. Defaults to `true`;
+    /// touch is never affected either way (it already scrolls natively).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub draggable: ReadSignal<bool>,
+
     /// Additional attributes to apply to the carousel content element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -641,12 +885,67 @@ pub struct CarouselContentProps {
 /// independently reachable, e.g. for finer scroll control than a full
 /// slide-step in the `multiple`-per-view layout.
 ///
+/// ## Pointer drag
+///
+/// A mouse or pen drag anywhere on the track pages the carousel, the same
+/// way shadcn/embla-style carousels do -- layered on this element's own
+/// scroll-snap track (a `scrollBy` per pointer move, never a second,
+/// competing animation engine), and disableable per instance via
+/// [`CarouselContentProps::draggable`] if a caller needs to opt out.
+/// **Touch is never intercepted** -- it already scrolls this track
+/// natively (`touch-action` is never set to `none` here), so a drag
+/// gesture only ever starts for `pointerType === 'mouse' | 'pen'`.
+///
+/// Dragging is direct manipulation (the track tracks the pointer 1:1), so
+/// under [`CarouselOrientation::Horizontal`] the physical direction that
+/// reveals the next slide mirrors under `dir="rtl"` -- swipe-left-for-next
+/// in LTR, swipe-right-for-next in RTL, the same familiar split a
+/// right-to-left photo gallery or story viewer already has, and the same
+/// direction [`Carousel`]'s own root-level `ArrowLeft`/`ArrowRight`
+/// keyboard handling already swaps under RTL. No direction branch exists
+/// in the drag code itself for this -- see `CAROUSEL_DRAG_JS`'s own doc
+/// for why none is needed.
+///
+/// A drag has to move at least a few pixels from its origin before it
+/// takes over -- below that threshold nothing happens at all, so a plain
+/// click on a link/button inside a [`CarouselItem`] still works exactly
+/// like a click. Once a real drag is recognized, the synthetic `click`
+/// that would otherwise fire on release is suppressed (a capture-phase
+/// listener on this element, ahead of both a native default action like
+/// link navigation and any caller's own `onclick`), text selection is
+/// suppressed for the gesture's duration, and pointer capture keeps the
+/// drag tracking correctly even if the pointer leaves this element's
+/// bounds mid-gesture.
+///
+/// On release, the browser's own scroll-snap machinery settles the track
+/// on the nearest slide exactly as it would after a native trackpad/touch
+/// scroll -- no separate "settle" step is needed. That settle (like every
+/// other native scroll) is what `use_carousel_scroll_tracking` (already
+/// attached to this same element) picks up to update `selected`, so a
+/// drag never invents a second source of truth for the index: the
+/// Previous/Next buttons' `disabled` state, the "N of M" slide labels, and
+/// a custom picker built on [`use_carousel`] all stay correct through the
+/// exact same bridge a click or keypress already uses.
+///
+/// This gesture reads pointer state maintained entirely on the JS side
+/// (see `CAROUSEL_DRAG_JS`'s own doc) and writes only a scroll position
+/// per pointer move -- never a synchronous layout *read* in the same
+/// handler (`dev-docs/recommended-implementations.md` §11 Rule 1); the one
+/// read this construction needs (the container's own starting scroll
+/// offset) is implicit in `scrollBy`'s own *relative* delta, so it is
+/// never taken at all, on either side of the bridge.
+///
 /// ## Styling
 ///
 /// The [`CarouselContent`] component defines the following data
-/// attribute you can use to control styling:
+/// attributes you can use to control styling:
 /// - `data-orientation`: `horizontal` or `vertical`, matching the parent
 ///   [`Carousel`]'s own.
+/// - `data-draggable`: `true` or `false`, matching
+///   [`CarouselContentProps::draggable`].
+/// - `data-dragging`: present (`"true"`) only while an active mouse/pen
+///   drag has crossed the movement threshold above; this is what the
+///   themed package's own `cursor: grabbing` styling keys off.
 #[component]
 pub fn CarouselContent(props: CarouselContentProps) -> Element {
     let mut ctx: CarouselContext = use_context();
@@ -664,8 +963,10 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     });
 
     use_carousel_scroll_tracking(id, ctx.orientation, ctx.set_selected);
+    use_carousel_drag(id, ctx.orientation, props.draggable);
 
     let orientation = (ctx.orientation)();
+    let draggable = (props.draggable)();
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
@@ -688,6 +989,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
             style,
             tabindex: "0",
             "data-orientation": orientation.as_str(),
+            "data-draggable": draggable,
             ..rest_attrs,
 
             {props.children}
@@ -1360,5 +1662,36 @@ mod ssr_tests {
         let html = render(RtlCarousel);
         assert!(html.contains(r#"dir="rtl""#));
         assert!(html.contains(r#"data-direction="rtl""#));
+    }
+
+    #[component]
+    fn CarouselWithDragDisabled() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselContent { draggable: false,
+                    CarouselItem { index: 0usize, "One" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn content_is_draggable_by_default() {
+        // The live pointer-drag *behavior* (threshold, scrollBy, click
+        // suppression) needs a real browser -- `playwright/carousel.spec.ts`'s
+        // own "pointer drag" describe block -- but the opt-out prop's own
+        // wiring into this styling hook is plain, SSR-checkable markup.
+        // Unquoted `true`/`false` (not `"true"`/`"false"`) is how a `bool`
+        // data attribute actually renders -- matching `calendar.rs`'s own
+        // `data-selected=true`/`data-disabled=false` assertions, confirmed
+        // by execution (the quoted form fails against this same markup).
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("data-draggable=true"));
+    }
+
+    #[test]
+    fn content_draggable_can_be_opted_out() {
+        let html = render(CarouselWithDragDisabled);
+        assert!(html.contains("data-draggable=false"));
     }
 }

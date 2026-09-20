@@ -17,12 +17,34 @@
        keyboard focus still work identically either way; only the
        scrollbar's own paint is suppressed. `CarouselPrevious`/
        `CarouselNext` plus the root's own `ArrowLeft`/`ArrowRight` remain
-       the discoverable way to page for a mouse-only user. */
+       the discoverable way to page without a pointer at all. */
     scrollbar-width: none;
 }
 
 .dx-carousel-content::-webkit-scrollbar {
     display: none;
+}
+
+/* Pointer-drag affordance (primitives/src/carousel.rs's own
+   `use_carousel_drag`/`CAROUSEL_DRAG_JS`, `data-draggable`/`data-dragging`
+   are that primitive's own styling hooks). `touch-action` is deliberately
+   never set here at all -- see `.dx-carousel-previous`/`-next`'s own
+   comment below for why `none` must never be used; the default `auto`
+   this element already has is what lets touch keep scrolling it natively,
+   completely independent of this mouse/pen-only gesture. */
+.dx-carousel-content[data-draggable="true"] {
+    cursor: grab;
+}
+
+.dx-carousel-content[data-draggable="true"][data-dragging="true"] {
+    cursor: grabbing;
+
+    /* Suppresses text selection for the drag's own duration -- the CSS
+       counterpart to `CAROUSEL_DRAG_JS`'s `preventDefault()` on each
+       pointermove past the movement threshold; either alone is enough in
+       most engines, both together is the usual belt-and-braces pairing
+       for a JS-driven pointer drag. */
+    user-select: none;
 }
 
 .dx-carousel-item {

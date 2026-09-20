@@ -60,6 +60,38 @@ async function expectSnappedToBoundary(content: Locator, item: Locator, orientat
 }
 
 /**
+ * Drives a real pointer drag with `page.mouse` (down, N intermediate
+ * moves, up) -- deliberately not a synthetic `dispatchEvent`, since
+ * `CAROUSEL_DRAG_JS`'s own threshold/pointer-capture/click-suppression
+ * logic all key off genuine `pointerdown`/`pointermove`/`pointerup`
+ * events, which a script-fired fake event does not reliably reproduce
+ * (`round5`'s own carousel-drag lane doc has the details).
+ */
+async function dragBy(page: Page, target: Locator, dx: number, dy: number, steps = 12) {
+  // Without this, `boundingBox()` can return coordinates outside the
+  // current viewport (found by execution: `main`'s own content sat at a
+  // large negative y on first paint) -- `page.mouse` targets real
+  // viewport coordinates, so a drag computed from an off-screen box
+  // silently lands on nothing.
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  if (!box) {
+    throw new Error("dragBy: target has no bounding box");
+  }
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(startX + (dx * i) / steps, startY + (dy * i) / steps);
+    // A short pause between steps, matching a real mouse's ~60 Hz event
+    // cadence rather than firing all steps in the same tick.
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+}
+
+/**
  * Samples `.dx-carousel-content`'s own scroll position at animation-frame
  * cadence for ~600ms starting just before `trigger()` runs, so a caller
  * can tell an animated transition (the position passes through a value
@@ -346,5 +378,97 @@ test.describe("Carousel: the first paged transition actually animates (round5 re
       passesThroughAnIntermediateValue(samples),
       `expected an intermediate scrollLeft strictly between the first (${samples[0]}) and last (${samples[samples.length - 1]}) sample; got: ${JSON.stringify(samples)}`,
     ).toBe(true);
+  });
+});
+
+/**
+ * round5 feature: mouse/pen drag-to-scroll on the track, layered on the
+ * same scroll-snap construction (see `primitives/src/carousel.rs`'s own
+ * "Pointer drag" doc). Touch is deliberately never exercised here -- it
+ * already scrolls natively and Playwright's own synthetic touch input
+ * would not exercise this code path anyway (`CAROUSEL_DRAG_JS` explicitly
+ * ignores `pointerType === 'touch'`).
+ */
+test.describe("Carousel: pointer drag (mouse/pen)", () => {
+  test("a drag past the threshold advances the slide, and selected (buttons, N of M label) stays correct", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expect(frame.getByRole("button", { name: "Previous slide" })).toBeDisabled();
+
+    await dragBy(page, content, -140, 0);
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    // The exact same bridge a click/keypress uses (`use_carousel_scroll_tracking`)
+    // is what a drag settles through too -- Previous's disabled state is
+    // one of the things that would desync if a drag had its own, second
+    // source of truth for the index instead.
+    await expect(frame.getByRole("button", { name: "Previous slide" })).toBeEnabled();
+  });
+
+  test("a click inside a slide still works when the pointer never crosses the drag threshold", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const button = frame.getByTestId("carousel-slide-button");
+    await expect(button).toHaveAttribute("data-clicked", "false");
+
+    await button.click();
+
+    await expect(button).toHaveAttribute("data-clicked", "true");
+  });
+
+  test("a real drag starting on a slide's own button pages the carousel and suppresses that button's own click", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const button = frame.getByTestId("carousel-slide-button");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await dragBy(page, button, -140, 0);
+
+    await expectSnappedToBoundary(frame.locator(".dx-carousel-content"), slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    await expect(button).toHaveAttribute("data-clicked", "false");
+  });
+
+  test("a short movement below the threshold does not page", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await dragBy(page, content, -2, 0, 2);
+    await page.waitForTimeout(300);
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("drag works under dir=rtl -- the physical direction that means 'next' mirrors, matching the keyboard's own RTL swap", async ({ page }) => {
+    await goto(page, "rtl");
+    const frame = demoFrame(page, "rtl");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+
+    // Rightward, not leftward -- see primitives/src/carousel.rs's own
+    // "Pointer drag" doc for why this mirrors LTR (the same swap
+    // `ArrowLeft`/`ArrowRight` already gets at the carousel root).
+    await dragBy(page, content, 140, 0);
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("drag works in the vertical variant", async ({ page }) => {
+    await goto(page, "vertical");
+    const frame = demoFrame(page, "vertical");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+
+    await dragBy(page, content, 0, -140);
+
+    await expectSnappedToBoundary(content, slide(2), "vertical");
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
   });
 });
