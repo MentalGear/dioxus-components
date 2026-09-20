@@ -84,6 +84,7 @@ fn generate_data() -> Vec<ChartDatum> {
             data.push(ChartDatum {
                 label: format!("{name} {day}"),
                 values: vec![Some(desktop), Some(mobile)],
+                ..Default::default()
             });
             i += 1.0;
         }
@@ -132,6 +133,7 @@ pub fn Demo() -> Element {
         .map(|d| ChartDatum {
             label: d.label.clone(),
             values: vec![d.values[current.index()]],
+            ..Default::default()
         })
         .collect();
 
