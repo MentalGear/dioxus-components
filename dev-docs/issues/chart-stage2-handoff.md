@@ -325,6 +325,17 @@ lost with it, even though the worktree itself would survive.** See §7's preserv
 — copying `$S/stage2/s2-radar/radar_chart/` into the worktree and committing it should be the
 single first action of any resumption, ahead of writing any new code for this lane.
 
+**Update 2026-09-20 (main loop, after this document was written):** done — the scratchpad draft was
+copied into this worktree and committed as `63de8f8`
+(`chore(radar-chart): preserve the s2-radar gallery draft on this lane's branch`): all 17
+`preview/src/components/radar_chart/**` files plus `playwright/radar_chart.spec.ts`, with
+`rustfmt --edition 2021` applied so a later `cargo fmt --all --check` cannot trip over them, and
+the two registration lines recorded in the commit body (the `variant-plan.md` itself stays
+scratchpad-only). The draft is still UNVERIFIED — never compiled, never registered, never run — and
+inert on the branch, since an unregistered component folder is not in the module tree. The seven
+mechanical gate scripts pass with it present. This branch is still local-only: the draft now
+survives anything that loses the scratchpad, but not the loss of the container itself (see §7).
+
 Also carried by this lane, still open (§4): the CSS request for `chart/style.css`'s three radar
 data-slots (§4e), the `has_full_table()` construction (§4b, filed by this lane against the
 refactor-owned `chart.rs`), and the `ChartTooltip` position-formula limitation (§4d) — none of
@@ -891,6 +902,15 @@ cp "$S/stage2/s2-radar/radar_chart.spec.ts" /home/user/dioxus-components/.claude
 # then register (two lines, per $S/stage2/s2-radar/variant-plan.md, §2 above)
 # and commit.
 ```
+
+**Update 2026-09-20 (main loop):** the last item above — the scratchpad-only radar gallery — HAS now
+been executed: copied into `worktree-agent-a54aab42e9a00e001` and committed as `63de8f8` (see §2's
+s2-radar subsection; registration deliberately NOT applied, so the draft stays inert and
+unverified). Nothing else in this section has been run: no `worktree-agent-*` branch has been
+pushed and no bundle has been created, because pushing branches other than
+`claude/roadmap-evaluation-6eiahc` needs the repository owner's say-so — it has been put to them and
+is unanswered as of this update. Until they answer, every lane's committed work survives only as
+long as this container does.
 
 Stated plainly, once more: as of this handoff, **zero** of the above has been executed. Every lane's
 work remains exactly where §2 describes it — in this container only.
