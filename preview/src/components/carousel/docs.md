@@ -55,7 +55,7 @@ rsx! {
 
 ## Direction / RTL
 
-`Carousel` accepts a `dir: Option<Direction>` prop (defaulting to the nearest `DirectionProvider`, or LTR). Under RTL, the root's `ArrowLeft`/`ArrowRight` paging swaps: `ArrowLeft` moves to the *next* slide, `ArrowRight` to the *previous* one (matching Radix's shared `RovingFocusGroup` convention, the same one `Tabs` follows). Scrolling itself needs no such swap at all -- slide order in the DOM never changes, and the browser's own `scrollIntoView` already resolves the correct physical position under `dir="rtl"`. See the `rtl` variant.
+`Carousel` accepts a `dir: Option<Direction>` prop (defaulting to the nearest `DirectionProvider`, or LTR). Under RTL, the root's `ArrowLeft`/`ArrowRight` paging swaps: `ArrowLeft` moves to the *next* slide, `ArrowRight` to the *previous* one (matching Radix's shared `RovingFocusGroup` convention, the same one `Tabs` follows). Scrolling itself needs no such swap at all -- slide order in the DOM never changes, and the browser's own `scrollIntoView` already resolves the correct physical position under `dir="rtl"`. `CarouselPrevious`/`CarouselNext` also reposition correctly on their own (`inset-inline-start`/`-end`), and any chevron-style icon placed inside either one is automatically mirrored (`transform: scaleX(-1)`, horizontal orientation only) so a caller who uses the same icon regardless of direction still gets one pointing the right way. See the `rtl` variant.
 
 ## What v1 does not include yet
 

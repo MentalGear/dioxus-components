@@ -64,9 +64,12 @@
  *     the reference implementation *loops* (its own rotation continues
  *     past the last slide back to the first, and manual Previous/Next
  *     activation loops the same way -- confirmed by reading
- *     `examples/js/carousel-prev-next.js`'s `moveToSlide`, which wraps the
- *     index with modulo arithmetic and never disables either button), so
- *     it never reaches the boundary state at all. Since v1 deliberately
+ *     `examples/js/carousel-prev-next.js`'s `previousCarouselItem`/
+ *     `nextCarouselItem`, which each wrap the index with an explicit
+ *     boundary check -- `nextIndex < 0` resets to `length - 1`,
+ *     `nextIndex >= length` resets to `0` -- and never disable either
+ *     button), so it never reaches the boundary state at all. Since v1
+ *     deliberately
  *     has no `loop` (a real, documented scope decision, not an APG
  *     requirement either way -- the pattern is silent on looping), this
  *     is asserted as a LIBRARY-ONLY fact in its own describe block below,
