@@ -34,7 +34,16 @@ const MARGIN_LEFT_BARE: f64 = 8.0;
 /// (or, for Line/Area, simply how far a hit band's edge sits from its
 /// neighbor's -- the point positions themselves are the band *centers*
 /// either way, so this only visibly matters for `Bar`).
-const BAND_PADDING: f64 = 0.2;
+///
+/// `pub(crate)`, not private: `components::series::bar` (s2-bar-owned, same
+/// as this file) reuses this exact value when it builds its own *second*
+/// band scale for a horizontal bar's category axis (this module's own
+/// `x_scale`/`y_scale` stay Cartesian-only -- see that file's module doc for
+/// why horizontal orientation is computed locally there rather than
+/// threaded through `LayoutParams`/`SeriesRenderContext`), so the two
+/// orientations' category spacing matches exactly rather than drifting via
+/// two independently-tuned literals.
+pub(crate) const BAND_PADDING: f64 = 0.2;
 
 /// The inputs [`build`] needs to compute a [`SeriesRenderContext`] --
 /// bundled into one struct rather than a long parameter list (clippy's
@@ -250,7 +259,24 @@ fn y_extent(
     (lo, hi)
 }
 
-/// Render `g[data-slot="chart-grid"]`: one horizontal line per y tick.
+/// Render `g[data-slot="chart-grid"]`: one horizontal line per y tick, plus
+/// (`ChartKind::Bar` only) an explicit `line[data-slot="chart-zero-line"]`
+/// at the baseline.
+///
+/// The zero line is gated on `ctx.kind == ChartKind::Bar` specifically,
+/// not drawn for every kind that happens to share this grid renderer
+/// (Area/Line too): [`crate::chart::nice_domain`] always includes `0.0` in
+/// the y domain, so `ctx.zero_y` is always a real, valid pixel position
+/// regardless of kind, but a explicit baseline line is only useful where a
+/// mark's own visual weight actually starts *from* zero (a bar) --
+/// `$S/stage2-common.md`'s own brief for this lane names the `negative`
+/// bar-chart variant's "zero line drawn" requirement specifically. Gating
+/// here, on a field every kind's `render_grid` call already receives,
+/// keeps this change from altering Area/Line's rendered output at all
+/// (verified: `ctx.kind` is a plain match, not a new parameter neither
+/// `s2-area` nor `s2-line`'s own call sites need to know about), rather
+/// than risking a shared-infrastructure behavior change those lanes did
+/// not ask for and have not verified against.
 pub(crate) fn render_grid(ctx: &SeriesRenderContext) -> Element {
     rsx! {
         g { "data-slot": "chart-grid",
@@ -261,6 +287,15 @@ pub(crate) fn render_grid(ctx: &SeriesRenderContext) -> Element {
                     x2: "{fmt_num(ctx.plot_x1)}",
                     y1: "{fmt_num(ctx.y_scale.scale(y_tick))}",
                     y2: "{fmt_num(ctx.y_scale.scale(y_tick))}",
+                }
+            }
+            if matches!(ctx.kind, ChartKind::Bar) {
+                line {
+                    "data-slot": "chart-zero-line",
+                    x1: "{fmt_num(ctx.plot_x0)}",
+                    x2: "{fmt_num(ctx.plot_x1)}",
+                    y1: "{fmt_num(ctx.zero_y)}",
+                    y2: "{fmt_num(ctx.zero_y)}",
                 }
             }
         }
