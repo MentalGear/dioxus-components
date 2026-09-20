@@ -57,6 +57,51 @@ test("keyboard navigation", async ({ page }) => {
   await expect(fileMenuContent).toHaveCount(0);
 });
 
+// REGRESSION (`docs/backlog.md` row 85). The most directly reproducible
+// instance of the whole class this row reports: `MenubarItem`'s own
+// `onblur` used to close this menu unconditionally whenever `focused()`
+// (it still held `menu_ctx.focus`'s roving focus the instant it blurred).
+// Arrow-down onto an item so it genuinely holds DOM focus, then a raw
+// `.focus()` call directly on `MenubarTrigger` -- confirmed RED on the
+// unmodified tree: `fileMenuContent` was torn out of the DOM entirely
+// (count 0) and focus reverted to `fileMenuButton`. No mouse-opened
+// precondition needed at all here (contrast `dropdown-menu.spec.ts`'s
+// identical-shaped test, which does need one) -- `MenubarItem`'s guard
+// never had `DropdownMenuTrigger`'s `submenu_open_count`-style escape
+// hatch, so it fired on this exact sequence unconditionally. Fixed by
+// construction: `MenubarContentRendered` now calls `use_outside_dismiss`
+// (`primitives/src/lib.rs`, the same DOM-truth-based check `ContextMenu`'s
+// own root already used), scoped to `MenubarMenu`'s own wrapping element
+// (`menu_ctx.root_id`, new) which covers both `MenubarTrigger` and
+// `MenubarContent` -- and `MenubarTrigger`'s/`MenubarItem`'s fragile
+// `onblur` branches are removed.
+test("a raw .focus() call on the trigger does not close its own open content (row 85)", async ({ page }) => {
+  await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+  const fileMenuButton = page.getByRole("menuitem", { name: "File" });
+  const fileMenuContent = page.getByRole("menu").filter({ has: page.getByRole("menuitem", { name: "New" }) }).last();
+
+  await fileMenuButton.click();
+  await expect(fileMenuContent).toHaveAttribute("data-state", "open");
+  // Arrow-down so a `MenubarItem` genuinely holds DOM focus -- the
+  // precondition `MenubarItem`'s own (removed) `onblur` needed.
+  await page.keyboard.press("ArrowDown");
+  const newItem = fileMenuContent.getByRole("menuitem", { name: "New" });
+  await expect(newItem).toBeFocused();
+
+  await fileMenuButton.focus();
+  // Give any (correctly, now, no-op) reactive close a moment to have
+  // fired if it were going to -- avoids a false green from asserting
+  // before a real regression's own close would have completed.
+  await page.waitForTimeout(150);
+
+  await expect(fileMenuContent, "the content must not close").toHaveCount(1);
+  await expect(fileMenuContent, "and must still report itself open").toHaveAttribute(
+    "data-state",
+    "open",
+  );
+  await expect(fileMenuButton, "the trigger must simply be focused in place").toBeFocused();
+});
+
 test.describe("Axe automated scan", () => {
   test("loaded (menus closed) has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });

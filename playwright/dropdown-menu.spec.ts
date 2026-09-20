@@ -81,6 +81,47 @@ test('open content is fit-content width, not full page width, and sits near its 
   expect(Math.abs(box.x - triggerBox.x), debug).toBeLessThan(200);
 });
 
+// REGRESSION (docs/backlog.md row 85): a raw DOM `.focus()` call landing
+// directly on a menu item -- the exact thing a Playwright test driving
+// focus programmatically does, and an assistive-technology focus-
+// restoration path plausibly could -- used to close the whole menu and
+// revert focus to the trigger, instead of simply focusing the item in
+// place. Root cause: `DropdownMenuTrigger`'s own `onblur` decided "did
+// focus leave the whole menu" by synchronously reading `ctx.focus.
+// any_focused()`, a Rust-tracked roving-focus signal this crate's own
+// click/keyboard code always updates *before* moving DOM focus -- but a
+// raw external `.focus()` call updates nothing, so the guard read stale
+// "nothing focused" state and closed. Confirmed RED on the unmodified
+// tree: `trigger` ended up `data-state="closed"` after this exact
+// sequence. Fixed by construction: `DropdownMenuContentRendered` now
+// calls `use_outside_dismiss` (the same DOM-truth-based "did focus/a
+// click land outside" check `ContextMenu`'s own root already used, never
+// vulnerable to this because it asks `element.contains(event.target)`
+// rather than trusting a signal), and the fragile `onblur` branch is
+// removed. See `DropdownMenuSubTrigger`'s identical fix
+// (`oracle/tier1-apg/menu-submenu.spec.ts`) for the sub-trigger instance
+// of the same class.
+test('a raw .focus() call on a plain item does not close the menu (row 85)', async ({ page }) => {
+  await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
+  const trigger = page.getByRole('button', { name: 'Open Menu' });
+  // Mouse-click-opened, deliberately with NO keyboard navigation
+  // afterward -- this leaves `ctx.focus` (the root's own roving-focus
+  // collection) never populated, exactly the precondition the bug needs.
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('data-state', 'open');
+  const editItem = page.getByRole('menuitem', { name: 'Edit' });
+  await expect(editItem).toBeVisible();
+
+  await editItem.focus();
+  // Give any (correctly, now, no-op) reactive close a moment to have
+  // fired if it were going to -- avoids a false green from asserting
+  // before a real regression's own close would have completed.
+  await page.waitForTimeout(150);
+
+  await expect(trigger, 'the whole menu must not close').toHaveAttribute('data-state', 'open');
+  await expect(editItem, 'the item must simply be focused in place').toBeFocused();
+});
+
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
