@@ -77,7 +77,12 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
-        carousel::CarouselContent { id: props.id, attributes: merged, {props.children} }
+        carousel::CarouselContent {
+            id: props.id,
+            draggable: props.draggable,
+            attributes: merged,
+            {props.children}
+        }
     }
 }
 

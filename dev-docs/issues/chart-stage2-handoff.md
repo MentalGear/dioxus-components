@@ -9,9 +9,11 @@ exists ONLY in this container**: local git worktrees under
 `/home/user/dioxus-components/.claude/worktrees/agent-<id>` on local branches
 `worktree-agent-<id>`, uncommitted working-tree edits inside several of those worktrees, and — for
 one lane specifically — a complete drafted gallery sitting only in the session scratchpad, which is
-more fragile than the worktrees. **None of this is pushed, and none of it is on `main` or on
-`claude/roadmap-evaluation-6eiahc`.** §7 below gives the exact commands that would preserve it;
-none of them have been run.
+more fragile than the worktrees. **Superseded 2026-09-20: all seven `worktree-agent-*` branches
+have since been pushed to `origin`** (with WIP checkpoint commits for the four lanes that still had
+uncommitted edits, and the scratchpad-only radar gallery copied into its worktree first), so the
+committed work is now durable. None of it is on `main` or on `claude/roadmap-evaluation-6eiahc`.
+§7 has the per-branch SHAs and says what each branch preserves.
 
 `$S`, used throughout this document, is this container's own session scratchpad —
 `/tmp/claude-0/-home-user-dioxus-components/0c0a1bde-8dc9-51c3-91e6-e93c0c00fb9e/scratchpad`, not
@@ -852,7 +854,27 @@ reported gates green ran them in an isolated `CARGO_TARGET_DIR`; a resumed lane 
 needs to re-run the full set itself rather than trust a snapshot taken before its own uncommitted
 changes existed.
 
-## 7. Preservation warning — nothing below has been done
+## 7. Preservation — DONE 2026-09-20 (this section was written before it was)
+
+> **Current state, verified against `git ls-remote origin` on 2026-09-20.** Every branch below is
+> on the remote. The rest of this section is preserved as written, in its original
+> "nothing has been done" voice, because it is the record of what was at risk and why — read it as
+> history, not as current status.
+>
+> | Lane | Branch `worktree-agent-<id>` | Tip | What the tip is |
+> |---|---|---|---|
+> | s2-refactor | `af6c70a282d507c23` | `b1cc636` | real work — series rendering split per family, stage-2 extension points reserved |
+> | s2-area | `aef4de610bdb8e2cf` | `85375d3` | real work — `stacked_expand`, gradient and icons variants |
+> | s2-bar | `a1519b1536ba3cc38` | `9deda40` | WIP checkpoint of this lane's uncommitted edits |
+> | s2-line | `ab986dd399489fca7` | `074ca38` | WIP checkpoint of this lane's uncommitted edits |
+> | s2-polar | `a73bafbe9f257480b` | `4847eb9` | WIP checkpoint of this lane's uncommitted edits |
+> | s2-radar | `a54aab42e9a00e001` | `63de8f8` | the scratchpad-only 14-variant gallery, copied in and committed (registration deliberately NOT applied — the draft stays inert and unverified) |
+> | s2-tooltip | `ae1ca1ec628383540` | `6e4911c` | WIP checkpoint of this lane's uncommitted edits |
+>
+> A WIP checkpoint is a throwaway commit made solely to make a push capture the working tree; it is
+> not reviewed, not gated, and not intended to be merged as-is. Nothing here has been integrated —
+> §2's per-lane status and §6's integration checklist still govern what it would take to land any
+> of it.
 
 Every worktree in §2 is a local git worktree under this container's own
 `/home/user/dioxus-components/.claude/worktrees/`, on a local-only branch
@@ -903,14 +925,16 @@ cp "$S/stage2/s2-radar/radar_chart.spec.ts" /home/user/dioxus-components/.claude
 # and commit.
 ```
 
-**Update 2026-09-20 (main loop):** the last item above — the scratchpad-only radar gallery — HAS now
-been executed: copied into `worktree-agent-a54aab42e9a00e001` and committed as `63de8f8` (see §2's
-s2-radar subsection; registration deliberately NOT applied, so the draft stays inert and
-unverified). Nothing else in this section has been run: no `worktree-agent-*` branch has been
-pushed and no bundle has been created, because pushing branches other than
-`claude/roadmap-evaluation-6eiahc` needs the repository owner's say-so — it has been put to them and
-is unanswered as of this update. Until they answer, every lane's committed work survives only as
-long as this container does.
+**Update 2026-09-20 (main loop), superseding the two paragraphs this replaces:** the repository
+owner gave the go-ahead ("2. push"), and all of the above has now been executed. The scratchpad-only
+radar gallery was copied into `worktree-agent-a54aab42e9a00e001` and committed as `63de8f8` first
+(registration deliberately NOT applied, so the draft stays inert and unverified); the four lanes
+that still had uncommitted working-tree edits — s2-bar, s2-line, s2-polar, s2-tooltip — each got a
+WIP checkpoint commit so the push would capture them; then every one of the seven branches was
+pushed to `origin`. No bundles were created: with the branches on the remote they are redundant.
+The table under this section's heading lists each branch and its tip SHA, verified against
+`git ls-remote origin`.
 
-Stated plainly, once more: as of this handoff, **zero** of the above has been executed. Every lane's
-work remains exactly where §2 describes it — in this container only.
+What this does and does not buy: every lane's work now survives this container being reclaimed, and
+can be fetched from a fresh clone. It is still unintegrated, ungated and unreviewed — see §2 and
+§6.

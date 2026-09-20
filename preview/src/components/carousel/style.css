@@ -17,12 +17,34 @@
        keyboard focus still work identically either way; only the
        scrollbar's own paint is suppressed. `CarouselPrevious`/
        `CarouselNext` plus the root's own `ArrowLeft`/`ArrowRight` remain
-       the discoverable way to page for a mouse-only user. */
+       the discoverable way to page without a pointer at all. */
     scrollbar-width: none;
 }
 
 .dx-carousel-content::-webkit-scrollbar {
     display: none;
+}
+
+/* Pointer-drag affordance (primitives/src/carousel.rs's own
+   `use_carousel_drag`/`CAROUSEL_DRAG_JS`, `data-draggable`/`data-dragging`
+   are that primitive's own styling hooks). `touch-action` is deliberately
+   never set here at all -- see `.dx-carousel-previous`/`-next`'s own
+   comment below for why `none` must never be used; the default `auto`
+   this element already has is what lets touch keep scrolling it natively,
+   completely independent of this mouse/pen-only gesture. */
+.dx-carousel-content[data-draggable="true"] {
+    cursor: grab;
+}
+
+.dx-carousel-content[data-draggable="true"][data-dragging="true"] {
+    cursor: grabbing;
+
+    /* Suppresses text selection for the drag's own duration -- the CSS
+       counterpart to `CAROUSEL_DRAG_JS`'s `preventDefault()` on each
+       pointermove past the movement threshold; either alone is enough in
+       most engines, both together is the usual belt-and-braces pairing
+       for a JS-driven pointer drag. */
+    user-select: none;
 }
 
 .dx-carousel-item {
@@ -34,15 +56,30 @@
     position: absolute;
     z-index: var(--dx-z-raise);
     display: flex;
-    width: var(--dx-space-9);
-    height: var(--dx-space-9);
+
+    /* 28px -- shadcn/ui's own measured size (`ui.shadcn.com/docs/components/carousel`,
+       live, JS running, 1280x800 @2x: both buttons' `getBoundingClientRect()`
+       report exactly 28x28), not the `size-9`/36px this rule used before.
+       `--dx-space-9` was an inferred guess (shadcn's `icon` Button variant
+       defaults to `size-9`); the live DOM shows their carousel Button
+       overrides that default down to an explicit `size-8`-ish 28px, so this
+       matches the measured element, not the un-overridden default class. */
+    width: var(--dx-space-7);
+    height: var(--dx-space-7);
     box-sizing: border-box;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
     border-radius: var(--dx-radius-full);
     background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
-    box-shadow: var(--dx-shadow-sm);
+
+    /* shadcn's measured `box-shadow` is `none` in both themes (same live
+       capture as the size above -- `getComputedStyle(button).boxShadow`),
+       not the `shadow-xs` its outline-variant Button class list would
+       suggest un-measured. A flat, borderless-looking control (relying on
+       the 1px border alone) is the actual shadcn look, so `--dx-shadow-sm`
+       is dropped rather than kept for light mode only. */
+    box-shadow: none;
     color: var(--secondary-color-1);
     cursor: pointer;
 
@@ -94,28 +131,44 @@
 /* Horizontal (default): centered on the block axis, pinned near the
    inline edges -- logical properties so these mirror correctly under
    `dir="rtl"` (Previous stays at the *start* edge, Next at the *end*
-   edge, whichever physical side that resolves to). */
+   edge, whichever physical side that resolves to).
+   `calc(-1 * var(--dx-space-12))` (-48px) rather than a positive inset
+   is what actually moves these fully outside the frame, never overlapping
+   a slide -- shadcn's own measured layout (same live capture as the size/
+   shadow comments above): a 28px button whose near edge sits exactly
+   `--dx-space-12` (48px) from the region's edge is 48 - 28 = 20px clear of
+   it, which is shadcn's own measured `btnOutsideBy`. This replaces the
+   previous `var(--dx-space-2)` (8px *inside*, layered over the track via
+   `z-index` -- this codebase's own prior design, not shadcn's), so
+   `z-index` above is now belt-and-braces rather than load-bearing: the
+   buttons no longer share any pixels with `.dx-carousel-content` at all. */
 .dx-carousel[data-orientation="horizontal"] .dx-carousel-previous {
     inset-block-start: 50%;
-    inset-inline-start: var(--dx-space-2);
+    inset-inline-start: calc(-1 * var(--dx-space-12));
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
 }
 
 .dx-carousel[data-orientation="horizontal"] .dx-carousel-next {
     inset-block-start: 50%;
-    inset-inline-end: var(--dx-space-2);
+    inset-inline-end: calc(-1 * var(--dx-space-12));
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
 }
 
-/* Vertical: centered on the inline axis, pinned near the block edges. */
+/* Vertical: centered on the inline axis, pinned near the block edges.
+   shadcn has its own vertical ("Orientation") demo on the same docs page,
+   measured the same live-DOM way as the horizontal numbers above (not
+   inferred from the horizontal case): Previous/Next sit fully outside the
+   region on the block axis too, `--dx-space-12` (48px) from its block edge
+   for the same 20px-clear result -- the identical construction as
+   horizontal, just on the other axis, confirmed rather than assumed. */
 .dx-carousel[data-orientation="vertical"] .dx-carousel-previous {
-    inset-block-start: var(--dx-space-2);
+    inset-block-start: calc(-1 * var(--dx-space-12));
     inset-inline-start: 50%;
     transform: translateX(-50%); /* rtl-physical: centers this control on its own parent's inline axis, symmetric under dir so it needs no sign flip -- same construction as resizable/style.css's own transform-paired centering */
 }
 
 .dx-carousel[data-orientation="vertical"] .dx-carousel-next {
-    inset-block-end: var(--dx-space-2);
+    inset-block-end: calc(-1 * var(--dx-space-12));
     inset-inline-start: 50%;
     transform: translateX(-50%); /* rtl-physical: see comment above */
 }

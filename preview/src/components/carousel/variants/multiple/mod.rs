@@ -9,7 +9,7 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        div { style: "max-width: 28rem; margin: 0 auto;",
+        div { style: "width: 100%; max-width: 28rem; margin: 0 auto;",
             Carousel { aria_label: "Product gallery",
                 CarouselPrevious { ChevronLeft {} }
                 CarouselNext { ChevronRight {} }

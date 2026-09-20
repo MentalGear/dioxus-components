@@ -53,9 +53,17 @@ rsx! {
 }
 ```
 
+## Pointer drag
+
+Click-and-drag anywhere on the track pages the carousel with the mouse or a pen, the same way shadcn/embla-style carousels do -- touch is never affected either way, since it already scrolls the track natively. A drag has to move a few pixels before it takes over, so a plain click on a link or button placed inside a `CarouselItem` still works as a click; a real drag suppresses the synthetic click that would otherwise follow it. Releasing settles on the nearest slide automatically (the browser's own scroll-snap), the same bridge (`use_carousel_scroll_tracking`) that already keeps `selected` correct after a native trackpad/touch scroll or a `CarouselPrevious`/`CarouselNext` click -- so the Previous/Next buttons' disabled state, the "N of M" slide labels, and a custom picker built on `use_carousel()` all stay correct after a drag too.
+
+Set `draggable: false` on `CarouselContent` to opt a particular carousel out of the gesture entirely (it defaults to `true`).
+
 ## Direction / RTL
 
 `Carousel` accepts a `dir: Option<Direction>` prop (defaulting to the nearest `DirectionProvider`, or LTR). Under RTL, the root's `ArrowLeft`/`ArrowRight` paging swaps: `ArrowLeft` moves to the *next* slide, `ArrowRight` to the *previous* one (matching Radix's shared `RovingFocusGroup` convention, the same one `Tabs` follows). Scrolling itself needs no such swap at all -- slide order in the DOM never changes, and the browser's own `scrollIntoView` already resolves the correct physical position under `dir="rtl"`. `CarouselPrevious`/`CarouselNext` also reposition correctly on their own (`inset-inline-start`/`-end`), and any chevron-style icon placed inside either one is automatically mirrored (`transform: scaleX(-1)`, horizontal orientation only) so a caller who uses the same icon regardless of direction still gets one pointing the right way. See the `rtl` variant.
+
+Pointer drag mirrors the same way the keyboard does: dragging is direct manipulation (the track tracks the pointer), so the physical direction that reveals the next slide flips under RTL -- swipe-left-for-next in LTR, swipe-right-for-next in RTL, the same split a right-to-left photo gallery or story viewer already has.
 
 ## What v1 does not include yet
 
