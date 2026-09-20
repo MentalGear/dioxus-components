@@ -92,15 +92,50 @@ async function dragBy(page: Page, target: Locator, dx: number, dy: number, steps
 }
 
 /**
+ * The carousel track's own per-slide pitch (px, along the given axis),
+ * measured live from a rendered slide's own box rather than assumed --
+ * every distance-based drag test below derives its drag length from this,
+ * not a hardcoded pixel constant. A previous hardcoded-constant version of
+ * these tests silently broke when a demo wrapper's rendered width changed
+ * (176px -> 320px, `93d0ee7`): a distance tuned to clear 50% of the old
+ * pitch cleared only ~42% of the new one, so `expectSnappedToBoundary`
+ * reported the drag landing exactly one slide short. Measuring live at
+ * each test's own run time is what survives the *next* geometry change
+ * too, not just this one.
+ */
+async function slidePitch(item: Locator, orientation: "horizontal" | "vertical" = "horizontal"): Promise<number> {
+  const box = await item.boundingBox();
+  if (!box) {
+    throw new Error("slidePitch: item has no bounding box");
+  }
+  return orientation === "horizontal" ? box.width : box.height;
+}
+
+/**
  * Samples `.dx-carousel-content`'s own scroll position at animation-frame
- * cadence for ~600ms starting just before `trigger()` runs, so a caller
- * can tell an animated transition (the position passes through a value
- * strictly between where it started and where it ended) from an instant
- * jump (it skips straight from start to end) -- see this file's own
- * "actually animates" describe block below, which is the reason this
- * exists: asserting the code *chose* `behavior: 'smooth'` is not the same
- * claim as the motion actually being animated, and only this sampling
- * proves the latter.
+ * cadence, starting just before `trigger()` runs, until the value has both
+ * (a) changed from its own starting point and (b) gone `STABLE_FRAMES_NEEDED`
+ * consecutive frames without changing again -- or `HARD_CAP_MS` elapses,
+ * whichever comes first -- so a caller can tell an animated transition (the
+ * position passes through a value strictly between where it started and
+ * where it ended) from an instant jump (it skips straight from start to
+ * end). See this file's own "actually animates" describe block below, which
+ * is the reason this exists: asserting the code *chose* `behavior: 'smooth'`
+ * is not the same claim as the motion actually being animated, and only
+ * this sampling proves the latter.
+ *
+ * A fixed wall-clock sampling window (previously 600ms, opened before
+ * `trigger()`) is a live bug, not a hardening measure: against a `dx serve`
+ * dev server the click-to-scroll latency happens to fit inside 600ms, so it
+ * passes, but against a statically-served release SSG build the wasm
+ * `document::eval` round trip alone can exceed it -- every sample then reads
+ * the pre-scroll value, reporting a false "instant jump" on a transition
+ * that (re-sampled with a longer window) demonstrably animates through
+ * dozens of distinct intermediate values. A settle-condition stop is honest
+ * regardless of how long the round trip actually takes on a given
+ * build/server, or how long the transition itself runs -- unlike a fixed
+ * window, it cannot silently start under-sampling a slower environment or
+ * a shorter transition.
  */
 async function sampleScrollDuring(
   page: Page,
@@ -108,23 +143,48 @@ async function sampleScrollDuring(
   axis: "scrollLeft" | "scrollTop",
   trigger: () => Promise<void>,
 ): Promise<number[]> {
+  const STABLE_FRAMES_NEEDED = 6;
+  const HARD_CAP_MS = 3000;
   await page.evaluate(
-    ({ id, axis }) => {
-      (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples = [];
+    ({ id, axis, stableFramesNeeded, hardCapMs }) => {
+      const w = window as unknown as {
+        __dxCarouselSamples: number[];
+        __dxCarouselDone: boolean;
+      };
+      w.__dxCarouselSamples = [];
+      w.__dxCarouselDone = false;
       const el = document.getElementById(id) as unknown as Record<string, number>;
+      const start = el[axis];
       const t0 = performance.now();
+      let stableCount = 0;
       const tick = () => {
-        (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples.push(el[axis]);
-        if (performance.now() - t0 < 600) {
-          requestAnimationFrame(tick);
+        const samples = w.__dxCarouselSamples;
+        const value = el[axis];
+        const previous = samples.length > 0 ? samples[samples.length - 1] : value;
+        samples.push(value);
+        stableCount = value === previous ? stableCount + 1 : 0;
+        const hasChanged = value !== start;
+        const settled = hasChanged && stableCount >= stableFramesNeeded;
+        const timedOut = performance.now() - t0 > hardCapMs;
+        if (settled || timedOut) {
+          w.__dxCarouselDone = true;
+          return;
         }
+        requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     },
-    { id: contentId, axis },
+    { id: contentId, axis, stableFramesNeeded: STABLE_FRAMES_NEEDED, hardCapMs: HARD_CAP_MS },
   );
   await trigger();
-  await page.waitForTimeout(700);
+  // A comfortable margin above the in-page HARD_CAP_MS -- that hard cap is
+  // what's expected to end the wait in the overwhelming common case; this
+  // outer one is only a safety net against the flag never being set at all.
+  await page.waitForFunction(
+    () => (window as unknown as { __dxCarouselDone: boolean }).__dxCarouselDone === true,
+    undefined,
+    { timeout: HARD_CAP_MS + 5000 },
+  );
   return page.evaluate(() => (window as unknown as { __dxCarouselSamples: number[] }).__dxCarouselSamples);
 }
 
@@ -459,7 +519,8 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
     await expect(frame.getByRole("button", { name: "Previous slide" })).toBeDisabled();
 
-    await dragBy(page, content, -140, 0);
+    const pitch = await slidePitch(slide(1));
+    await dragBy(page, content, -pitch * 0.7, 0);
 
     await expectSnappedToBoundary(content, slide(2));
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
@@ -487,7 +548,14 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     const button = frame.getByTestId("carousel-slide-button");
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
 
-    await dragBy(page, button, -140, 0);
+    // Pitch measured from the slide itself, not `button` -- `button` is a
+    // small element *inside* slide 1, and its own box is far narrower than
+    // the track's actual per-slide pitch (see `slidePitch`'s own doc). The
+    // drag still *originates* on `button`, exercising the same "a drag
+    // starting on interactive content still pages, and suppresses that
+    // content's own click" behavior this test is for.
+    const pitch = await slidePitch(slide(1));
+    await dragBy(page, button, -pitch * 0.7, 0);
 
     await expectSnappedToBoundary(frame.locator(".dx-carousel-content"), slide(2));
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
@@ -515,7 +583,8 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     // Rightward, not leftward -- see primitives/src/carousel.rs's own
     // "Pointer drag" doc for why this mirrors LTR (the same swap
     // `ArrowLeft`/`ArrowRight` already gets at the carousel root).
-    await dragBy(page, content, 140, 0);
+    const pitch = await slidePitch(slide(1));
+    await dragBy(page, content, pitch * 0.7, 0);
 
     await expectSnappedToBoundary(content, slide(2));
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
@@ -527,9 +596,65 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
 
-    await dragBy(page, content, 0, -140);
+    const pitch = await slidePitch(slide(1), "vertical");
+    await dragBy(page, content, 0, -pitch * 0.7);
 
     await expectSnappedToBoundary(content, slide(2), "vertical");
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
+  });
+});
+
+/**
+ * `scroll-snap-stop: always` (`primitives/src/carousel.rs`, a scoped
+ * `<style>` tag rendered alongside the track -- see that file's own
+ * `no_skip_supports_css` doc, including its "Known limitation" section)
+ * requires this track to stop at the first snap position a scroll
+ * operation would otherwise pass, rather than skipping over several to
+ * settle on whichever is numerically nearest. Measured to genuinely cap a
+ * browser-animated smooth scroll -- a caller's own `scrollBy(...,
+ * {behavior: 'smooth'})`, and by the same CSS Scroll Snap Spec language a
+ * native wheel/trackpad fling -- to one slide of travel regardless of the
+ * requested distance, which is what this test exercises directly.
+ *
+ * Deliberately **not** exercised here via this crate's own pointer-drag
+ * gesture (`dragBy`): measured directly (isolated `page.evaluate` against
+ * a release build, outside this test file) that this crate's own drag
+ * path does *not* get this guarantee, because it moves the track with
+ * many independently-instant, unsnapped `scrollBy` calls while
+ * `scroll-snap-type` is suspended for the gesture's own duration, and
+ * restoring that property afterward is a fresh, static re-evaluation of
+ * an already-stationary position -- not a "scrolling operation" this
+ * property constrains on this engine (Chromium). A drag-driven version of
+ * this exact test was red on this same build/property (settled 2 slides
+ * from the origin, not 1) before this test was rewritten to test the
+ * mechanism this property actually delivers, rather than the one this
+ * lane originally hoped it would also cover. See `no_skip_supports_css`'s
+ * own doc for the full write-up; that gap is being reported, not silently
+ * worked around here.
+ */
+test.describe("Carousel: scroll-snap-stop caps a smooth scroll to one slide", () => {
+  test("a smooth scroll covering multiple slide widths lands exactly one slide away, never more", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    const pitch = await slidePitch(slide(1));
+    const contentId = await content.getAttribute("id");
+    // 2.5 slides' worth -- comfortably enough that "settle on whichever is
+    // numerically nearest" (the pre-existing, still-current behaviour for
+    // this crate's own drag path -- see this describe block's own header)
+    // would land on slide 3, not slide 2.
+    await page.evaluate(
+      ({ id, distance }) => {
+        document.getElementById(id)!.scrollBy({ left: distance, behavior: "smooth" });
+      },
+      { id: contentId, distance: pitch * 2.5 },
+    );
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    await expect(slide(3)).toHaveAttribute("data-selected", "false");
   });
 });
