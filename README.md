@@ -27,9 +27,11 @@
 
 Dioxus Components is a shadcn style component library for Dioxus built on top of the unstyled [Dioxus primitives](https://crates.io/crates/dioxus-primitives) library. The unstyled primitives serve as the foundation for building accessible and customizable UI components in Dioxus applications. The styled versions serve as a starting point to develop your own design system.
 
+**Live preview:** browse the component gallery at [mentalgear.github.io/dioxus-components](https://mentalgear.github.io/dioxus-components/) — individual component pages live at `https://mentalgear.github.io/dioxus-components/component/<name>/`.
+
 ## Getting started
 
-First, explore the [component gallery](https://dioxuslabs.github.io/dioxus-components/) to find the components you want to use.
+First, explore the [component gallery](https://mentalgear.github.io/dioxus-components/) to find the components you want to use.
 
 Once you find a component, you can add it to your project with the Dioxus CLI. If you don't already have `dx` installed, you can do so with:
 

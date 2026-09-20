@@ -410,6 +410,52 @@ test.describe("APG Menu and Menubar pattern — DropdownMenu.Sub", () => {
       "the item hovered inside the submenu content is actually clickable/selectable",
     ).toBeVisible();
   });
+
+  // REGRESSION (`docs/backlog.md` row 85). "Calling .focus() directly on a
+  // submenu's own sub-trigger element (as a test driving focus
+  // programmatically does, and as an assistive-technology focus-
+  // restoration path plausibly could) closes the entire menu and reverts
+  // focus to the ROOT trigger, rather than simply focusing the sub-trigger
+  // in place." Root cause: `DropdownMenuTrigger`'s own `onblur` decided
+  // "did focus leave the whole menu" by synchronously reading `ctx.focus.
+  // any_focused()` (a Rust-tracked roving-focus signal) the instant this
+  // trigger blurred -- correct for every focus move this crate's own
+  // click/keyboard code drives (all of which update that signal *before*
+  // moving DOM focus), but never told about a focus move arriving any
+  // other way. Confirmed RED on the unmodified tree with this exact
+  // sequence: `trigger` ended up `data-state="closed"` and the "More
+  // tools" sub-trigger was gone from the DOM entirely (the whole menu had
+  // unmounted), with focus reverted to `trigger` itself -- exactly the
+  // reported symptom. Fixed by construction:
+  // `DropdownMenuContentRendered` now calls `use_outside_dismiss` (the
+  // same DOM-truth-based "did focus/a click land outside the whole
+  // widget" check `ContextMenu`'s own root already used, immune to this
+  // by construction since it asks `element.contains(event.target)` rather
+  // than trusting a signal), and `DropdownMenuTrigger`'s fragile `onblur`
+  // branch is removed.
+  test("a raw .focus() call on the sub-trigger does not close the whole menu (row 85)", async ({
+    page,
+  }) => {
+    const trigger = page.getByRole("button", { name: "Open Menu" });
+    const subTrigger = page.getByRole("menuitem", { name: "More tools" });
+    // Mouse-click-opened, deliberately with NO keyboard navigation
+    // afterward -- this is exactly the precondition the bug needs:
+    // `ctx.focus` (the root's own roving-focus collection) is never
+    // populated by a plain click-open.
+    await expect(subTrigger).toBeVisible();
+
+    await subTrigger.focus();
+    // Give any (correctly, now, no-op) reactive close a moment to have
+    // fired if it were going to -- avoids a false green from asserting
+    // before a real regression's own close would have completed.
+    await page.waitForTimeout(150);
+
+    await expect(trigger, "the whole menu must not close").toHaveAttribute("data-state", "open");
+    await expect(
+      subTrigger,
+      "the sub-trigger must simply be focused in place, not torn out of the DOM by the whole menu unmounting",
+    ).toBeFocused();
+  });
 });
 
 test.describe("APG Menu and Menubar pattern — ContextMenu.Sub", () => {
@@ -564,5 +610,37 @@ test.describe("APG Menu and Menubar pattern — ContextMenu.Sub", () => {
       page.getByText("Selected: rename"),
       "the item hovered inside the submenu content is actually clickable/selectable",
     ).toBeVisible();
+  });
+
+  // CONSTRUCTION-PARITY regression, not a reproduced defect. `docs/backlog.md`
+  // row 85 reports this closing-everything symptom for "BOTH DropdownMenu
+  // and ContextMenu" -- this lane's own investigation (`$S/round4/fix-menu-
+  // toggle/`) could reproduce it for `DropdownMenu`/`DropdownMenu.Sub` (see
+  // the identical test in the `DropdownMenu.Sub` describe block above) and
+  // for `Menubar` (`playwright/menubar.spec.ts`), but this exact "mouse-
+  // opened root, then raw `.focus()` directly on `ContextMenuSubTrigger`"
+  // sequence was already GREEN on the unmodified tree: `ContextMenu`'s own
+  // root dismissal already went through `use_outside_dismiss`
+  // (`context_menu.rs`, pre-existing, unchanged by this fix) rather than a
+  // signal-based `onblur` guard, so it never had the root-level failure
+  // mode `DropdownMenuTrigger` did. `ContextMenuSubTrigger`'s own `onblur`
+  // (the submenu-*level* instance) carried the identical fragile shape
+  // (`focused() && !sub.focus.any_focused()`, `context_menu.rs`) as
+  // `DropdownMenuSubTrigger`'s, so it is fixed by the same construction
+  // (`crate::menu_sub::use_sub_outside_dismiss`) for uniformity and
+  // defense-in-depth, not because this test caught it red -- kept here as
+  // a permanent regression guard now that both hosts share the construction.
+  test("a raw .focus() call on the sub-trigger does not close the whole menu (row 85, construction parity)", async ({
+    page,
+  }) => {
+    const rootMenu = page.getByRole("menu").first();
+    const subTrigger = page.getByRole("menuitem", { name: "More tools" });
+    await expect(subTrigger).toBeVisible();
+
+    await subTrigger.focus();
+    await page.waitForTimeout(150);
+
+    await expect(rootMenu, "the whole menu must not close").toHaveAttribute("data-state", "open");
+    await expect(subTrigger, "the sub-trigger must simply be focused in place").toBeFocused();
   });
 });

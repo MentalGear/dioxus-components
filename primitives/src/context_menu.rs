@@ -1418,11 +1418,14 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
             event.stop_propagation();
         },
 
-        onblur: move |_| {
-            if focused() && !sub.focus.any_focused() {
-                sub.set_open.call(false);
-            }
-        },
+        // `docs/backlog.md` row 85: see `DropdownMenuSubTrigger`'s
+        // identical removal (`dropdown_menu.rs`) for the full root-cause
+        // writeup -- this handler used to close the submenu whenever
+        // `focused() && !sub.focus.any_focused()`, a synchronous read of a
+        // Rust-tracked signal a raw external `.focus()` call never
+        // updates. `ContextMenuSubContentRendered`'s own
+        // `crate::menu_sub::use_sub_outside_dismiss` call now gives this
+        // submenu the DOM-truth-based construction instead.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
@@ -1530,6 +1533,14 @@ fn ContextMenuSubContentRendered(
             sub.set_open.call(is_open);
         }),
     );
+
+    // `docs/backlog.md` row 85: see `crate::menu_sub::use_sub_outside_
+    // dismiss`'s own doc and `DropdownMenuSubContentRendered`'s identical
+    // call (`dropdown_menu.rs`) for the full construction.
+    crate::menu_sub::use_sub_outside_dismiss(sub.trigger_id, sub.content_id, move || {
+        sub.focus.clear_focus();
+        sub.set_open.call(false);
+    });
 
     // See `DropdownMenuSubContentRendered`'s identical call for the full
     // side/gap rationale: anchors to this submenu's own trigger on the
@@ -1690,6 +1701,13 @@ fn ContextMenuSubContentRendered(
     let ctx: ContextMenuCtx = use_context();
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
+
+    // `docs/backlog.md` row 85 -- see the web arm's identical call above
+    // for the full construction.
+    crate::menu_sub::use_sub_outside_dismiss(sub.trigger_id, sub.content_id, move || {
+        sub.focus.clear_focus();
+        sub.set_open.call(false);
+    });
 
     let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
         Vec::new()

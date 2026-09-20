@@ -72,7 +72,7 @@ use dioxus_sdk_time::sleep;
 
 use crate::collection::{use_collection_provider, CollectionPlacement, CollectionState};
 use crate::direction::{Direction, HorizontalNav};
-use crate::use_unique_id;
+use crate::{use_effect_with_cleanup, use_unique_id};
 
 /// Hover-intent delay before a pointer hovering a sub-trigger opens its
 /// submenu.
@@ -284,4 +284,62 @@ pub(crate) fn use_sub_menu_state(
         hover_open: use_delayed_action(),
         hover_close: use_delayed_action(),
     }
+}
+
+/// `docs/backlog.md` row 85's construction, generalized to a `Sub`'s own
+/// shape. `crate::use_outside_dismiss` (`lib.rs`) already answers "did
+/// focus/a click leave the tracked subtree" by asking the DOM directly --
+/// a native `focusin` listener plus `element.contains(event.target)` --
+/// rather than trusting a Rust-tracked roving-focus signal a raw external
+/// `.focus()` call (a Playwright test driving focus programmatically, or
+/// an assistive-technology focus-restoration path) never updates; see
+/// `DropdownMenuContentRendered`'s own call in `dropdown_menu.rs` for the
+/// full root-cause writeup this reuses. It cannot be called as-is for a
+/// `Sub`, though: it takes exactly *one* container id, and a `Sub`'s own
+/// trigger and content are never wrapped by a common element the way a
+/// top-level host's trigger+content pair now are (`DropdownMenuSub`/
+/// `ContextMenuSub` render no wrapper of their own -- see this module's
+/// own doc, "Why this module exists"). This is the same construction with
+/// two ids instead of one: "inside" means a descendant of *either*.
+///
+/// Deliberately narrower than `use_outside_dismiss` in one respect: no
+/// `pointerdown` handling. A click anywhere outside a `Sub`'s own
+/// trigger+content already closes the *whole* enclosing menu today (every
+/// item's `onclick` calls the host's own `set_open.call(false)`, and a
+/// `Sub` renders nothing once its enclosing `*Content` unmounts -- see
+/// `DropdownMenuSub`'s own cleanup effect), so a second, submenu-scoped
+/// pointerdown check would be redundant. Only the focus-based check is
+/// this module's own gap: closing *just* this submenu (not the whole
+/// menu) when focus moves elsewhere within the still-open enclosing menu
+/// is a case only `*SubTrigger`'s own (removed) `onblur` used to attempt,
+/// with the exact same signal-staleness hazard `DropdownMenuTrigger`'s did.
+pub(crate) fn use_sub_outside_dismiss(
+    trigger_id: impl Readable<Target = String> + Copy + 'static,
+    content_id: impl Readable<Target = String> + Copy + 'static,
+    on_dismiss: impl FnMut() + Clone + 'static,
+) {
+    use_effect_with_cleanup(move || {
+        let mut eval = dioxus::document::eval(
+            "const [triggerId, contentId] = await dioxus.recv();
+            const inside = (target) => {
+                const t = document.getElementById(triggerId);
+                const c = document.getElementById(contentId);
+                return (t != null && t.contains(target)) || (c != null && c.contains(target));
+            };
+            const onFocus = e => { if (!inside(e.target)) dioxus.send(true); };
+            document.addEventListener('focusin', onFocus, true);
+            await dioxus.recv();
+            document.removeEventListener('focusin', onFocus, true);",
+        );
+        let _ = eval.send((trigger_id.cloned(), content_id.cloned()));
+        let mut on_dismiss = on_dismiss.clone();
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                on_dismiss();
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
 }

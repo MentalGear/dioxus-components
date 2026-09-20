@@ -1,0 +1,13 @@
+{
+  "name": "carousel",
+  "description": "A slideshow you page through with prev/next buttons, arrow keys, or by scrolling.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

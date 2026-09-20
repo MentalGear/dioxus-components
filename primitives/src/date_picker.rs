@@ -646,8 +646,25 @@ struct DateSegmentProps<T: Clone + Integer + 'static> {
     // Max field length
     pub max_length: usize,
 
+    /// Whether Up/Down past `min`/`max` wraps to the opposite bound (the
+    /// default) or clamps and stays at the bound -- see
+    /// `date_segment_key_effects`'s own doc for the calibration (backlog
+    /// row 84 finding 4).
+    #[props(default = true)]
+    pub wrap: bool,
+
     // Callback when display placeholder
     pub on_format_placeholder: Callback<(), String>,
+
+    /// An `aria-valuetext` alternative to the raw number, for a value whose
+    /// number alone doesn't convey its meaning (e.g. a month name) -- per
+    /// the APG spinbutton pattern's Roles/States/Properties section. `None`
+    /// (the default) renders no `aria-valuetext` at all, exactly like an
+    /// absent `value_text` always has. Always `None` while the segment has
+    /// no value (see [`DateSegment`]'s own doc), matching `aria-valuenow`'s
+    /// own absent-while-untouched rule (backlog row 84 findings 2 and 3).
+    #[props(default)]
+    pub value_text: Option<String>,
 
     // Additional attributes for the value element
     #[props(extends = GlobalAttributes)]
@@ -679,12 +696,28 @@ enum DateSegmentEffect<T> {
 
 /// Roll a value that has gone out of `[min, max]` around to the opposite
 /// bound (used by the arrow-key handlers so incrementing past `max` wraps to
-/// `min`, and vice versa).
+/// `min`, and vice versa). Used for the month and day segments -- see
+/// [`date_segment_key_effects`]'s own doc for the calibration behind which
+/// segments wrap and which (the year, [`clamp_value`]) don't.
 fn roll_value<T: PartialOrd>(value: T, min: T, max: T) -> T {
     if value < min {
         max
     } else if value > max {
         min
+    } else {
+        value
+    }
+}
+
+/// Clamp a value that has gone out of `[min, max]` back to the nearest
+/// bound, instead of [`roll_value`]'s wrap-to-the-opposite-end behavior.
+/// Used by the year segment (backlog row 84 finding 4) -- see
+/// [`date_segment_key_effects`]'s own doc for why.
+fn clamp_value<T: PartialOrd>(value: T, min: T, max: T) -> T {
+    if value < min {
+        min
+    } else if value > max {
+        max
     } else {
         value
     }
@@ -741,6 +774,10 @@ struct SegmentValueBounds<T> {
     default: T,
     min: T,
     max: T,
+    /// Whether Up/Down past `min`/`max` wraps to the opposite bound
+    /// ([`roll_value`]) or clamps at it ([`clamp_value`]) -- see
+    /// [`date_segment_key_effects`]'s own doc for the calibration.
+    wrap: bool,
 }
 
 /// Compute what a `DateSegment` should do in response to a keydown, as a pure
@@ -749,6 +786,24 @@ struct SegmentValueBounds<T> {
 /// mirrors `move_interaction.rs`'s `MoveEvent::from_keyboard`. The caller
 /// (`DateSegment`'s `onkeydown` handler) applies the returned effects in
 /// order.
+///
+/// ## Up/Down wrap-vs-clamp calibration (backlog row 84 finding 4)
+///
+/// `bounds.wrap` decides what Up/Down do at `min`/`max`: wrap to the
+/// opposite bound ([`roll_value`]) or clamp and stay there ([`clamp_value`]).
+/// Calibrated against two sources per segment, cited in each caller
+/// (`DatePickerYearSegment`/`DatePickerMonthSegment`/`DatePickerDaySegment`):
+/// native `<input type="date">` in Chromium (its month/day sub-fields wrap
+/// on Up/Down at their own bounds; its year sub-field does not -- it just
+/// stops incrementing/decrementing) and the APG spinbutton pattern (silent
+/// on wrap-vs-clamp for a bounded value, but its own Roles/States/
+/// Properties section frames `aria-valuemin`/`aria-valuemax` as real limits
+/// the value stays within, which reads more naturally as "stop at the
+/// bound" than "silently jump to the opposite end" for a non-cyclical unit
+/// like a year). Month and day are cyclical (day 31 of one frame of
+/// reference is adjacent to day 1 of the next), so wrapping matches both
+/// user expectation and the native platform control; a year is not
+/// cyclical, so clamping is the correct default for it specifically.
 fn date_segment_key_effects<T: Integer + Copy + FromStr>(
     key: &Key,
     modifiers: SegmentKeyModifiers,
@@ -766,6 +821,7 @@ fn date_segment_key_effects<T: Integer + Copy + FromStr>(
         default,
         min,
         max,
+        wrap,
     } = bounds;
 
     let mut effects = Vec::new();
@@ -817,7 +873,11 @@ fn date_segment_key_effects<T: Integer + Copy + FromStr>(
             let value = match current_value {
                 Some(mut value) => {
                     value.inc();
-                    roll_value(value, min, max)
+                    if wrap {
+                        roll_value(value, min, max)
+                    } else {
+                        clamp_value(value, min, max)
+                    }
                 }
                 None => default,
             };
@@ -827,7 +887,11 @@ fn date_segment_key_effects<T: Integer + Copy + FromStr>(
             let value = match current_value {
                 Some(mut value) => {
                     value.dec();
-                    roll_value(value, min, max)
+                    if wrap {
+                        roll_value(value, min, max)
+                    } else {
+                        clamp_value(value, min, max)
+                    }
                 }
                 None => default,
             };
@@ -885,7 +949,26 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
         }
     });
 
-    let now_value = use_memo(move || (props.value)().unwrap_or(props.default));
+    // backlog row 84 findings 2/3/6 (the "untouched segment" state machine):
+    // `aria-valuenow` must mirror `props.value` faithfully -- present once
+    // the segment actually holds a value, absent while it doesn't -- rather
+    // than substituting `props.default` for the "no value yet" case, which
+    // is what this used to do (`(props.value)().unwrap_or(props.default)`).
+    // That substitution silently claimed a value (typically today's date)
+    // the user never set (finding 3), AND made the first Up/Down keypress
+    // on a never-touched segment invisible from an aria/assistive-tech
+    // standpoint (finding 6): `date_segment_key_effects`'s `None => default`
+    // branch (unchanged by this fix -- see its own doc) already committed
+    // exactly `default` on that first press, so when `aria-valuenow` was
+    // ALREADY reporting `default` beforehand, the announced value was
+    // identical before and after -- indistinguishable from a dropped
+    // keystroke. Once "no value" stops being reported as "= default", that
+    // same first press becomes a real, detectable transition (the attribute
+    // goes from absent to present), fixing both findings with the one
+    // change. `value_text` (below, in the rendered `span`) is gated on this
+    // same `Option`, so `aria-valuetext` (finding 2) tracks `aria-valuenow`
+    // in lockstep instead of drifting into its own "untouched" state.
+    let now_value = use_memo(move || (props.value)());
 
     let mut ctx = use_context::<BaseDatePickerContext>();
 
@@ -921,6 +1004,7 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
                 default: props.default,
                 min: props.min.cloned(),
                 max: props.max.cloned(),
+                wrap: props.wrap,
             },
         );
 
@@ -949,7 +1033,14 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
             role: "spinbutton",
             aria_valuemin: props.min.to_string(),
             aria_valuemax: props.max.to_string(),
-            aria_valuenow: now_value.to_string(),
+            // `Option<String>` (rather than always-a-string): Dioxus omits
+            // the attribute entirely when `None`, the same convention this
+            // crate already uses for other optional ARIA state (e.g.
+            // `navigation_menu.rs`'s `aria_current: props.active.then_some
+            // ("page")`) -- see `now_value`'s own doc above for why this
+            // must be absent, not a substituted default, while untouched.
+            aria_valuenow: now_value().map(|v| v.to_string()),
+            aria_valuetext: props.value_text.clone(),
             // No `aria-labelledby` here: per the APG Spin Button pattern's
             // own Roles/States/Properties section ("If the spinbutton has a
             // visible label, it is referenced by aria-labelledby ... .
@@ -1009,6 +1100,9 @@ struct DateElementContext {
     on_format_day_placeholder: Callback<(), String>,
     on_format_month_placeholder: Callback<(), String>,
     on_format_year_placeholder: Callback<(), String>,
+    /// Locale-aware month name for the month segment's `aria-valuetext`
+    /// (backlog row 84 finding 2) -- see `DateElementProps::on_format_month`.
+    on_format_month: Callback<Month, String>,
 }
 
 /// The props for the [`DatePickerYearSegment`] component.
@@ -1066,6 +1160,11 @@ pub fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
             min: min_year,
             max: max_year,
             max_length: 4,
+            // A year is not cyclical (unlike month/day) -- backlog row 84
+            // finding 4, see `date_segment_key_effects`'s own doc for the
+            // full calibration (native Chromium `<input type="date">` does
+            // not wrap its year sub-field either).
+            wrap: false,
             on_format_placeholder: ctx.on_format_year_placeholder,
             attributes: props.attributes,
         }
@@ -1106,6 +1205,21 @@ pub fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
     let (min_month, max_month) =
         month_bounds_for_year((ctx.year_value)(), min_year, max_year, min_date, max_date);
 
+    // backlog row 84 finding 2: a locale-aware month *name* for
+    // `aria-valuetext`, not a bare 1-12 number -- `ctx.on_format_month` is
+    // the same kind of caller-suppliable, i18n-capable callback the
+    // calendar grid's `CalendarMonthTitle`/`CalendarSelectMonthValue` (and
+    // `DatePickerCalendarProps::on_format_month`) already use, defaulting to
+    // `Month::to_string()` (see `DateElementProps::on_format_month`) but
+    // overridable with e.g. `dioxus_i18n`'s `tid!` for a translated name.
+    // `None` while the segment has no value yet (`ctx.month_value()` is
+    // `None`), matching `aria-valuenow`'s own untouched-is-absent rule
+    // (finding 3) so the two stay in lockstep -- see `DateSegment`'s
+    // `now_value` doc.
+    let value_text = (ctx.month_value)()
+        .and_then(|m| Month::try_from(m).ok())
+        .map(|m| ctx.on_format_month.call(m));
+
     rsx! {
         DateSegment {
             aria_label: "month",
@@ -1116,7 +1230,15 @@ pub fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
             min: min_month,
             max: max_month,
             max_length: 2,
+            // Cyclical (December -> January) -- backlog row 84 finding 4,
+            // matches native Chromium `<input type="date">`'s month
+            // sub-field. `wrap: true` is also `DateSegment`'s own default;
+            // stated explicitly here (and on the day segment below) so the
+            // calibration decision is visible at every call site, not just
+            // the one (year) that overrides it.
+            wrap: true,
             on_format_placeholder: ctx.on_format_month_placeholder,
+            value_text,
             attributes: props.attributes,
         }
     }
@@ -1185,6 +1307,10 @@ pub fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
             min: min_day,
             max: max_day,
             max_length: 2,
+            // Cyclical (the last day of a month -> the 1st) -- backlog row
+            // 84 finding 4, matches native Chromium `<input type="date">`'s
+            // day sub-field. See `DatePickerMonthSegment`'s identical note.
+            wrap: true,
             on_format_placeholder: ctx.on_format_day_placeholder,
             attributes: props.attributes,
         }
@@ -1221,6 +1347,10 @@ pub struct DatePickerInputValueProps {
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
 
+    /// See `DateElementProps::on_format_month` (backlog row 84 finding 2).
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
+
     /// The children of the date value.
     #[props(default)]
     pub children: Option<Element>,
@@ -1240,6 +1370,10 @@ pub struct DateRangePickerInputValueProps {
     /// Callback when display year placeholder
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
+
+    /// See `DateElementProps::on_format_month` (backlog row 84 finding 2).
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
 
     /// The children of the date range value.
     #[props(default)]
@@ -1269,6 +1403,8 @@ struct DateRangeInputContext {
     on_format_day_placeholder: Callback<(), String>,
     on_format_month_placeholder: Callback<(), String>,
     on_format_year_placeholder: Callback<(), String>,
+    /// See `DateElementProps::on_format_month` (backlog row 84 finding 2).
+    on_format_month: Callback<Month, String>,
 }
 
 impl DateRangeInputContext {
@@ -1325,6 +1461,14 @@ struct DateElementProps {
     /// Callback when display year placeholder
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
+
+    /// Locale-aware month name for the month segment's `aria-valuetext`
+    /// (backlog row 84 finding 2). Defaults to `Month::to_string()` (plain
+    /// English), matching `DatePickerCalendarProps::on_format_month`'s own
+    /// default for the calendar grid -- pass e.g. `dioxus_i18n`'s `tid!` for
+    /// a translated name, the same way the calendar side already can.
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
 
     /// The children of the date element.
     #[props(default)]
@@ -1397,6 +1541,7 @@ fn DateElement(props: DateElementProps) -> Element {
         on_format_day_placeholder: props.on_format_day_placeholder,
         on_format_month_placeholder: props.on_format_month_placeholder,
         on_format_year_placeholder: props.on_format_year_placeholder,
+        on_format_month: props.on_format_month,
     });
 
     let children = props.children.unwrap_or_else(|| {
@@ -1430,6 +1575,7 @@ pub fn DatePickerInputValue(props: DatePickerInputValueProps) -> Element {
             on_format_day_placeholder: props.on_format_day_placeholder,
             on_format_month_placeholder: props.on_format_month_placeholder,
             on_format_year_placeholder: props.on_format_year_placeholder,
+            on_format_month: props.on_format_month,
             children: props.children,
         }
     }
@@ -1456,6 +1602,7 @@ pub fn DateRangePickerInputValue(props: DateRangePickerInputValueProps) -> Eleme
         on_format_day_placeholder: props.on_format_day_placeholder,
         on_format_month_placeholder: props.on_format_month_placeholder,
         on_format_year_placeholder: props.on_format_year_placeholder,
+        on_format_month: props.on_format_month,
     };
 
     use_effect(move || {
@@ -1513,6 +1660,7 @@ pub fn DateRangePickerStartValue(props: DateRangePickerStartValueProps) -> Eleme
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
+            on_format_month: ctx.on_format_month,
             children: props.children,
         }
     }
@@ -1531,6 +1679,7 @@ pub fn DateRangePickerEndValue(props: DateRangePickerEndValueProps) -> Element {
             on_format_day_placeholder: ctx.on_format_day_placeholder,
             on_format_month_placeholder: ctx.on_format_month_placeholder,
             on_format_year_placeholder: ctx.on_format_year_placeholder,
+            on_format_month: ctx.on_format_month,
             children: props.children,
         }
     }
@@ -1550,6 +1699,13 @@ pub struct DatePickerInputProps {
     /// Callback when display year placeholder
     #[props(default = Callback::new(|_| "Y".to_string()))]
     pub on_format_year_placeholder: Callback<(), String>,
+
+    /// See `DateElementProps::on_format_month` (backlog row 84 finding 2).
+    /// Only applies to the default children (a caller-supplied `children`
+    /// renders its own segments directly and must thread this itself, the
+    /// same pre-existing limitation the placeholder callbacks above have).
+    #[props(default = Callback::new(|month: Month| month.to_string()))]
+    pub on_format_month: Callback<Month, String>,
 
     /// Additional attributes for the value element
     #[props(extends = GlobalAttributes)]
@@ -1606,6 +1762,7 @@ pub fn DatePickerInput(props: DatePickerInputProps) -> Element {
                 on_format_day_placeholder: props.on_format_day_placeholder,
                 on_format_month_placeholder: props.on_format_month_placeholder,
                 on_format_year_placeholder: props.on_format_year_placeholder,
+                on_format_month: props.on_format_month,
             }
         }
     });
@@ -1662,6 +1819,7 @@ pub fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
                 on_format_day_placeholder: props.on_format_day_placeholder,
                 on_format_month_placeholder: props.on_format_month_placeholder,
                 on_format_year_placeholder: props.on_format_year_placeholder,
+                on_format_month: props.on_format_month,
             }
         }
     });
@@ -1710,6 +1868,86 @@ mod tests {
         assert!(!html.contains("YYYY"));
         assert!(!html.contains("MM"));
         assert!(!html.contains("DD"));
+    }
+
+    #[component]
+    fn UntouchedDatePicker() -> Element {
+        rsx! {
+            DatePicker {
+                DatePickerInput {}
+            }
+        }
+    }
+
+    #[test]
+    fn untouched_date_segments_omit_aria_valuenow_and_aria_valuetext() {
+        // backlog row 84 findings 2/3/6: before any date is chosen, every
+        // segment's `props.value` is `None` -- `aria-valuenow` (and the
+        // month segment's new `aria-valuetext`) must be entirely absent
+        // rather than substituting `default`/a formatted default. RED on
+        // the unmodified tree: `now_value` used to be `(props.value)()
+        // .unwrap_or(props.default)`, so `aria-valuenow="<today's year>"`
+        // etc. were always present here.
+        let mut dom = VirtualDom::new(UntouchedDatePicker);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(
+            !html.contains("aria-valuenow"),
+            "an untouched segment must not report any aria-valuenow: {html}"
+        );
+        assert!(
+            !html.contains("aria-valuetext"),
+            "an untouched month segment must not report any aria-valuetext: {html}"
+        );
+        // Sanity: the segments really did render (the assertions above
+        // aren't vacuously true because nothing rendered at all).
+        assert!(html.contains(r#"aria-label="year""#));
+        assert!(html.contains("YYYY"));
+    }
+
+    #[test]
+    fn touched_date_segments_report_aria_valuenow_and_month_reports_a_locale_aware_aria_valuetext()
+    {
+        // Counterpart to `untouched_date_segments_omit_aria_valuenow_and_
+        // aria_valuetext` above: once a segment actually holds a value
+        // (here, `ControlledDatePicker`'s fixed 2026-05-07), `aria-valuenow`
+        // must report it, and the month segment's `aria-valuetext` must be
+        // the default formatter's locale-aware month name (backlog row 84
+        // finding 2 -- `Month::to_string()` by default, "May" for month 5),
+        // not merely "some non-empty string". RED on the unmodified tree:
+        // `aria-valuetext` never rendered at all (no such attribute
+        // existed), so `html.contains(r#"aria-valuetext="May""#)` failed.
+        let mut dom = VirtualDom::new(ControlledDatePicker);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        assert!(
+            html.contains(r#"aria-valuenow="2026""#),
+            "year segment must report its value: {html}"
+        );
+        assert!(
+            html.contains(r#"aria-valuenow="5""#),
+            "month segment must report its raw numeric value too: {html}"
+        );
+        assert!(
+            html.contains(r#"aria-valuenow="7""#),
+            "day segment must report its value: {html}"
+        );
+        assert!(
+            html.contains(r#"aria-valuetext="May""#),
+            "month segment must report a locale-aware name via aria-valuetext: {html}"
+        );
+        // Year and day are plain numbers -- no aria-valuetext for either
+        // (backlog row 84 finding 2 is scoped to the month segment only,
+        // per the APG spinbutton pattern's own rationale: a bare number is
+        // "user-friendly" for a day-of-month or a year, unlike a month
+        // index). `year value_text` is fixed structurally (only
+        // `DatePickerMonthSegment` ever sets `DateSegmentProps::value_text`)
+        // rather than by an attribute count here, since `aria-valuetext`
+        // appearing exactly once total already proves it's not also on
+        // year/day.
+        assert_eq!(html.matches("aria-valuetext").count(), 1, "{html}");
     }
 
     #[test]
@@ -1775,6 +2013,11 @@ mod tests {
         min: i32,
         max: i32,
     ) -> Vec<DateSegmentEffect<i32>> {
+        // `wrap: true` for every pre-existing call site below: all of them
+        // predate the wrap-vs-clamp split (backlog row 84 finding 4) and
+        // exercise the month/day-shaped ("cyclical") behavior, which is
+        // unchanged by that fix -- see `key_effects_clamped` for the new,
+        // year-shaped (`wrap: false`) cases.
         date_segment_key_effects(
             key,
             SegmentKeyModifiers { ctrl, meta, alt },
@@ -1788,6 +2031,41 @@ mod tests {
                 default,
                 min,
                 max,
+                wrap: true,
+            },
+        )
+    }
+
+    /// Like [`key_effects`], but with `wrap: false` -- the year segment's
+    /// clamp-at-the-bound policy (backlog row 84 finding 4).
+    #[allow(clippy::too_many_arguments)]
+    fn key_effects_clamped(
+        key: &Key,
+        ctrl: bool,
+        meta: bool,
+        alt: bool,
+        current_text: &str,
+        max_length: usize,
+        reset: bool,
+        current_value: Option<i32>,
+        default: i32,
+        min: i32,
+        max: i32,
+    ) -> Vec<DateSegmentEffect<i32>> {
+        date_segment_key_effects(
+            key,
+            SegmentKeyModifiers { ctrl, meta, alt },
+            SegmentTextState {
+                current_text,
+                max_length,
+                reset,
+            },
+            SegmentValueBounds {
+                current_value,
+                default,
+                min,
+                max,
+                wrap: false,
             },
         )
     }
@@ -2232,6 +2510,69 @@ mod tests {
             vec![DateSegmentEffect::EmitValue(Some(10))],
             "decrementing past min wraps to max"
         );
+    }
+
+    #[test]
+    fn key_effects_arrow_up_down_clamp_at_bounds_instead_of_wrapping_when_wrap_is_false() {
+        // backlog row 84 finding 4: the YEAR segment must clamp, not wrap.
+        // `roll_value`'s own wrap test above (`key_effects_arrow_up_
+        // increments_and_wraps_from_max_to_min`) is `wrap: true`'s
+        // (month/day's) behavior; this is `wrap: false`'s (year's).
+        let (ctrl, meta, alt) = no_modifiers();
+        let up_at_max = key_effects_clamped(
+            &Key::ArrowUp,
+            ctrl,
+            meta,
+            alt,
+            "",
+            4,
+            false,
+            Some(2050),
+            2000,
+            1925,
+            2050,
+        );
+        assert_eq!(
+            up_at_max,
+            vec![DateSegmentEffect::EmitValue(Some(2050))],
+            "incrementing past max clamps at max instead of wrapping to min"
+        );
+
+        let down_at_min = key_effects_clamped(
+            &Key::ArrowDown,
+            ctrl,
+            meta,
+            alt,
+            "",
+            4,
+            false,
+            Some(1925),
+            2000,
+            1925,
+            2050,
+        );
+        assert_eq!(
+            down_at_min,
+            vec![DateSegmentEffect::EmitValue(Some(1925))],
+            "decrementing past min clamps at min instead of wrapping to max"
+        );
+
+        // Away from either bound, clamped and wrapped behavior agree --
+        // this isolates the *boundary* as what actually differs.
+        let up_in_range = key_effects_clamped(
+            &Key::ArrowUp,
+            ctrl,
+            meta,
+            alt,
+            "",
+            4,
+            false,
+            Some(2000),
+            2000,
+            1925,
+            2050,
+        );
+        assert_eq!(up_in_range, vec![DateSegmentEffect::EmitValue(Some(2001))]);
     }
 
     #[test]

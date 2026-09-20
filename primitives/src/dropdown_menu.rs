@@ -16,7 +16,7 @@ use crate::{
     },
     direction::{use_direction, Direction},
     has_own_accessible_name, merge_attributes, use_animated_open, use_controlled, use_id_or,
-    use_unique_id,
+    use_outside_dismiss, use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
@@ -27,6 +27,20 @@ struct DropdownMenuContext {
     open: Memo<bool>,
     set_open: Callback<bool>,
     disabled: ReadSignal<bool>,
+
+    // This menu's own outer wrapping element id (set on the root `div`
+    // `DropdownMenu` itself renders, the one enclosing both
+    // `DropdownMenuTrigger` and `DropdownMenuContent`) -- mirrors
+    // `ContextMenuCtx::root_id` (`context_menu.rs`) exactly, added for the
+    // same reason: `docs/backlog.md` row 85's fix. See
+    // `DropdownMenuContentRendered`'s own `use_outside_dismiss` call for
+    // why this id, not `trigger_id`/`content_id` individually, is what a
+    // real "did focus/a click leave the whole widget" check needs to key
+    // off (root 85's root cause: `DropdownMenuTrigger`'s old `onblur` used
+    // to answer that question from `focus.any_focused()`, a Rust-tracked
+    // signal a raw external `.focus()` call never updates, instead of
+    // asking the DOM directly).
+    root_id: Signal<String>,
 
     // Focus state
     focus: CollectionState,
@@ -217,6 +231,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
     let direction = use_direction(props.dir);
 
     let disabled = props.disabled;
+    let root_id = use_unique_id();
     let trigger_id = use_unique_id();
     // Placeholder value until `DropdownMenuContent` mounts and syncs its
     // own id in -- see `DropdownMenuContext::content_id`'s doc.
@@ -229,6 +244,7 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         open,
         set_open,
         disabled,
+        root_id,
         focus,
         initial_focus,
         trigger_id,
@@ -372,14 +388,43 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         event.prevent_default();
     };
 
-    rsx! {
-        div {
+    // Merged (caller-wins, deduped), not set-then-spread-over: `docs/
+    // backlog.md` row 85 needs a stable `id` on *this* element (the one
+    // wrapping both `DropdownMenuTrigger` and `DropdownMenuContent`) so
+    // `DropdownMenuContentRendered`'s `use_outside_dismiss(ctx.root_id,
+    // ...)` can ask the DOM "is the thing that just received focus/a click
+    // actually inside the whole widget". The comment this replaced claimed
+    // a caller-supplied `id` in a trailing `..props.attributes` spread
+    // "still wins (spread order)" -- that is false: an explicit `id:`
+    // literal followed by `..props.attributes` on the same element emits
+    // *both* into the SSR'd HTML (confirmed by execution: the top-layer
+    // fixture's `id: "clip-dropdown-menu-root"` produced literal
+    // `id="dxc-1091" ... id="clip-dropdown-menu-root"` on one tag), a
+    // WHATWG duplicate-attribute parse error -- `docs/conformance-
+    // harness.md` hydration-parity Rule 4. The browser's HTML parser keeps
+    // the FIRST (this component's own generated id), silently dropping the
+    // caller's override, the opposite of what the comment claimed.
+    // `ContextMenu`'s identical root `div` (`context_menu.rs`) already
+    // merges this same shape via `merge_attributes` (`b35d671`); this now
+    // matches it exactly -- `id` caller-wins like everything else here,
+    // `use_outside_dismiss`'s own `getElementById` lookup then silently
+    // no-ops if a caller's override id makes it miss, unchanged from
+    // before.
+    let attributes = merge_attributes(vec![
+        attributes!(div {
+            id: root_id.cloned(),
             dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
             "data-direction": ctx.direction.as_str(),
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        div {
             onkeydown: handle_keydown,
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -453,7 +498,7 @@ pub struct DropdownMenuTriggerProps {
 /// - `data-disabled`: Indicates if the dropdown menu is disabled. values are `true` or `false`.
 #[component]
 pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
-    let mut ctx: DropdownMenuContext = use_context();
+    let ctx: DropdownMenuContext = use_context();
     let mut element = use_signal(|| None::<Rc<MountedData>>);
 
     let open = ctx.open;
@@ -506,19 +551,41 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
                 });
             }
         },
-        onblur: move |_| {
-            // See `DropdownMenuContext::submenu_open_count`'s doc: an open
-            // submenu's own first item is a legitimate place for focus to
-            // land when this button blurs (a mouse-driven or hover-driven
-            // submenu open never touches `ctx.focus`, this root's own
-            // collection, at all), and must not read as "focus left the
-            // whole menu."
-            if !ctx.focus.any_focused() && *ctx.submenu_open_count.peek() == 0 {
-                ctx.interacted_outside.set(true);
-                ctx.focus.clear_focus();
-                ctx.set_open.call(false);
-            }
-        },
+        // `docs/backlog.md` row 85: this used to carry its own `onblur`,
+        // closing the menu whenever `!ctx.focus.any_focused() &&
+        // submenu_open_count() == 0` -- i.e. whenever this button lost
+        // focus and neither a root-level item nor an open submenu had
+        // (yet) claimed it. That read `ctx.focus` (a Rust-tracked roving-
+        // focus signal) synchronously, inside the blur handler itself --
+        // correct for every focus move *this crate's own* click/keyboard
+        // code drives, since all of them update that signal *before*
+        // imperatively moving DOM focus (see `open_with_focus`'s doc), so
+        // the guard always saw already-current state. It was never told
+        // about a focus move that arrives some *other* way -- no item in
+        // this file has an `onfocus` reconciling it (unlike e.g.
+        // `tabs.rs`'s `onfocus: move |_| ctx.focus.set_focus(...)`) -- so a
+        // raw external `.focus()` call landing directly on a menu item or
+        // a `DropdownMenuSubTrigger` (the exact thing a Playwright test
+        // driving focus programmatically does, and an assistive-technology
+        // focus-restoration path plausibly could) blurred this button
+        // *before* anything updated `ctx.focus`, and the guard -- reading
+        // the still-stale "nothing focused" state -- closed the whole menu
+        // and (since it never set `interacted_outside`)
+        // `use_refocus_on_close_unless` then dutifully refocused this same
+        // button, exactly the reported "closes the whole menu and reverts
+        // focus to the root trigger" (row 85). `ContextMenu` never had this
+        // failure mode: its own dismissal already goes through
+        // `use_outside_dismiss` (`primitives/src/lib.rs`), which answers
+        // "did focus really leave" by asking the DOM directly (a native
+        // `focusin` listener plus `root.contains(event.target)`), not by
+        // trusting a signal this crate has to remember to update -- immune
+        // to the same-tick blur-before-focus ordering hazard by
+        // construction, since it never depends on *this* code writing
+        // anything first. `DropdownMenuContentRendered`'s own `use_outside_
+        // dismiss(ctx.root_id, ...)` call below now gives `DropdownMenu`
+        // that identical construction, so this handler is redundant --
+        // removed rather than left as a second, still-fragile way to reach
+        // the same conclusion.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
@@ -697,6 +764,24 @@ fn DropdownMenuContentRendered(
             ctx.set_open.call(is_open);
         }),
     );
+    // `docs/backlog.md` row 85: the DOM-truth-based dismiss check
+    // `ContextMenu` already has (`ContextMenuContentRendered`,
+    // `context_menu.rs`) -- a native `focusin`/`pointerdown` listener
+    // asking `ctx.root_id`'s own element (this menu's outer wrapping `div`,
+    // covering the trigger *and* this content, submenus included, since a
+    // `DropdownMenuSub`'s own content is a genuine DOM descendant of this
+    // one -- see `oracle/tier1-apg/menu-submenu.spec.ts`'s file header)
+    // `.contains(event.target)`, never a Rust-tracked roving-focus signal.
+    // Replaces the `DropdownMenuTrigger` `onblur` this crate used to lean
+    // on for the same job (see that component's own doc for the exact
+    // failure this construction fixes -- a raw external `.focus()` call
+    // landing on any item or `DropdownMenuSubTrigger` used to close the
+    // whole menu because that signal-based check couldn't see it coming).
+    use_outside_dismiss(ctx.root_id, move || {
+        ctx.interacted_outside.set(true);
+        ctx.focus.clear_focus();
+        ctx.set_open.call(false);
+    });
     // JS-measured static positioning fallback for engines without CSS
     // Anchor Positioning -- see `top_layer::use_anchor_position_fallback`'s
     // doc. `side`/`align` match the APG/Radix dropdown-menu default:
@@ -781,7 +866,7 @@ fn DropdownMenuContentRendered(
     scroll_lock_active: Memo<bool>,
     children: Element,
 ) -> Element {
-    let ctx: DropdownMenuContext = use_context();
+    let mut ctx: DropdownMenuContext = use_context();
 
     // See the web arm's identical construction above (docs/backlog.md row
     // 25/53) for why this is conditional and routed through
@@ -790,6 +875,17 @@ fn DropdownMenuContentRendered(
     let labelledby =
         crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
     let attributes = merge_attributes(vec![attributes, labelledby]);
+
+    // `docs/backlog.md` row 85 -- see the web arm's identical call above
+    // for the full construction. This arm has no popover API to fall back
+    // on at all (this file's own doc, above), so it depended on
+    // `DropdownMenuTrigger`'s old `onblur` entirely for dismissal; this
+    // call is now that arm's only "did focus/a click leave" check too.
+    use_outside_dismiss(ctx.root_id, move || {
+        ctx.interacted_outside.set(true);
+        ctx.focus.clear_focus();
+        ctx.set_open.call(false);
+    });
 
     rsx! {
         div {
@@ -1293,21 +1389,26 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
             event.stop_propagation();
         },
 
-        onblur: move |_| {
-            // Focus moving from the trigger into its own just-opened
-            // submenu is an expected, internal transition (`sub.focus`
-            // becomes non-empty as soon as the first item mounts and
-            // `use_deferred_collection_focus` applies the placement
-            // `open_with_focus` requested) -- only a blur that leaves
-            // *nothing* in the submenu focused is a real "focus left this
-            // sub-tree" signal. Never touches `ctx.focus` (the enclosing
-            // menu's own collection) -- unlike `DropdownMenuItem`'s
-            // identical-looking guard, closing a submenu must not look like
-            // the *enclosing* menu itself lost focus.
-            if focused() && !sub.focus.any_focused() {
-                sub.set_open.call(false);
-            }
-        },
+        // `docs/backlog.md` row 85: this used to carry its own `onblur`,
+        // closing the submenu whenever `focused() && !sub.focus.any_focused()`
+        // -- this trigger still held the *enclosing* menu's roving focus,
+        // but its own submenu's collection had (apparently) caught nobody.
+        // The intent (see the removed comment's own reasoning, preserved
+        // here): focus moving from this trigger into its own just-opened
+        // submenu is an expected, internal transition, and only a blur
+        // that leaves *nothing* in the submenu focused is a real "focus
+        // left this sub-tree" signal. That check read `sub.focus` (a
+        // Rust-tracked signal) synchronously, inside the blur handler --
+        // correct for this crate's own click/keyboard opens, which always
+        // populate it *before* moving DOM focus (`open_with_focus`), but
+        // never told about a focus move arriving any other way. Exactly
+        // `DropdownMenuTrigger`'s own former defect (see that component's
+        // doc for the full root-cause writeup) at one level of nesting.
+        // `DropdownMenuSubContentRendered`'s own `crate::menu_sub::
+        // use_sub_outside_dismiss(sub.trigger_id, sub.content_id, ...)`
+        // call now gives this submenu the same DOM-truth-based
+        // construction `DropdownMenuContentRendered`'s `use_outside_
+        // dismiss` gives the root menu, so this handler is redundant.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
@@ -1420,6 +1521,16 @@ fn DropdownMenuSubContentRendered(
             sub.set_open.call(is_open);
         }),
     );
+
+    // `docs/backlog.md` row 85: see `crate::menu_sub::use_sub_outside_
+    // dismiss`'s own doc for the full construction and why a `Sub` needs
+    // its own two-id variant of `DropdownMenuContentRendered`'s
+    // `use_outside_dismiss(ctx.root_id, ...)` call rather than that same
+    // function.
+    crate::menu_sub::use_sub_outside_dismiss(sub.trigger_id, sub.content_id, move || {
+        sub.focus.clear_focus();
+        sub.set_open.call(false);
+    });
 
     // Anchors to this submenu's own trigger, on the inline axis (`Right`
     // in LTR; `top_layer.rs`'s shared `position-try-fallbacks: flip-block,
@@ -1611,6 +1722,13 @@ fn DropdownMenuSubContentRendered(
     // docs/backlog.md row 11 (Phase 6, typeahead): see the web arm's
     // identical call above for the general rationale.
     let mut typeahead = crate::typeahead::use_typeahead_state();
+
+    // `docs/backlog.md` row 85 -- see the web arm's identical call above
+    // for the full construction.
+    crate::menu_sub::use_sub_outside_dismiss(sub.trigger_id, sub.content_id, move || {
+        sub.focus.clear_focus();
+        sub.set_open.call(false);
+    });
 
     let labelledby: Vec<Attribute> = if has_own_accessible_name(&attributes) {
         Vec::new()
@@ -1805,5 +1923,45 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
             ..props.attributes,
             {props.children}
         }
+    }
+}
+
+/// `docs/backlog.md` row 85 / hydration-parity Rule 4 regression coverage:
+/// proves `DropdownMenu`'s root `div` renders a caller-supplied `id`
+/// exactly once, with no second, internally-generated `dxc-N` id also
+/// present. Confirmed RED on the pre-fix tree (both `id="dxc-0"` and
+/// `id="my-menu-root"` were present, 2 total `id="` occurrences) and GREEN
+/// after routing the root's attributes through `merge_attributes`, the
+/// same construction `context_menu.rs`'s identical fixture already proves.
+#[cfg(test)]
+mod ssr_tests {
+    use super::*;
+
+    #[component]
+    fn DropdownMenuWithOwnId() -> Element {
+        rsx! {
+            DropdownMenu { id: "my-menu-root", "content" }
+        }
+    }
+
+    fn render(component: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(component);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
+    #[test]
+    fn callers_own_id_on_the_root_is_not_duplicated() {
+        let html = render(DropdownMenuWithOwnId);
+        assert_eq!(
+            html.matches(" id=\"").count(),
+            1,
+            "expected exactly one `id` attribute on the root, got: {html}"
+        );
+        assert!(html.contains(r#"id="my-menu-root""#), "html: {html}");
+        assert!(
+            !html.contains("dxc-"),
+            "the internally-generated id must not also render: {html}"
+        );
     }
 }

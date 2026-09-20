@@ -2521,6 +2521,26 @@ pub fn calendar_day_attributes(state: &CalendarDayState) -> Vec<Attribute> {
         attrs.push(attr("data-unavailable", Bool(true)));
     }
     attrs.push(attr("data-disabled", Bool(state.disabled)));
+    // backlog row 84 finding 1: an unavailable day (or a day inside a
+    // disabled calendar -- `state.disabled` is already `(calendar disabled)
+    // || unavailable`, see `day_state`) never told assistive tech it could
+    // not be chosen: the cell has no native `disabled` attribute (a
+    // genuinely disabled `<button>` would drop out of the tab order, which
+    // `SingleCalendarDay`/`RangeCalendarDay` deliberately avoid so the grid
+    // keeps a single roving tabstop -- see their own `handle_day_select`
+    // early-return instead), and until now nothing else stood in for it.
+    // `aria-disabled` (unlike a native `disabled` attribute) does not
+    // remove the element from the tab order, so this is the correct
+    // "focusable but not operable" signal -- matches this crate's own
+    // established convention for exactly that shape of control (e.g.
+    // `combobox`/`select`/`command`'s own options: `aria_disabled:
+    // (option.disabled)()` alongside a still-focusable role). Mirrors
+    // `data-disabled` immediately above: same source value, same
+    // unconditional presence (a `data-disabled=false` day contributes
+    // `aria-disabled=false`, which is the correct, explicit "not disabled"
+    // ARIA state for a role that has no native disabled semantics of its
+    // own, not merely "no opinion").
+    attrs.push(attr("aria-disabled", Bool(state.disabled)));
     if state.range_start {
         attrs.push(attr("data-selection-start", Bool(true)));
     }
@@ -3074,6 +3094,13 @@ mod tests {
             find_attr(&attrs, "data-disabled").unwrap().value,
             Bool(false)
         );
+        // backlog row 84 finding 1: `aria-disabled` mirrors `data-disabled`
+        // exactly (same source value, same unconditional presence) -- see
+        // the fix's own comment in `calendar_day_attributes`.
+        assert_eq!(
+            find_attr(&attrs, "aria-disabled").unwrap().value,
+            Bool(false)
+        );
         assert_eq!(
             find_attr(&attrs, "data-month").unwrap().value,
             Text("current".to_string())
@@ -3109,6 +3136,7 @@ mod tests {
             "data-selected",
             "data-unavailable",
             "data-disabled",
+            "aria-disabled",
             "data-selection-start",
             "data-selection-between",
             "data-selection-end",
@@ -3329,8 +3357,71 @@ mod tests {
         assert!(html.contains("data-today=true"));
         assert!(html.contains("data-selected=true"));
         assert!(html.contains("data-disabled=false"));
+        assert!(html.contains("aria-disabled=false"));
         assert!(html.contains(r#"data-month="current""#));
         assert!(!html.contains("data-unavailable"));
+    }
+
+    #[test]
+    fn unavailable_calendar_day_renders_aria_disabled_true_and_available_day_renders_aria_disabled_false(
+    ) {
+        // backlog row 84 finding 1: "Calendar's unavailable days carry no
+        // aria-disabled" -- an end-to-end (full `Calendar`, real
+        // `disabled_ranges`, `dioxus_ssr::render`) regression guard rather
+        // than only the lower-level `calendar_day_attributes` fixture tests
+        // above, so this also exercises `is_unavailable`/`day_state`'s own
+        // wiring, not just the attribute-building function in isolation.
+        #[component]
+        fn Demo() -> Element {
+            rsx! {
+                Calendar {
+                    view_date: date!(2024 - 06 - 01),
+                    today: date!(2024 - 06 - 01),
+                    disabled_ranges: vec![DateRange::new(date!(2024 - 06 - 15), date!(2024 - 06 - 15))],
+                    CalendarView {
+                        CalendarDay { date: date!(2024 - 06 - 15) }
+                        CalendarDay { date: date!(2024 - 06 - 16) }
+                    }
+                }
+            }
+        }
+
+        let mut dom = VirtualDom::new(Demo);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        let unavailable_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 15)));
+        let available_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 16)));
+        let unavailable_pos = html
+            .find(&unavailable_label)
+            .expect("unavailable day must render");
+        let available_pos = html
+            .find(&available_label)
+            .expect("available day must render");
+
+        // Slice each day's own attribute run (up to the next day's
+        // aria-label, or the end of the string for the last one) so
+        // `aria-disabled=false`/`aria-disabled=true` are each checked
+        // against the correct cell, not just "somewhere in the whole grid".
+        let unavailable_html = &html[unavailable_pos..available_pos.max(unavailable_pos)];
+        let available_html = &html[available_pos..];
+
+        assert!(
+            unavailable_html.contains("data-unavailable=true"),
+            "sanity: the fixture's disabled_ranges must actually make this day unavailable: {unavailable_html}"
+        );
+        assert!(
+            unavailable_html.contains("aria-disabled=true"),
+            "an unavailable day must carry aria-disabled=true: {unavailable_html}"
+        );
+        assert!(
+            !available_html.contains("data-unavailable"),
+            "sanity: the following day must be available: {available_html}"
+        );
+        assert!(
+            available_html.contains("aria-disabled=false"),
+            "an available day must still carry an explicit aria-disabled=false: {available_html}"
+        );
     }
 
     #[test]

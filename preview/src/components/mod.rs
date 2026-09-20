@@ -218,6 +218,7 @@ examples!(
     button_group,
     calendar[simple, internationalized, range, multi_month, unavailable_dates, rtl],
     card,
+    carousel[multiple, indicators, vertical, rtl],
     chart[bar, line, stacked],
     checkbox,
     collapsible,

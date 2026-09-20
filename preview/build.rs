@@ -26,12 +26,20 @@ fn main() {
     // (one this script has never seen) isn't watched until something else
     // causes it to rerun -- cargo has no "watch this directory for new
     // entries only" primitive, only the recursive watch just removed.
-    // Self-healing in practice: adding a new component always also means
-    // editing `components/mod.rs` (a `.rs` file cargo already tracks
-    // directly), and the first build after that fails loudly with a clear
-    // "No such file" against the missing `OUT_DIR` output until this
-    // script reruns -- fixed by touching this file or `cargo clean -p
-    // preview`, not a silent bug.
+    // NOT self-healing, despite what this note used to claim: editing
+    // `components/mod.rs` makes cargo rebuild `preview`, but it does NOT
+    // rerun this build script (cargo tracks `mod.rs` as a source file of
+    // the crate, not as an input of this script), so adding a component
+    // leaves `OUT_DIR` without that component's `description.txt`/
+    // `docs.html`. What the original note got right is that the failure is
+    // LOUD rather than silent: `cargo clippy`/`test`/`doc` all fail with
+    // `couldn't read .../out/<name>/description.txt`, and `dx serve`'s own
+    // wasm build fails the same way separately, since it has its own
+    // target dir. Fix: `touch preview/build.rs` (or `cargo clean -p
+    // preview`), once per target dir. Observed for real on 2026-09-20 when
+    // Carousel landed -- see `dev-docs/backlog.md` row 92. A lane building
+    // in a fresh target dir never sees it, because there this script runs
+    // with the new component already present.
     // Process all markdown files in each component folder.
     for folder in std::fs::read_dir("src/components").unwrap().flatten() {
         if !folder.file_type().unwrap().is_dir() {

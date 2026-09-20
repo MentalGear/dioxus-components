@@ -1,0 +1,149 @@
+/* Layout-critical properties (overflow/scroll-snap/flex-direction on
+   `.dx-carousel-content`, `flex-basis`/`scroll-snap-align` on
+   `.dx-carousel-item`) are structural and live on the primitive itself
+   (primitives/src/carousel.rs), the same way ScrollArea/Resizable inline
+   their own required layout -- it has to work with zero theme CSS
+   applied. Everything below is purely visual. */
+
+.dx-carousel {
+    position: relative;
+    width: 100%;
+}
+
+.dx-carousel-content {
+    gap: var(--dx-space-4);
+
+    /* Hide the native scrollbar -- dragging/wheel/trackpad scrolling and
+       keyboard focus still work identically either way; only the
+       scrollbar's own paint is suppressed. `CarouselPrevious`/
+       `CarouselNext` plus the root's own `ArrowLeft`/`ArrowRight` remain
+       the discoverable way to page for a mouse-only user. */
+    scrollbar-width: none;
+}
+
+.dx-carousel-content::-webkit-scrollbar {
+    display: none;
+}
+
+.dx-carousel-item {
+    box-sizing: border-box;
+}
+
+.dx-carousel-previous,
+.dx-carousel-next {
+    position: absolute;
+    z-index: var(--dx-z-raise);
+    display: flex;
+    width: var(--dx-space-9);
+    height: var(--dx-space-9);
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    border-radius: var(--dx-radius-full);
+    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+    box-shadow: var(--dx-shadow-sm);
+    color: var(--secondary-color-1);
+    cursor: pointer;
+
+    /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on
+       this control while still allowing pan/pinch scrolling of the track
+       underneath (touch-action: none must never be used, it breaks
+       scrolling); mirrors the shared app-layer rule in preview/assets/main.css.
+       Copied-out components ship without main.css, so this needs to live
+       here too. */
+    touch-action: manipulation;
+}
+
+.dx-carousel-previous svg,
+.dx-carousel-next svg {
+    width: var(--dx-space-4);
+    height: var(--dx-space-4);
+}
+
+/* A chevron-style icon inside Previous/Next points a physical direction
+   (e.g. lucide's ChevronLeft/ChevronRight), so under RTL -- horizontal
+   only; a vertical carousel's Up/Down icons have nothing to do with text
+   direction -- the *icon itself* needs the same physical-side mirroring
+   `inset-inline-*` already gives the *button's position*, or a caller
+   who reuses one icon component regardless of direction (as this
+   package's own `rtl` demo variant does, deliberately, to prove this
+   rule) ends up with a "<" chevron sitting on the physical right and a
+   ">" sitting on the physical left -- confirmed live, see
+   $S/round4/carousel/variant-rtl-light.png before this rule existed.
+   `scaleX(-1)` is a pure mirror (not a directional offset), so it needs
+   no `rtl-physical` allowlist comment -- it is exactly as direction-safe
+   as flipping is supposed to be. */
+.dx-carousel[data-orientation="horizontal"][data-direction="rtl"] .dx-carousel-previous svg,
+.dx-carousel[data-orientation="horizontal"][data-direction="rtl"] .dx-carousel-next svg {
+    transform: scaleX(-1);
+}
+
+.dx-carousel-previous:disabled,
+.dx-carousel-next:disabled {
+    cursor: not-allowed;
+    opacity: var(--dx-opacity-disabled);
+}
+
+.dx-carousel-previous:focus-visible,
+.dx-carousel-next:focus-visible {
+    outline: 2px solid var(--dx-ring-color);
+    outline-offset: 2px;
+}
+
+/* Horizontal (default): centered on the block axis, pinned near the
+   inline edges -- logical properties so these mirror correctly under
+   `dir="rtl"` (Previous stays at the *start* edge, Next at the *end*
+   edge, whichever physical side that resolves to). */
+.dx-carousel[data-orientation="horizontal"] .dx-carousel-previous {
+    inset-block-start: 50%;
+    inset-inline-start: var(--dx-space-2);
+    transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
+}
+
+.dx-carousel[data-orientation="horizontal"] .dx-carousel-next {
+    inset-block-start: 50%;
+    inset-inline-end: var(--dx-space-2);
+    transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
+}
+
+/* Vertical: centered on the inline axis, pinned near the block edges. */
+.dx-carousel[data-orientation="vertical"] .dx-carousel-previous {
+    inset-block-start: var(--dx-space-2);
+    inset-inline-start: 50%;
+    transform: translateX(-50%); /* rtl-physical: centers this control on its own parent's inline axis, symmetric under dir so it needs no sign flip -- same construction as resizable/style.css's own transform-paired centering */
+}
+
+.dx-carousel[data-orientation="vertical"] .dx-carousel-next {
+    inset-block-end: var(--dx-space-2);
+    inset-inline-start: 50%;
+    transform: translateX(-50%); /* rtl-physical: see comment above */
+}
+
+.dx-carousel-indicators {
+    display: flex;
+    justify-content: center;
+    gap: var(--dx-space-2);
+    margin-block-start: var(--dx-space-4);
+}
+
+.dx-carousel-indicator {
+    width: var(--dx-space-2);
+    height: var(--dx-space-2);
+    box-sizing: border-box;
+    padding: 0;
+    border: none;
+    border-radius: var(--dx-radius-full);
+    background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.dx-carousel-indicator[data-active="true"] {
+    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
+}
+
+.dx-carousel-indicator:focus-visible {
+    outline: 2px solid var(--dx-ring-color);
+    outline-offset: 2px;
+}

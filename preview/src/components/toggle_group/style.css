@@ -24,7 +24,15 @@
   border-inline-end: 1px solid var(--primary-color-6);
 }
 
-.dx-toggle-group-item:hover,
+/* docs/backlog.md row 89: same construction as `toggle/style.css`'s
+   identical fix -- see that file's own comment for the full writeup.
+   `:hover` and `[data-state="on"]` tie at (0,2,0) on top of
+   `.dx-toggle-group-item`, broken only by source order today (verified:
+   an ON item keeps its `on` background, `rgb(176, 176, 176)` light /
+   `rgb(62, 62, 62)` dark, while hovered, in both themes).
+   `:where(:hover)` makes that unconditional instead of order-dependent.
+   `:focus-visible` is untouched, same (0,2,0) it already has. */
+.dx-toggle-group-item:where(:hover),
 .dx-toggle-group-item:focus-visible {
   background-color: var(--primary-color-4);
   cursor: pointer;

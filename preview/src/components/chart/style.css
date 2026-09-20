@@ -23,17 +23,53 @@
  * writes a single per-key rule.
  */
 
-/* `display: flex; flex-direction: column` (not plain `block`) so
- * `ChartLegend`'s `order` below can move it before `Chart` in RENDER order
- * without needing DOM order to change -- `ChartLegend` is a plain sibling
- * of `Chart` with no layout authority over it, per `$S/chart-api.md`'s
- * "API changes" #6, so `vertical_align: LegendAlign::Top` has no observable
- * effect without this. `ChartTooltip` (`position: absolute`) is unaffected
- * either way -- it never participates in flex layout. */
+/* `display: grid`, with `[data-slot="chart"]` (Chart's own svg+table
+ * wrapper) and `.dx-chart-tooltip` explicitly sharing ONE named grid area
+ * ("chart") -- not plain `flex`/`block`. This is load-bearing, not a style
+ * preference: per the CSS Grid spec (section 10.1, "Absolute Positioning"), an
+ * absolutely-positioned grid item with an explicit `grid-area` takes THAT
+ * AREA -- not the whole grid container -- as its containing block.
+ * `ChartTooltip`'s `left`/`top` (`tooltip.rs`) are percentages of `Chart`'s
+ * own logical width/height (`ChartLayout`, shared via context), i.e. of
+ * the svg's own box, so its containing block must be pixel-exact with
+ * that box regardless of what else lives in `.dx-chart` -- the legend's
+ * size, or which side it's on. A flex column (this rule's previous shape)
+ * cannot give that guarantee: `ChartTooltip` is `.dx-chart`'s child too,
+ * so its only containing-block option there is `.dx-chart` itself, whose
+ * total box includes the legend's own height -- the wrong basis for a
+ * percentage calibrated to the svg alone.
+ *
+ * This was a real, measured bug, not a theoretical one: with
+ * `ChartLegend`'s `vertical_align: Top` (`data-align="top"`, the `bar`
+ * demo variant), `.dx-chart`'s total height included the legend's ~16px
+ * ABOVE the chart's own top edge, and every `top:X%` the primitive wrote
+ * was computed as X% of the *svg's* height, then resolved by the browser
+ * as X% of the *combined* (legend + svg) height measured from
+ * `.dx-chart`'s own top -- landing the tooltip's anchor, and often its
+ * whole body, inside the legend's row (confirmed: hovering the `bar`
+ * demo's 2nd bar rendered the tooltip directly over the legend, obscuring
+ * "Desktop" entirely -- $S/chart-legend-overlap/before-bar-crop-light.png).
+ * The default (bottom-aligned) legend is calibrated wrong by the same
+ * arithmetic, just less visibly with this package's current demo data
+ * (every series value the demos use is far enough from zero that the
+ * resulting few-px error stays inside the svg's own box) -- not
+ * "different code", the same wrong percentage basis either way.
+ *
+ * `legend-before`/`legend-after` are always present as grid rows so the
+ * legend's own `data-align` (an ordinary attribute selector on the legend
+ * itself, same idiom this rule previously used for `order`) can move it to
+ * either side of the fixed "chart" row without moving the row `Chart`/
+ * `ChartTooltip` share. The row `ChartLegend` doesn't occupy is empty and
+ * collapses to 0 height (an `auto`-sized grid row with no content). */
 .dx-chart {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-areas: "legend-before" "chart" "legend-after";
+  grid-template-rows: auto auto auto;
+}
+
+.dx-chart > [data-slot="chart"] {
+  grid-area: chart;
 }
 
 /* Keyboard contract (`$S/chart-api.md`, "API changes" #4): `Chart`'s own
@@ -160,6 +196,11 @@
   box-shadow: var(--dx-shadow-md);
   color: var(--primary-color);
   font-size: var(--dx-text-xs);
+
+  /* Shares `[data-slot="chart"]`'s own grid area -- see `.dx-chart`'s own
+   * comment (top of this file) for why this, not `.dx-chart` itself, must
+   * be this element's containing block. */
+  grid-area: chart;
   pointer-events: none;
 
   /* rtl-physical: centers the tooltip over its anchor point (the active
@@ -173,6 +214,59 @@
 
 .dx-chart-tooltip[data-state="closed"] {
   display: none;
+}
+
+/* When the legend sits ABOVE the chart (`ChartLegend`'s `data-align="top"`
+ * -- the `bar` demo variant), flip which direction the tooltip extends
+ * from its anchor: downward, into the chart's own plot area (the ordinary
+ * "a tooltip floats over the marks you're hovering" case every chart
+ * tooltip does -- always safe, since nothing meaningful renders below the
+ * plot when the legend has moved above it), instead of upward.
+ *
+ * This is not a style choice -- it fixes a real, measured escape the
+ * `grid-area` fix above (this file's `.dx-chart` rule) does not, and
+ * cannot, close by itself. `ChartTooltip` anchors to the *top* of the
+ * tallest mark at the active index (`tooltip.rs`'s own doc: "the active
+ * band center / max value point") and, by default, extends UPWARD from
+ * there (`translate(-50%, -100%)`) -- deliberately, so it never covers a
+ * BELOW legend (confirmed: an exhaustive hover sweep over every hit-band
+ * in every demo with a bottom/default legend found zero overlap, in every
+ * case, by construction -- upward can never reach something below).
+ * But upward is exactly the direction a TOP legend sits in, immediately
+ * adjacent to the chart's own top edge -- and a tooltip tall enough
+ * (multiple series, e.g. the `bar` demo's 3) anchored near the top of the
+ * plot (any near-peak value -- not a rare case, this is what hovering the
+ * *tallest* bar/point does on every chart) can legitimately need more
+ * headroom above that anchor than a themed stylesheet can reserve as
+ * static space without either measuring the tooltip's own rendered size
+ * (`tooltip.rs`'s own doc: deliberately "never a DOM measurement") or
+ * guessing an arbitrary, content-dependent gap that's either too small for
+ * some configurations or wastefully large for most. Flipping the escape
+ * direction sidesteps the problem instead of bounding it: confirmed
+ * (`$S/chart-legend-overlap/after-bar-crop-light.png`) against the `bar`
+ * demo's actual worst case (hovering its 2nd, near-tallest bar, a 3-series
+ * tooltip) with zero legend overlap, and true for ANY tooltip height in
+ * this configuration specifically, not just this demo's current content --
+ * "downward, when the legend is above" always lands in the chart's own
+ * plot or in ordinary space beyond it, never in a legend, regardless of
+ * how tall the tooltip is or how many series are configured.
+ *
+ * `:has()` targets `.dx-chart` (the parent) by a CHILD's attribute --
+ * already used elsewhere in this theme (e.g. card/alert/button/sidebar's
+ * own style.css) -- rather than a sibling combinator, because
+ * `ChartTooltip`/`ChartLegend` are independent, order-agnostic siblings
+ * per the primitive's own contract (either may be composed before the
+ * other); a sibling-combinator rule would silently stop matching for a
+ * caller who wrote them in the other order (this package's own `bar` demo
+ * composes `ChartTooltip` BEFORE `ChartLegend`, which a forward-only `~`
+ * selector keyed off the legend could never select). */
+.dx-chart:has(> [data-slot="chart-legend"][data-align="top"]) > .dx-chart-tooltip {
+  /* rtl-physical: keeps only the base rule's own horizontal centering
+     (dropping just its vertical `-100%` term) -- the same symmetric,
+     point-centered offset the base rule's own comment above already
+     justifies as identical under `dir="rtl"`; nothing here is a
+     reading-direction-dependent side. */
+  transform: translateX(-50%);
 }
 
 .dx-chart-tooltip [data-slot="chart-tooltip-label"] {
@@ -211,20 +305,31 @@
   justify-content: center;
   margin: 0;
   gap: var(--dx-space-4);
+  grid-area: legend-after;
   list-style: none;
+
+  /* Block-start breathing room between the chart and the legend -- shadcn's
+   * own `ChartLegendContent` convention (`pt-3`/`pb-3` depending on
+   * `verticalAlign`; `$S/refs/ui/apps/v4/registry/new-york-v4/ui/chart.tsx`).
+   * Previously absent: the legend sat flush against the svg's own box (a
+   * real, if minor, visual-crowding issue independent of the `grid-area`
+   * fix above -- the two were found and fixed together, not conflated). */
+  padding-block-start: var(--dx-space-3);
   padding-inline-start: 0;
 }
 
 /* `vertical_align: LegendAlign::Top` (`$S/chart-api.md`'s "API changes"
  * #6): rendered as `data-align="top"` on this element; `bottom` (the
- * default) needs no rule since it already matches DOM order (`Chart`
- * composed before `ChartLegend` in every demo in this package). Moves the
- * legend before `Chart` in the `.dx-chart` flex column above without
- * touching DOM order (source order stays the render/table/hidden-content
- * order; only visual position changes) -- every other child defaults to
- * `order: 0`, so `-1` alone is enough to place this first. */
+ * default) needs no rule since `legend-after` above already matches it.
+ * Moves the legend to the `legend-before` grid row (above the fixed
+ * "chart" row `Chart`/`ChartTooltip` share -- see `.dx-chart`'s own
+ * comment) without touching DOM order (source order stays the render/
+ * table/hidden-content order; only visual position changes). The spacing
+ * flips to the OTHER side of the legend, matching shadcn's own `pb-3`
+ * (space belongs between the legend and the chart, wherever the legend is). */
 .dx-chart-legend[data-align="top"] {
-  order: -1;
+  grid-area: legend-before;
+  padding-block: 0 var(--dx-space-3);
 }
 
 .dx-chart-legend [data-slot="chart-legend-item"] {
