@@ -222,7 +222,7 @@ examples!(
     card,
     carousel[multiple, indicators, vertical, rtl],
     chart[bar, line, stacked],
-    chart_tooltip[indicator_none, label_none, label_formatter],
+    chart_tooltip[indicator_line, indicator_none, label_none, label_custom, label_formatter, formatter, icons, advanced],
     checkbox,
     collapsible,
     color_picker,

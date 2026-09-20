@@ -72,14 +72,20 @@ shadcn's free-form per-datum payload object) a precomputed cross-series total â€
 
 ## Icons
 
+`ChartSeries::icon` (`Option<ChartIcon>`) has no builder method yet, so attach one with a struct
+update on an already-built series:
+
 ```rust
-ChartConfig::new().series_with_icon("running", "Running", "var(--dx-chart-1)", || rsx! { Footprints {} })
+let running = ChartConfig::new().series("running", "Running", "var(--dx-chart-1)").series.remove(0);
+let running = ChartSeries { icon: Some(ChartIcon(Callback::new(|()| rsx! { Footprints {} }))), ..running };
 ```
 
 A series with an icon renders that icon in place of its indicator swatch, in both the tooltip and
 the legend (`ChartLegend`'s own `hide_icon: true` opts a legend back out of icons while keeping a
 series' icon in the tooltip). The icon sits in a `role="graphics-symbol"` wrapper with the series'
-label as its accessible name, exactly like the swatch it replaces.
+label as its accessible name, exactly like the swatch it replaces -- and, unlike the swatch, ignores
+`hide_indicator`/`indicator` entirely on the tooltip side (it only ever falls back to the swatch via
+the legend's own `hide_icon`).
 
 ## The nine demos
 

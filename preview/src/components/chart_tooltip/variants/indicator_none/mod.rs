@@ -18,6 +18,7 @@ fn chart_data() -> Vec<ChartDatum> {
     .map(|(date, running, swimming)| ChartDatum {
         label: date.to_string(),
         values: vec![Some(running), Some(swimming)],
+        ..Default::default()
     })
     .collect()
 }

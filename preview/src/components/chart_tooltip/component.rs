@@ -26,26 +26,67 @@
 //! items without also naming the module itself, so the collision can't
 //! arise.
 //!
-//! `TooltipIndicator`/`TooltipRow` (once the primitive change lands --
-//! `primitives/src/chart/components/tooltip.rs`) are re-exported directly
-//! off `dioxus_primitives::chart` here rather than through `chart`'s own
-//! `component.rs` (which this lane does not own -- integration decides
-//! whether to also add them there for `chart`'s direct consumers): they
-//! are plain, render-nothing value/data types with no theme of their own
-//! to attach (the same rationale `chart/component.rs`'s own header comment
-//! gives for re-exporting `ChartConfig`/`ChartDatum`/`ChartKind`/
-//! `LegendAlign` the identical way), so pulling them in raw here is the
-//! wrapper layer doing its job, not a `check-preview-composition.sh`
-//! violation (every `component.rs` is exempt from that scan by
-//! construction -- see that script's own header).
+//! `TooltipIndicator`/`TooltipRow`/`ChartSeries`/`ChartIcon` are re-exported
+//! directly off `dioxus_primitives::chart` here rather than through
+//! `chart`'s own `component.rs` (which this lane does not own -- see
+//! `ChartTooltipFull`'s own doc below for why this file also can't just ask
+//! that file to forward every prop): they are plain, render-nothing
+//! value/data types with no theme of their own to attach (the same
+//! rationale `chart/component.rs`'s own header comment gives for
+//! re-exporting `ChartConfig`/`ChartDatum`/`ChartKind`/`LegendAlign` the
+//! identical way), so pulling them in raw here is the wrapper layer doing
+//! its job, not a `check-preview-composition.sh` violation (every
+//! `component.rs` is exempt from that scan by construction -- see that
+//! script's own header).
 
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 pub use crate::components::chart::component::*;
-// `TooltipIndicator`/`TooltipRow` join this re-export list once the
-// primitive lands them (see the module doc above) -- the `indicator_line`/
-// `label_custom`/`formatter`/`icons`/`advanced` variants that need them are
-// added in that same follow-up commit, not this one.
+pub use dioxus_primitives::chart::{ChartIcon, ChartSeries, TooltipIndicator, TooltipRow};
+
+/// Forwards every [`dioxus_primitives::chart::ChartTooltipProps`] field via
+/// `..props`, unlike `crate::components::chart::ChartTooltip` (`chart`'s
+/// OWN themed wrapper), which today still hand-lists only `label_format`/
+/// `value_format`/`hide_label`/`hide_indicator`/`children` and would
+/// silently drop `indicator`/`label_key`/`name_key`/`formatter` -- a caller
+/// setting any of those through that wrapper sees no compile error and no
+/// effect at all (the exact class of bug this lane's own `$S/
+/// stage2-lanes.md` entry documents, with the fix `chart::Chart`'s own
+/// wrapper already applies: a struct-update spread). `chart/component.rs`
+/// is stage-1/integration-owned, not this lane's to edit -- the exact fix
+/// is filed there as a ledger request instead
+/// (`$S/stage2-lanes.md`'s "requests for the refactor owner"). Until that
+/// lands, every demo below that needs one of the new fields renders
+/// through this pass-through instead of the themed `ChartTooltip`, so it
+/// demonstrates the real, working behavior rather than a silently no-op'd
+/// prop -- every demo that only needs the OLDER fields keeps using the
+/// normal themed `ChartTooltip` unchanged. Renders byte-identical markup to
+/// what the themed wrapper would (same `.dx-chart-tooltip` class, same
+/// stylesheet link): this is not a new primitive, just this gap's
+/// temporary, gallery-local fix.
+#[component]
+pub fn ChartTooltipFull(props: dioxus_primitives::chart::ChartTooltipProps) -> Element {
+    let base = attributes!(div {
+        class: "dx-chart-tooltip",
+    });
+    // `.clone()`, not a move: `..props` below needs `props.attributes`
+    // (among every other field) still intact -- a `..base` spread cannot
+    // follow an earlier statement that already partially moved out of
+    // `base` (`error[E0382]`, even for a field the spread's own explicit
+    // `attributes: merged` immediately overrides), the one combination
+    // (merge a base class in via a prior statement, THEN spread the rest)
+    // `chart::Chart`'s own `..props` (no merging at all) and
+    // `chart::ChartContainer`'s own hand-listed forward (merging, no
+    // spread) each individually avoid.
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
+        dioxus_primitives::chart::ChartTooltip { attributes: merged, ..props }
+    }
+}
 
 /// Wraps every demo in this gallery in one `.dx-chart-tooltip-gallery` root
 /// -- this component's own `dx-<name>` class
