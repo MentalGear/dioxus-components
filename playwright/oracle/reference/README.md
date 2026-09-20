@@ -34,6 +34,31 @@ Per conformance-harness.md's reachability note (`patterns/menu-button/examples/m
 | Radio Group | Rating Radio Group Example (also roving-`tabindex`) | `radio/examples/radio-rating.html` |
 | Table | Sortable Table Example | `table/examples/sortable-table.html` |
 | Disclosure | Disclosure (Show/Hide) Navigation Menu | `disclosure/examples/disclosure-navigation.html` |
+| Carousel | Auto-Rotating Image Carousel Example with Buttons for Slide Control | `carousel/examples/carousel-1-prev-next.html` |
+
+Added for the `carousel` primitive's oracle
+(`playwright/oracle/tier1-apg/carousel.spec.ts`,
+dev-docs/research/carousel-2026-09-19.md): the Carousel pattern's
+"basic" (prev/next, no picker) worked example only. Vendored the same
+way as the patterns above: `carousel/carousel-pattern.html` (the
+pattern's own prose page, kept alongside the example per this file's own
+convention even though the oracle spec loads the example page directly),
+`carousel/examples/carousel-1-prev-next.html` plus its own
+`examples/css/carousel-prev-next.css`, `examples/js/
+carousel-prev-next.js`, `examples/images/{amsterdamslide__800x600.jpg,
+britcomdavidslide__800x600.jpg, foyleswarslide__800x600.jpg,
+lands-endslide__800x600.jpg, mag800-2__800x600.jpg,
+trustslide-2__800x600.jpg, reload-icon.png}` (all seven images the
+example's own markup and "reload needed" option link reference), and
+`content/images/pattern-carousel.svg` (its pattern icon, three levels up
+from `examples/`, like every other pattern's own icon). The sibling
+`carousel-2-tablist.html` example (a slide-picker built from tabs) is
+linked *from* the vendored `carousel-pattern.html` page and cited in the
+research this oracle was scoped from, but was deliberately **not**
+vendored: the approved 2026-09-19 decisions defer the library's own
+tablist-picker variant to a fast-follow (dev-docs/research/
+carousel-2026-09-19.md §8.5), and a reference page for a variant the
+library doesn't implement yet has nothing to calibrate against.
 
 Added for the `navigation_menu` primitive's oracle
 (`playwright/oracle/tier1-apg/disclosure-navigation.spec.ts`): the
@@ -66,8 +91,8 @@ Each example page loads shared chrome plus its own CSS/JS. Everything each page 
 - `content/shared/css/core.css` (and its own `url("github.css")` dependency, `content/shared/css/github.css`)
 - `content/shared/js/{app.js, examples.js, highlight.pack.js, skipto.js, specLinks.mjs}` — `app.js` dynamically `import()`s `specLinks.mjs` and `fetch()`es a usage-warning template at runtime (see "Known non-essential gaps" below); `examples.js` drives the in-page "view source" / syntax highlighting and an XHR-based "Open in CodePen" button
 - `content/shared/templates/{example-usage-warning.html, experimental-example-usage-warning.html}` — fetched by `app.js` at `DOMContentLoaded` to insert the usage-warning banner
-- `content/images/{pattern-menu-button.svg, pattern-combobox.svg, pattern-radio.svg, pattern-table.svg}` — each page's pattern icon, three levels up from its own `examples/` directory
-- Each pattern's own `examples/css/*.css` and `examples/js/*.js` (`menu-button-actions.{css,js}`, `select-only.{css,js}`, `radio.{css,js}`, `radio-rating.{css,js}`, `sortable-table.{css,js}`)
+- `content/images/{pattern-menu-button.svg, pattern-combobox.svg, pattern-radio.svg, pattern-table.svg, pattern-carousel.svg}` — each page's pattern icon, three levels up from its own `examples/` directory
+- Each pattern's own `examples/css/*.css` and `examples/js/*.js` (`menu-button-actions.{css,js}`, `select-only.{css,js}`, `radio.{css,js}`, `radio-rating.{css,js}`, `sortable-table.{css,js}`, `carousel-prev-next.{css,js}`)
 - `LICENSE.md` (see Licence, below)
 
 Sibling example pages in the same directories (e.g. `menu-button-links.html`, `combobox-datepicker.html`, `radio-activedescendant.html`) are linked *from* the vendored pages via plain `<a href>` cross-links but are not required for the vendored pages to load or function, and were not vendored — only assets reachable via `src=`, `<link>`/`@import`/`url()`, or script-driven `fetch`/`import` were treated as load-bearing.
@@ -85,9 +110,12 @@ The pages are used here unmodified, for internal, non-distributed calibration/te
 - `menu-button/examples/css/menu-button-actions.css` references `../images/separator.svg` (a decorative background-image on `[role="separator"]`). This file **does not exist anywhere in the `w3c/aria-practices` repository at the pinned commit** — it is a pre-existing dead reference upstream, not something dropped in vendoring. It is purely cosmetic (a background image on a menu separator); its absence does not change the DOM, roles, or keyboard behaviour of the example. The table page has no equivalent gap -- `sortable-table.css` references no external image, and `pattern-table.svg` resolves cleanly (verified below).
 - All five pages load `https://www.w3.org/StyleSheets/TR/2016/base.css` (base W3C document chrome styling) and `app.js`/`examples.js` reference `https://aria-at.w3.org/...` (an embedded AT-report iframe on the menu-button and radio pages) and W3C spec-link rewriting. These are external, non-essential to the pattern's own semantics/behaviour, and were deliberately left as external references rather than vendored, per the task's guidance to leave non-essential external references in place. They fail closed (no network in CI) without breaking the example markup itself.
 - `app.js`'s `fetch()` of the usage-warning template and `examples.js`'s XHR-driven "Open in CodePen" button both use relative same-origin requests; over `file://` these can be blocked by the browser's file-access-from-file restrictions. Verified (see below) that this does not affect the presence of the pattern's own roles/elements in the DOM.
+- `carousel-1-prev-next.html` has no equivalent gap of its own -- `carousel-prev-next.css` references no external image beyond the six slide photos and `reload-icon.png`, all vendored, and `pattern-carousel.svg` resolves cleanly (verified below).
 
 ## Offline verification
 
 Each vendored page was loaded via `file://` with the repo's own headless Chromium (`/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell --headless --disable-gpu --no-sandbox --dump-dom`) and checked for (a) the expected ARIA roles in the dumped DOM and (b) every relative `src=`/`href=` reference used to load a resource (not a same-page anchor or cross-link to a sibling doc) resolving to a vendored file. Results are recorded in the harness execution notes (see the PR/commit that added this directory); summary: all five pages render their pattern's roles correctly offline, and the only unresolved reference across all five pages is the pre-existing upstream `separator.svg` gap noted above.
 
 `sortable-table.html` specifically (re-verified when the table pattern was added): the dumped DOM shows `aria-sort="ascending"` on the Last Name column header and a `button[data-column-index]` for each of the four sortable columns (First Name/Last Name/Company/Favorite Number, indices 0/1/2/4 -- index 3, Address, is `class="no-sort"` and correctly has no button), `pattern-table.svg` loads with no console error, and the only console errors are the same file://-CORS-blocked XHR/`fetch`/dynamic-`import` calls (examples.js's "view source" re-fetch of `sortable-table.{css,js}`, app.js's usage-warning template fetch, and the `specLinks.mjs` dynamic import) already documented above for the other four pages -- not a new gap, the same one.
+
+`carousel-1-prev-next.html` specifically (verified when the Carousel pattern was added): the dumped DOM shows `aria-roledescription="carousel"` once (the region) and `aria-roledescription="slide"` six times, one per `div.carousel-item`, each with its own `aria-label="{n} of 6"` (`1 of 6` through `6 of 6`); the rotation/previous/next buttons carry `aria-label="Stop automatic slide show"`/`"Previous Slide"`/`"Next Slide"`; all six slide photos plus `reload-icon.png` load with no console error; `pattern-carousel.svg` loads with no console error. The only console errors are the same file://-CORS-blocked XHR/`fetch`/dynamic-`import` calls already documented above for the other five pages (this page's own equivalents: `examples.js`'s "view source" re-fetch of `carousel-prev-next.{css,js}`, `app.js`'s usage-warning template fetch, and the `specLinks.mjs` dynamic import) -- not a new gap, the same one.
