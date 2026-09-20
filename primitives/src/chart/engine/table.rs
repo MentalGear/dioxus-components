@@ -65,6 +65,57 @@ pub fn table_rows_single_series(data: &[ChartDatum]) -> Vec<TableRow> {
         .collect()
 }
 
+/// Build one [`TableRow`] per datum, same shape as [`table_rows_single_series`]
+/// (one value cell, from `values[0]`) plus a second cell: that datum's
+/// share of every datum's `values[0]` summed, as a percentage. Used by
+/// `Chart` for [`crate::chart::ChartKind::Pie`] specifically -- unlike
+/// [`table_rows_single_series`] (still used for `Radar`/`RadialBar`,
+/// where "percent of the total" isn't a meaningful reading of a radial
+/// bar's own value), a pie slice's percentage of the whole is exactly
+/// the visual information its wedge angle encodes, so the hidden table
+/// should carry it too, not just the raw value the eye can't easily
+/// recover a share from.
+///
+/// A negative or non-finite value contributes `0.0` to the sum (matching
+/// `engine::polar::pie_layout`'s own treatment of a slice's angular
+/// share), so this stays consistent with what a sighted user actually
+/// sees drawn, even though the "value" cell itself still prints the raw
+/// number unchanged.
+///
+/// ```
+/// use dioxus_primitives::chart::{engine::table::table_rows_pie, ChartDatum};
+///
+/// let data = vec![
+///     ChartDatum { label: "Chrome".to_string(), values: vec![Some(75.0)], ..Default::default() },
+///     ChartDatum { label: "Safari".to_string(), values: vec![Some(25.0)], ..Default::default() },
+/// ];
+/// let rows = table_rows_pie(&data);
+/// assert_eq!(rows[0].cells, vec!["75".to_string(), "75%".to_string()]);
+/// assert_eq!(rows[1].cells, vec!["25".to_string(), "25%".to_string()]);
+/// ```
+pub fn table_rows_pie(data: &[ChartDatum]) -> Vec<TableRow> {
+    let total: f64 = data
+        .iter()
+        .filter_map(|d| d.values.first().copied().flatten())
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .sum();
+    data.iter()
+        .map(|datum| {
+            let value = datum.values.first().copied().flatten();
+            let percent = match value {
+                Some(v) if v.is_finite() && v > 0.0 && total > 0.0 => {
+                    format!("{}%", fmt_decimal(v / total * 100.0, 1))
+                }
+                _ => "0%".to_string(),
+            };
+            TableRow {
+                label: datum.label.clone(),
+                cells: vec![format_cell(value), percent],
+            }
+        })
+        .collect()
+}
+
 /// Format one data table cell: `"—"` (em dash, matching this crate's other
 /// "no value" convention) for `None`, else up to 2 decimal places.
 fn format_cell(value: Option<f64>) -> String {
@@ -133,5 +184,58 @@ mod tests {
         assert_eq!(rows[1].cells, vec!["—".to_string()]);
         // No series at all (an empty `values`) is a gap too, not a panic.
         assert_eq!(rows[2].cells, vec!["—".to_string()]);
+    }
+
+    #[test]
+    fn table_rows_pie_adds_a_percent_column() {
+        let data = vec![
+            ChartDatum {
+                label: "Chrome".to_string(),
+                values: vec![Some(275.0)],
+                ..Default::default()
+            },
+            ChartDatum {
+                label: "Safari".to_string(),
+                values: vec![Some(200.0)],
+                ..Default::default()
+            },
+            ChartDatum {
+                label: "Other".to_string(),
+                values: vec![Some(25.0)],
+                ..Default::default()
+            },
+        ];
+        let rows = table_rows_pie(&data);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].cells, vec!["275".to_string(), "55%".to_string()]);
+        assert_eq!(rows[1].cells, vec!["200".to_string(), "40%".to_string()]);
+        assert_eq!(rows[2].cells, vec!["25".to_string(), "5%".to_string()]);
+    }
+
+    #[test]
+    fn table_rows_pie_handles_a_none_value_and_an_all_zero_total() {
+        let with_gap = vec![
+            ChartDatum {
+                label: "A".to_string(),
+                values: vec![Some(10.0)],
+                ..Default::default()
+            },
+            ChartDatum {
+                label: "B".to_string(),
+                values: vec![None],
+                ..Default::default()
+            },
+        ];
+        let rows = table_rows_pie(&with_gap);
+        assert_eq!(rows[0].cells, vec!["10".to_string(), "100%".to_string()]);
+        assert_eq!(rows[1].cells, vec!["—".to_string(), "0%".to_string()]);
+
+        let all_zero = vec![ChartDatum {
+            label: "A".to_string(),
+            values: vec![Some(0.0)],
+            ..Default::default()
+        }];
+        let rows = table_rows_pie(&all_zero);
+        assert_eq!(rows[0].cells, vec!["0".to_string(), "0%".to_string()]);
     }
 }
