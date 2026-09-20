@@ -192,6 +192,23 @@ npx playwright test --config=ssg.local.config.ts oracle/hydration-parity.spec.ts
 SSG_SITE_DIR=/tmp/ssg-site npx playwright test --config=ssg.local.config.ts oracle/hydration-parity.spec.ts
 ```
 
+> **Use `--release` if you are going to run anything INTERACTIVE against this build.**
+> Added 2026-09-20 after it cost a full debugging detour. The debug artifact this
+> recipe produces serves correct prerendered markup — so `hydration-parity.spec.ts`,
+> which reads the served HTML, is perfectly happy with it, and so is any check that
+> only measures static geometry. But its wasm bundle traps at runtime the moment the
+> app actually does anything: the browser console shows
+> `RuntimeError: memory access out of bounds`, plus a failed
+> `ws://127.0.0.1:8080/_dioxus?build_id=0` handshake because a debug build still
+> expects a `dx serve` hot-reload socket. The page looks completely fine and returns
+> HTTP 200; clicks simply do nothing. Run against it and the interaction specs fail
+> in a way that reads exactly like a real regression — 13 of `carousel.spec.ts` +
+> `oracle/tier1-apg/carousel.spec.ts` failed this way on known-good code, including
+> paging, keyboard and drag, while every geometry assertion in the same file passed.
+> Add `--release` to the `dx build` above (the site dir then becomes
+> `target/dx/preview/release/web/public`) whenever the specs you intend to run drive
+> the UI rather than just read its markup.
+
 `playwright/ssg.local.config.ts` (cloned from `baseline.local.config.ts`) has no `webServer` entry, so it never starts or waits on a dev server — start the static server yourself first. It does not change the base URL for the rest of this repo's specs, which hardcode `http://127.0.0.1:8080`: to run one of *those* against the SSG lane, also serve the same site directory on port 8080 (a second `http.server` process over the same directory is harmless). `oracle/hydration-parity.spec.ts` itself hardcodes port 8090. As of batch 3 (`dev-docs/backlog.md` row 22), the CI job that runs this recipe end-to-end is `.github/workflows/playwright.yml`'s SSG job — `workflow_dispatch`-only, per the standing CI freeze, so it must still be triggered by hand until that freeze lifts.
 
 A quick manual check that needs no Playwright at all — the fastest way to tell whether a build landed on the web arm or the native arm:
