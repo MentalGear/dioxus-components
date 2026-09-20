@@ -15,17 +15,14 @@ use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 /// extends past `.dx-component-preview-frame`'s own padding -- measured
 /// live, before this padding was added, as the button's box straddling the
 /// frame's border (~15px poking above/below it in both themes; horizontal
-/// variants stay clear by a wide margin because they render far narrower
-/// than their own `max-width`, an unrelated pre-existing sizing quirk of
-/// `.dx-component-preview-frame`'s `align-items: center`, out of this
-/// component's own scope). Reusing the same `--dx-space-12` token the
+/// variants stay clear by a wide margin). Reusing the same `--dx-space-12` token the
 /// button offset itself uses (rather than a new literal) guarantees this
 /// wrapper always gives at least as much room as the button needs, however
 /// the frame's own padding is tuned later.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        div { style: "max-width: 12rem; margin: 0 auto; padding-block: var(--dx-space-12);",
+        div { style: "width: 100%; max-width: 12rem; margin: 0 auto; padding-block: var(--dx-space-12);",
             Carousel {
                 aria_label: "Vertical scrolling demo",
                 orientation: CarouselOrientation::Vertical,

@@ -14,7 +14,7 @@ use dioxus_primitives::direction::{Direction, DirectionProvider};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        div { dir: "rtl", style: "max-width: 20rem; margin: 0 auto;",
+        div { dir: "rtl", style: "width: 100%; max-width: 20rem; margin: 0 auto;",
             DirectionProvider { direction: Direction::Rtl,
                 Carousel { aria_label: "Right-to-left slideshow demo",
                     CarouselPrevious { ChevronLeft {} }

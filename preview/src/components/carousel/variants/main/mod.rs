@@ -12,7 +12,19 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 pub fn Demo() -> Element {
     let mut slide_one_clicked = use_signal(|| false);
     rsx! {
-        div { style: "max-width: 20rem; margin: 0 auto;",
+        // `width: 100%` is load-bearing next to `max-width`, not redundant.
+        // `.dx-component-preview-frame` is a flex column, so its cross axis is
+        // horizontal; this wrapper's own `margin: 0 auto` makes both cross-axis
+        // margins `auto`, and per flexbox those win over `align-self: stretch`.
+        // With cross-size left `auto` the wrapper shrink-wraps its content
+        // instead of reaching `max-width` -- measured at 176px against an
+        // intended 320px, i.e. shadcn's own card width. An explicit `width`
+        // resolves the cross size before auto margins apply, so the wrapper
+        // fills the frame and `max-width` clamps it as intended. Setting
+        // `align-items: stretch` on the frame does NOT fix this (auto margins
+        // still win) and would widen ~80 other demos that have no `max-width`;
+        // both measured, see `dev-docs/backlog.md` row 94.
+        div { style: "width: 100%; max-width: 20rem; margin: 0 auto;",
             Carousel { aria_label: "Featured photos",
                 CarouselPrevious { ChevronLeft {} }
                 CarouselNext { ChevronRight {} }
