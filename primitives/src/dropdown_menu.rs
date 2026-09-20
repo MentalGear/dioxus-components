@@ -388,27 +388,43 @@ pub fn DropdownMenu(props: DropdownMenuProps) -> Element {
         event.prevent_default();
     };
 
-    rsx! {
-        div {
-            // `docs/backlog.md` row 85: `DropdownMenuContentRendered`'s
-            // `use_outside_dismiss(ctx.root_id, ...)` needs a stable id on
-            // *this* element (the one wrapping both `DropdownMenuTrigger`
-            // and `DropdownMenuContent`) to ask the DOM "is the thing that
-            // just received focus/a click actually inside the whole
-            // widget" -- mirrors `ContextMenu`'s own root `div` (
-            // `context_menu.rs`) setting `id: root_id` the same way. A
-            // caller-supplied `id` in `..props.attributes` below still wins
-            // (spread order), same accepted tradeoff `ContextMenu`'s own
-            // identical construction already documents: `use_outside_
-            // dismiss`'s own `getElementById` lookup then silently misses
-            // and no-ops, exactly like today.
+    // Merged (caller-wins, deduped), not set-then-spread-over: `docs/
+    // backlog.md` row 85 needs a stable `id` on *this* element (the one
+    // wrapping both `DropdownMenuTrigger` and `DropdownMenuContent`) so
+    // `DropdownMenuContentRendered`'s `use_outside_dismiss(ctx.root_id,
+    // ...)` can ask the DOM "is the thing that just received focus/a click
+    // actually inside the whole widget". The comment this replaced claimed
+    // a caller-supplied `id` in a trailing `..props.attributes` spread
+    // "still wins (spread order)" -- that is false: an explicit `id:`
+    // literal followed by `..props.attributes` on the same element emits
+    // *both* into the SSR'd HTML (confirmed by execution: the top-layer
+    // fixture's `id: "clip-dropdown-menu-root"` produced literal
+    // `id="dxc-1091" ... id="clip-dropdown-menu-root"` on one tag), a
+    // WHATWG duplicate-attribute parse error -- `docs/conformance-
+    // harness.md` hydration-parity Rule 4. The browser's HTML parser keeps
+    // the FIRST (this component's own generated id), silently dropping the
+    // caller's override, the opposite of what the comment claimed.
+    // `ContextMenu`'s identical root `div` (`context_menu.rs`) already
+    // merges this same shape via `merge_attributes` (`b35d671`); this now
+    // matches it exactly -- `id` caller-wins like everything else here,
+    // `use_outside_dismiss`'s own `getElementById` lookup then silently
+    // no-ops if a caller's override id makes it miss, unchanged from
+    // before.
+    let attributes = merge_attributes(vec![
+        attributes!(div {
             id: root_id.cloned(),
             dir: ctx.direction.as_str(),
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
             "data-direction": ctx.direction.as_str(),
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        div {
             onkeydown: handle_keydown,
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -1907,5 +1923,45 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
             ..props.attributes,
             {props.children}
         }
+    }
+}
+
+/// `docs/backlog.md` row 85 / hydration-parity Rule 4 regression coverage:
+/// proves `DropdownMenu`'s root `div` renders a caller-supplied `id`
+/// exactly once, with no second, internally-generated `dxc-N` id also
+/// present. Confirmed RED on the pre-fix tree (both `id="dxc-0"` and
+/// `id="my-menu-root"` were present, 2 total `id="` occurrences) and GREEN
+/// after routing the root's attributes through `merge_attributes`, the
+/// same construction `context_menu.rs`'s identical fixture already proves.
+#[cfg(test)]
+mod ssr_tests {
+    use super::*;
+
+    #[component]
+    fn DropdownMenuWithOwnId() -> Element {
+        rsx! {
+            DropdownMenu { id: "my-menu-root", "content" }
+        }
+    }
+
+    fn render(component: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(component);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
+    #[test]
+    fn callers_own_id_on_the_root_is_not_duplicated() {
+        let html = render(DropdownMenuWithOwnId);
+        assert_eq!(
+            html.matches(" id=\"").count(),
+            1,
+            "expected exactly one `id` attribute on the root, got: {html}"
+        );
+        assert!(html.contains(r#"id="my-menu-root""#), "html: {html}");
+        assert!(
+            !html.contains("dxc-"),
+            "the internally-generated id must not also render: {html}"
+        );
     }
 }

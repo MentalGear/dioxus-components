@@ -341,20 +341,30 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
     // rationale.
     let mut typeahead = crate::typeahead::use_typeahead_state();
 
-    rsx! {
-        div {
-            // `docs/backlog.md` row 85: `MenubarContentRendered`'s
-            // `use_outside_dismiss(menu_ctx.root_id, ...)` needs a stable
-            // id on *this* element -- see `MenubarMenuContext::root_id`'s
-            // doc. A caller-supplied `id` in `..props.attributes` below
-            // still wins (spread order), the same accepted tradeoff
-            // `DropdownMenu`'s/`ContextMenu`'s own identical construction
-            // already documents.
+    // Merged (caller-wins, deduped), not set-then-spread-over: see
+    // `DropdownMenu`'s identical root `div` (`dropdown_menu.rs`) for the
+    // full account of why an explicit `id:` literal (or `role:`, which is
+    // just as reachable through `..props.attributes` -- `MenubarMenuProps`
+    // has no typed field claiming either name) followed by a trailing
+    // `..props.attributes` spread on the same element emits *both* into
+    // the SSR'd HTML instead of the caller's override "still winning" as
+    // the comment this replaced claimed -- a WHATWG duplicate-attribute
+    // parse error, `docs/conformance-harness.md` hydration-parity Rule 4.
+    // `ContextMenu`'s own root `div` (`context_menu.rs`) already merges
+    // this same shape via `merge_attributes` (`b35d671`); this now matches
+    // it exactly.
+    let attributes = merge_attributes(vec![
+        attributes!(div {
             id: root_id.cloned(),
             role: crate::menu_semantics::MENU_ROLE,
             "data-state": if is_open() { "open" } else { "closed" },
             "data-disabled": (ctx.disabled)() || (props.disabled)(),
+        }),
+        props.attributes,
+    ]);
 
+    rsx! {
+        div {
             onkeydown: move |event: Event<KeyboardData>| {
                 match event.key() {
                     Key::Enter if !disabled() => {
@@ -447,7 +457,7 @@ pub fn MenubarMenu(props: MenubarMenuProps) -> Element {
                 event.prevent_default();
             },
 
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -1116,5 +1126,49 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
             ..props.attributes,
             {props.children}
         }
+    }
+}
+
+/// `docs/backlog.md` row 85 / hydration-parity Rule 4 regression coverage:
+/// proves `MenubarMenu`'s own wrapping `div` renders a caller-supplied
+/// `id` exactly once, with no second, internally-generated `dxc-N` id
+/// also present -- the identical regression `dropdown_menu.rs`'s own
+/// `ssr_tests::callers_own_id_on_the_root_is_not_duplicated` proves for
+/// `DropdownMenu`'s root. Confirmed RED on the pre-fix tree (both the
+/// generated id and `id="my-menu-root"` were present, 2 total `id="`
+/// occurrences) and GREEN after routing this element's attributes through
+/// `merge_attributes`.
+#[cfg(test)]
+mod ssr_tests {
+    use super::*;
+
+    #[component]
+    fn MenubarWithOwnMenuId() -> Element {
+        rsx! {
+            Menubar {
+                MenubarMenu { index: 0usize, id: "my-menu-root", "content" }
+            }
+        }
+    }
+
+    fn render(component: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(component);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
+    #[test]
+    fn callers_own_id_on_the_menu_wrapper_is_not_duplicated() {
+        let html = render(MenubarWithOwnMenuId);
+        assert_eq!(
+            html.matches(" id=\"").count(),
+            1,
+            "expected exactly one `id` attribute on the menu wrapper, got: {html}"
+        );
+        assert!(html.contains(r#"id="my-menu-root""#), "html: {html}");
+        assert!(
+            !html.contains("dxc-"),
+            "the internally-generated id must not also render: {html}"
+        );
     }
 }
