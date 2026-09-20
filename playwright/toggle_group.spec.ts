@@ -31,6 +31,35 @@ test("test", async ({ page }) => {
   await expect(b_button).toBeFocused();
 });
 
+// HARDENING (docs/backlog.md row 89), not a reproduced defect -- see
+// `toggle.spec.ts`'s identical test for the full writeup (same
+// `:where(:hover)` construction, same "already correct via source order,
+// now correct via specificity" story).
+for (const dark of [false, true]) {
+  test(`a pressed item keeps its "on" background while hovered (${dark ? "dark" : "light"} mode)`, async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=toggle_group&${dark ? "dark_mode=true" : ""}`);
+    const bButton = page.getByRole("button", { name: "B", exact: true });
+
+    await bButton.click();
+    await expect(bButton).toHaveAttribute("data-state", "on");
+    await page.locator("body").hover({ position: { x: 0, y: 0 } });
+    // Wait past the CSS transition (--dx-motion-duration-slow, 200ms)
+    // before reading computed style -- a mid-transition read returns an
+    // interpolated, neither-old-nor-new color.
+    await page.waitForTimeout(400);
+    const onAtRest = await bButton.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    await bButton.hover();
+    await page.waitForTimeout(400);
+    expect(await bButton.evaluate((el) => el.matches(":hover"))).toBe(true);
+    const onAndHovered = await bButton.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // Exact values confirmed identical before and after the `:where()` fix
+    // (light: rgb(176, 176, 176); dark: rgb(62, 62, 62)).
+    expect(onAndHovered, `onAtRest=${onAtRest} onAndHovered=${onAndHovered}`).toBe(onAtRest);
+  });
+}
+
 test.describe("Axe automated scan", () => {
   test("loaded (none selected) has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=toggle_group&`);

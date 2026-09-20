@@ -18,7 +18,23 @@
   transition: background-color var(--dx-motion-duration-base), color var(--dx-motion-duration-base), outline-color var(--dx-motion-duration-base);
 }
 
-.dx-toggle:hover, .dx-toggle:focus-visible {
+/* docs/backlog.md row 89: `:hover` and `[data-state="on"]` both add exactly
+   one selector component on top of `.dx-toggle`, so they tie at (0,2,0) --
+   unlike calendar/tabs's own row 89 fix (an *accidental* extra-specificity
+   bump from a stray `:not(...)`), this is a genuine tie, broken only by
+   source order: `[data-state="on"]` happens to be declared after this rule,
+   so it already wins today (verified: an ON toggle stays at its `on`
+   background, `rgb(176, 176, 176)` light / `rgb(62, 62, 62)` dark, while
+   hovered -- confirmed via computed styles in both themes, not just the one
+   `:hover` this rule's own hover-tint would otherwise apply,
+   `rgb(248, 248, 248)` light / `rgb(26, 26, 26)` dark). `:where(:hover)`
+   makes that unconditional (drops this branch's contribution to (0,1,0),
+   below `[data-state="on"]`'s (0,2,0)) rather than order-dependent, so
+   reordering these rules -- or `:hover` later picking up an extra clause
+   the way calendar/tabs's did -- can no longer silently flip the winner.
+   `:focus-visible` is untouched (kept at its own (0,2,0), same as today):
+   this row is about the hover/active tie only. */
+.dx-toggle:where(:hover), .dx-toggle:focus-visible {
   background-color: var(--primary-color-4);
   cursor: pointer;
 }
