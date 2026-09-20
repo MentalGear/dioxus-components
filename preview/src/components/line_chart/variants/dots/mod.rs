@@ -37,6 +37,7 @@ fn generate_data() -> Vec<ChartDatum> {
         .map(|(label, desktop)| ChartDatum {
             label: label.to_string(),
             values: vec![Some(*desktop)],
+            ..Default::default()
         })
         .collect()
 }
@@ -56,7 +57,10 @@ pub fn Demo() -> Element {
                     Chart {
                         aria_label: "Visitors by month, desktop",
                         x_label: "Month",
-                        show_dots: true,
+                        line: LineOptions {
+                            dots: true,
+                            ..Default::default()
+                        },
                     }
                     ChartTooltip { hide_label: true }
                 }

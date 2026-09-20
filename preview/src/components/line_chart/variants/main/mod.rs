@@ -34,6 +34,7 @@ fn generate_data() -> Vec<ChartDatum> {
         .map(|(label, desktop)| ChartDatum {
             label: label.to_string(),
             values: vec![Some(*desktop)],
+            ..Default::default()
         })
         .collect()
 }
