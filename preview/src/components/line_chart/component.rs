@@ -52,3 +52,14 @@ pub use crate::components::chart::component::*;
 /// "themed wrapper" layer `check-preview-composition.sh` exempts, so this
 /// one raw `dioxus_primitives::chart::Curve` reference is not a violation.
 pub use dioxus_primitives::chart::Curve;
+
+/// `LineOptions` itself is already re-exported by `chart::component`
+/// (that package's own `component.rs`, added alongside the stage-2
+/// refactor's `Chart.line: LineOptions` field) -- reached here through
+/// the `pub use crate::components::chart::component::*;` above. Its own
+/// nested types (`LineLabels`, `DotRenderer`, `DotContext`) landed after
+/// that re-export line was written and are not in it yet; re-exported
+/// straight from the primitive here for the same reason and with the same
+/// no-shared-file-edit benefit as `Curve` above, rather than adding a
+/// second lane's own names to `chart::component`'s shared list.
+pub use dioxus_primitives::chart::{DotContext, DotRenderer, LineLabels};

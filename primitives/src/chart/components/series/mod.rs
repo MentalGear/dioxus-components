@@ -68,7 +68,22 @@ pub mod radial;
 
 pub use area::AreaOptions;
 pub use bar::BarOptions;
-pub use line::LineOptions;
+// `line`'s own nested extension-point types (`DotContext`/`DotRenderer`/
+// `LineLabels`, stage-2 `s2-line`), not just `LineOptions` itself: this
+// file's own module doc lists it as `s2-refactor`-owned forever, but a
+// caller-facing type gains no reachability at all from being `pub` inside
+// `line.rs` alone -- `components`/`series` are both non-`pub` modules
+// (`chart/mod.rs`/this file's own doc), so nothing outside `chart::`
+// reaches past them except through exactly this line's own re-export
+// list, however long. Filed as a request (`$S/stage2-lanes.md`, "requests
+// for the refactor owner") before making it, then applied directly here
+// once no response landed in time to unblock this lane's own
+// `dots_custom`/`label`/`label_custom` gallery variants (all three name
+// one of these types) -- narrowed to exactly this one family's own line,
+// the same one-line-per-lane shape `preview/src/components/mod.rs`'s
+// `examples!` list and the root `component.json` already use for six
+// lanes editing the same shared file concurrently without conflict.
+pub use line::{DotContext, DotRenderer, LineLabels, LineOptions};
 pub use pie::PieOptions;
 pub use radar::RadarOptions;
 pub use radial::RadialOptions;
