@@ -187,6 +187,67 @@ for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as c
   });
 }
 
+/**
+ * shadcn-parity geometry: 28x28px buttons, no box-shadow, and fully outside
+ * the region -- never overlapping a slide -- on every variant and axis.
+ * Values are shadcn/ui's own live-measured carousel
+ * (`ui.shadcn.com/docs/components/carousel`, JS running, 1280x800 @2x):
+ * `getBoundingClientRect()` on both buttons reported exactly 28x28,
+ * `getComputedStyle().boxShadow` reported "none", and the near edge of each
+ * button sat 20px clear of the region's own edge (`--dx-space-12`, 48px,
+ * minus the button's own 28px). Their own vertical ("Orientation") demo
+ * confirmed the same 20px-clear rule holds on the block axis too, not just
+ * inferred from the horizontal case -- see
+ * `preview/src/components/carousel/style.css`'s own comments for the full
+ * derivation and the exact numbers this asserts against.
+ */
+test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement)", () => {
+  const BUTTON_SIZE_PX = 28;
+  const MIN_CLEAR_PX = 20 - 1; // 1px tolerance for sub-pixel layout rounding
+
+  for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+    test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the region`, async ({ page }) => {
+      await goto(page, variant);
+      const frame = demoFrame(page, variant);
+      const region = frame.getByRole("region");
+      const previous = frame.getByRole("button", { name: "Previous slide" });
+      const next = frame.getByRole("button", { name: "Next slide" });
+
+      await expect(previous).toHaveCSS("box-shadow", "none");
+      await expect(next).toHaveCSS("box-shadow", "none");
+
+      const [regionBox, previousBox, nextBox] = await Promise.all([
+        region.boundingBox(),
+        previous.boundingBox(),
+        next.boundingBox(),
+      ]);
+      expect(regionBox).not.toBeNull();
+      expect(previousBox).not.toBeNull();
+      expect(nextBox).not.toBeNull();
+
+      for (const box of [previousBox!, nextBox!]) {
+        expect(box.width).toBeCloseTo(BUTTON_SIZE_PX, 0);
+        expect(box.height).toBeCloseTo(BUTTON_SIZE_PX, 0);
+      }
+
+      if (variant === "vertical") {
+        // Block axis: Previous above the region, Next below it.
+        expect(regionBox!.y - (previousBox!.y + previousBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(nextBox!.y - (regionBox!.y + regionBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+      } else if (variant === "rtl") {
+        // Inline axis, mirrored: Previous (the *start* edge) resolves to
+        // the physical right under dir="rtl"; Next (the *end* edge) to the
+        // physical left -- the opposite pairing from every other variant.
+        expect(previousBox!.x - (regionBox!.x + regionBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(regionBox!.x - (nextBox!.x + nextBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+      } else {
+        expect(regionBox!.x - (previousBox!.x + previousBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(nextBox!.x - (regionBox!.x + regionBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+      }
+    });
+  }
+});
+
 test.describe("Carousel: paging by button and scroll-snap landing", () => {
   test("Next/Previous page one slide at a time and land exactly on the slide boundary", async ({ page }) => {
     await goto(page, "main");
