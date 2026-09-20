@@ -19,11 +19,16 @@
 //!    factoring them out bought nothing); the three polar/radial **stub**
 //!    kinds get none of that (a Cartesian grid behind a shape that isn't
 //!    Cartesian would be actively misleading, not merely unfinished) --
-//!    just the dispatched placeholder mark group and a reduced data table
-//!    (category + first configured series' value only, via
-//!    [`crate::chart::engine::table::table_rows_single_series`]) until each
-//!    stub's owning lane replaces it (see [`super::series`]'s own module
-//!    doc for the ownership map).
+//!    just the dispatched mark group and a reduced data table (category +
+//!    first configured series' value, via
+//!    [`crate::chart::engine::table::table_rows_single_series`], plus a
+//!    `Percent` column for [`ChartKind::Pie`] specifically via
+//!    [`crate::chart::engine::table::table_rows_pie`] -- a pie slice's
+//!    share of the whole is exactly what its wedge angle already encodes
+//!    visually, landed alongside `s2-polar`'s own `series::pie` since a
+//!    pie-shaped data table is that lane's own deliverable, not a stub)
+//!    until each remaining stub's owning lane replaces its own mark group
+//!    (see [`super::series`]'s own module doc for the ownership map).
 //!
 //! Every other behavior -- the wrapper `div`/keyboard layer, the SVG root,
 //! the hidden data table's shape for the three real kinds -- is unchanged
@@ -39,7 +44,7 @@ use super::series::{
 use super::{layout, series};
 use crate::chart::context::{use_chart, ChartLayout};
 use crate::chart::engine::scale::fmt_num;
-use crate::chart::engine::table::{table_rows, table_rows_single_series};
+use crate::chart::engine::table::{table_rows, table_rows_pie, table_rows_single_series};
 use crate::chart::{ChartKind, Curve};
 use crate::dioxus_attributes::attributes;
 use crate::direction::{use_direction, Direction, HorizontalNav};
@@ -277,9 +282,12 @@ pub struct ChartProps {
 /// - `data-slot="chart-series"[data-series=<key>]`: one per configured
 ///   series, wrapping that series' own `"chart-area"`/`"chart-line"`/
 ///   `"chart-bar"`/`"chart-dot"` marks (`data-index` on the per-datum ones)
-///   -- `ChartKind::is_cartesian` kinds. The three polar/radial stub
-///   kinds instead render one `data-slot="chart-series"[data-kind=<kind>]`
-///   placeholder group (no `data-series`) -- see the module doc.
+///   -- `ChartKind::is_cartesian` kinds. [`ChartKind::Pie`] renders
+///   `"chart-arc"[data-index][data-series?]` slices instead (`data-series`
+///   only for a stacked, multi-ring pie -- see `series::pie`'s own module
+///   doc). The two remaining polar/radial stub kinds still render one
+///   `data-slot="chart-series"[data-kind=<kind>]` placeholder group (no
+///   `data-series`) until their own owning lane replaces it.
 /// - `data-slot="chart-cursor"` (`"chart-cursor-line"` for Area/Line,
 ///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]"` --
 ///   `ChartKind::is_cartesian` kinds only.
@@ -376,8 +384,20 @@ pub fn Chart(props: ChartProps) -> Element {
     };
     layout_signal.set(Some(ChartLayout { anchor_percent }));
 
+    // `ChartKind::Pie` gets its own row shape (value + percent-of-total --
+    // `s2-polar`'s own deliverable, `engine::table::table_rows_pie`'s doc):
+    // a slice's share of the whole is exactly what its wedge angle already
+    // encodes visually, so the hidden table should carry it too. RadialBar
+    // keeps the generic single-series reduction -- "percent of the total"
+    // isn't a meaningful reading of a radial bar's own value the way it is
+    // for a pie slice. Radar gets the full per-category-per-series table
+    // via `has_full_table()` (§4(b) of the stage-2 handoff) -- it is
+    // non-Cartesian but, unlike Pie/RadialBar, genuinely holds one value
+    // per series per category.
     let rows = if kind.has_full_table() {
         table_rows(&data)
+    } else if matches!(kind, ChartKind::Pie) {
+        table_rows_pie(&data)
     } else {
         table_rows_single_series(&data)
     };
@@ -553,6 +573,9 @@ pub fn Chart(props: ChartProps) -> Element {
                                         .map(|s| s.label.clone())
                                         .unwrap_or_else(|| "Value".to_string())
                                 }
+                            }
+                            if matches!(kind, ChartKind::Pie) {
+                                th { scope: "col", "Percent" }
                             }
                         }
                     }
@@ -904,24 +927,32 @@ mod tests {
         assert!(html.contains(r#"data-slot="chart-grid""#));
     }
 
-    // -- Stage-2 stub kinds (Pie/RadialBar) ---------------------------------
+    // -- Stage-2 polar kinds (Pie/RadialBar) --------------------------------
     //
-    // Each stub kind renders the same `Harness` used by every Cartesian
-    // test above (it's generic over `kind`) -- the point of these tests is
-    // exactly that nothing kind-specific needs to change to reach a
-    // non-panicking render for a brand new `ChartKind`. `ChartKind::Radar`
-    // moved out of this section (below, "Radar (landed, s2-radar)") once
-    // `s2-radar` replaced its own stub -- see that test's own comment for
-    // why this section's original assertions about it went stale, not
-    // wrong-from-the-start.
+    // Each kind renders the same `Harness` used by every Cartesian test
+    // above (it's generic over `kind`). RadialBar is still `s2-refactor`'s
+    // placeholder stub; Pie is `s2-polar`'s own real `series::pie::render`
+    // -- see that module's own doc for why `sample_config`'s two series
+    // (desktop/mobile) make this a *stacked* (two-ring) pie, not the
+    // single-ring case (covered in detail by `series::pie`'s own test
+    // module instead). `ChartKind::Radar` moved out of this section (below,
+    // "Radar (landed, s2-radar)") once `s2-radar` replaced its own stub --
+    // see that test's own comment for why this section's original
+    // assertions about it went stale, not wrong-from-the-start.
 
     #[test]
-    fn pie_kind_renders_the_placeholder_group_and_the_table_without_panicking() {
+    fn pie_kind_renders_one_ring_per_series_and_the_table_without_panicking() {
         let html = render(ChartKind::Pie, false, true);
         assert!(html.contains(r#"data-slot="chart-series""#));
-        assert!(html.contains(r#"data-kind="pie""#));
+        assert!(html.contains(r#"data-slot="chart-arc""#));
+        // Two series (desktop/mobile) -> two rings, each with its own
+        // `data-series`; two data points (January/February) each -> 4
+        // slices total.
+        assert!(html.contains(r#"data-series="desktop""#));
+        assert!(html.contains(r#"data-series="mobile""#));
+        assert_eq!(html.matches(r#"data-slot="chart-arc""#).count(), 4);
         assert!(html.contains(r#"data-slot="chart-data""#));
-        // No Cartesian-only apparatus for a stub kind.
+        // No Cartesian-only apparatus.
         assert!(!html.contains(r#"data-slot="chart-grid""#));
         assert!(!html.contains(r#"data-slot="chart-axis""#));
         assert!(!html.contains(r#"data-slot="chart-hit-bands""#));
@@ -978,15 +1009,46 @@ mod tests {
     }
 
     #[test]
-    fn stub_kinds_reduce_the_table_to_category_plus_first_series_value() {
+    fn radar_and_radial_bar_reduce_the_table_to_category_plus_first_series_value() {
+        for kind in [ChartKind::Radar, ChartKind::RadialBar] {
+            let html = render(kind, false, true);
+            // Only the first configured series' column header ("Desktop"),
+            // not both -- unlike the Cartesian
+            // `hidden_table_mirrors_the_data_...` test above, which asserts
+            // both "Desktop" AND "Mobile" appear. No "Percent" column --
+            // that's `ChartKind::Pie`'s own addition (see the test below).
+            assert!(html.contains("Desktop"), "kind={kind:?}");
+            assert!(!html.contains("Mobile"), "kind={kind:?}");
+            assert!(!html.contains("Percent"), "kind={kind:?}");
+            assert!(html.contains("January"), "kind={kind:?}");
+            assert!(html.contains("February"), "kind={kind:?}");
+        }
+    }
+
+    #[test]
+    fn pie_kind_table_adds_a_percent_column() {
         let html = render(ChartKind::Pie, false, true);
-        // Only the first configured series' column header ("Desktop"), not
-        // both -- unlike the Cartesian `hidden_table_mirrors_the_data_...`
-        // test above, which asserts both "Desktop" AND "Mobile" appear.
+        // Same single-value-column reduction as Radar/RadialBar (still
+        // only "Desktop", never "Mobile" -- `ChartDatum::values[0]` is the
+        // hidden table's own reduction, same as `series::pie::render`'s
+        // own single-ring geometry reads `values[0]` when there is exactly
+        // one series), PLUS this kind's own "Percent" column.
         assert!(html.contains("Desktop"));
         assert!(!html.contains("Mobile"));
-        // Still one row per datum, with the category label preserved.
+        assert!(html.contains(r#"<th scope="col">Percent</th>"#));
         assert!(html.contains("January"));
         assert!(html.contains("February"));
+        // January (186) is 100% of the two non-`None` values' sum -- wait,
+        // both January (186) and February (305) are real, positive
+        // `values[0]`s, so the table's percent column reads their own
+        // share of that sum (186+305=491): 186/491 ~= 37.9%.
+        assert!(
+            html.contains("37.9%"),
+            "expected January's own percent share: {html}"
+        );
+        assert!(
+            html.contains("62.1%"),
+            "expected February's own percent share: {html}"
+        );
     }
 }

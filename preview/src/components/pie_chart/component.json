@@ -1,0 +1,14 @@
+{
+  "name": "pie_chart",
+  "description": "Pie and donut charts, built from the Chart package's arc-based (Pie) kind -- no separate primitive.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["chart"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
