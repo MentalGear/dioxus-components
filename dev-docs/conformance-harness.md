@@ -218,6 +218,15 @@ SSG_SITE_DIR=/tmp/ssg-site npx playwright test --config=ssg.local.config.ts orac
 > the `--base-path` build is served one level up under that name, this build is served at `/`, and
 > neither works the other way.
 >
+> **Start the static server with `--directory`, never `cd … && … &`.** Added 2026-09-21 after it
+> cost a full oracle run. `cd "$dir" && nohup python3 -m http.server 8090 … &` inside a compound
+> command can background the server before the `cd` applies, leaving it serving `$HOME` — it still
+> answers 200, with a directory listing. The spec then reports 7 failures across Rules 1, 3, 4b, 5
+> and 6×3, which reads exactly like a hydration regression. `python3 -m http.server 8090 --bind
+> 127.0.0.1 --directory "$dir"` cannot race. Confirm what a server is actually serving with
+> `readlink /proc/<pid>/cwd`, or by grepping the fetched page for a known marker, before believing
+> any failure it produces.
+>
 > **Two smaller traps from the same session.** Passing a bare filename to Playwright
 > (`npx playwright test carousel.spec.ts`) substring-matches `oracle/tier1-apg/carousel.spec.ts`
 > too, roughly doubling the run — pass the absolute path to disambiguate. And when several agents
