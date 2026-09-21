@@ -304,7 +304,7 @@
  * `npx playwright test` run with no SSG build present at all -- broader
  * standing coverage than the SSG-gated rules above, not narrower.
  *
- * As of this extension: 20 real component+attribute+element sites across
+ * As of this extension: 27 real component+attribute+element sites across
  * 13 primitives (`progress`, `toast`, `context_menu`, `dropdown_menu`,
  * `menubar`, `popover`, `navbar`, `navigation_menu`, `collapsible`,
  * `tooltip`, `select`, `hover_card`, `combobox`), plus 2 self-test sites
@@ -313,11 +313,27 @@
  * own doc for the exhaustive list and for what it still cannot reach
  * (four menu-family `*Content` components gated behind an effect-driven
  * render signal that does not settle synchronously, plus `Drawer`, not
- * pursued for time). Running this against the current tree found one
- * genuine, previously-unknown defect this way (`navigation_menu:trigger:
- * style` -- see the RED-BY-DESIGN comment on that case below), which is
- * itself the intended proof that this extension can catch something the
- * demo-page-driven rules above cannot.
+ * pursued for time). Running this against the tree as it stood when this
+ * extension first landed found one genuine, previously-unknown defect this
+ * way: `navigation_menu:trigger:style` (`NavigationMenuTrigger` served a
+ * bare `style: anchor_name_style(..)` literal beside a raw `..attributes`
+ * spread) -- itself the intended proof that this extension can catch
+ * something the demo-page-driven rules above cannot. The `anchor-style-class`
+ * lane (this repository's own history/commit log) then audited every other
+ * `anchor_name_style` trigger call site the same defect could plausibly hit
+ * (`grep -rn "anchor_name_style" primitives/src/*.rs`) and found three more
+ * genuinely defective the same way (`hover_card:trigger:style`,
+ * `menubar:trigger:style`, `navbar:trigger:style` below) plus five already
+ * safe from this specific hazard (their own `style` already ran through
+ * `merge_attributes` before the `rsx!` spread, just not folded -- see the
+ * `.toContain` discussion below) -- `context_menu:sub_trigger:style`,
+ * `dropdown_menu:trigger:style`, `dropdown_menu:sub_trigger:style`,
+ * `popover:trigger:style`, `tooltip:trigger:style`. All nine now share one
+ * construction, `top_layer::anchored_trigger_attributes`, added as part of
+ * that fix; the cases for all nine (new or pre-existing) are asserted here
+ * the same way as every other case in this block, so none of them can
+ * regress back to a bare literal, or back to a plain (non-folding) merge,
+ * without this file failing.
  */
 
 import { test, expect } from "@playwright/test";
@@ -552,29 +568,35 @@ test.describe("hydration parity — synthesized attribute collisions (Rule 4c)",
     expect(ATTR_SYNTH.error, ATTR_SYNTH.error ?? "").toBeNull();
   });
 
-  // Two cases below are RED BY DESIGN, not a flake -- the same convention
-  // `oracle/tier2-html/main-thread.spec.ts` already uses for its own three
-  // known-red subjects (documented there, left as ordinary failing tests
-  // rather than skipped): `selftest:unfixed:id` is a deliberate,
-  // permanent meta-proof that this file's own detection logic can tell a
-  // real collision apart from a fixed one (see attr-synth/src/main.rs's
-  // doc comment on `self_test_unfixed_collision`) -- it is SUPPOSED to
-  // fail, every run, by construction. `navigation_menu:trigger:style` is a
-  // genuine, previously-unknown defect this rule found by execution while
-  // building this extension (confirmed 2026-09-21): `NavigationMenuTrigger`
-  // (`primitives/src/navigation_menu.rs`) sets a bare literal
+  // Exactly one case below is RED BY DESIGN, not a flake -- the same
+  // convention `oracle/tier2-html/main-thread.spec.ts` already uses for its
+  // own three known-red subjects (documented there, left as ordinary
+  // failing tests rather than skipped): `selftest:unfixed:id` is a
+  // deliberate, permanent meta-proof that this file's own detection logic
+  // can tell a real collision apart from a fixed one (see
+  // attr-synth/src/main.rs's doc comment on `self_test_unfixed_collision`)
+  // -- it is SUPPOSED to fail, every run, by construction.
+  //
+  // `navigation_menu:trigger:style` USED TO be here too: a genuine,
+  // previously-unknown defect this rule found by execution while building
+  // this extension (confirmed 2026-09-21) -- `NavigationMenuTrigger`
+  // (`primitives/src/navigation_menu.rs`) set a bare literal
   // `style: crate::top_layer::anchor_name_style(...)` directly on its
-  // `button {}`, THEN separately spreads `..attributes` (a
+  // `button {}`, THEN separately spread `..attributes` (a
   // `merge_attributes` result that, once a caller supplies their own
-  // `style`, also carries one) onto the SAME element -- the exact
+  // `style`, also carried one) onto the SAME element -- the exact
   // literal-attribute-beside-a-raw-spread shape this whole file exists to
-  // catch, structurally identical to the already-fixed `NavbarTrigger`
-  // sibling this component was modeled on, just never itself audited for
-  // it because no `preview` demo happens to override this trigger's
-  // `style` (exactly the gap this rule exists to close). Fixing it is out
-  // of this lane's ownership (`primitives/src/**`); left red and named
-  // here so it is not lost.
-  const KNOWN_RED = new Set(["selftest:unfixed:id", "navigation_menu:trigger:style"]);
+  // catch. Fixing it was out of THIS lane's ownership (`primitives/src/**`)
+  // at the time, so it was left red and named here so it would not be
+  // lost. The `anchor-style-class` lane (this repository's own history)
+  // then fixed it -- and, per this repo's CLAUDE.md ("when the same
+  // problem shows up more than once, stop patching instances"), audited
+  // every other `anchor_name_style` trigger call site and fixed the whole
+  // class via one shared construction, `top_layer::anchored_trigger_
+  // attributes` -- see this file's own header doc ("Rule 4c" section) for
+  // the full account of which sites were genuinely defective and which
+  // were already safe. This case is asserted like any other below now.
+  const KNOWN_RED = new Set(["selftest:unfixed:id"]);
 
   for (const c of ATTR_SYNTH.cases) {
     const label = KNOWN_RED.has(c.case) ? " (RED BY DESIGN -- see this block's own header comment)" : "";
@@ -606,17 +628,32 @@ test.describe("hydration parity — synthesized attribute collisions (Rule 4c)",
           `Server and client then disagree about which value is in effect. Raw tag: ${target!.raw}`,
       ).toBe(1);
 
-      // `.toContain`, not `.toBe`: a handful of these (the anchored-content
-      // family, e.g. `popover:content:style`/`tooltip:content:style`/
-      // `select:list:style`) deliberately FOLD the caller's style together
-      // with an internal `position-anchor` binding via
-      // `top_layer::anchored_content_attributes` -- a different, equally
-      // valid construction from plain `merge_attributes`'s last-wins rule,
-      // documented at this file's own header ("Rule 4c" section) and in
-      // that function's own doc. The effective value for those is real
-      // CSS text containing the marker, not equal to it verbatim; for
-      // every other (plain-merge) case the two checks are equivalent,
-      // since nothing else ever gets folded in.
+      // `.toContain`, not `.toBe`: two families of these deliberately FOLD
+      // the caller's style together with an internal anchor-positioning
+      // binding, rather than letting either one flatly replace the other --
+      // the anchored-CONTENT family (`popover:content:style`/
+      // `tooltip:content:style`/`select:list:style`/`hover_card:content:
+      // style`/`combobox:list:style`) via `top_layer::
+      // anchored_content_attributes`, and the anchored-TRIGGER family
+      // (`context_menu:sub_trigger:style`/`dropdown_menu:trigger:style`/
+      // `dropdown_menu:sub_trigger:style`/`hover_card:trigger:style`/
+      // `menubar:trigger:style`/`navbar:trigger:style`/`navigation_menu:
+      // trigger:style`/`popover:trigger:style`/`tooltip:trigger:style`) via
+      // `top_layer::anchored_trigger_attributes` -- documented at this
+      // file's own header ("Rule 4c" section) and in each function's own
+      // doc. Both exist for the same reason: plain `merge_attributes` only
+      // ever folds `class` (`primitives/src/lib.rs`'s own
+      // `later_list_overwrites`/`style_attribute_is_overwritten_not_folded`
+      // tests), so without folding first, a caller's own `style` would
+      // either collide with a bare literal (the original defect this rule
+      // exists to catch) or, once merged the naive way, silently REPLACE --
+      // not combine with -- the anchor/position-anchor binding, which is a
+      // quieter, worse failure (CSS Anchor Positioning breaks with no
+      // duplicate attribute left for anything to catch). The effective
+      // value for every one of these folding cases is real CSS text
+      // containing the marker, not equal to it verbatim; for every other
+      // (plain-merge, or no merge at all) case the two checks are
+      // equivalent, since nothing else ever gets folded in.
       expect(
         target!.effectiveValues.get(c.attr),
         `attr-synth case "${c.case}" (${c.source}): the served, EFFECTIVE (first-wins) value of "${c.attr}" ` +

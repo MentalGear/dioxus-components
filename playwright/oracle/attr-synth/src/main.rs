@@ -116,8 +116,12 @@ use dioxus::prelude::*;
 use dioxus_core::AttributeValue;
 use dioxus_primitives::collapsible::{Collapsible, CollapsibleTrigger};
 use dioxus_primitives::combobox::{Combobox, ComboboxInput, ComboboxList};
-use dioxus_primitives::context_menu::{ContextMenu, ContextMenuTrigger};
-use dioxus_primitives::dropdown_menu::{DropdownMenu, DropdownMenuTrigger};
+use dioxus_primitives::context_menu::{
+    ContextMenu, ContextMenuSub, ContextMenuSubTrigger, ContextMenuTrigger,
+};
+use dioxus_primitives::dropdown_menu::{
+    DropdownMenu, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuTrigger,
+};
 use dioxus_primitives::hover_card::{HoverCard, HoverCardContent, HoverCardTrigger};
 use dioxus_primitives::menubar::{Menubar, MenubarMenu, MenubarTrigger};
 use dioxus_primitives::navbar::{Navbar, NavbarNav, NavbarTrigger};
@@ -232,6 +236,33 @@ fn context_menu_trigger_id() -> Element {
     }
 }
 
+fn context_menu_sub_trigger_style() -> Element {
+    // `ContextMenuSub` renders no element of its own -- "purely a context
+    // boundary around a ContextMenuSubTrigger and a ContextMenuSubContent"
+    // (its own doc) -- and `ContextMenuSubTrigger` itself only needs
+    // `ContextMenuCtx` (from the enclosing `ContextMenu`) and `SubMenuState`
+    // (from `ContextMenuSub`), neither of which depends on `ContextMenuContent`
+    // actually being open. `ContextMenuContent` is therefore skipped
+    // entirely here, the same way the plain trigger cases above never
+    // render their own `*Content` -- it is gated behind the same
+    // `menu_root::use_menu_content_lifecycle` signal documented at this
+    // file's own top doc ("What this still cannot reach") as not settling
+    // within a bounded number of synchronous passes, and is not needed to
+    // reach this trigger.
+    rsx! {
+        ContextMenu {
+            ContextMenuTrigger { "right click here" }
+            ContextMenuSub {
+                ContextMenuSubTrigger {
+                    index: 0usize,
+                    attributes: vec![attr("style", "--attr-synth-marker: context-menu-sub-trigger-style;")],
+                    "More tools"
+                }
+            }
+        }
+    }
+}
+
 fn dropdown_menu_root_id() -> Element {
     // Mirrors `primitives/src/dropdown_menu.rs`'s own
     // `ssr_tests::callers_own_id_on_the_root_is_not_duplicated` -- same
@@ -252,6 +283,38 @@ fn dropdown_menu_trigger_id() -> Element {
             DropdownMenuTrigger {
                 attributes: vec![attr("id", "attr-synth-marker-dropdown-menu-trigger")],
                 "Open Menu"
+            }
+        }
+    }
+}
+
+fn dropdown_menu_trigger_style() -> Element {
+    rsx! {
+        DropdownMenu {
+            DropdownMenuTrigger {
+                attributes: vec![attr("style", "--attr-synth-marker: dropdown-menu-trigger-style;")],
+                "Open Menu"
+            }
+        }
+    }
+}
+
+fn dropdown_menu_sub_trigger_style() -> Element {
+    // Same construction as `context_menu_sub_trigger_style` above --
+    // `DropdownMenuSub` is an identical "renders no element of its own,
+    // purely a context boundary" wrapper (`DropdownMenuSub`'s own doc), and
+    // `DropdownMenuContent`/`DropdownMenuSubContent` are skipped for the
+    // same reason (the menu-family content lifecycle gate; see this file's
+    // top doc, "What this still cannot reach").
+    rsx! {
+        DropdownMenu {
+            DropdownMenuTrigger { "Open Menu" }
+            DropdownMenuSub {
+                DropdownMenuSubTrigger {
+                    index: 0usize,
+                    attributes: vec![attr("style", "--attr-synth-marker: dropdown-menu-sub-trigger-style;")],
+                    "More options"
+                }
             }
         }
     }
@@ -292,11 +355,36 @@ fn menubar_trigger_id() -> Element {
     }
 }
 
+fn menubar_trigger_style() -> Element {
+    rsx! {
+        Menubar {
+            MenubarMenu { index: 0usize,
+                MenubarTrigger {
+                    attributes: vec![attr("style", "--attr-synth-marker: menubar-trigger-style;")],
+                    "File"
+                }
+            }
+        }
+    }
+}
+
 fn popover_trigger_id() -> Element {
     rsx! {
         PopoverRoot {
             PopoverTrigger {
                 attributes: vec![attr("id", "attr-synth-marker-popover-trigger")],
+                "Show Popover"
+            }
+            PopoverContent { "content" }
+        }
+    }
+}
+
+fn popover_trigger_style() -> Element {
+    rsx! {
+        PopoverRoot {
+            PopoverTrigger {
+                attributes: vec![attr("style", "--attr-synth-marker: popover-trigger-style;")],
                 "Show Popover"
             }
             PopoverContent { "content" }
@@ -325,6 +413,19 @@ fn navbar_trigger_id() -> Element {
             NavbarNav { index: 0usize,
                 NavbarTrigger {
                     attributes: vec![attr("id", "attr-synth-marker-navbar-trigger")],
+                    "Inputs"
+                }
+            }
+        }
+    }
+}
+
+fn navbar_trigger_style() -> Element {
+    rsx! {
+        Navbar { aria_label: "Components",
+            NavbarNav { index: 0usize,
+                NavbarTrigger {
+                    attributes: vec![attr("style", "--attr-synth-marker: navbar-trigger-style;")],
                     "Inputs"
                 }
             }
@@ -418,6 +519,19 @@ fn select_list_style() -> Element {
             SelectList {
                 aria_label: "Select Demo",
                 attributes: vec![attr("style", "--attr-synth-marker: select-list-style;")],
+            }
+        }
+    }
+}
+
+fn hover_card_trigger_style() -> Element {
+    // No `default_open`/`HoverCardContent` needed -- `HoverCardTrigger`
+    // renders unconditionally, same as `tooltip_trigger_style` above.
+    rsx! {
+        HoverCard {
+            HoverCardTrigger {
+                attributes: vec![attr("style", "--attr-synth-marker: hover-card-trigger-style;")],
+                "Dioxus"
             }
         }
     }
@@ -519,6 +633,13 @@ fn cases() -> Vec<Case> {
             context_menu_trigger_id
         ),
         case!(
+            "context_menu:sub_trigger:style",
+            "style",
+            "--attr-synth-marker: context-menu-sub-trigger-style;",
+            "primitives/src/context_menu.rs ContextMenuSubTrigger (top_layer::anchored_trigger_attributes)",
+            context_menu_sub_trigger_style
+        ),
+        case!(
             "dropdown_menu:root:id",
             "id",
             "attr-synth-marker-dropdown-menu-root",
@@ -531,6 +652,20 @@ fn cases() -> Vec<Case> {
             "attr-synth-marker-dropdown-menu-trigger",
             "primitives/src/dropdown_menu.rs DropdownMenuTrigger",
             dropdown_menu_trigger_id
+        ),
+        case!(
+            "dropdown_menu:trigger:style",
+            "style",
+            "--attr-synth-marker: dropdown-menu-trigger-style;",
+            "primitives/src/dropdown_menu.rs DropdownMenuTrigger (top_layer::anchored_trigger_attributes)",
+            dropdown_menu_trigger_style
+        ),
+        case!(
+            "dropdown_menu:sub_trigger:style",
+            "style",
+            "--attr-synth-marker: dropdown-menu-sub-trigger-style;",
+            "primitives/src/dropdown_menu.rs DropdownMenuSubTrigger (top_layer::anchored_trigger_attributes)",
+            dropdown_menu_sub_trigger_style
         ),
         case!(
             "menubar:menu:id",
@@ -547,11 +682,25 @@ fn cases() -> Vec<Case> {
             menubar_trigger_id
         ),
         case!(
+            "menubar:trigger:style",
+            "style",
+            "--attr-synth-marker: menubar-trigger-style;",
+            "primitives/src/menubar.rs MenubarTrigger (top_layer::anchored_trigger_attributes)",
+            menubar_trigger_style
+        ),
+        case!(
             "popover:trigger:id",
             "id",
             "attr-synth-marker-popover-trigger",
             "primitives/src/popover.rs PopoverTrigger (filter+single-bind construction, not merge_attributes)",
             popover_trigger_id
+        ),
+        case!(
+            "popover:trigger:style",
+            "style",
+            "--attr-synth-marker: popover-trigger-style;",
+            "primitives/src/popover.rs PopoverTrigger (top_layer::anchored_trigger_attributes)",
+            popover_trigger_style
         ),
         case!(
             "popover:content:style",
@@ -568,10 +717,17 @@ fn cases() -> Vec<Case> {
             navbar_trigger_id
         ),
         case!(
+            "navbar:trigger:style",
+            "style",
+            "--attr-synth-marker: navbar-trigger-style;",
+            "primitives/src/navbar.rs NavbarTrigger (top_layer::anchored_trigger_attributes)",
+            navbar_trigger_style
+        ),
+        case!(
             "navigation_menu:trigger:style",
             "style",
             "--attr-synth-marker: nav-menu-trigger-style;",
-            "primitives/src/navigation_menu.rs NavigationMenuTrigger",
+            "primitives/src/navigation_menu.rs NavigationMenuTrigger (top_layer::anchored_trigger_attributes -- previously RED BY DESIGN, see dev-docs history/this lane's commit for the fix)",
             navigation_menu_trigger_style
         ),
         case!(
@@ -592,7 +748,7 @@ fn cases() -> Vec<Case> {
             "tooltip:trigger:style",
             "style",
             "--attr-synth-marker: tooltip-trigger-style;",
-            "primitives/src/tooltip.rs TooltipTrigger",
+            "primitives/src/tooltip.rs TooltipTrigger (top_layer::anchored_trigger_attributes)",
             tooltip_trigger_style
         ),
         case!(
@@ -615,6 +771,13 @@ fn cases() -> Vec<Case> {
             "--attr-synth-marker: select-list-style;",
             "primitives/src/select/components/list.rs SelectList (top_layer::anchored_content_attributes)",
             select_list_style
+        ),
+        case!(
+            "hover_card:trigger:style",
+            "style",
+            "--attr-synth-marker: hover-card-trigger-style;",
+            "primitives/src/hover_card.rs HoverCardTrigger (top_layer::anchored_trigger_attributes)",
+            hover_card_trigger_style
         ),
         case!(
             "hover_card:content:style",

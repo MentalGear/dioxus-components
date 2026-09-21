@@ -431,7 +431,6 @@ primitives/src/hover_card.rs	HoverCardContentRendered	role
 primitives/src/hover_card.rs	HoverCardContentRendered	role
 primitives/src/hover_card.rs	HoverCardTrigger	aria_describedby
 primitives/src/hover_card.rs	HoverCardTrigger	role
-primitives/src/hover_card.rs	HoverCardTrigger	style
 primitives/src/hover_card.rs	HoverCardTrigger	tabindex
 primitives/src/input_otp.rs	InputOtp	autocapitalize
 primitives/src/input_otp.rs	InputOtp	autocomplete
@@ -458,7 +457,6 @@ primitives/src/menubar.rs	MenubarItem	data-disabled
 primitives/src/menubar.rs	MenubarItem	role
 primitives/src/menubar.rs	MenubarItem	tabindex
 primitives/src/menubar.rs	MenubarTrigger	role
-primitives/src/menubar.rs	MenubarTrigger	style
 primitives/src/menubar.rs	MenubarTrigger	tabindex
 primitives/src/menubar.rs	MenubarTrigger	type
 primitives/src/navbar.rs	Navbar	data-direction
@@ -476,7 +474,6 @@ primitives/src/navbar.rs	NavbarNav	data-disabled
 primitives/src/navbar.rs	NavbarNav	data-state
 primitives/src/navbar.rs	NavbarNav	role
 primitives/src/navbar.rs	NavbarTrigger	role
-primitives/src/navbar.rs	NavbarTrigger	style
 primitives/src/navbar.rs	NavbarTrigger	tabindex
 primitives/src/navbar.rs	NavbarTrigger	type
 primitives/src/navigation_menu.rs	NavigationMenu	data-disabled
@@ -493,7 +490,6 @@ primitives/src/navigation_menu.rs	NavigationMenuTrigger	aria_controls
 primitives/src/navigation_menu.rs	NavigationMenuTrigger	aria_expanded
 primitives/src/navigation_menu.rs	NavigationMenuTrigger	data-disabled
 primitives/src/navigation_menu.rs	NavigationMenuTrigger	data-state
-primitives/src/navigation_menu.rs	NavigationMenuTrigger	style
 primitives/src/navigation_menu.rs	NavigationMenuTrigger	type
 primitives/src/popover.rs	PopoverModalContent	aria_hidden
 primitives/src/popover.rs	PopoverModalContent	aria_hidden

@@ -203,6 +203,21 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
         }
     };
 
+    // Ties this trigger to the content's `position-anchor` so its
+    // `[data-side]` CSS still resolves relative to this trigger once the
+    // content is promoted to the top layer -- see
+    // `crate::top_layer::anchor_name_style`/`anchored_trigger_attributes`.
+    // Previously a bare `style: anchor_name_style(..)` literal directly
+    // alongside the `..props.attributes` spread below: a caller supplying
+    // their own `style` then produced two `style` attributes on this same
+    // element (`docs/conformance-harness.md` hydration-parity Rule 4;
+    // `scripts/check-attr-spread-collision.sh`). Folding it here first,
+    // like every other anchored trigger, fixes that and (unlike plain
+    // `merge_attributes`, which only folds `class`) keeps the anchor
+    // binding even when the caller's `style` is present.
+    let attributes =
+        crate::top_layer::anchored_trigger_attributes(&ctx.content_id.cloned(), props.attributes);
+
     rsx! {
         div {
             id,
@@ -221,13 +236,7 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
             role: "button",
             aria_describedby: (ctx.open)().then(|| ctx.content_id.cloned()),
 
-            // See `crate::top_layer::anchor_name_style`: ties this trigger
-            // to the content's `position-anchor` so its `[data-side]` CSS
-            // still resolves relative to this trigger once the content is
-            // promoted to the top layer. Inert (empty) off the web arm.
-            style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
-
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
