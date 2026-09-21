@@ -1,0 +1,18 @@
+[package]
+name = "attr-spread-collision-checker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "syn/dioxus-rsx-based analyzer behind scripts/check-attr-spread-collision.sh -- see that script's header for what it detects."
+
+[[bin]]
+name = "attr-spread-collision-checker"
+path = "src/main.rs"
+
+[dependencies]
+# Same pin as the rest of the workspace (root Cargo.toml's [workspace.dependencies]) --
+# resolves to the exact dioxus-rsx 0.7.9 already in Cargo.lock, i.e. the real grammar
+# this repo's own `rsx! { .. }` invocations are written against.
+dioxus-rsx = { workspace = true }
+proc-macro2 = { version = "1.0", features = ["span-locations"] }
+syn = { version = "2.0", features = ["full", "extra-traits", "visit"] }
