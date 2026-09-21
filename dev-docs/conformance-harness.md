@@ -209,6 +209,22 @@ SSG_SITE_DIR=/tmp/ssg-site npx playwright test --config=ssg.local.config.ts orac
 > `target/dx/preview/release/web/public`) whenever the specs you intend to run drive
 > the UI rather than just read its markup.
 
+> **Serve this build at the server ROOT, not under `/dioxus-components`.** Added 2026-09-21.
+> This is the mirror image of the `--base-path` trap and costs just as much. The build above takes
+> no `--base-path`, so its asset paths are root-relative; serving it under a `/dioxus-components`
+> prefix (the symlink trick that `dev-docs/dx-serve-hot-reload.md` describes for the *Pages* build)
+> 404s every asset and yields an unhydrated shell. That shell returns HTTP 200 and renders, so the
+> result looks like 44+ genuine test failures rather than a misconfigured server. Rule of thumb:
+> the `--base-path` build is served one level up under that name, this build is served at `/`, and
+> neither works the other way.
+>
+> **Two smaller traps from the same session.** Passing a bare filename to Playwright
+> (`npx playwright test carousel.spec.ts`) substring-matches `oracle/tier1-apg/carousel.spec.ts`
+> too, roughly doubling the run — pass the absolute path to disambiguate. And when several agents
+> build concurrently, do not confirm a background build by tailing a shared log path: poll the
+> build's own output directory instead, or you can read another build's completion line and act on
+> a tree that was never rebuilt.
+
 `playwright/ssg.local.config.ts` (cloned from `baseline.local.config.ts`) has no `webServer` entry, so it never starts or waits on a dev server — start the static server yourself first. It does not change the base URL for the rest of this repo's specs, which hardcode `http://127.0.0.1:8080`: to run one of *those* against the SSG lane, also serve the same site directory on port 8080 (a second `http.server` process over the same directory is harmless). `oracle/hydration-parity.spec.ts` itself hardcodes port 8090. As of batch 3 (`dev-docs/backlog.md` row 22), the CI job that runs this recipe end-to-end is `.github/workflows/playwright.yml`'s SSG job — `workflow_dispatch`-only, per the standing CI freeze, so it must still be triggered by hand until that freeze lifts.
 
 A quick manual check that needs no Playwright at all — the fastest way to tell whether a build landed on the web arm or the native arm:
