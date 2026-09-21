@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["primitives", "preview", "test-harness", "dioxus-attributes"]
+members = [
+    "primitives",
+    "preview",
+    "test-harness",
+    "dioxus-attributes",
+    "scripts/attr-spread-collision-checker",
+]
 
 [workspace.dependencies]
 dioxus-primitives = { path = "primitives" }

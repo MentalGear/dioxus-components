@@ -1369,7 +1369,6 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
         "data-disabled": disabled(),
         "data-state": if (sub.open)() { "open" } else { "closed" },
         tabindex: if focused() { "0" } else { "-1" },
-        style: crate::top_layer::anchor_name_style(&sub.content_id.cloned()),
 
         onmounted,
 
@@ -1428,6 +1427,12 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
         // submenu the DOM-truth-based construction instead.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
+    // See `crate::top_layer::anchor_name_style`/`anchored_trigger_attributes`:
+    // ties this trigger to the submenu content's `position-anchor`, folded
+    // with any caller-supplied `style` rather than left to plain
+    // `merge_attributes` (which only folds `class` and would otherwise let
+    // a caller's own `style` silently replace this binding).
+    let merged = crate::top_layer::anchored_trigger_attributes(&sub.content_id.cloned(), merged);
 
     rsx! {
         div {

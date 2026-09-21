@@ -33,13 +33,16 @@
 //! with plain `scrollBy` calls rather than a parallel transform-based
 //! engine; every `scrollBy` it issues is native scrolling as far as the
 //! browser (and the second bridge above) is concerned, so dragging is
-//! never a second source of truth for `selected`. All three are
-//! `document::eval` call sites, and all three no-op harmlessly off a real
-//! document (native/Blitz, or a plain `cargo test`), the same as every
-//! other un-gated `document::eval` helper in `crate::lib` (`use_outside_dismiss`,
-//! `use_form_reset_listener`, ...): this module's rendered markup never
-//! branches on `feature = "web"` at all, so unlike the native-`<dialog>`
-//! overlays there is nothing here for a `feature = "web"` gate to protect.
+//! never a second source of truth for `selected`. Release settles the
+//! track with the same `scrollIntoView` paging mechanism buttons/keyboard
+//! already use, not a hand-rolled offset -- see [`CarouselContent`]'s own
+//! "Release settle" doc. All three are `document::eval` call sites, and
+//! all three no-op harmlessly off a real document (native/Blitz, or a
+//! plain `cargo test`), the same as every other un-gated `document::eval`
+//! helper in `crate::lib` (`use_outside_dismiss`, `use_form_reset_listener`,
+//! ...): this module's rendered markup never branches on `feature = "web"`
+//! at all, so unlike the native-`<dialog>` overlays there is nothing here
+//! for a `feature = "web"` gate to protect.
 //!
 //! # Accessibility
 //!
@@ -347,6 +350,15 @@ fn use_carousel_scroll_tracking(
 /// drag" doc for what this threshold is for.
 const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 
+/// How long, in milliseconds, [`CAROUSEL_DRAG_JS`]'s own release-time
+/// settle waits for a `scrollend` event before falling back to restoring
+/// `scroll-snap-type` unconditionally -- only reached on an engine without
+/// `scrollend` support (this module's own doc: Safari before v26.2).
+/// Comfortably longer than a `scrollIntoView({behavior: 'smooth'})`
+/// transition normally takes to finish, so the fallback essentially never
+/// fires *before* that transition has visibly completed.
+const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
+
 /// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
 /// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
 /// track [`CAROUSEL_SCROLL_INTO_VIEW_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
@@ -378,15 +390,18 @@ const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 /// `scrollBy` call and sent a short, slow real-mouse drag flying several
 /// slides past where the pointer actually stopped. So the drag
 /// temporarily sets `el.style.scrollSnapType = 'none'` the moment it
-/// starts (after the movement threshold, alongside `data-dragging`) and
-/// restores the exact value this element is always rendered with on
-/// release -- which is also what makes the release "settle on a slide"
-/// at all: once snapping is back on, the browser glides to the nearest
-/// slide by itself, the same as it would after releasing a real
-/// touch/trackpad drag, with no hand-rolled offset math here to get
-/// wrong.
+/// starts (after the movement threshold, alongside `data-dragging`).
+/// Originally (round5) it was restored right on release, trusting the
+/// browser's own re-snap to glide to the nearest slide the same way it
+/// would after a real touch/trackpad drag -- measured later (see
+/// [`CarouselContent`]'s own "Release settle" doc), that glide never
+/// actually happened, since setting the property back on an
+/// already-stationary position is a static re-evaluation, not an
+/// animated scroll. `endDrag` below settles explicitly instead, and
+/// defers restoring this property until that explicit settle has
+/// actually finished.
 const CAROUSEL_DRAG_JS: &str = "\
-    const [id, orientation, thresholdPx, enabled] = await dioxus.recv();
+    const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
         await dioxus.recv();
@@ -400,6 +415,10 @@ const CAROUSEL_DRAG_JS: &str = "\
     let lastY = 0;
     let dragging = false;
     let suppressNextClick = false;
+    // Cancels whichever of `endDrag`'s two release-settle mechanisms
+    // (the `scrollend` listener or its timeout fallback) is currently
+    // pending, or null if neither is. See `onPointerDown`'s own comment.
+    let cancelPendingSnapRestore = null;
 
     const onPointerDown = (e) => {
         // Mouse and pen only -- touch already scrolls this track natively
@@ -415,6 +434,19 @@ const CAROUSEL_DRAG_JS: &str = "\
         originX = lastX = e.clientX;
         originY = lastY = e.clientY;
         dragging = false;
+        if (cancelPendingSnapRestore !== null) {
+            // The previous gesture's own scroll-snap-type restore never
+            // got to run -- harmless to abandon: this new drag's own
+            // threshold-crossing below sets scroll-snap-type to 'none'
+            // unconditionally regardless of its current value, and this
+            // new drag's own release will schedule a fresh restore.
+            // Leaving the old one pending instead would risk it firing
+            // *during* this new drag and re-enabling snap mid-gesture --
+            // exactly the 'fights every scrollBy' failure mode this
+            // module's own doc already measured once.
+            cancelPendingSnapRestore();
+            cancelPendingSnapRestore = null;
+        }
     };
 
     const onPointerMove = (e) => {
@@ -439,12 +471,11 @@ const CAROUSEL_DRAG_JS: &str = "\
             // live (round5): left enabled, a single ~80px drag snapped
             // forward one slide per `scrollBy` call and landed 4 slides
             // away instead of 1. Suspending it for the drag's own
-            // duration lets these calls move the track freely; restoring
-            // the exact value this element is always rendered with (never
-            // just clearing it -- see `endDrag` below) on release is what
-            // makes the browser glide to the nearest slide by itself, the
-            // same native settle a real trackpad/touch drag gets, with no
-            // hand-rolled offset math of this module's own.
+            // duration lets these calls move the track freely; `endDrag`
+            // below settles it back on release -- see that function's own
+            // doc, and this element's own 'Release settle' doc, for why
+            // that settle is no longer simply 'restore this property and
+            // let the browser re-snap'.
             el.style.scrollSnapType = 'none';
         }
         // Only reached once dragging -- a still-below-threshold move never
@@ -491,15 +522,71 @@ const CAROUSEL_DRAG_JS: &str = "\
             suppressNextClick = true;
             el.removeAttribute('data-dragging');
             try { el.releasePointerCapture(pointerId); } catch (err) {}
-            // Restore -- never just clear -- the exact snap-type this
-            // element is always rendered with (see onPointerMove's own
-            // comment on why it was suspended); this is what makes the
-            // browser glide to the nearest slide on its own the instant
-            // dragging stops, and it must happen synchronously here
-            // rather than waiting for Rust to notice the settled scroll
-            // position and re-render, or the browser would have nothing
-            // to snap *with* the moment the gesture actually ends.
-            el.style.scrollSnapType = orientation === 'horizontal' ? 'x mandatory' : 'y mandatory';
+
+            // This element's own 'Release settle' doc has the full
+            // reasoning; short version: find the slide nearest the raw
+            // drag position -- the same getBoundingClientRect-based
+            // geometry `use_carousel_scroll_tracking`'s own settle()
+            // already uses elsewhere on this identical element, since a
+            // fresh `document::eval` string cannot import a shared JS
+            // helper -- and explicitly scroll it into view with
+            // `behavior: 'smooth'` (respecting reduced motion, the exact
+            // policy CAROUSEL_SCROLL_INTO_VIEW_JS already applies to
+            // every other paging path), rather than leaving the settle to
+            // however restoring `scroll-snap-type` happens to behave.
+            const children = Array.from(el.children);
+            let nearest = null;
+            let nearestDist = Infinity;
+            if (children.length > 0) {
+                const containerRect = el.getBoundingClientRect();
+                const containerStart = orientation === 'horizontal' ? containerRect.left : containerRect.top;
+                children.forEach((child) => {
+                    const rect = child.getBoundingClientRect();
+                    const childStart = orientation === 'horizontal' ? rect.left : rect.top;
+                    const dist = Math.abs(childStart - containerStart);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearest = child;
+                    }
+                });
+            }
+
+            const restoreSnap = () => {
+                el.style.scrollSnapType = orientation === 'horizontal' ? 'x mandatory' : 'y mandatory';
+                cancelPendingSnapRestore = null;
+            };
+            if (nearest) {
+                // Deferred, not synchronous: setting scroll-snap-type
+                // back to mandatory on an already-stationary position is
+                // what made release never animate in the first place
+                // (measured -- see 'Release settle'). Waiting for this
+                // specific scroll to actually finish (`scrollend`,
+                // falling back to a timeout where unsupported -- the same
+                // feature detection `use_carousel_scroll_tracking` already
+                // uses) means scroll-snap-type is still 'none' for the
+                // whole smooth-scroll animation this call starts, so
+                // there is nothing stationary for the browser to
+                // instantly correct until that animation has already
+                // finished on its own.
+                const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if ('onscrollend' in window) {
+                    el.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
+                    cancelPendingSnapRestore = () => el.removeEventListener('scrollend', restoreSnap);
+                } else {
+                    const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
+                    cancelPendingSnapRestore = () => clearTimeout(timer);
+                }
+                nearest.scrollIntoView({
+                    behavior: reduced ? 'auto' : 'smooth',
+                    inline: orientation === 'horizontal' ? 'start' : 'nearest',
+                    block: orientation === 'horizontal' ? 'nearest' : 'start',
+                });
+            } else {
+                // No children at all (shouldn't happen in practice) --
+                // fall back to the old unconditional-restore behavior
+                // rather than leaving scroll-snap-type suspended forever.
+                restoreSnap();
+            }
         }
         pointerId = null;
         dragging = false;
@@ -566,7 +653,13 @@ fn use_carousel_drag(
         // this function's own doc), so there is nothing to poll for until
         // the cleanup closure's own teardown `send` below, which needs no
         // receiver on this side to take effect.
-        let _ = eval.send((id, orientation_str, CAROUSEL_DRAG_THRESHOLD_PX, enabled()));
+        let _ = eval.send((
+            id,
+            orientation_str,
+            CAROUSEL_DRAG_THRESHOLD_PX,
+            enabled(),
+            CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+        ));
         move || {
             let _ = eval.send(true);
         }
@@ -917,22 +1010,13 @@ pub struct CarouselContentProps {
 /// drag tracking correctly even if the pointer leaves this element's
 /// bounds mid-gesture.
 ///
-/// On release, the browser's own scroll-snap machinery settles the track
-/// on whichever slide is numerically nearest, exactly as it would after a
-/// native trackpad/touch scroll -- no separate "settle" step is needed,
-/// but also (measured, see this component's own "scroll-snap-stop"
-/// section below, "Known limitation") no guarantee that "nearest" is
-/// close: a drag whose raw distance covers several slide widths can
-/// settle several slides from the origin, the same as before this crate
-/// declared `scroll-snap-stop: always` on every slide -- that property
-/// does correctly cap a wheel/trackpad fling or a caller's own `scrollBy`
-/// on this same track to one slide, just not this crate's own
-/// pointer-drag release specifically, for the reason that section
-/// explains.
-/// That settle (like every other native scroll) is what
-/// `use_carousel_scroll_tracking` (already
-/// attached to this same element) picks up to update `selected`, so a
-/// drag never invents a second source of truth for the index: the
+/// On release, `endDrag` explicitly settles the track on whichever slide
+/// is numerically nearest -- see this component's own "Release settle"
+/// section below for the mechanism and why it is no longer simply
+/// "restore `scroll-snap-type` and let the browser re-snap." That settle
+/// (like every other native scroll) is what `use_carousel_scroll_tracking`
+/// (already attached to this same element) picks up to update `selected`,
+/// so a drag never invents a second source of truth for the index: the
 /// Previous/Next buttons' `disabled` state, the "N of M" slide labels, and
 /// a custom picker built on [`use_carousel`] all stay correct through the
 /// exact same bridge a click or keypress already uses.
@@ -943,7 +1027,85 @@ pub struct CarouselContentProps {
 /// handler (`dev-docs/recommended-implementations.md` §11 Rule 1); the one
 /// read this construction needs (the container's own starting scroll
 /// offset) is implicit in `scrollBy`'s own *relative* delta, so it is
-/// never taken at all, on either side of the bridge.
+/// never taken at all, on either side of the bridge. `endDrag` itself does
+/// take a one-time `getBoundingClientRect` read once the pointer is
+/// already released, to compute the settle target -- a discrete,
+/// once-per-gesture event, not the continuous per-pointer-move path Rule 1
+/// is about; see "Release settle" below.
+///
+/// ## Release settle
+///
+/// `endDrag` finds the slide nearest the track's raw (possibly unsnapped)
+/// position at release -- the identical `getBoundingClientRect`-based
+/// geometry `use_carousel_scroll_tracking`'s own `settle()` already uses
+/// on this same element (a fresh `document::eval` string cannot import a
+/// shared JS helper, so this is duplicated rather than called, but it is
+/// the same technique, not a different one) -- and explicitly scrolls it
+/// into view with `behavior: 'smooth'` (or `'auto'` under
+/// `prefers-reduced-motion: reduce`, the exact policy
+/// `CAROUSEL_SCROLL_INTO_VIEW_JS` already applies to every other paging
+/// path). This reuses that same `scrollIntoView` mechanism/options shape
+/// this crate already pages with everywhere else -- not a second,
+/// hand-rolled animation engine.
+///
+/// This replaced simply restoring `scroll-snap-type` and trusting the
+/// browser's own re-snap to both choose the destination *and* animate the
+/// way there (round5's original construction, and still what
+/// `onPointerMove`'s own "why suspend scroll-snap-type" comment
+/// describes). Measured (the carousel-feel lane's own regression): it
+/// never animated.
+/// Sampling `.dx-carousel-content`'s own `scrollLeft` across a release
+/// yielded exactly two distinct values -- the position mid-drag and the
+/// final slide -- for drags of very different lengths, both landing
+/// instantly. Setting `scrollSnapType` back to `'x mandatory'` on a
+/// position that is already stationary is not treated by this engine
+/// (Chromium) as "a scrolling operation resuming through skipped snap
+/// points"; it is a synchronous, static re-evaluation, and nothing
+/// animates a style recalculation. Explicitly targeting the destination
+/// slide with its own `scrollIntoView({behavior: 'smooth'})` call sidesteps
+/// that path entirely: it is a genuine, browser-animated scroll operation,
+/// the same kind "## scroll-snap-stop" below documents as actually
+/// constrained/animated by this engine.
+///
+/// Restoring `scroll-snap-type` is **deferred**, not synchronous, for the
+/// same reason: doing it immediately, right after starting the
+/// `scrollIntoView` call, reintroduces the exact bug above the instant the
+/// browser notices the position is (still, momentarily) not yet at a snap
+/// point. So it waits for this specific scroll to actually finish
+/// (`scrollend`, falling back to a fixed timeout where that event is
+/// unsupported -- the same feature detection `use_carousel_scroll_tracking`
+/// already uses, and the reason `CAROUSEL_SNAP_RESTORE_FALLBACK_MS`
+/// exists) before touching the property again, so there is never a
+/// stationary, unsnapped position for the browser to instantly correct
+/// while this animation is still in flight. A fresh `pointerdown` cancels
+/// any still-pending restore from a previous release rather than letting
+/// it fire mid-*new*-drag and re-enable snapping while that drag's own
+/// `scrollBy` calls are still running -- see `onPointerDown`'s own
+/// comment.
+///
+/// This does not change *which* slide a long or fast drag lands on --
+/// see "## scroll-snap-stop" below, "Known limitation," which still
+/// applies, now for a restated reason.
+///
+/// ## No elastic rubber-band past the first/last slide
+///
+/// Dragging past either end does not produce an elastic "rubber-band"
+/// bounce -- a deliberate omission, not a bug: [`CarouselPrevious`]/
+/// [`CarouselNext`] are already genuinely `disabled` at the ends (module
+/// doc, "Accessibility"), which already signals the boundary. Building an
+/// elastic bounce for this one gesture would need a `transform` layered
+/// over this same native scroll container while its own scroll position
+/// stays put underneath -- a second piece of visual state that the snap
+/// points and `use_carousel_scroll_tracking`'s own settle detection
+/// would have to be kept from disagreeing with, plus a damping curve, a
+/// release animation, RTL mirroring, and a block-axis variant -- considered
+/// and dropped as neither cheap nor reliably correct for a purely cosmetic
+/// effect. It is also not simply "missing" what native touch/trackpad
+/// scrolling gets for free: elastic overscroll is a macOS/iOS compositor
+/// behavior specifically, not a universal property of scroll-snap
+/// containers -- the same native touch scroll on Linux or Windows does not
+/// rubber-band either, so this gesture's own lack of one is not purely a
+/// consequence of it being synthetic.
 ///
 /// ## scroll-snap-stop
 ///
@@ -1017,23 +1179,40 @@ pub struct CarouselContentProps {
 /// position at release can land several slide-widths from the origin with
 /// no scrolling operation having passed through the intervening snap
 /// points at all -- each jump was independently instant and unsnapped.
-/// Restoring `scroll-snap-type` afterward is not itself treated as "a
-/// scrolling operation resuming past skipped snap points"; it is a fresh,
-/// static re-evaluation of an already-stationary position, which this
-/// property does not appear to constrain on this engine (Chromium):
-/// confirmed live, isolated from this crate's own JS entirely (raw
-/// `el.scrollBy({ behavior: 'instant' })` in a loop with
-/// `scroll-snap-type` suspended, then restored, on an element whose child
-/// already computes `scroll-snap-stop: always`) -- the settle still lands
-/// on whichever slide is numerically nearest the raw position, identical
-/// to what happens with the property absent altogether. A same-tick
-/// zero-distance and 1px `behavior: 'smooth'` nudge issued immediately
-/// after restoring `scroll-snap-type`, tried as a cheap way to route the
-/// correction through the constrained "smooth scroll" path instead, did
-/// not change this. This is a real, currently-open gap for this crate's
-/// own pointer-drag feature specifically -- not for wheel/trackpad/native
-/// scrolling on the same track, and not for a caller's own `scrollBy`,
-/// both of which this property does correctly constrain.
+/// Originally (round5), the release simply restored `scroll-snap-type` and
+/// trusted the browser's own re-snap to choose the destination: that
+/// restore was not itself treated as "a scrolling operation resuming past
+/// skipped snap points," but a fresh, static re-evaluation of an
+/// already-stationary position, which this property does not appear to
+/// constrain on this engine (Chromium) -- confirmed live, isolated from
+/// this crate's own JS entirely (raw `el.scrollBy({ behavior: 'instant'
+/// })` in a loop with `scroll-snap-type` suspended, then restored, on an
+/// element whose child already computes `scroll-snap-stop: always`) --
+/// the settle still landed on whichever slide was numerically nearest the
+/// raw position, identical to what happens with the property absent
+/// altogether. A same-tick zero-distance and 1px `behavior: 'smooth'`
+/// nudge issued immediately after restoring `scroll-snap-type`, tried as
+/// a cheap way to route the correction through the constrained "smooth
+/// scroll" path instead, did not change this.
+///
+/// "## Release settle" above replaced that mechanism entirely -- release
+/// no longer relies on restoring `scroll-snap-type` to pick a destination
+/// at all, it explicitly targets whichever slide its own geometry search
+/// finds nearest -- which is why release now visibly *animates* there
+/// (this section's own regression, item 2, is fixed). But the
+/// *destination* that search finds is still "whichever slide is
+/// numerically nearest the raw drag position," with no notion of "cap to
+/// one slide from the origin" -- `scroll-snap-stop`'s own guarantee is
+/// about a scroll *operation* the browser resolves against intervening
+/// snap points, and a plain nearest-neighbor geometry search never asks
+/// the browser to resolve anything, so it was never a candidate to
+/// inherit that guarantee either. So this specific gap -- a long or fast
+/// drag can still land several slides from the origin -- is unchanged
+/// today, now for this restated reason rather than the "static
+/// re-evaluation" one above. This remains a real, open gap for this
+/// crate's own pointer-drag feature specifically -- not for wheel/
+/// trackpad/native scrolling on the same track, and not for a caller's
+/// own `scrollBy`, both of which this property does correctly constrain.
 ///
 /// Also not covered, and unreachable by construction rather than merely
 /// unimplemented: a short, fast flick that settles back to its origin

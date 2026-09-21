@@ -212,11 +212,6 @@ pub fn TooltipTrigger(props: TooltipTriggerProps) -> Element {
         id: props.id.clone(),
         tabindex: "0",
         "aria-describedby": ctx.tooltip_id.cloned(),
-        // See `crate::top_layer::anchor_name_style`: ties the trigger to
-        // the content's `position-anchor` so the content's `[data-side]`
-        // CSS still resolves relative to this trigger once the content is
-        // promoted to the top layer. Inert (empty) off the web arm.
-        style: crate::top_layer::anchor_name_style(&ctx.tooltip_id.cloned()),
         onmouseenter: handle_mouse_enter,
         onmouseleave: handle_mouse_leave,
         onfocus: handle_focus,
@@ -224,6 +219,14 @@ pub fn TooltipTrigger(props: TooltipTriggerProps) -> Element {
         onkeydown: handle_keydown,
     });
     let merged = merge_attributes(vec![base, props.attributes]);
+    // Ties the trigger to the content's `position-anchor` so the content's
+    // `[data-side]` CSS still resolves relative to this trigger once the
+    // content is promoted to the top layer -- folded with any caller-
+    // supplied `style` (rather than a bare literal beside a raw spread, or
+    // left to plain `merge_attributes`, which only folds `class` and would
+    // otherwise let a caller's own `style` silently replace this binding)
+    // by `top_layer::anchored_trigger_attributes`; see its own doc.
+    let merged = crate::top_layer::anchored_trigger_attributes(&ctx.tooltip_id.cloned(), merged);
 
     if let Some(dynamic) = props.r#as {
         dynamic.call(merged)

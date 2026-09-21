@@ -507,14 +507,25 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
         attributes!(button { id: id.cloned() }),
         props.attributes,
     ]);
+    // Ties this trigger to the web-arm content's `position-anchor` once
+    // promoted to the top layer -- see `crate::top_layer::anchor_name_style`
+    // (inert off the web arm). Previously a bare `style: anchor_name_style(
+    // ..)` literal directly on this element, beside `..attributes` below: a
+    // caller supplying their own `style` then produced two `style`
+    // attributes on this same tag (`docs/conformance-harness.md`
+    // hydration-parity Rule 4; caught live by
+    // `playwright/oracle/attr-synth`'s `navigation_menu:trigger:style`
+    // case). Folding it into `attributes` here instead, via
+    // `top_layer::anchored_trigger_attributes`, fixes that and (unlike
+    // plain `merge_attributes`, which only folds `class`) keeps the anchor
+    // binding even when the caller's `style` is present; see that
+    // function's own doc.
+    let attributes =
+        crate::top_layer::anchored_trigger_attributes(&item_ctx.content_id.cloned(), attributes);
 
     rsx! {
         button {
             onmounted,
-            // Ties this trigger to the web-arm content's `position-anchor`
-            // once promoted to the top layer -- see
-            // `crate::top_layer::anchor_name_style`. Inert off the web arm.
-            style: crate::top_layer::anchor_name_style(&item_ctx.content_id.cloned()),
             type: "button",
             aria_expanded: is_open(),
             aria_controls: item_ctx.content_id.cloned(),

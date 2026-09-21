@@ -524,14 +524,6 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
         disabled: disabled,
         aria_expanded: open,
         aria_haspopup: crate::menu_semantics::MENU_TRIGGER_HASPOPUP,
-        // See `crate::top_layer::anchor_name_style`: ties this trigger to
-        // the web-arm content's `position-anchor` (`DropdownMenuContentRendered`)
-        // so its anchor-positioned placement resolves relative to this
-        // trigger once promoted to the top layer. Inert (empty) off the web
-        // arm, and keyed on `ctx.content_id` -- not `ctx.trigger_id` above,
-        // this trigger's own id -- for the same reason `PopoverTrigger`
-        // does (see `PopoverCtx::content_id`'s doc in `popover.rs`).
-        style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
         onmounted: move |e: MountedEvent| {
             element.set(Some(e.data()));
         },
@@ -588,6 +580,17 @@ pub fn DropdownMenuTrigger(props: DropdownMenuTriggerProps) -> Element {
         // the same conclusion.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
+    // Ties this trigger to the web-arm content's `position-anchor`
+    // (`DropdownMenuContentRendered`) so its anchor-positioned placement
+    // resolves relative to this trigger once promoted to the top layer --
+    // keyed on `ctx.content_id`, not `ctx.trigger_id` above (this trigger's
+    // own id), for the same reason `PopoverTrigger` does (see
+    // `PopoverCtx::content_id`'s doc in `popover.rs`). Folded with any
+    // caller-supplied `style` by `top_layer::anchored_trigger_attributes`
+    // rather than left to plain `merge_attributes` (which only folds
+    // `class` and would otherwise let a caller's own `style` silently
+    // replace this binding); see that function's own doc.
+    let merged = crate::top_layer::anchored_trigger_attributes(&ctx.content_id.cloned(), merged);
 
     if let Some(dynamic) = props.r#as {
         dynamic.call(merged)
@@ -1329,11 +1332,6 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
         "data-disabled": disabled(),
         "data-state": if (sub.open)() { "open" } else { "closed" },
         tabindex: if focused() { "0" } else { "-1" },
-        // See `crate::top_layer::anchor_name_style`: ties this trigger to
-        // the web-arm submenu content's `position-anchor`
-        // (`DropdownMenuSubContentRendered`), the same mechanism
-        // `DropdownMenuTrigger` uses for the top-level content.
-        style: crate::top_layer::anchor_name_style(&sub.content_id.cloned()),
 
         onmounted,
 
@@ -1411,6 +1409,14 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
         // dismiss` gives the root menu, so this handler is redundant.
     });
     let merged = merge_attributes(vec![base, props.attributes]);
+    // Ties this trigger to the web-arm submenu content's `position-anchor`
+    // (`DropdownMenuSubContentRendered`), the same mechanism
+    // `DropdownMenuTrigger` uses for the top-level content -- folded with
+    // any caller-supplied `style` by `top_layer::anchored_trigger_attributes`
+    // rather than left to plain `merge_attributes` (which only folds
+    // `class` and would otherwise let a caller's own `style` silently
+    // replace this binding); see that function's own doc.
+    let merged = crate::top_layer::anchored_trigger_attributes(&sub.content_id.cloned(), merged);
 
     rsx! {
         div {

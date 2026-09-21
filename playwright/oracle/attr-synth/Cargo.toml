@@ -1,0 +1,30 @@
+[package]
+name = "attr-synth"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Detached from the parent (repo-root) Cargo workspace on purpose: this
+# crate exists only to be invoked by `hydration-parity.spec.ts` (see its
+# Rule 4c) and must never become a member of the primitives/preview
+# workspace -- an empty `[workspace]` table here stops cargo from walking
+# up to the root `Cargo.toml` and pulling this package in as a member (or
+# erroring that it isn't listed there). See `src/main.rs`'s own top-of-file
+# doc comment for the full rationale (why this crate exists, why it
+# renders `dioxus-primitives` directly, and what it still cannot reach).
+[workspace]
+
+[dependencies]
+dioxus = { version = "0.7.8", default-features = false, features = ["macro"] }
+dioxus-core = "0.7.8"
+# Path dependency onto the real, unmodified library this repo ships --
+# never a fork/copy. `web` mirrors what `preview`'s own `server` feature
+# turns on for `dioxus-primitives` (`preview/Cargo.toml`'s
+# `server = [..., "dioxus-primitives/web"]`), so this crate renders the
+# SAME arm the deployed SSG server binary does.
+dioxus-primitives = { path = "../../../primitives", default-features = false, features = [
+    "web",
+    "router",
+] }
+dioxus-ssr = "0.7.0"
+serde_json = "1"

@@ -261,11 +261,85 @@
  *     (not fail) when `SSG_SITE_DIR` is unset, so this file still runs its
  *     original, pre-row-46 rules 1-4b unchanged against an SSG build that
  *     was not invoked through the env var this lane's CI job sets.
+ *
+ * ## `attr-oracle` lane extension: Rule 4c, synthesized collisions
+ *
+ * Rules 4/4b/4-extended above all share one limitation: they can only ever
+ * find a duplicate-attribute collision that some `preview` demo page
+ * *happens* to produce (a caller override that happens to collide with a
+ * component's own literal attribute of the same name). That is exactly how
+ * three successive manual sweeps (`b35d671`, `5fc1439`, `f2be1d7`) each left
+ * different survivors -- each one fixed only what was incidentally exercised
+ * by the demo content that existed at the time. A component that carries the
+ * same literal-attribute-beside-a-raw-spread hazard shape, but that no demo
+ * page currently happens to override, is invisible to all of the rules
+ * above -- not fixed, just not yet triggered.
+ *
+ * "hydration parity — synthesized attribute collisions (Rule 4c)" below
+ * closes that gap by manufacturing the collision directly, per component,
+ * rather than waiting for one. It builds and runs a small, standalone Rust
+ * binary crate, `playwright/oracle/attr-synth/` (its own doc comment,
+ * `attr-synth/src/main.rs`, has the full account: why it exists as a
+ * separate crate, why it renders `dioxus-primitives` directly rather than
+ * through `preview`, exactly how each case is constructed, and what it
+ * still cannot reach). For each covered component, that crate pushes a
+ * caller-supplied, distinctive marker value for an attribute the component
+ * ALSO sets literally directly into that component's own `attributes`
+ * catch-all field, renders it via `dioxus-ssr` (the same
+ * `VirtualDom`/`rebuild_in_place`/`render_immediate` technique this repo's
+ * own `primitives/src/dropdown_menu.rs`/`menubar.rs`/`tooltip.rs`
+ * `#[cfg(test)]` modules already use for exactly this proof, on a handful of
+ * sites), and prints one JSON line per case (`case`, `attr`, `expected`,
+ * `source`, `html`). Rule 4c re-uses this file's OWN `extractStartTags`
+ * tokenizer against each case's `html` -- the identical WHATWG-tokenizer
+ * method Rules 1-4b already use against real served markup, just pointed at
+ * a synthesized fragment instead -- and asserts the target start tag
+ * carries `attr` exactly once, with its effective (first-wins) value
+ * containing the caller's marker.
+ *
+ * This does not depend on `SSG_SITE_DIR` or a running server at `BASE`: it
+ * needs only `cargo` (already a hard requirement everywhere else in this
+ * repo's toolchain). It runs unconditionally, so it keeps exercising
+ * `dioxus-primitives`'s attribute-merge construction even in a plain
+ * `npx playwright test` run with no SSG build present at all -- broader
+ * standing coverage than the SSG-gated rules above, not narrower.
+ *
+ * As of this extension: 27 real component+attribute+element sites across
+ * 13 primitives (`progress`, `toast`, `context_menu`, `dropdown_menu`,
+ * `menubar`, `popover`, `navbar`, `navigation_menu`, `collapsible`,
+ * `tooltip`, `select`, `hover_card`, `combobox`), plus 2 self-test sites
+ * that prove the detection pipeline itself (not a real component) can tell
+ * a live collision apart from a fixed one -- see attr-synth/src/main.rs's
+ * own doc for the exhaustive list and for what it still cannot reach
+ * (four menu-family `*Content` components gated behind an effect-driven
+ * render signal that does not settle synchronously, plus `Drawer`, not
+ * pursued for time). Running this against the tree as it stood when this
+ * extension first landed found one genuine, previously-unknown defect this
+ * way: `navigation_menu:trigger:style` (`NavigationMenuTrigger` served a
+ * bare `style: anchor_name_style(..)` literal beside a raw `..attributes`
+ * spread) -- itself the intended proof that this extension can catch
+ * something the demo-page-driven rules above cannot. The `anchor-style-class`
+ * lane (this repository's own history/commit log) then audited every other
+ * `anchor_name_style` trigger call site the same defect could plausibly hit
+ * (`grep -rn "anchor_name_style" primitives/src/*.rs`) and found three more
+ * genuinely defective the same way (`hover_card:trigger:style`,
+ * `menubar:trigger:style`, `navbar:trigger:style` below) plus five already
+ * safe from this specific hazard (their own `style` already ran through
+ * `merge_attributes` before the `rsx!` spread, just not folded -- see the
+ * `.toContain` discussion below) -- `context_menu:sub_trigger:style`,
+ * `dropdown_menu:trigger:style`, `dropdown_menu:sub_trigger:style`,
+ * `popover:trigger:style`, `tooltip:trigger:style`. All nine now share one
+ * construction, `top_layer::anchored_trigger_attributes`, added as part of
+ * that fix; the cases for all nine (new or pre-existing) are asserted here
+ * the same way as every other case in this block, so none of them can
+ * regress back to a bare literal, or back to a plain (non-folding) merge,
+ * without this file failing.
  */
 
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 const BASE = "http://127.0.0.1:8090";
@@ -405,6 +479,190 @@ function duplicateAttrTags(html: string): { raw: string; dup: string }[] {
   }
   return out;
 }
+
+/**
+ * Rule 4c support: builds and runs `playwright/oracle/attr-synth/` (see
+ * that crate's own `src/main.rs` doc comment for the full rationale) and
+ * parses its one-JSON-object-per-line stdout. Run once, synchronously, at
+ * module load -- same timing as `COMPONENT_NAMES` above -- so the resulting
+ * cases can be turned into statically-declared, individually named `test()`
+ * calls below (one per case, for per-case pass/fail visibility) rather than
+ * a single opaque test.
+ *
+ * Deliberately never throws: a build/run failure is captured as `error` and
+ * surfaced through an always-present test below ("Rule 4c: attr-synth built
+ * and ran successfully") instead, so it fails loudly with the captured
+ * output rather than silently producing zero cases -- the same concern the
+ * "legacy query-URL redirect" describe block below documents for its own
+ * three always-listed tests.
+ */
+type AttrSynthCase = {
+  case: string;
+  attr: string;
+  expected: string;
+  source: string;
+  html: string;
+};
+
+function runAttrSynth(): { cases: AttrSynthCase[]; error: string | null } {
+  const crateDir = path.join(__dirname, "attr-synth");
+  // Absolute and scoped to this crate on purpose (CLAUDE.md: lane
+  // `CARGO_TARGET_DIR`s must be absolute) -- this also keeps it from being
+  // silently redirected by an inherited `CARGO_TARGET_DIR` a caller may
+  // have set for the main (unrelated, differently-shaped) preview/primitives
+  // workspace build.
+  const env = { ...process.env, CARGO_TARGET_DIR: path.join(crateDir, "target") };
+
+  const build = spawnSync("cargo", ["build", "--release", "--quiet"], {
+    cwd: crateDir,
+    env,
+    timeout: NAV_TIMEOUT,
+    encoding: "utf-8",
+  });
+  if (build.error) {
+    return { cases: [], error: `failed to spawn \`cargo build\` for attr-synth: ${build.error}` };
+  }
+  if (build.status !== 0) {
+    return {
+      cases: [],
+      error:
+        `attr-synth \`cargo build --release\` exited ${build.status}:\n` +
+        `--- stderr ---\n${build.stderr}\n--- stdout ---\n${build.stdout}`,
+    };
+  }
+
+  const binPath = path.join(crateDir, "target", "release", "attr-synth");
+  const run = spawnSync(binPath, [], { cwd: crateDir, timeout: NAV_TIMEOUT, encoding: "utf-8" });
+  if (run.error) {
+    return { cases: [], error: `failed to spawn the attr-synth binary at ${binPath}: ${run.error}` };
+  }
+  if (run.status !== 0) {
+    return {
+      cases: [],
+      error: `attr-synth exited ${run.status}:\n--- stderr ---\n${run.stderr}\n--- stdout ---\n${run.stdout}`,
+    };
+  }
+
+  try {
+    const cases = run.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as AttrSynthCase);
+    if (cases.length === 0) {
+      return {
+        cases: [],
+        error: "attr-synth produced zero cases (empty stdout) -- see attr-synth/src/main.rs's own `cases()`.",
+      };
+    }
+    return { cases, error: null };
+  } catch (e) {
+    return { cases: [], error: `failed to parse attr-synth's stdout as JSON lines: ${e}\nstdout:\n${run.stdout}` };
+  }
+}
+
+const ATTR_SYNTH = runAttrSynth();
+
+test.describe("hydration parity — synthesized attribute collisions (Rule 4c)", () => {
+  test("Rule 4c: attr-synth built and ran successfully", () => {
+    expect(ATTR_SYNTH.error, ATTR_SYNTH.error ?? "").toBeNull();
+  });
+
+  // Exactly one case below is RED BY DESIGN, not a flake -- the same
+  // convention `oracle/tier2-html/main-thread.spec.ts` already uses for its
+  // own three known-red subjects (documented there, left as ordinary
+  // failing tests rather than skipped): `selftest:unfixed:id` is a
+  // deliberate, permanent meta-proof that this file's own detection logic
+  // can tell a real collision apart from a fixed one (see
+  // attr-synth/src/main.rs's doc comment on `self_test_unfixed_collision`)
+  // -- it is SUPPOSED to fail, every run, by construction.
+  //
+  // `navigation_menu:trigger:style` USED TO be here too: a genuine,
+  // previously-unknown defect this rule found by execution while building
+  // this extension (confirmed 2026-09-21) -- `NavigationMenuTrigger`
+  // (`primitives/src/navigation_menu.rs`) set a bare literal
+  // `style: crate::top_layer::anchor_name_style(...)` directly on its
+  // `button {}`, THEN separately spread `..attributes` (a
+  // `merge_attributes` result that, once a caller supplies their own
+  // `style`, also carried one) onto the SAME element -- the exact
+  // literal-attribute-beside-a-raw-spread shape this whole file exists to
+  // catch. Fixing it was out of THIS lane's ownership (`primitives/src/**`)
+  // at the time, so it was left red and named here so it would not be
+  // lost. The `anchor-style-class` lane (this repository's own history)
+  // then fixed it -- and, per this repo's CLAUDE.md ("when the same
+  // problem shows up more than once, stop patching instances"), audited
+  // every other `anchor_name_style` trigger call site and fixed the whole
+  // class via one shared construction, `top_layer::anchored_trigger_
+  // attributes` -- see this file's own header doc ("Rule 4c" section) for
+  // the full account of which sites were genuinely defective and which
+  // were already safe. This case is asserted like any other below now.
+  const KNOWN_RED = new Set(["selftest:unfixed:id"]);
+
+  for (const c of ATTR_SYNTH.cases) {
+    const label = KNOWN_RED.has(c.case) ? " (RED BY DESIGN -- see this block's own header comment)" : "";
+    test(`Rule 4c: ${c.case} -- caller override of a literal attribute is served exactly once${label}`, () => {
+      const tags = extractStartTags(c.html);
+      // Finds the right tag by substring on the RAW text, not by the
+      // tokenizer's first-wins effective value: when the collision is
+      // live, the effective value is the component's own internal
+      // default, not this case's marker, but the raw tag text still
+      // contains BOTH values as substrings pre-parse (that is the whole
+      // point of the defect) -- so this lookup succeeds identically
+      // whether the case is RED or GREEN, and only the assertions below
+      // tell those two states apart.
+      const target = tags.find((t) => t.raw.includes(c.expected));
+      expect(
+        target,
+        `attr-synth case "${c.case}" (${c.source}): no start tag in the synthesized fragment contains the ` +
+          `marker "${c.expected}" anywhere in its raw text -- the target element may not have rendered at all ` +
+          `(see attr-synth/src/main.rs's own doc, "What this still cannot reach"). Rendered fragment:\n${c.html}`,
+      ).toBeDefined();
+
+      const occurrences = target!.attrNames.filter((n) => n === c.attr).length;
+      expect(
+        occurrences,
+        `attr-synth case "${c.case}" (${c.source}): expected exactly one "${c.attr}" attribute on the ` +
+          `synthesized element, found ${occurrences}. Per WHATWG HTML's attribute-name parsing state, a ` +
+          `duplicate is a parse error and the browser keeps only the FIRST occurrence -- but Dioxus's web ` +
+          `(CSR/hydrated) DOM path applies attributes sequentially, so there the LAST-applied value wins. ` +
+          `Server and client then disagree about which value is in effect. Raw tag: ${target!.raw}`,
+      ).toBe(1);
+
+      // `.toContain`, not `.toBe`: two families of these deliberately FOLD
+      // the caller's style together with an internal anchor-positioning
+      // binding, rather than letting either one flatly replace the other --
+      // the anchored-CONTENT family (`popover:content:style`/
+      // `tooltip:content:style`/`select:list:style`/`hover_card:content:
+      // style`/`combobox:list:style`) via `top_layer::
+      // anchored_content_attributes`, and the anchored-TRIGGER family
+      // (`context_menu:sub_trigger:style`/`dropdown_menu:trigger:style`/
+      // `dropdown_menu:sub_trigger:style`/`hover_card:trigger:style`/
+      // `menubar:trigger:style`/`navbar:trigger:style`/`navigation_menu:
+      // trigger:style`/`popover:trigger:style`/`tooltip:trigger:style`) via
+      // `top_layer::anchored_trigger_attributes` -- documented at this
+      // file's own header ("Rule 4c" section) and in each function's own
+      // doc. Both exist for the same reason: plain `merge_attributes` only
+      // ever folds `class` (`primitives/src/lib.rs`'s own
+      // `later_list_overwrites`/`style_attribute_is_overwritten_not_folded`
+      // tests), so without folding first, a caller's own `style` would
+      // either collide with a bare literal (the original defect this rule
+      // exists to catch) or, once merged the naive way, silently REPLACE --
+      // not combine with -- the anchor/position-anchor binding, which is a
+      // quieter, worse failure (CSS Anchor Positioning breaks with no
+      // duplicate attribute left for anything to catch). The effective
+      // value for every one of these folding cases is real CSS text
+      // containing the marker, not equal to it verbatim; for every other
+      // (plain-merge, or no merge at all) case the two checks are
+      // equivalent, since nothing else ever gets folded in.
+      expect(
+        target!.effectiveValues.get(c.attr),
+        `attr-synth case "${c.case}" (${c.source}): the served, EFFECTIVE (first-wins) value of "${c.attr}" ` +
+          `should contain the caller's override ("${c.expected}") -- it must not be silently dropped in favor ` +
+          `of the component's own internal default. Raw tag: ${target!.raw}`,
+      ).toContain(c.expected);
+    });
+  }
+});
 
 test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   test("Rule 1: served HTML's ToastProvider region carries popover (web-arm markup canary)", async ({

@@ -578,19 +578,26 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
         }),
         props.attributes,
     ]);
+    // Ties this trigger to the web-arm content's `position-anchor`
+    // (`MenubarContentRendered`) so its anchor-positioned placement
+    // resolves relative to *this* trigger once promoted to the top layer --
+    // keyed on `menu_ctx.content_id`, not this menu's own index, for the
+    // same reason `DropdownMenuTrigger` keys off `ctx.content_id` (see that
+    // doc). Previously a bare `style: anchor_name_style(..)` literal
+    // directly on this element, beside `..attributes` below: a caller
+    // supplying their own `style` then produced two `style` attributes on
+    // this same tag (`docs/conformance-harness.md` hydration-parity Rule 4;
+    // `scripts/check-attr-spread-collision.sh`). Folding it into
+    // `attributes` here instead, via `top_layer::anchored_trigger_attributes`,
+    // fixes that and (unlike plain `merge_attributes`, which only folds
+    // `class`) keeps the anchor binding even when the caller's `style` is
+    // present; see that function's own doc.
+    let attributes =
+        crate::top_layer::anchored_trigger_attributes(&menu_ctx.content_id.cloned(), attributes);
 
     rsx! {
         button {
             onmounted,
-            // See `crate::top_layer::anchor_name_style`: ties this trigger
-            // to the web-arm content's `position-anchor`
-            // (`MenubarContentRendered`) so its anchor-positioned placement
-            // resolves relative to *this* trigger once promoted to the top
-            // layer. Inert (empty) off the web arm, and keyed on
-            // `menu_ctx.content_id` -- not this menu's own index -- for the
-            // same reason `DropdownMenuTrigger` keys off
-            // `ctx.content_id` (see that doc).
-            style: crate::top_layer::anchor_name_style(&menu_ctx.content_id.cloned()),
             onpointerup: move |_| {
                 if !disabled() {
                     let new_open = if is_open() { None } else { Some(index.cloned()) };

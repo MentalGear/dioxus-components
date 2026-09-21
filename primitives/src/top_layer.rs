@@ -24,7 +24,14 @@
 
 #[cfg(feature = "web")]
 use dioxus::document;
-#[cfg(feature = "web")]
+// Unconditional, unlike the rest of this block: `anchored_trigger_attributes`
+// (below) is called by every anchored trigger on BOTH arms -- mirroring
+// `anchor_name_style`, see its own doc for why -- and needs `Attribute` in
+// scope, plus whatever `dioxus_attributes::attributes!`'s expansion resolves
+// against (`dioxus_core`/`dioxus_elements`, brought in by this same glob),
+// regardless of `web`. A plain glob import is never itself an error when
+// some of what it would bring in is `#[cfg]`'d away, so this costs the
+// `web` arm nothing.
 use dioxus::prelude::*;
 
 #[cfg(feature = "web")]
@@ -2212,6 +2219,74 @@ pub(crate) fn anchor_name_style(_id: &str) -> String {
     String::new()
 }
 
+/// Fold [`anchor_name_style`] and a caller's own `style` into exactly one
+/// `style` attribute, then merge the rest of `attributes` on top.
+///
+/// The trigger-side mirror of `anchored_content_attributes` -- same
+/// problem, same fix, the other end of the same anchor pair. Every
+/// anchored trigger (`ContextMenuSubTrigger`, `DropdownMenuTrigger`,
+/// `DropdownMenuSubTrigger`, `HoverCardTrigger`, `MenubarTrigger`,
+/// `NavbarTrigger`, `NavigationMenuTrigger`, `PopoverTrigger`,
+/// `TooltipTrigger`) ties itself to its content's `position-anchor` via
+/// [`anchor_name_style`]. Some of them used to set it as a bare literal
+/// directly alongside a raw `..attributes` spread on the same element --
+/// the exact duplicate-`style` hazard `anchored_content_attributes`'s own
+/// doc describes (`docs/conformance-harness.md` hydration-parity Rule 4;
+/// `scripts/check-attr-spread-collision.sh` ratchets against it, and
+/// `playwright/oracle/attr-synth` synthesizes it directly). The rest
+/// already ran their own literal through `merge_attributes` before the
+/// `rsx!` spread (`TooltipTrigger` in particular), which *does* avoid that
+/// literal HTML duplicate -- but is not enough on its own: `merge_attributes`
+/// only ever folds `class`, every other name (`style` included) is
+/// overwritten outright by whichever list is later in the `vec![...]`
+/// passed to it (confirmed by `primitives/src/lib.rs`'s own
+/// `later_list_overwrites`/`style_attribute_is_overwritten_not_folded`
+/// tests, and by this module's own tests below). Passing `vec![base,
+/// props.attributes]` -- `base` first, so a caller's own value in
+/// `props.attributes` is the one that survives the merge -- therefore lets
+/// a caller's own `style` silently overwrite, not merge with, the
+/// anchor-name binding: no duplicate attribute is left in the served HTML
+/// for Rule 4c (or anything else) to catch, CSS Anchor Positioning just
+/// silently stops working the moment any caller sets `style` on the
+/// trigger. So, exactly like the content side, this folds first instead:
+/// pull every style-contributing attribute out of `attributes` with
+/// [`crate::fold_style_attributes`], prepend the anchor-name binding, and
+/// merge the single resulting `style` back in with everything else
+/// `fold_style_attributes` left untouched.
+///
+/// Unlike `anchored_content_attributes`, this carries no `#[cfg(feature =
+/// "web")]` guard: every trigger above calls this unconditionally on both
+/// arms (see [`anchor_name_style`]'s own doc for why a trigger, unlike a
+/// content leaf, is never itself split into separate web/native component
+/// fns), so this absorbs the resulting empty anchor-name string itself
+/// (contributing nothing to the folded `style` off the web arm) rather than
+/// pushing that concern onto every call site.
+///
+/// Call this as the last step before an anchored trigger's `rsx!` block, on
+/// whatever `attributes` variable would otherwise be spread with
+/// `..attributes` -- including one a call site already ran through its own
+/// `merge_attributes` for an `id`/event handlers/other literals, so this
+/// never needs a second, separate merge pass for those. Drop the call
+/// site's own `style: anchor_name_style(&id)` literal once this is wired
+/// in; the returned list already carries that `style`.
+pub(crate) fn anchored_trigger_attributes(id: &str, attributes: Vec<Attribute>) -> Vec<Attribute> {
+    let anchor = anchor_name_style(id);
+    let (caller_style, rest) = crate::fold_style_attributes(attributes);
+    let style = match (anchor.is_empty(), caller_style) {
+        (true, None) => None,
+        (true, Some(caller_style)) => Some(caller_style),
+        (false, None) => Some(anchor),
+        (false, Some(caller_style)) => Some(format!("{anchor} {caller_style}")),
+    };
+    match style {
+        Some(style) => crate::merge_attributes(vec![
+            dioxus_attributes::attributes!(div { style: "{style}" }),
+            rest,
+        ]),
+        None => rest,
+    }
+}
+
 #[cfg(all(test, feature = "web"))]
 mod tests {
     use super::*;
@@ -2332,5 +2407,163 @@ mod tests {
         assert!(style.contains("padding:1rem;"));
         assert!(style.find("position-anchor").unwrap() < style.find("min-height").unwrap());
         assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    // -----------------------------------------------------------------
+    // `anchored_trigger_attributes` -- the trigger-side mirror of the
+    // `anchored_content_attributes` tests above. Same four shapes (no
+    // caller style / plain / shorthand / both), asserted the same way,
+    // just against `anchor-name` instead of `position-anchor`. The web
+    // arm always yields a non-empty `anchor_name_style`, so these only
+    // exercise the `(false, ..)` arms of its `match`; the empty-anchor
+    // (native) arms are covered by `trigger_attributes_native_tests`
+    // below, which is not `feature = "web"`-gated.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn trigger_no_caller_style_yields_just_the_anchor_binding() {
+        let result = anchored_trigger_attributes("x", vec![other("role", "button")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        assert_eq!(styles[0].1, "anchor-name: --dxa-x;");
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    #[test]
+    fn trigger_plain_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_trigger_attributes("x", vec![plain_style("color: red;")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("anchor-name: --dxa-x;"));
+        assert!(style.contains("color: red;"));
+        // Anchor binding first, so the caller's own declaration -- listed
+        // after -- can override any property it names without ever being
+        // able to drop the anchor binding itself (the exact silent-loss
+        // failure mode `merge_attributes` alone has -- see this function's
+        // own doc and `style_attribute_is_overwritten_not_folded` in
+        // `primitives/src/lib.rs`).
+        assert!(style.find("anchor-name").unwrap() < style.find("color").unwrap());
+    }
+
+    #[test]
+    fn trigger_shorthand_caller_style_is_folded_after_the_anchor_binding() {
+        let result = anchored_trigger_attributes("x", vec![shorthand_style("cursor", "pointer")]);
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("anchor-name: --dxa-x;"));
+        assert!(style.contains("cursor:pointer;"));
+        assert!(style.find("anchor-name").unwrap() < style.find("cursor").unwrap());
+    }
+
+    #[test]
+    fn trigger_shorthand_and_plain_caller_style_both_fold_into_the_one_attribute() {
+        let result = anchored_trigger_attributes(
+            "x",
+            vec![
+                plain_style("color: red;"),
+                shorthand_style("cursor", "pointer"),
+                other("role", "button"),
+            ],
+        );
+        let styles = style_attrs(&result);
+        assert_eq!(
+            styles.len(),
+            1,
+            "expected exactly one style attribute: {result:?}"
+        );
+        let style = &styles[0].1;
+        assert!(style.contains("anchor-name: --dxa-x;"));
+        assert!(style.contains("color: red;"));
+        assert!(style.contains("cursor:pointer;"));
+        assert!(style.find("anchor-name").unwrap() < style.find("color").unwrap());
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    /// A caller-supplied `id` (or any other non-style attribute) passes
+    /// through untouched, deduped against nothing since this function only
+    /// ever contributes `style` -- guards against a future edit accidentally
+    /// routing more than style through the `dioxus_attributes::attributes!`
+    /// base list this function builds.
+    #[test]
+    fn trigger_non_style_attributes_pass_through_untouched() {
+        let result = anchored_trigger_attributes(
+            "x",
+            vec![other("id", "caller-id"), other("role", "button")],
+        );
+        assert!(result
+            .iter()
+            .any(|a| a.name == "id" && matches!(&a.value, Text(s) if s == "caller-id")));
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+}
+
+/// `anchored_trigger_attributes` is NOT `feature = "web"`-gated (see its own
+/// doc for why: every trigger calls it unconditionally, on both arms), so
+/// unlike every other test in this module it is meaningful -- and needed --
+/// on the native (non-`web`) arm too, which is what `cargo test --workspace`
+/// exercises by default (`primitives/Cargo.toml`'s `default = ["router"]`
+/// does not include `web`). This covers the `anchor.is_empty()` arms of its
+/// `match` that `feature = "web"` can never reach (`anchor_name_style`
+/// always returns a real, non-empty string there) -- the web-arm folding
+/// behavior itself is covered by `tests::trigger_*` above.
+///
+/// `not(feature = "web")`, not just `test`: under `--features web`,
+/// `anchor_name_style` stops being empty and these exact assertions would
+/// fail -- this module is only meaningful on the arm its own name says.
+#[cfg(all(test, not(feature = "web")))]
+mod trigger_attributes_native_tests {
+    use super::*;
+    use dioxus_core::AttributeValue::Text;
+
+    fn plain_style(value: &str) -> Attribute {
+        Attribute {
+            name: "style",
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    fn other(name: &'static str, value: &str) -> Attribute {
+        Attribute {
+            name,
+            namespace: None,
+            volatile: false,
+            value: Text(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn native_anchor_is_empty_so_no_caller_style_yields_no_style_attribute_at_all() {
+        // Off the web arm, `anchor_name_style` is the inert `String::new()`
+        // stub -- with no caller style either, there is nothing to say, so
+        // this must not manufacture a stray empty `style=""`.
+        let result = anchored_trigger_attributes("x", vec![other("role", "button")]);
+        assert!(!result.iter().any(|a| a.name == "style"));
+        assert!(result.iter().any(|a| a.name == "role"));
+    }
+
+    #[test]
+    fn native_anchor_is_empty_so_caller_style_passes_through_unchanged() {
+        // No anchor binding to fold in on this arm -- the caller's own
+        // `style` should come through exactly as given, not prefixed with
+        // an empty anchor segment (no stray leading space either).
+        let result = anchored_trigger_attributes("x", vec![plain_style("color: red;")]);
+        let style = result.iter().find(|a| a.name == "style").expect("style");
+        assert!(matches!(&style.value, Text(s) if s == "color: red;"));
     }
 }

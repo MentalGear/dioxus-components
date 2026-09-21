@@ -605,6 +605,79 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
 });
 
 /**
+ * carousel-feel lane, item 2: a drag release used to settle on the
+ * nearest slide by restoring `scroll-snap-type` and trusting Chromium's
+ * own re-snap to both choose the destination *and* animate the way there
+ * -- measured, it never animated: sampling `scrollLeft` across a release
+ * yielded exactly two distinct values (the mid-drag position and the
+ * final slide), both landing instantly, for drags of very different
+ * lengths. Fixed by routing the release through the same `scrollIntoView`
+ * paging path `CarouselPrevious`/`CarouselNext` already use -- see
+ * `primitives/src/carousel.rs`'s own `CarouselContent` doc, "Release
+ * settle" section, for the construction.
+ *
+ * Sampling starts only once the drag has already stopped moving and is
+ * sitting at a raw, unsnapped position -- `page.mouse.up()` is the only
+ * action inside `sampleScrollDuring`'s own `trigger`, not the whole drag
+ * (unlike the "pointer drag" describe block above). The drag's own
+ * per-move `scrollBy` calls already produce many intermediate values on
+ * their own, which would make an assertion over the *whole* gesture pass
+ * even if the release itself were still an instant jump -- isolating the
+ * release is what actually exercises this fix, the same way the "first
+ * paged transition actually animates" describe block isolates a single
+ * button click.
+ */
+test.describe("Carousel: a drag release actually animates to the nearest slide (item 2 regression)", () => {
+  test("releasing a drag passes through several intermediate scrollLeft values, not an instant jump", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const reducedMotion = await page.evaluate(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    test.skip(
+      reducedMotion,
+      "test browser reports prefers-reduced-motion: reduce -- the release deliberately forces an instant scroll in that case, so whether it animates cannot be asked honestly in this environment",
+    );
+
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const contentId = (await content.getAttribute("id"))!;
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await content.scrollIntoViewIfNeeded();
+    const box = await content.boundingBox();
+    if (!box) {
+      throw new Error("content has no bounding box");
+    }
+    const pitch = await slidePitch(slide(1));
+    const startX = box.x + box.width / 2;
+    const startY = box.y + box.height / 2;
+    const dx = -pitch * 0.7;
+    const steps = 12;
+
+    // Drag most of the way to slide 2 but stop short of releasing, so
+    // sampling begins from wherever the drag currently sits (see this
+    // describe block's own header for why the release must be isolated).
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(startX + (dx * i) / steps, startY);
+      await page.waitForTimeout(16);
+    }
+
+    const samples = await sampleScrollDuring(page, contentId, "scrollLeft", () => page.mouse.up());
+
+    expect(
+      passesThroughAnIntermediateValue(samples),
+      `expected an intermediate scrollLeft strictly between the first (${samples[0]}) and last (${samples[samples.length - 1]}) sample; got: ${JSON.stringify(samples)}`,
+    ).toBe(true);
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+  });
+});
+
+/**
  * `scroll-snap-stop: always` (`primitives/src/carousel.rs`, a plain inline
  * `style` declaration on each slide, right alongside `scroll-snap-align`
  * -- see that file's own `CarouselContent` doc, "scroll-snap-stop"

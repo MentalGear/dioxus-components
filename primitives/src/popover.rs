@@ -799,30 +799,31 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
     let merged = merge_attributes(vec![
         attributes!(button {
             type: "button",
-            // See `crate::top_layer::anchor_name_style`: ties this trigger
-            // to the content's `position-anchor` so its `[data-side]` CSS
-            // still resolves relative to this trigger once the content is
-            // promoted to the top layer -- non-modal via `popover="auto"`
-            // (Phase 4.4), modal via `showModal()` (this module's doc
-            // comment, native-dialog engine migration). Inert (empty
-            // string) on the native (Blitz) arm, which never promotes
-            // anything to a top layer and has no containing-block problem
-            // to solve; a real anchor name on the web arm, set
-            // unconditionally here regardless of `is_modal` since both web
-            // content arms need it now.
-            //
-            // Keyed on `ctx.content_id` -- *not* `id`/`ctx.labelledby`
-            // above, which is this trigger's own id (used for the `id`
-            // attribute and, via `PopoverContent`'s `aria-labelledby`, an
-            // unrelated ARIA relationship). See `PopoverCtx::content_id`'s
-            // doc for why those must not be conflated: `position_anchor_
-            // style` on the content side is always built from the
-            // content's own id, so this side has to name that same id, not
-            // the trigger's.
-            style: crate::top_layer::anchor_name_style(&ctx.content_id.cloned()),
         }),
         attributes,
     ]);
+    // Ties this trigger to the content's `position-anchor` so its
+    // `[data-side]` CSS still resolves relative to this trigger once the
+    // content is promoted to the top layer -- non-modal via
+    // `popover="auto"` (Phase 4.4), modal via `showModal()` (this module's
+    // doc comment, native-dialog engine migration). Inert (empty string) on
+    // the native (Blitz) arm, which never promotes anything to a top layer
+    // and has no containing-block problem to solve; a real anchor name on
+    // the web arm, set unconditionally here regardless of `is_modal` since
+    // both web content arms need it now.
+    //
+    // Keyed on `ctx.content_id` -- *not* `id`/`ctx.labelledby` above, which
+    // is this trigger's own id (used for the `id` attribute and, via
+    // `PopoverContent`'s `aria-labelledby`, an unrelated ARIA relationship).
+    // See `PopoverCtx::content_id`'s doc for why those must not be
+    // conflated: `position_anchor_style` on the content side is always
+    // built from the content's own id, so this side has to name that same
+    // id, not the trigger's. Folded with any caller-supplied `style` by
+    // `top_layer::anchored_trigger_attributes` rather than left to plain
+    // `merge_attributes` (which only folds `class` and would otherwise let
+    // a caller's own `style` silently replace this binding); see that
+    // function's own doc.
+    let merged = crate::top_layer::anchored_trigger_attributes(&ctx.content_id.cloned(), merged);
 
     rsx! {
         button {

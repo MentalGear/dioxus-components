@@ -1071,6 +1071,33 @@ mod tests {
         assert_eq!(get_value(&result[0]), "second");
     }
 
+    /// `style` is not special-cased in `merge_attributes` the way `class`
+    /// is (see this function's own doc and the plain `if attr.name ==
+    /// "class" { .. } else { *existing = attr; }` in its implementation) --
+    /// a later list's `style` attribute REPLACES an earlier list's `style`
+    /// outright, it is never folded/concatenated the way `class` is.
+    ///
+    /// This is `later_list_overwrites` above, specialized to the one name
+    /// this repo's `top_layer::anchored_trigger_attributes`/
+    /// `anchored_content_attributes` construction depends on getting right:
+    /// both exist specifically because plain `merge_attributes` alone would
+    /// otherwise let a caller-supplied `style` silently drop an internal
+    /// `anchor-name`/`position-anchor` binding rather than combine with it
+    /// (`docs/conformance-harness.md` hydration-parity Rule 4's own
+    /// discussion). Kept as its own named, permanent test -- rather than
+    /// relying on `later_list_overwrites`'s generic "a"/"b" names to stand
+    /// in for it -- so that fact stays pinned and visible right next to the
+    /// function it is a fact about.
+    #[test]
+    fn style_attribute_is_overwritten_not_folded() {
+        let result = merge_attributes(vec![
+            vec![attr("style", "anchor-name: --dxa-x;")],
+            vec![attr("style", "color: red;")],
+        ]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(get_value(&result[0]), "color: red;");
+    }
+
     #[test]
     fn class_attributes_are_merged() {
         let result = merge_attributes(vec![vec![attr("class", "foo")], vec![attr("class", "bar")]]);
