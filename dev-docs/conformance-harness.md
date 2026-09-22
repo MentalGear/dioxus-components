@@ -209,6 +209,19 @@ SSG_SITE_DIR=/tmp/ssg-site npx playwright test --config=ssg.local.config.ts orac
 > `target/dx/preview/release/web/public`) whenever the specs you intend to run drive
 > the UI rather than just read its markup.
 
+> **`dx build --ssg` does not clean its output directory — wipe it when switching
+> base-path modes.** Added 2026-09-22 after it invalidated a full 57-test run. A build
+> WITHOUT `--base-path`, run after an earlier build WITH it (e.g. `scripts/deploy-preview.sh`,
+> which is why that script does its own `rm -rf "$public_dir"` first), leaves the previous
+> run's prerendered HTML in place: the served pages still carry `/dioxus-components/` asset
+> references — 89 of them on one component page, and zero root-relative ones — so every asset
+> 404s, nothing hydrates, and EVERY interaction test fails. The failure looks nothing like a
+> stale build: the server returns 200, the markup renders, and the specs report ordinary
+> assertion failures across the whole file. Check with
+> `grep -c '/dioxus-components/' <public>/component/<name>/index.html` — it should be 0 for a
+> root-served build — and `rm -rf target/dx/preview/release/web/public` before rebuilding in
+> the other mode.
+>
 > **Serve this build at the server ROOT, not under `/dioxus-components`.** Added 2026-09-21.
 > This is the mirror image of the `--base-path` trap and costs just as much. The build above takes
 > no `--base-path`, so its asset paths are root-relative; serving it under a `/dioxus-components`
