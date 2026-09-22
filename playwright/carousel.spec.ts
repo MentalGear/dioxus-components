@@ -854,3 +854,115 @@ test.describe("Carousel: scroll-snap-stop caps a smooth scroll to one slide", ()
     await expect(slide(4)).toHaveAttribute("data-selected", "false");
   });
 });
+
+/**
+ * True if `samples` pass strictly through a value between their own first
+ * and last entry, on a scale-relative tolerance.
+ *
+ * Deliberately NOT `passesThroughAnIntermediateValue`: that one guards with
+ * `hi - lo < 2` and bands with `lo + 1`/`hi - 1`, which are pixel
+ * thresholds. Opacity's whole range is 0..1, so a 1 -> 0.5 fade has a span
+ * of 0.5 and would fail that guard unconditionally -- the test would be red
+ * no matter how well the fade worked. This one takes a minimum span and
+ * pads by a fraction of the observed span instead.
+ */
+function passesThroughAnIntermediateFraction(samples: number[], minSpan = 0.05): boolean {
+  if (samples.length < 3) {
+    return false;
+  }
+  const start = samples[0];
+  const end = samples[samples.length - 1];
+  const lo = Math.min(start, end);
+  const hi = Math.max(start, end);
+  if (hi - lo < minSpan) {
+    return false;
+  }
+  const pad = (hi - lo) * 0.1;
+  return samples.some((v) => v > lo + pad && v < hi - pad);
+}
+
+/** Sample an element's computed opacity every frame across `trigger`. */
+async function sampleOpacityDuring(
+  page: Page,
+  selector: string,
+  trigger: () => Promise<void>,
+  windowMs = 1500,
+): Promise<number[]> {
+  await page.evaluate(
+    ({ selector, windowMs }) => {
+      const w = window as unknown as { __dxOpacity: number[]; __dxOpacityDone: boolean };
+      w.__dxOpacity = [];
+      w.__dxOpacityDone = false;
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (!el) {
+        w.__dxOpacityDone = true;
+        return;
+      }
+      const t0 = performance.now();
+      const tick = () => {
+        w.__dxOpacity.push(parseFloat(getComputedStyle(el).opacity));
+        if (performance.now() - t0 > windowMs) {
+          w.__dxOpacityDone = true;
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    { selector, windowMs },
+  );
+  await trigger();
+  await page.waitForFunction(
+    () => (window as unknown as { __dxOpacityDone: boolean }).__dxOpacityDone === true,
+    undefined,
+    { timeout: windowMs + 5000 },
+  );
+  return page.evaluate(() => (window as unknown as { __dxOpacity: number[] }).__dxOpacity);
+}
+
+/**
+ * The disabled-state fade (round 6, user-reported): Previous/Next are
+ * genuinely `disabled` at the first/last slide, and that opacity change used
+ * to apply instantly. The transition lives on the BASE rule rather than
+ * inside `:disabled` -- scoped to `:disabled` it would animate entering the
+ * state but not leaving it, since the non-disabled style would then carry no
+ * transition of its own. So both directions are asserted here.
+ */
+test.describe("Carousel: the disabled-state opacity change actually fades", () => {
+  test("Next fades both entering and leaving :disabled", async ({ page }) => {
+    await goto(page, "main");
+    const reducedMotion = await page.evaluate(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    test.skip(
+      reducedMotion,
+      "test browser reports prefers-reduced-motion: reduce -- the shared theme layer deliberately suppresses this fade, so whether it animates cannot be asked honestly here",
+    );
+
+    const frame = demoFrame(page, "main");
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const previous = frame.getByRole("button", { name: "Previous slide" });
+
+    // Walk to the second-to-last slide so the next click disables Next.
+    for (let i = 0; i < 3; i++) {
+      await next.click();
+      await page.waitForTimeout(700);
+    }
+
+    const disabling = await sampleOpacityDuring(page, ".dx-carousel-next", () => next.click());
+    await expect(next).toBeDisabled();
+    expect(
+      passesThroughAnIntermediateFraction(disabling),
+      `entering :disabled should pass through an intermediate opacity; got ${JSON.stringify(disabling)}`,
+    ).toBe(true);
+
+    await page.waitForTimeout(700);
+
+    const enabling = await sampleOpacityDuring(page, ".dx-carousel-next", () => previous.click());
+    await expect(next).toBeEnabled();
+    expect(
+      passesThroughAnIntermediateFraction(enabling),
+      `leaving :disabled should pass through an intermediate opacity; got ${JSON.stringify(enabling)}`,
+    ).toBe(true);
+  });
+});
