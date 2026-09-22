@@ -100,7 +100,16 @@ SPREAD_BASELINE="scripts/check-attr-spread-collision.baseline.tsv"
 COMPONENT_FORWARD_BASELINE="scripts/check-attr-spread-collision.component-forward.baseline.tsv"
 
 CHECKER_DIR="scripts/attr-spread-collision-checker"
+# Must be EXPORTED, not just assigned: `cargo build` runs as a subprocess, and an
+# unexported shell variable never reaches it. Without the export cargo falls back
+# to whatever `target-dir` the ambient cargo config names (this image's
+# /root/.cargo/config.toml points at the main checkout's own target/), while the
+# $BIN check below still looks at the relative default -- so the two agree in the
+# main checkout by coincidence and diverge in every git worktree, failing with a
+# spurious "built but not there". Found 2026-09-22 by an agent running this gate
+# from a worktree.
 : "${CARGO_TARGET_DIR:=target}"
+export CARGO_TARGET_DIR
 
 echo "check-attr-spread-collision: building analyzer..." >&2
 if ! cargo build --release --offline -p attr-spread-collision-checker >&2; then
