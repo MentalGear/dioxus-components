@@ -209,18 +209,54 @@ SSG_SITE_DIR=/tmp/ssg-site npx playwright test --config=ssg.local.config.ts orac
 > `target/dx/preview/release/web/public`) whenever the specs you intend to run drive
 > the UI rather than just read its markup.
 
-> **`dx build --ssg` does not clean its output directory — wipe it when switching
-> base-path modes.** Added 2026-09-22 after it invalidated a full 57-test run. A build
-> WITHOUT `--base-path`, run after an earlier build WITH it (e.g. `scripts/deploy-preview.sh`,
-> which is why that script does its own `rm -rf "$public_dir"` first), leaves the previous
-> run's prerendered HTML in place: the served pages still carry `/dioxus-components/` asset
-> references — 89 of them on one component page, and zero root-relative ones — so every asset
-> 404s, nothing hydrates, and EVERY interaction test fails. The failure looks nothing like a
-> stale build: the server returns 200, the markup renders, and the specs report ordinary
-> assertion failures across the whole file. Check with
-> `grep -c '/dioxus-components/' <public>/component/<name>/index.html` — it should be 0 for a
-> root-served build — and `rm -rf target/dx/preview/release/web/public` before rebuilding in
-> the other mode.
+> **Build the local SSG site into its own absolute `CARGO_TARGET_DIR`, never the shared
+> repo-root `target/`.** Added 2026-09-22 after this invalidated a full 57-test run, then
+> cost three further rebuilds chasing the wrong cause. The symptom: a build run WITHOUT
+> `--base-path` still serves pages whose prerendered markup carries `/dioxus-components/`
+> references — 89 of them on one component page — so those assets all 404, nothing hydrates,
+> and EVERY interaction test fails. The failure looks nothing like a stale build: the server
+> returns 200, the markup renders, and the specs report ordinary assertion failures across the
+> whole file. Two failure shapes appear in the same log, which is itself a tell: assertions
+> with Playwright's 5s `expect` timeout fail fast with "element(s) not found", while raw
+> un-timed actions (`.focus()`, `.click()`, `.getAttribute()`) burn the entire 2-minute test
+> timeout — the `(2.0m)` entries are starvation, not a hang.
+>
+> Check with `grep -o '/dioxus-components/' <public>/component/<name>/index.html | wc -l` — it
+> must be 0 for a root-served build. **Not `grep -c`**, which counts matching LINES: these
+> pages are minified, 223 lines holding 89 occurrences, so `grep -c` returns `3` and a page
+> that is entirely wrong reads as very nearly clean.
+>
+> **Mechanism, established 2026-09-22.** `dx` itself is innocent: a build into a brand-new
+> `CARGO_TARGET_DIR` that no `--base-path` build had ever touched emits ZERO prefixed
+> references. There is no dx-CLI default that silently applies `dioxus-components` when the
+> flag is omitted, and no compile-time caching that survives the flag — the captured rustc
+> environment in `target/dx/.captured-args/*/preview.bin.json` holds only `DIOXUS_APP_TITLE`
+> and `DIOXUS_PRODUCT_NAME`, nothing base-path-related. The contamination channel is the
+> SHARED `target/` tree, which `scripts/deploy-preview.sh` also writes into WITH
+> `--base-path dioxus-components` (line 22). Supporting evidence: that tree held two
+> generations of captured build args at clearly different timestamps for the same crate and
+> target hashes, and its own `target/dx/preview/release/web/public` already carried the
+> 89-occurrence prefix a full minute before it was copied into the serve root — the
+> contamination predates any copy step. Caveat, stated deliberately: a second writer was not
+> caught in the act (that would mean deliberately racing two builds), so this is the
+> best-supported account rather than a witnessed fact. What IS witnessed, and is what matters
+> operationally, is that an isolated absolute `CARGO_TARGET_DIR` produces a clean build every
+> time and the shared tree did not.
+>
+> **This is why `rm -rf <public>` does not fix it, and why three rebuilds were wasted on it.**
+> Wiping `public`, then `cargo clean -p preview`, then wiping `web/` all ran inside the shared
+> tree, so each rebuild re-derived the same contaminated inputs. Deleting the output of a
+> contaminated tree cannot help; the tree is the problem. Prefer the isolated build. If you
+> must serve a build you did not make yourself, make both path shapes resolve
+> (`ln -s . "<serve-root>/dioxus-components"`) rather than rebuilding on a hunch.
+>
+> **The construction already exists — it was adopted for a different reason.** `CLAUDE.md`
+> requires every agent to use an absolute, isolated `CARGO_TARGET_DIR`; that rule was written
+> for `dev-docs/backlog.md` row 98 (`dx build --ssg` fails outright on a RELATIVE path).
+> Following it also makes this whole class of base-path contamination impossible, because no
+> two base-path modes ever share a tree. One construction, two failure classes. It does not
+> subsume the `--base-path`-vs-root SERVING mismatch below, which is about where a correct
+> build is mounted, not about how it was produced.
 >
 > **Serve this build at the server ROOT, not under `/dioxus-components`.** Added 2026-09-21.
 > This is the mirror image of the `--base-path` trap and costs just as much. The build above takes
