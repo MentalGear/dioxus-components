@@ -101,6 +101,24 @@
        Copied-out components ship without main.css, so this needs to live
        here too. */
     touch-action: manipulation;
+
+    /* Fades the :disabled opacity change below in both directions.
+       Declared here on the base rule, not inside `:disabled`, on purpose --
+       a transition scoped to `:disabled` only applies once that state
+       already matches, so it animates the *entry* into disabled (old
+       opacity 1 -> the new target, using the incoming rule's own
+       transition) but not the *exit* (the post-change style carries no
+       `:disabled` rule to contribute a transition at all, so opacity would
+       snap back to 1 instantly). Putting it on the always-applied base rule
+       keeps a transition active in both the enabled and disabled computed
+       styles. Token/easing pair matches the one already used for an
+       opacity fade three times elsewhere (navbar/style.css, sidebar/
+       style.css x2) rather than inventing a new shape. No
+       prefers-reduced-motion override needed here -- these are native
+       `<button>` elements, already covered by dx-components-theme.css's
+       shared reduced-motion layer's bare `button` selector (confirmed
+       live, see this lane's report). */
+    transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
 .dx-carousel-previous svg,
