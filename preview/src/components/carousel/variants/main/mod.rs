@@ -12,6 +12,17 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 pub fn Demo() -> Element {
     let mut slide_one_clicked = use_signal(|| false);
     rsx! {
+        // `max-width: 26rem` = the intended 320px (20rem) card + 6rem.
+        // `.dx-carousel` itself reserves that same 6rem as `padding-inline`
+        // for its own Previous/Next buttons (style.css, `box-sizing:
+        // border-box`), which comes out of this wrapper's width rather than
+        // adding on top of it -- so the wrapper must be widened by exactly
+        // the reservation's own size, or the visible card shrinks by it
+        // (measured: 320px -> 224px without this). See lane
+        // `carousel-wrapper-width`'s report for the full measurement table.
+        // Keep these two numbers paired: do not "tidy" 26rem back toward
+        // 20rem without also revisiting the reservation in style.css.
+        //
         // `width: 100%` is load-bearing next to `max-width`, not redundant.
         // `.dx-component-preview-frame` is a flex column, so its cross axis is
         // horizontal; this wrapper's own `margin: 0 auto` makes both cross-axis
@@ -24,7 +35,7 @@ pub fn Demo() -> Element {
         // `align-items: stretch` on the frame does NOT fix this (auto margins
         // still win) and would widen ~80 other demos that have no `max-width`;
         // both measured, see `dev-docs/backlog.md` row 94.
-        div { style: "width: 100%; max-width: 20rem; margin: 0 auto;",
+        div { style: "width: 100%; max-width: 26rem; margin: 0 auto;",
             Carousel { aria_label: "Featured photos",
                 CarouselPrevious { ChevronLeft {} }
                 CarouselNext { ChevronRight {} }

@@ -1,0 +1,1564 @@
+<title>Carousel Overscroll Bench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f4f6f8;
+    --surface: #ffffff;
+    --sunken: #eceff3;
+    --ink: #111820;
+    --ink-soft: #55606e;
+    --ink-faint: #8a94a2;
+    --line: #dbe1e8;
+    --line-strong: #c2cbd6;
+    --accent: #0d6e72;
+    --accent-soft: #e3f1f1;
+    --signal: #b2561a;
+    --signal-soft: #fbeade;
+    --ok: #1d7048;
+    --void: #e8d9c6;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1318;
+      --surface: #161d24;
+      --sunken: #0a0e12;
+      --ink: #e7edf3;
+      --ink-soft: #a3aebb;
+      --ink-faint: #6d7886;
+      --line: #263039;
+      --line-strong: #3a4753;
+      --accent: #4fc4c8;
+      --accent-soft: #10312f;
+      --signal: #e08b52;
+      --signal-soft: #2e1d12;
+      --ok: #5cc28c;
+      --void: #2b2318;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1318;
+    --surface: #161d24;
+    --sunken: #0a0e12;
+    --ink: #e7edf3;
+    --ink-soft: #a3aebb;
+    --ink-faint: #6d7886;
+    --line: #263039;
+    --line-strong: #3a4753;
+    --accent: #4fc4c8;
+    --accent-soft: #10312f;
+    --signal: #e08b52;
+    --signal-soft: #2e1d12;
+    --ok: #5cc28c;
+    --void: #2b2318;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 28px 56px;
+  }
+
+  header h1 {
+    font-size: clamp(22px, 4.2vw, 30px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  header p {
+    margin: 0;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  section { margin-top: 34px; }
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .mode {
+    display: block; text-align: left; cursor: pointer;
+    background: var(--surface); color: inherit; font: inherit;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 13px;
+  }
+  .mode:hover { border-color: var(--line-strong); }
+  .mode[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mode .k {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-faint); display: block; margin-bottom: 3px;
+  }
+  .mode[aria-pressed="true"] .k { color: var(--accent); }
+  .mode .n { font-weight: 600; display: block; }
+  .mode .d { font-size: 12.5px; color: var(--ink-soft); display: block; margin-top: 3px; line-height: 1.4; }
+
+  .bench {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 20px 16px;
+    margin-top: 14px;
+  }
+  .viewport {
+    position: relative;
+    background: var(--void);
+    border-radius: 8px;
+    padding: 10px 0;
+    /* C translates the scroll container itself, which moves its clip box with
+       it -- that is why slides used to paint outside the frame. Clipping here
+       is a structural guarantee: nothing inside can paint beyond this box, at
+       any transform. `clip` rather than `hidden` so this never silently
+       becomes a scroll container of its own. */
+    overflow: clip;
+  }
+  .void-label {
+    position: absolute; inset-block-start: 4px; inset-inline-start: 10px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-faint); pointer-events: none;
+  }
+  .track {
+    display: flex; gap: 12px;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    will-change: transform;
+  }
+  .track::-webkit-scrollbar { display: none; }
+  .track.grab { cursor: grab; }
+  .track.grabbing { cursor: grabbing; user-select: none; }
+  .slide {
+    flex: 0 0 100%; min-width: 0;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    display: grid; place-items: center;
+    height: 150px;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-family: var(--mono); font-size: 34px; font-weight: 500;
+    color: var(--ink-soft);
+  }
+
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; margin-top: 16px; }
+  .stat { background: var(--sunken); border-radius: 7px; padding: 9px 11px; }
+  .stat .l {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-faint); display: block;
+  }
+  .stat .v { font-family: var(--mono); font-size: 17px; font-variant-numeric: tabular-nums; margin-top: 2px; display: block; }
+  .stat .v.hot { color: var(--signal); }
+  .stat .v.ok { color: var(--ok); }
+
+  .trace { margin-top: 14px; }
+  .trace svg { display: block; width: 100%; height: 56px; background: var(--sunken); border-radius: 7px; }
+  .trace .cap {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
+    margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .swatch { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  .note {
+    background: var(--signal-soft);
+    border-inline-start: 3px solid var(--signal);
+    border-radius: 0 7px 7px 0;
+    padding: 11px 14px; margin-top: 14px;
+    font-size: 13.5px; color: var(--ink-soft);
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+  .note code, p code, li code { font-family: var(--mono); font-size: 0.92em; }
+
+  .ask + .ask { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .ask .q { margin: 0 0 9px; font-weight: 600; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .choice {
+    font: inherit; font-size: 13.5px; cursor: pointer;
+    background: var(--sunken); color: inherit;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px;
+  }
+  .choice:hover { border-color: var(--line-strong); }
+  .choice[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
+  .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choice[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .ask .hint { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-faint); }
+  .status {
+    margin: 16px 0 0; padding-top: 13px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint);
+  }
+  .status.live::before { content: "● "; color: var(--ok); }
+  .status.off::before { content: "○ "; }
+
+  .native .track { scroll-snap-type: x mandatory; cursor: default; }
+  .findings { padding-inline-start: 18px; margin: 0; color: var(--ink-soft); }
+  .findings li { margin-bottom: 7px; }
+  .findings strong { color: var(--ink); font-weight: 600; }
+  .revnote {
+    background: var(--sunken); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; margin-top: 14px; font-size: 13.5px; line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  .revnote strong { color: var(--ink); }
+  footer { margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 12.5px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .track { scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="page">
+  <header>
+    <p class="eyebrow">Drag physics · scroll-snap</p>
+    <h1>Carousel Overscroll Bench</h1>
+    <p>Five ways to handle a mouse drag past the first or last slide, on the same CSS scroll-snap engine our component uses. Drag each with the mouse and compare. The native control at the bottom has no JavaScript at all — on macOS it is the only one that can show real OS elasticity.</p>
+    <p class="revnote"><strong>Revision 28 — B2’s room resized from measurement, and the reason it overshoots is structural.</strong> The recording confirms it sharply: a gesture peaking at <strong>25px per event consumed the entire 260px room</strong>, while at the other edge gestures peaking at 145 and 121 produced 3px and 0px. There is no resistance anywhere in B2’s wheel path — there cannot be, since damping needs ownership of the scroll position and that is exactly the fight that was removed. The room fills at 1:1 with raw travel, so its SIZE is the only thing controlling how far you go, and 260 was chosen back when a damping curve still needed space there. It is now 140, derived rather than guessed: the deliberate end-edge attempts in that session ran 139, 183 and 331px of raw travel, and the platform’s own curve maps their median to 139px of visible depth — so the wall now sits roughly where native would have eased to. That is mitigation, not a fix. B2 trades a long free slide into a far wall for a short one into a near wall; what it cannot do is resist, and v27 already showed it cannot even reach the native asymptote (582px against the 260 it had). Bursts now also record which edge they worked against, so the start/end asymmetry can be read directly next time rather than inferred from the sign of the sum.</p>
+  </header>
+
+  <section>
+    <h2>Approach</h2>
+    <div class="modes" id="modes">
+      <button class="mode" data-mode="clamped" aria-pressed="true">
+        <span class="k">A · shipping now</span>
+        <span class="n">Clamped</span>
+        <span class="d">scrollBy is clamped at the edge. Nothing moves.</span>
+      </button>
+      <button class="mode" data-mode="deadspace" aria-pressed="false">
+        <span class="k">B · your idea</span>
+        <span class="n">Dead space</span>
+        <span class="d">Margin on the end slides makes real room; the settle carries it back.</span>
+      </button>
+      <button class="mode" data-mode="damped" aria-pressed="false">
+        <span class="k">B2 · your suggestion</span>
+        <span class="n">Damped margin</span>
+        <span class="d">Real room you scroll into, then the same ease home the mouse gets — triggered once the gesture is spent.</span>
+      </button>
+      <button class="mode" data-mode="bounce" aria-pressed="false">
+        <span class="k">B3 · no room to fight over</span>
+        <span class="n">Edge transform</span>
+        <span class="d">The wheel path never writes the scroll position and never disables snapping. Only the transform is ours.</span>
+      </button>
+      <button class="mode" data-mode="transform" aria-pressed="false">
+        <span class="k">C · my proposal</span>
+        <span class="n">Damped transform</span>
+        <span class="d">Track is translated past the edge, then springs back.</span>
+      </button>
+    </div>
+
+    <div class="bench">
+      <div class="viewport">
+        <span class="void-label" id="voidLabel">frame</span>
+        <div class="track grab" id="track">
+          <div class="slide">1</div>
+          <div class="slide">2</div>
+          <div class="slide">3</div>
+          <div class="slide">4</div>
+          <div class="slide">5</div>
+        </div>
+      </div>
+
+      <div class="readout">
+        <div class="stat"><span class="l">scrollLeft</span><span class="v" id="rScroll">0</span></div>
+        <div class="stat"><span class="l">overscroll</span><span class="v" id="rOver">0</span></div>
+        <div class="stat"><span class="l">scrollWidth</span><span class="v" id="rWidth">0</span></div>
+        <div class="stat"><span class="l">selected</span><span class="v" id="rSel">1 of 5</span></div>
+      </div>
+
+      <div class="trace">
+        <svg id="trace" viewBox="0 0 600 56" preserveAspectRatio="none" aria-label="Scroll position trace"></svg>
+        <div class="cap">
+          <span class="swatch"><i style="background:var(--accent)"></i> scrollLeft</span>
+          <span class="swatch"><i style="background:var(--signal)"></i> overscroll past the edge</span>
+          <span id="traceHint"></span>
+        </div>
+      </div>
+
+      <div class="note" id="modeNote"></div>
+    </div>
+  </section>
+
+  <section class="native">
+    <h2>Native control · no JavaScript</h2>
+    <p style="margin:0 0 12px;color:var(--ink-soft)"><strong>Now instrumented — drive this one and it calibrates the others.</strong> Identical CSS and no script controls it, but it is watched: every burst records the platform’s own delta curve, whether the OS bounce is visible to JavaScript at all, and — the number that matters most — how long after the last wheel event the motion actually stops. That last figure is the ground truth for “gesture end”, which is precisely what every tuned constant on the other modes is guessing at. Identical CSS, zero script. Scroll it with a trackpad, a wheel, or touch. On macOS and iOS this rubber-bands; on Linux and Windows it does not — which is the second reason the effect is missing, independent of our drag being synthetic.</p>
+    <div class="bench">
+      <div class="viewport" style="background:var(--sunken)">
+        <div class="track" id="nativeTrack" style="cursor:default">
+          <div class="slide" style="background:var(--surface)">A</div>
+          <div class="slide" style="background:var(--surface)">B</div>
+          <div class="slide" style="background:var(--surface)">C</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your verdict</h2>
+    <p style="margin:0 0 12px;color:var(--ink-soft)">The one thing no measurement here can answer: what it feels like on your machine. Both questions record straight back to me.</p>
+
+    <div class="bench">
+      <div class="ask">
+        <p class="q">Which came closest to feeling right?</p>
+        <div class="choices" data-vote="preferred">
+          <button class="choice" data-value="clamped">A · Clamped</button>
+          <button class="choice" data-value="deadspace">B · Dead space</button>
+          <button class="choice" data-value="damped">B2 · Damped margin</button>
+          <button class="choice" data-value="bounce">B3 · Edge transform</button>
+          <button class="choice" data-value="transform">C · Transform</button>
+          <button class="choice" data-value="none">None of them</button>
+        </div>
+      </div>
+
+      <div class="ask">
+        <p class="q">Did the <em>native control</em> rubber-band for you?</p>
+        <div class="choices" data-vote="nativeElastic">
+          <button class="choice" data-value="yes">Yes — it stretched</button>
+          <button class="choice" data-value="no">No — hard stop</button>
+          <button class="choice" data-value="unsure">Not sure</button>
+        </div>
+        <p class="hint">This tells me whether your OS has elasticity at all, which decides whether any of this is worth chasing.</p>
+      </div>
+
+      <p class="status" id="status">Checking whether this page can record…</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What to judge</h2>
+    <ul class="findings">
+      <li><strong>Your two B2 reports were one defect seen twice, and the recording pins it.</strong> The gestures
+      carry <code>scrollStart</code> values of both 0 and 260 — the margin was in a different state at the start of
+      different drags, which is only possible if its removal was racing the next gesture. Several also recorded
+      <code>distinctScrollValues: 0</code>, meaning the finishing bookkeeping for one drag ran after the next drag had
+      already cleared the sample buffer. The damping itself was never the problem: peak raw finger travel reached 960px
+      while visible overscroll capped at 180px, comfortably under the 221px asymptote, and no gesture ever hit the wall.
+      The selection never drifted either — <code>indexStart</code> and <code>indexEnd</code> are 0 on all 30 damped
+      gestures.</li>
+      <li><strong>The trackpad answer costs something, and it is worth being explicit about it.</strong> Making the room
+      gesture-scoped is what stops a trackpad coasting into it and getting stuck — your complaint about B. But room
+      that only exists during a gesture is, by definition, not there for the gesture that has not started yet, which is
+      why the wheel needs its own scope rather than inheriting the pointer's. These two requirements pull against each
+      other, and any real implementation has to pick a burst-idle timeout (320ms here). That is a tuning constant, not a
+      construction, and it is the one part of B2 I cannot make self-evidently correct.</li>
+      <li><strong>Your report, confirmed by the recording.</strong> B’s peak overscroll came back as exactly 80 on every overdrag — the margin width to the pixel, which is the signature of a hard wall, not of resistance. C’s reached 383–940px with <code>distinctScrollValues: 1</code>, i.e. the track moved several hundred pixels while <code>scrollLeft</code> never changed once. Both of your complaints were the same defect twice: an unbounded input driving a bounded output with nothing shaping the curve between them.</li>
+      <li><strong>B2 fixes the wall by making it unreachable, not by moving it.</strong> Raw finger travel goes into <code>rawOver</code>; what the scroll port actually does is <code>limit · x / (x + limit)</code>, which asymptotes at 221px against 260px of real room. Every extra pixel of drag buys strictly less than the one before, and the far end is approached but never met — so there is no edge left to hit. Simply lengthening the margin would only have moved the stop further away.</li>
+      <li><strong>B2’s room exists only during a drag.</strong> It is installed on the first move past the threshold and removed once the settle has finished, with the scroll port shifted by the same amount so neither transition is visible. Between gestures the space is not there, which is why a trackpad flick cannot coast into it or get stuck — the behaviour you hit on the trackpad in B.</li>
+      <li><strong>C’s escape is fixed by containment, not by stacking.</strong> C translates the scroll container, and a transformed scroller carries its own clip box with it — which is why slides painted over the frame. The frame now declares <code>overflow: clip</code>, so nothing inside it can paint beyond it at any transform, under any <code>z-index</code>, in any stacking context. That is a containment rule, so unlike a <code>z-index</code> fix it cannot be outbid by a descendant. <code>clip</code> rather than <code>hidden</code> so the frame never quietly becomes a second scroll container.</li>
+      <li><strong>C’s translation is bounded too</strong>, by the same rubber function, at 110px. The clip alone would have stopped the painting while the track still ran arbitrarily far; the two together mean it can neither run away nor escape. Independent guarantees, deliberately — either one failing still leaves the other standing.</li>
+      <li><strong>The objection to C is unchanged.</strong> While the transform is applied, the visual position and the scroll position disagree, and the component’s selected-slide tracking reads the scroll position. B and B2 keep one source of truth, which is why I still prefer them despite C feeling closest to native for you.</li>
+      <li><strong>The obvious version of B destroys the component.</strong> Adding spacer <code>&lt;div&gt;</code>s instead of margins shifts every slide’s position in <code>container.children</code> — and both the tracking bridge and the drag code read a child’s array position <em>as</em> its slide index. One leading spacer, zero further input, and the selection walks 2→3→4→5 of 5 in about 900ms and locks there, because each misread triggers a scroll that triggers another misread. That is why this bench uses margins on the existing end slides.</li>
+      <li><strong>Estimated cost of shipping B2:</strong> 30–50 lines inside the drag bridge, two call sites, no API or component change. The tracking code never learns anything happened.</li>
+      <li><strong>Neither is the OS effect.</strong> Compare both against the native control above on your Mac; the real curve is decelerating and rubbery under momentum, while these shape a drag that you are still holding.</li>
+    </ul>
+  </section>
+
+  <footer>Mouse drag only, matching the component — touch is left to the browser here exactly as it is in the real implementation. Reduced-motion settings are respected. Each completed drag records its own measurements (mode, distance, peak overscroll, settle duration) to this artifact so I can read them back; nothing else about you is collected.</footer>
+</div>
+
+<script>
+(function () {
+  var track = document.getElementById("track");
+  var rScroll = document.getElementById("rScroll");
+  var rOver = document.getElementById("rOver");
+  var rWidth = document.getElementById("rWidth");
+  var rSel = document.getElementById("rSel");
+  var traceSvg = document.getElementById("trace");
+  var traceHint = document.getElementById("traceHint");
+  var modeNote = document.getElementById("modeNote");
+  var voidLabel = document.getElementById("voidLabel");
+
+  var PAD = 80;            // dead-space width in mode B
+  // B2's room, resized from measurement. 260 was chosen when B2 still damped
+  // on the wheel -- it needed space for a curve. It has no curve there any
+  // more (damping needs ownership of the scroll position, which is the fight
+  // we removed), so the room fills at 1:1 with raw travel and its SIZE is the
+  // only thing controlling how far you go. The recording shows the cost: a
+  // gesture peaking at 25px/event consumed the entire 260px, while fast
+  // gestures at the other edge (peaks of 145 and 121) produced 3px and 0px --
+  // no resistance anywhere, just a long free slide into a wall.
+  // Sized now to where the platform's own curve would have landed: the
+  // deliberate end-edge attempts in that session ran 139, 183 and 331px of
+  // raw travel, and the native curve maps their median (183) to 139px of
+  // visible depth. So the wall sits where native would have eased to.
+  var PAD_LONG = 140;      // mode B2: the room IS the limit, so it is sized like one
+  var MAX_TRANSLATE = 110; // mode C: asymptotic ceiling, so the track cannot run away
+  var TRANSLATE_K = 260;   // mode C: how quickly resistance builds
+  // DERIVED, not chosen. The macOS/WebKit rubber-band function is
+  //     b(x) = (1 - 1/(x*c/d + 1)) * d,  c ~ 0.55, d = viewport dimension
+  // Let u = x*c/d; then b = d*u/(u+1) = x*d/(x + d/c). That is exactly the
+  // hyperbola already in use here, rubber(x) = L*x/(x + L), with L = d/c.
+  // So the SHAPE was right by accident and only the constant was invented:
+  // it should be the track's own width over 0.55, about 1.8x the visible
+  // width, rather than the 221px that came from an arbitrary 260px room.
+  // (The formula is recalled, not measured -- the platform's own bounce is
+  // invisible to us, being composited. What IS verified here is the algebra
+  // showing our function and theirs are the same family.)
+  var RUBBER_C = 0.55;
+  function nativeLimit() { return (track.clientWidth || 320) / RUBBER_C; }
+  var DAMP_LIMIT = PAD_LONG * 0.85;  // B2 only: capped by the room it actually has, below
+                                     // the physical margin, so the wall is structurally
+                                     // unreachable -- resistance, never a stop.
+  var THRESHOLD = 5;      // px before a drag is recognised
+  // A wheel has no `pointerup`. Its real release signal is the velocity
+  // decaying, not the event stream going silent: kinetic momentum keeps
+  // firing events for a second or more after the fingers lift, so an idle
+  // timer alone always settles late. Below this per-event delta the gesture
+  // is spent and we can ease out, which is what the drag does on release.
+  // NOT a pixel guess any more. 1.6 was invented in v11 and carried unchecked
+  // for twelve revisions; the recording shows this trackpad's deltas bottom
+  // out at 2-3px and often never reach 1, so a 1.6px floor sits UNDER the
+  // device's own quantum and the decay test could never be satisfied -- one
+  // burst with a tail of 3,3,2,3,2,3,3,2,2,2 never fired by decay at all and
+  // fell through to the idle backstop. The floor is now derived from the
+  // smallest non-zero delta this device has actually emitted, so it scales
+  // with whatever hardware is in front of us instead of assuming mine.
+  var WHEEL_RELEASE_DELTA = 1.6;      // fallback only, until the device speaks
+  var WHEEL_FLOOR_MULT = 2;           // x the device's own quantum
+  var WHEEL_PLATEAU_MULT = 3;         // x the device's own quantum
+  // ...but a FIXED floor makes the wait grow with how hard you pushed: a
+  // deeper overdrag means more momentum, which takes longer to decay to any
+  // fixed number. Releasing at a fraction of the gesture's OWN peak keeps
+  // the wait roughly constant however far out you went.
+  var WHEEL_RELEASE_FRACTION = 0.12;
+  var WHEEL_RELEASE_MAX = 10;         // bounded, or a hard flick sets an absurd bar
+  // A PLATEAU is not decay. Momentum falls monotonically; a hand still
+  // pushing gently holds a flat delta. The relative threshold only helps
+  // fast gestures -- a slow one has peak*fraction below the 1.6px floor, so
+  // it could not release until the stream reached essentially zero. The
+  // recording shows the cost: a 71-event burst at peak 7px sat in the room
+  // for 1196ms against a flat tail of 3,3,3,3,2,2,2,2,2,2.
+  var WHEEL_PLATEAU_MAX = 4;   // px: at or under this, flat means finished
+  // The interrupt threshold MUST stay strictly above the release threshold.
+  // v16 made release peak-relative (~10px after a fast flick) while interrupt
+  // stayed a fixed 6px, so any delta between the two BOTH triggered a release
+  // AND immediately cancelled it -- release, cancel, release, cancel, every
+  // few events. That is why v16 glitched far worse rather than better.
+  var wheelInterruptFloor = 6;
+  var WHEEL_RELEASE_RUNS = 2;      // consecutive, so one pause is not a release
+  // MEASURED, not guessed. Driving the untouched native control and timing the
+  // gap between its last wheel event and the moment its scroll position stops
+  // changing gives 64-78ms on seven of ten bursts. 140 was invented and is
+  // twice what the hardware needs. The outliers -- 210, 526 and 609ms, all
+  // from gentle gestures whose smooth scrolling runs on long after the last
+  // event -- are exactly why an idle timeout can never be the only trigger,
+  // and why the plateau test has to carry those.
+  var WHEEL_IDLE_MS = 90;          // backstop only, for a stream that just stops
+  var WHEEL_INTERRUPT_DELTA = 6;   // px: above this, a new gesture may cut the ease short
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var mode = "clamped";
+  var samples = [];
+  var dragging = false, armed = false, startX = 0, lastX = 0, over = 0;
+  // B2: signed FINGER travel past the boundary (+ past the start, - past the end).
+  // What the eye sees is rubber(|rawOver|), never rawOver itself.
+  var rawOver = 0, padLive = 0;
+  // Timers that own the room. Both are cancellable, because the v4 bug was
+  // exactly a stale one firing into the NEXT gesture.
+  var padTimer = 0, wheelTimer = 0, wheelLowRun = 0, wheelBurstStart = 0;
+  var wheelSettling = false;
+  var settleToken = 0;
+  // Snapping is suspended ONCE per gesture, not re-assigned on every event:
+  // touching `style.scrollSnapType` repeatedly dirties the element and makes
+  // the engine re-evaluate snapping, which costs more the more content there
+  // is -- which is why the churn got worse on bigger screens.
+  var snapSuspended = false;
+  var bounceSettling = false, bounceHoming = false;
+  var wheelPeakDelta = 0, wheelLastAbs = Infinity;
+  var deviceMinDelta = Infinity;   // measured: the smallest step this hardware sends
+  function noteDeviceDelta(ad) { if (ad > 0 && ad < deviceMinDelta) deviceMinDelta = ad; }
+
+  // ---- telemetry -------------------------------------------------------
+  // One document per page load, rewritten after each completed gesture.
+  // The store caps documents per artifact, so gestures aggregate into this
+  // one doc rather than becoming a document each.
+  var sid = (function () {
+    try { return crypto.randomUUID().replace(/-/g, ""); }
+    catch (e) { return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  })();
+  var db = null, docRef = null;
+  var record = {
+    startedAt: new Date().toISOString(),
+    ua: navigator.userAgent,
+    platform: (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "",
+    reducedMotion: reduce,
+    dpr: window.devicePixelRatio || 1,
+    viewport: window.innerWidth + "x" + window.innerHeight,
+    gestures: [],
+    dwellMs: { clamped: 0, deadspace: 0, damped: 0, bounce: 0, transform: 0 },
+    // Trackpad/wheel is a SEPARATE input path from the pointer drag -- a
+    // two-finger trackpad scroll fires `wheel`, never pointerdown/move.
+    // Per-burst wheel records. Until now the wheel produced only aggregates,
+    // so every fix to it was reasoned rather than measured -- which is why so
+    // many of them were wrong. `deltaMode` plus the raw delta trace is also
+    // the only way to tell a trackpad from a notched wheel: the platform
+    // never reports the device, it can only be inferred from the shape.
+    deviceMinDelta: null,
+    nativeBursts: [],
+    wheelBursts: [],
+    wheel: { bursts: 0, peakOverscroll: 0, peakRawOver: 0, reachedRoom: 0, settles: 0,
+             lastRelease: null, lastReleaseMs: 0, decayReleases: 0, idleReleases: 0 },
+    verdicts: {}
+  };
+  var MAX_GESTURES = 60;
+  var statusEl = document.getElementById("status");
+  var flushing = false, flushAgain = false, wrote = 0;
+
+  function setStatus(text, live) {
+    statusEl.textContent = text;
+    statusEl.className = "status " + (live ? "live" : "off");
+  }
+
+  function flush() {
+    if (!docRef) return;
+    if (flushing) { flushAgain = true; return; }   // one write at a time per doc
+    flushing = true;
+    docRef.set(record).then(function () {
+      flushing = false;
+      wrote += 1;
+      setStatus("recorded · " + record.gestures.length + " gesture(s), " + wrote + " save(s) · " + sid.slice(0, 8), true);
+      if (flushAgain) { flushAgain = false; flush(); }
+    }).catch(function (e) {
+      flushing = false;
+      if (e && (e.code === "revoked" || e.code === "not_granted")) {
+        docRef = null;
+        setStatus("recording stopped", false);
+      }
+    });
+  }
+
+  var dwellSince = Date.now();
+  function tallyDwell() {
+    var now = Date.now();
+    record.dwellMs[mode] = (record.dwellMs[mode] || 0) + (now - dwellSince);
+    dwellSince = now;
+  }
+
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("db").then(function (store) {
+      if (!store) { setStatus("not recording — no data capability in this view", false); return; }
+      db = store;
+      docRef = db.collection("sessions").doc(sid);
+      setStatus("recording this session · " + sid.slice(0, 8), true);
+    }).catch(function () {
+      setStatus("not recording — capability unavailable", false);
+    });
+  } else {
+    setStatus("not recording — opened outside the artifact viewer", false);
+  }
+
+  var NOTES = {
+    clamped:
+      "<strong>What you should see:</strong> at slide 1 or 5 the track simply refuses. " +
+      "<code>scrollLeft</code> is clamped to <code>[0, scrollWidth − clientWidth]</code>, so the drag is a no-op and the trace flatlines. " +
+      "This is what ships today.",
+    deadspace:
+      "<strong>What you should see:</strong> the track scrolls into blank space past the end, then the release animation carries it back to the slide. " +
+      "The <code>scrollWidth</code> readout grows by " + (PAD * 2) + "px because the room is genuinely there. " +
+      "A spike measured this construction against the real component: no jolt when the margin is added or removed mid-gesture, correct spring-back through the unmodified settle code, and a wheel cannot rest in the space because mandatory snapping absorbs it.",
+    damped:
+      "<strong>What you should see:</strong> the same real room as B, but " + Math.round(PAD_LONG / PAD) + "× " +
+      "longer, and the further you push the less each pixel of travel buys you. " +
+      "The rubber function asymptotes at " + Math.round(DAMP_LIMIT) + "px against a " + PAD_LONG + "px margin, " +
+      "so you can never reach the wall — the drag eases out instead of stopping. " +
+      "The room is added on the first real move of a gesture and handed back once that gesture has " +
+      "settled AND the scroll port has left it, so nothing can coast into it and nothing can be " +
+      "yanked out from under a drag still in progress. A trackpad gets its own gesture scope, " +
+      "because a two-finger scroll fires <code>wheel</code> and never reaches the pointer path at all — including its own release. Its release is inferred from the velocity decaying, not from the event stream falling silent, and then it eases back through the same settle a drag uses.",
+    bounce:
+      "<strong>What you should see:</strong> the same damped resistance as B2, but reached a different way. " +
+      "There is no margin here at all, so the scroller is genuinely clamped at the edge and cannot move \u2014 " +
+      "the shortfall between what your gesture asked for and what the scroller actually did is the overdrag, " +
+      "and the track is translated by that amount instead. Because nothing past the edge is scrollable, " +
+      "momentum has nothing to contest and no per-frame correction is needed, which is what was glitching in B2. " +
+      "The rule this obeys: where the browser is already the scroller, never write the scroll position and never " +
+      "disable snapping \u2014 so this path calls no <code>preventDefault</code>, no <code>scrollBy</code> and no " +
+      "<code>scroll-snap-type</code>, and not even a settle on release, because the scroller never left its snap point. " +
+      "<code>scrollLeft</code> stays pinned at the edge throughout \u2014 but unlike C that is not a disagreement, " +
+      "because at a clamped edge it could not have changed anyway. The mouse path still owns the scroll position, " +
+      "which is safe precisely because a mouse drag has no native scrolling to compete with.",
+    transform:
+      "<strong>What you should see:</strong> the track slides past the edge with resistance and springs back on release. " +
+      "The translation is now bounded at " + MAX_TRANSLATE + "px by the same rubber function, and the frame clips with " +
+      "<code>overflow: clip</code>, so a slide can no longer paint over its container. " +
+      "<code>scrollLeft</code> still never changes — the readout stays pinned while the track visibly moves, which is exactly the disagreement that worries me."
+  };
+
+  // The rubber function: bounded, monotonic, and its slope falls off with
+  // depth. `limit * x / (x + limit)` is ~x for small x and asymptotes to
+  // `limit` as x grows, so resistance rises smoothly and the far end is a
+  // limit rather than a wall. Both B2 and C use it; only the units differ.
+  // B3 can use the platform-derived limit outright: it has no room to run out
+  // of, only a transform. B2 cannot -- its asymptote has to stay under the
+  // physical margin or the wall becomes reachable again, and on a 320px track
+  // the native limit (582px) is more than twice the room it has (260px). That
+  // is a structural limit of the margin approach, not a tuning choice.
+  function rubberLimit() {
+    return mode === "bounce" ? nativeLimit() : Math.min(nativeLimit(), DAMP_LIMIT);
+  }
+  function rubber(depth) { var L = rubberLimit(); return L * depth / (depth + L); }
+  function rubberSigned(x) { return x < 0 ? -rubber(-x) : rubber(x); }
+
+  // ---- overdrag measured PHYSICALLY, never through scrollLeft ------------
+  // `scrollLeft`'s zero point and sign disagree across browsers under
+  // `dir="rtl"` -- the real component refuses to touch it for exactly that
+  // reason, and round 5 measured scrollLeft going 0 -> -153 on the rtl
+  // variant. A getBoundingClientRect is the same physical rectangle under
+  // any direction, so the whole overdrag is expressed in screen pixels and
+  // applied with scrollBy, whose delta is physical too. Nothing below needs
+  // to know which logical end it is at, so nothing below breaks under RTL.
+  //
+  // Signed content displacement: + means the content has been pushed RIGHT
+  // (a gap opens on the left), - means pushed LEFT. min/max rather than
+  // slides[0]/slides[n-1] because RTL reverses which slide is leftmost.
+  // left  < 0 : content still extends past the container's left edge (slack)
+  // left  > 0 : a gap has opened on the left (content pushed right)
+  // right > 0 : content still extends past the right edge (slack)
+  // right < 0 : a gap has opened on the right (content pushed left)
+  function edgeGaps() {
+    var slides = track.querySelectorAll(".slide");
+    if (!slides.length) return { left: 0, right: 0 };
+    var c = track.getBoundingClientRect();
+    var minL = Infinity, maxR = -Infinity;
+    for (var i = 0; i < slides.length; i++) {
+      var r = slides[i].getBoundingClientRect();
+      if (r.left < minL) minL = r.left;
+      if (r.right > maxR) maxR = r.right;
+    }
+    return { left: minL - c.left, right: maxR - c.right };
+  }
+
+  function overdragDepth() {
+    var g = edgeGaps();
+    if (g.left > 0.5) return g.left;
+    if (g.right < -0.5) return g.right;
+    return 0;
+  }
+
+  // How far the content may still travel in this direction (cd > 0 = right)
+  // before a gap opens. Measured, so it needs no notion of which logical end.
+  function slackFor(cd) {
+    var g = edgeGaps();
+    return cd > 0 ? Math.max(0, -g.left) : Math.max(0, g.right);
+  }
+
+  // The one damped model, shared by pointer and wheel. `cd` is a desired
+  // CONTENT displacement in physical pixels (+ right). Returns true when it
+  // consumed the input, so the wheel caller knows to preventDefault.
+  //
+  // Every decision here is made synchronously, from geometry measured in
+  // this same turn. v9 deferred the "did we just cross an edge?" test to the
+  // next animation frame, which let a trackpad flick scroll natively through
+  // the whole 260px room before the damping engaged -- and the frame after
+  // yanked it back to the damped depth. That snap-back was the "weird bug".
+  function feedDamped(cd) {
+    if (!cd) return false;
+    if (rawOver !== 0) {
+      var nxt = rawOver + cd;
+      if ((rawOver > 0) !== (nxt > 0)) {        // back out through the edge
+        rawOver = 0;
+        applyOverdrag(0);
+        track.scrollBy({ left: -nxt, behavior: "instant" });  // spend the remainder
+        return true;
+      }
+      rawOver = nxt;
+      applyOverdrag(rubberSigned(rawOver));
+      return true;
+    }
+    var slack = slackFor(cd);
+    if (Math.abs(cd) <= slack) return false;    // ordinary scrolling, hands off
+    // This one input crosses the edge: spend the slack undamped, damp only
+    // the excess, so there is no step at the moment of crossing.
+    track.scrollBy({ left: -(cd > 0 ? slack : -slack), behavior: "instant" });
+    rawOver = cd > 0 ? cd - slack : cd + slack;
+    applyOverdrag(rubberSigned(rawOver));
+    return true;
+  }
+
+  // Closed loop: measure where the content actually is, move it the
+  // remaining distance. Self-correcting, so accumulated float drift in the
+  // scrollBy increments cannot make the spring-back miss its mark -- which
+  // an open-loop chain of increments would.
+  function applyOverdrag(target) {
+    var delta = target - overdragDepth();
+    if (Math.abs(delta) < 0.05) return;
+    track.scrollBy({ left: -delta, behavior: "instant" });  // content moves by -left
+  }
+  function rubberT(x) { return MAX_TRANSLATE * x / (Math.abs(x) + TRANSLATE_K); }
+
+  // B2 owns its room per gesture rather than up front: the margin appears on
+  // the first real drag move and is taken away again once the settle is done.
+  // That is what keeps a trackpad from coasting into the space and resting
+  // there -- between drags the space does not exist at all.
+  function setDampedPad(on) {
+    var want = on ? PAD_LONG : 0;
+    if (want === padLive) return;
+    var slides = track.querySelectorAll(".slide");
+    if (!slides.length) { padLive = want; return; }
+    // Physical again: measure where the leading slide's edge sits relative
+    // to the container before and after the margin changes, then move the
+    // scroll port by exactly that difference so nothing appears to jump.
+    // Measured rather than derived from `delta`, because a derived value has
+    // to know which logical end the margin was added to -- and that is the
+    // direction dependency this whole reformulation exists to remove.
+    var before = slides[0].getBoundingClientRect().left - track.getBoundingClientRect().left;
+    slides[0].style.marginInlineStart = want + "px";
+    slides[slides.length - 1].style.marginInlineEnd = want + "px";
+    var after = slides[0].getBoundingClientRect().left - track.getBoundingClientRect().left;
+    track.scrollBy({ left: after - before, behavior: "instant" });
+    padLive = want;
+  }
+
+  // The rubber-band return, driven by us rather than by the browser.
+  //
+  // scrollIntoView({behavior:"smooth"}) cannot do this job here: a user scroll
+  // CANCELS an in-flight smooth scroll, and releasing on velocity decay means
+  // momentum is still delivering events -- so the ease began and the very next
+  // momentum event killed it, every time, which is why it kept reading as an
+  // instant snap no matter how the ordering was arranged. Animating the depth
+  // ourselves cannot be cancelled, takes a duration we choose, and is the
+  // actual spring-back rather than a snap dressed up as one.
+  function springBack(done) {
+    var from = overdragDepth();
+    if (Math.abs(from) < 0.5 || reduce) { applyOverdrag(0); done(); return; }
+    var t0 = performance.now(), DUR = 340;
+    (function step() {
+      var t = Math.min(1, (performance.now() - t0) / DUR);
+      var k = 1 - Math.pow(1 - t, 3);      // ease-out cubic: fast away from the edge, gentle into rest
+      applyOverdrag(from * (1 - k));
+      pushSample(); report();
+      if (t < 1) window.requestAnimationFrame(step); else done();
+    })();
+  }
+
+  // The wheel's equivalent of pointerup. Whether it was reached by velocity
+  // decay or by the idle backstop, the ending is identical to the drag's:
+  // rawOver is handed to settle(), which eases to the nearest slide and
+  // restores snapping, and only then is the room given back.
+  // Spent when this event is a small fraction of the biggest one in the burst.
+  var burstLog = null;
+  function burstBegin(dm) {
+    burstLog = { mode: mode, t: new Date().toISOString(), deltaMode: dm,
+                 events: 0, peak: 0, deltas: [], maxOver: 0, _t0: performance.now() };
+  }
+  function burstSample(d) {
+    if (!burstLog) return;
+    burstLog.events++;
+    var ad = Math.abs(d);
+    if (ad > burstLog.peak) burstLog.peak = Math.round(ad * 10) / 10;
+    if (burstLog.deltas.length < 80) burstLog.deltas.push(Math.round(d * 10) / 10);
+    var o = Math.abs(overscrollAmount());
+    if (o > burstLog.maxOver) burstLog.maxOver = Math.round(o);
+  }
+  function burstEnd(how) {
+    if (!burstLog) return;
+    burstLog.releasedBy = how;
+    // Thresholds are captured here from whatever armRelease() stashed, NOT
+    // recomputed: the release path zeroes wheelPeakDelta before this runs, so
+    // recomputing reported a flat 1.6 for every burst no matter its velocity.
+    burstLog.ms = Math.round(performance.now() - burstLog._t0);
+    if (burstLog.releaseThreshold === undefined) {
+      burstLog.releaseThreshold = Math.round(wheelReleaseThreshold() * 10) / 10;
+    }
+    burstLog.interruptFloor = Math.round(wheelInterruptFloor * 10) / 10;
+    burstLog.deviceFloor = Math.round(deviceFloor() * 10) / 10;
+    // Which edge this burst worked against, so the start/end asymmetry can be
+    // read directly next time instead of inferred from the sign of the sum.
+    var net = 0, dd = burstLog.deltas;
+    for (var q = 0; q < dd.length; q++) net += dd[q];
+    burstLog.edge = net > 0 ? "end" : "start";
+    burstLog.net = Math.round(net);
+    record.deviceMinDelta = isFinite(deviceMinDelta) ? deviceMinDelta : null;
+    delete burstLog._t0;
+    // A one- or two-event burst that never entered the room carries no
+    // information and would otherwise cost a database write per event.
+    var trivial = burstLog.events <= 2 && !burstLog.maxOver;
+    if (!trivial) {
+      record.wheelBursts.push(burstLog);
+      if (record.wheelBursts.length > 16) record.wheelBursts.shift();
+    }
+    burstLog = null;
+    if (!trivial) flush();
+  }
+
+  function deviceFloor() {
+    return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_FLOOR_MULT : WHEEL_RELEASE_DELTA;
+  }
+  function plateauCeiling() {
+    return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_PLATEAU_MULT : WHEEL_PLATEAU_MAX;
+  }
+  function wheelReleaseThreshold() {
+    return Math.min(WHEEL_RELEASE_MAX,
+                    Math.max(deviceFloor(), wheelPeakDelta * WHEEL_RELEASE_FRACTION));
+  }
+  function wheelSpent(d) {
+    var ad = Math.abs(d);
+    if (ad > wheelPeakDelta) wheelPeakDelta = ad;
+    noteDeviceDelta(ad);   // learn the hardware
+    var spent = ad <= wheelReleaseThreshold() ||
+                (ad <= plateauCeiling() && ad <= wheelLastAbs);   // small and not rising
+    wheelLastAbs = ad;
+    return spent;
+  }
+  // Captured at release, while the peak is still known, and held for the whole
+  // return so the tail cannot re-trigger what just fired.
+  function armInterruptFloor() {
+    // Stamp the threshold that was actually in force onto the burst first.
+    if (burstLog && burstLog.releaseThreshold === undefined) {
+      burstLog.releaseThreshold = Math.round(wheelReleaseThreshold() * 10) / 10;
+      burstLog.peakAtRelease = Math.round(wheelPeakDelta);
+    }
+    wheelInterruptFloor = Math.max(WHEEL_INTERRUPT_DELTA, wheelReleaseThreshold() * 3);
+  }
+
+  function releaseWheelBurst(how) {
+    burstEnd(how);
+    if (wheelTimer) { window.clearTimeout(wheelTimer); wheelTimer = 0; }
+    armInterruptFloor();
+    wheelLowRun = 0; wheelPeakDelta = 0; wheelLastAbs = Infinity;
+    if (Math.abs(overscrollAmount()) > 0.5) {
+      record.wheel.settles++;
+      record.wheel.lastRelease = how;
+      record.wheel.lastReleaseMs = Math.round(performance.now() - wheelBurstStart);
+      rawOver = 0;                  // the animation owns the position from here
+      wheelSettling = true;         // and the momentum tail must not disturb it
+      springBack(function () {
+        wheelSettling = false;
+        settle();                   // lands on the nearest slide, restores snapping at its end
+      });
+    } else {
+      // Ended outside the room: restore snapping here, so suspending it can
+      // never outlive the gesture that suspended it.
+      restoreSnap();
+      rawOver = 0;
+    }
+    scheduleUnpad();                // re-checks that the port has left the room
+  }
+
+  // B3. Content offset measured as slide-minus-track, which is invariant
+  // under a transform ON the track (both rects move together) -- so this
+  // reads true scroll progress even while the bounce transform is applied.
+  function trackContentOffset() {
+    var s = track.querySelector(".slide");
+    if (!s) return 0;
+    return s.getBoundingClientRect().left - track.getBoundingClientRect().left;
+  }
+
+  function suspendSnapOnce() {
+    if (snapSuspended) return;
+    track.style.scrollSnapType = "none";
+    snapSuspended = true;
+  }
+  function restoreSnap() {
+    track.style.scrollSnapType = "";
+    snapSuspended = false;
+  }
+
+  function applyBounce() {
+    track.style.transform = rawOver ? "translateX(" + rubberSigned(rawOver).toFixed(2) + "px)" : "";
+  }
+
+  // Feed a desired content displacement into B3. The scroller is asked for
+  // the whole of it first; whatever it REFUSES is the overdrag. That refusal
+  // is how the edge is located -- no margin, no scroll coordinate, no
+  // direction reasoning. And because there is no room past the edge, the
+  // scroller simply cannot move there, so momentum has nothing to contest
+  // and nothing has to be corrected back each frame.
+  function feedBounce(cd) {
+    if (!cd) return;
+    var before = trackContentOffset();
+    track.scrollBy({ left: -cd, behavior: "instant" });
+    var moved = trackContentOffset() - before;
+    var refused = cd - moved;
+    if (refused || rawOver) {
+      rawOver += refused;
+      if ((rawOver > 0) !== (rawOver + refused > 0) && Math.abs(rawOver) < 0.5) rawOver = 0;
+      applyBounce();
+    }
+  }
+
+  function bounceHome(done) {
+    // Never restart a return that is already running. The recording showed
+    // nine single-event bursts in a row, each released as "reversed" with
+    // ms=0: every scroll arriving DURING the return re-launched it from
+    // wherever it had got to, so it never completed -- a stutter rather than
+    // an ease. Let the one in flight finish; a large enough delta still
+    // cancels it through bounceSettling.
+    if (bounceHoming) { done && done(); return; }
+    var from = rawOver;
+    if (!from || reduce) { rawOver = 0; applyBounce(); done && done(); return; }
+    bounceHoming = true;
+    var t0 = performance.now(), DUR = 340;
+    (function step() {
+      var t = Math.min(1, (performance.now() - t0) / DUR);
+      rawOver = from * (1 - (1 - Math.pow(1 - t, 3)));
+      applyBounce();
+      pushSample(); report();
+      if (t < 1) window.requestAnimationFrame(step);
+      else { rawOver = 0; applyBounce(); bounceHoming = false; done && done(); }
+    })();
+  }
+
+  // The snap-back trigger B2 was missing entirely.
+  //
+  // The ownership rule says never write the scroll position where the browser
+  // is already the scroller -- but the contest only exists WHILE momentum is
+  // live. Once the burst is spent the browser has stopped scrolling, so owning
+  // it again is safe, and that is the moment to run exactly the same
+  // self-driven ease the mouse drag gets on pointerup. v20 removed B2's fight
+  // and put nothing in its place, so a gesture ending inside the room had
+  // nothing to bring it out: the recording shows tails of a flat -2 that never
+  // decay, released only as "native" -- stuck.
+  function wheelSettleFromRoom() {
+    if (Math.abs(overscrollAmount()) <= 0.5) { scheduleUnpad(); return; }
+    wheelSettling = true;
+    suspendSnapOnce();     // safe NOW: nothing else is scrolling
+    settle();              // ease out, land exactly, restore snapping at the end
+    window.setTimeout(function () { wheelSettling = false; scheduleUnpad(); }, 700);
+  }
+
+  function cancelUnpad() {
+    if (padTimer) { window.clearTimeout(padTimer); padTimer = 0; }
+  }
+
+  // Removing the room is only ever SAFE under two conditions, so rather than
+  // trust a timeout to land after the settle, check them and wait if they do
+  // not hold. This is what v4 got wrong: its unconditional 950ms removal
+  // could fire mid-gesture (consecutive drags were recorded 830-1300ms apart,
+  // straddling that timeout), and removing a 260px leading margin while the
+  // scroll port sat 120px inside it clamped scrollLeft to 0 -- a ~140px jump
+  // with the button still held down.
+  function scheduleUnpad() {
+    cancelUnpad();
+    padTimer = window.setTimeout(function tryRemove() {
+      padTimer = 0;
+      if (!padLive) return;
+      if (armed || dragging) return;              // a gesture owns the room
+      var s = track.scrollLeft;
+      if (s < padLive - 0.5 || s > maxScroll() - padLive + 0.5) {
+        padTimer = window.setTimeout(tryRemove, 150);   // still inside it; wait
+        return;
+      }
+      setDampedPad(false);
+    }, 950);
+  }
+
+  function applyMode() {
+    var pad = mode === "deadspace" ? PAD : 0;   // B2 adds its room per-gesture, not up front
+    rawOver = 0; over = 0; padLive = pad;
+    cancelUnpad();
+    if (wheelTimer) { window.clearTimeout(wheelTimer); wheelTimer = 0; }
+    // Margin on the EXISTING first/last slide -- never an inserted spacer child.
+    // A spacer changes container.children, and the real component's tracking
+    // bridge reads a child's array position AS its slide index, so a leading
+    // spacer shifts every index by one and sends it into a runaway.
+    var slides = track.querySelectorAll(".slide");
+    if (slides.length) {
+      slides[0].style.marginInlineStart = pad + "px";
+      slides[slides.length - 1].style.marginInlineEnd = pad + "px";
+    }
+    track.style.transform = "";
+    bounceSettling = false; bounceHoming = false; burstLog = null;
+    restoreSnap();
+    voidLabel.textContent = mode === "deadspace" ? "frame · dead space at both ends"
+      : mode === "damped" ? "frame · room appears only while dragging"
+      : mode === "bounce" ? "frame · no room past the edge, the track moves instead" : "frame";
+    modeNote.innerHTML = NOTES[mode];
+    traceHint.textContent = mode === "clamped" ? "expect a flat line at the edges" : "";
+    samples = [];
+    // Keep slide 1 aligned when the leading spacer appears or disappears.
+    track.scrollLeft = pad;
+    report();
+  }
+
+  function maxScroll() { return track.scrollWidth - track.clientWidth; }
+
+  function overscrollAmount() {
+    if (mode === "transform") return over;
+    if (mode === "bounce") return Math.abs(rubberSigned(rawOver));
+    if (mode === "damped") {
+      // Measured from layout, never inferred from a scroll coordinate, so
+      // it reads the same during the drag and during the spring-back -- and
+      // the same under any `dir`.
+      return Math.abs(overdragDepth());
+    }
+    if (mode !== "deadspace") return 0;
+    var s = track.scrollLeft;
+    if (s < PAD) return PAD - s;
+    if (s > maxScroll() - PAD) return s - (maxScroll() - PAD);
+    return 0;
+  }
+
+  function selectedIndex() {
+    var slides = track.querySelectorAll(".slide");
+    var box = track.getBoundingClientRect();
+    var best = 0, bestD = Infinity;
+    for (var i = 0; i < slides.length; i++) {
+      var r = slides[i].getBoundingClientRect();
+      var d = Math.abs(r.left - box.left);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function report() {
+    var o = Math.round(overscrollAmount());
+    rScroll.textContent = Math.round(track.scrollLeft);
+    rOver.textContent = o;
+    rOver.className = "v" + (o > 0 ? " hot" : "");
+    rWidth.textContent = Math.round(track.scrollWidth);
+    rSel.textContent = (selectedIndex() + 1) + " of 5";
+    rSel.className = "v ok";
+  }
+
+  function pushSample() {
+    samples.push({ s: track.scrollLeft, o: overscrollAmount() });
+    if (samples.length > 160) samples.shift();
+    drawTrace();
+  }
+
+  function drawTrace() {
+    if (!samples.length) { traceSvg.innerHTML = ""; return; }
+    var w = 600, h = 56, n = samples.length;
+    var max = Math.max(maxScroll(), 1);
+    var pts = [], hot = [];
+    for (var i = 0; i < n; i++) {
+      var x = n === 1 ? 0 : (i / (n - 1)) * w;
+      var y = h - 6 - (samples[i].s / max) * (h - 14);
+      pts.push(x.toFixed(1) + "," + y.toFixed(1));
+      if (samples[i].o > 0) hot.push('<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.4" fill="var(--signal)"/>');
+    }
+    traceSvg.innerHTML =
+      '<polyline points="' + pts.join(" ") + '" fill="none" stroke="var(--accent)" stroke-width="1.8" ' +
+      'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' + hot.join("");
+  }
+
+  // Offset, in physical px, between a slide's leading edge and the
+  // container's. Zero means that slide is exactly at rest.
+  function slideOffset(el) {
+    return el.getBoundingClientRect().left - track.getBoundingClientRect().left;
+  }
+
+  function alignExactly(el) {
+    var d = slideOffset(el);
+    if (Math.abs(d) > 0.5) track.scrollBy({ left: d, behavior: "instant" });
+  }
+
+  function abortSettle() { settleToken++; }
+
+  function settle() {
+    var slides = track.querySelectorAll(".slide");
+    var target = slides[selectedIndex()];
+    if (!target) { restoreSnap(); return; }
+    var myToken = ++settleToken;   // a newer gesture can abort this animation
+
+    // Driven here, not by the browser, for the same reason springBack is:
+    // scrollIntoView({behavior:"smooth"}) is cancelled by any user scroll, and
+    // its landing is not exact. The recording of v13 shows ordinary drags --
+    // no overdrag at all -- coming to rest 5 to 109px off a slide boundary,
+    // because deferring the scroll-snap restore removed the instant re-snap
+    // that used to do the precision work. Animating it ourselves gives both:
+    // a real ease AND an exact rest position, with snapping restored only
+    // once we are already on the boundary so its re-snap moves nothing.
+    var from = slideOffset(target);
+    var t0 = performance.now();
+    var DUR = reduce ? 0 : 340;
+
+    (function tick() {
+      var t = DUR ? Math.min(1, (performance.now() - t0) / DUR) : 1;
+      var k = 1 - Math.pow(1 - t, 3);            // ease-out cubic
+      var want = from * (1 - k);
+      var now = slideOffset(target);
+      if (Math.abs(now - want) > 0.05) {
+        track.scrollBy({ left: now - want, behavior: "instant" });
+      }
+      pushSample(); report();
+      if (myToken !== settleToken) { return; }   // superseded; leave the scroll alone
+      if (t < 1) {
+        window.requestAnimationFrame(tick);
+      } else {
+        alignExactly(target);                    // exact, before snapping returns
+        restoreSnap();
+        // Keep sampling briefly so the trace still shows the landing.
+        var t1 = performance.now();
+        (function trail() {
+          pushSample(); report();
+          if (performance.now() - t1 < 260) window.requestAnimationFrame(trail);
+        })();
+      }
+    })();
+  }
+
+
+  var gesture = null;
+
+  track.addEventListener("pointerdown", function (e) {
+    if (e.pointerType === "touch") return;   // touch scrolls natively, as in the component
+    if (e.button !== 0) return;
+    cancelUnpad();   // this gesture owns the room now, not the last one
+    armed = true; dragging = false;
+    startX = lastX = e.clientX;
+    over = 0; rawOver = 0;
+    samples = [];
+    gesture = {
+      mode: mode,
+      t: new Date().toISOString(),
+      pointerType: e.pointerType,
+      scrollStart: Math.round(track.scrollLeft),
+      indexStart: selectedIndex(),
+      startedAtMs: performance.now(),
+      peakOverscroll: 0,
+      peakRawOver: 0,      // B2: raw finger travel past the edge, before damping
+      hitBoundary: false,
+      dragPx: 0
+    };
+  });
+
+  window.addEventListener("pointermove", function (e) {
+    if (!armed) return;
+    var dx = e.clientX - lastX;
+    if (!dragging) {
+      if (Math.abs(e.clientX - startX) < THRESHOLD) return;
+      dragging = true;
+      track.classList.add("grabbing");
+      suspendSnapOnce();                     // else per-move scrollBy fights mandatory snapping
+      if (mode === "damped") setDampedPad(true);   // the room exists only for this gesture
+    }
+    lastX = e.clientX;
+
+    var atStart = track.scrollLeft <= (mode === "deadspace" ? 0 : 0.5);
+    var atEnd = track.scrollLeft >= maxScroll() - 0.5;
+
+    if (mode === "damped") {
+      // Dragging right pushes the content right, so dx IS the desired
+      // content displacement. Everything else lives in feedDamped.
+      if (!feedDamped(dx)) {
+        track.scrollBy({ left: -dx, behavior: "instant" });
+      }
+    } else if (mode === "bounce") {
+      feedBounce(dx);
+    } else if (mode === "transform" && ((atStart && dx > 0) || (atEnd && dx < 0))) {
+      over += dx;
+      // Bounded by the same rubber function: however far you drag, the
+      // translation asymptotes at MAX_TRANSLATE, so the track cannot run away
+      // from its frame. `overflow: clip` on the frame is the second and
+      // independent guarantee -- this one limits how far the track moves, that
+      // one limits where anything inside it may paint.
+      track.style.transform = "translateX(" + rubberT(over).toFixed(2) + "px)";
+    } else {
+      if (mode === "transform" && over !== 0) {
+        over = 0;
+        track.style.transform = "";
+      }
+      track.scrollBy({ left: -dx, behavior: "instant" });
+    }
+    if (gesture) {
+      gesture.dragPx += Math.abs(dx);
+      if (atStart || atEnd) gesture.hitBoundary = true;
+      var o = Math.abs(overscrollAmount());
+      if (o > gesture.peakOverscroll) gesture.peakOverscroll = Math.round(o);
+      var r = Math.abs(rawOver);
+      if (r > gesture.peakRawOver) gesture.peakRawOver = Math.round(r);
+    }
+    pushSample(); report();
+  });
+
+  function finishGesture() {
+    if (!gesture) return;
+    var g = gesture;
+    gesture = null;
+    var settleStart = performance.now();
+    // Let the settle finish before recording where it landed.
+    window.setTimeout(function () {
+      // Hand the room to scheduleUnpad rather than removing it here: it
+      // re-checks that no gesture is in flight and that the scroll port has
+      // actually left the padded region before taking it away.
+      if (g.mode === "damped") scheduleUnpad();
+      g.releaseMs = Math.round(settleStart - g.startedAtMs);
+      g.settleMs = Math.round(performance.now() - settleStart);
+      g.scrollEnd = Math.round(track.scrollLeft);
+      g.indexEnd = selectedIndex();
+      g.movedSlides = g.indexEnd - g.indexStart;
+      g.distinctScrollValues = new Set(samples.map(function (s) { return Math.round(s.s); })).size;
+      delete g.startedAtMs;
+      record.gestures.push(g);
+      if (record.gestures.length > MAX_GESTURES) record.gestures.shift();
+      tallyDwell();
+      flush();
+    }, 950);
+  }
+
+  window.addEventListener("pointerup", function () {
+    if (!armed) return;
+    armed = false;
+    if (!dragging) { gesture = null; return; }
+    dragging = false;
+    track.classList.remove("grabbing");
+
+    if (mode === "transform" && over !== 0) {
+      track.style.transition = reduce ? "none" : "transform 320ms cubic-bezier(.22,1,.36,1)";
+      track.style.transform = "translateX(0px)";
+      over = 0;
+      window.setTimeout(function () { track.style.transition = ""; }, reduce ? 0 : 340);
+    }
+    if (mode === "bounce") {
+      bounceHome(function () { settle(); });
+      finishGesture();
+      return;
+    }
+    rawOver = 0;   // the settle owns the position from here; B2 reads it back geometrically
+    settle();
+    finishGesture();
+  });
+
+  // A trackpad two-finger scroll fires `wheel`, NOT pointerdown/pointermove.
+  // In v4 that meant B2's gesture-scoped room did not exist during a trackpad
+  // gesture at all -- it only appeared to work when a mouse drag had just left
+  // the room installed and its removal had not fired yet. That is precisely
+  // the "first try rubber-bands, second time it doesn't" report: the first
+  // attempt landed inside the leftover window, the second did not.
+  // So the wheel gets its own gesture scope: the room appears on the first
+  // wheel event of a burst and is handed back once the burst has gone quiet.
+  // The wheel needs the RUBBER as well as the room. v6 installed the margin
+  // and then let the browser scroll into it natively, so 260px of room went
+  // by at full trackpad speed and you were against the wall almost at once --
+  // the same "reaches the end margin position almost immediately" as mode B.
+  // Damping it means taking the motion over at the boundary, which needs a
+  // non-passive listener: `preventDefault()` is only honoured on one, and it
+  // is called ONLY while we are actually in the overdrag, so ordinary
+  // scrolling anywhere else stays fully native.
+  // B2's wheel path, held to the SAME rule as B3: where the browser is
+  // already the scroller, never write the scroll position.
+  //
+  // It used to call preventDefault, write the scroll position, suspend
+  // snapping and re-assert a damped depth every animation frame. That last
+  // one existed because preventDefault is only ADVISORY under compositor
+  // momentum -- so every frame the native scroll moved the content and the
+  // correction yanked it back. Bigger screen, bigger deltas, more visible
+  // oscillation: the glitching.
+  //
+  // Removing the contest leaves B2's wheel able only to OBSERVE, and the
+  // consequence is worth seeing rather than hiding: you cannot damp a
+  // SCROLL-BASED overdrag without owning the scroll position, and owning it
+  // is exactly what starts the fight. So on a trackpad B2 now gives you the
+  // real 260px of room and then the hard stop you reported back in mode B.
+  // Its damping survives only on the mouse drag, where owning the scroll
+  // position is safe because there is no native scrolling to compete with.
+  //
+  // That is the finding: B2's approach cannot be made to work on a trackpad.
+  // B3 is what it becomes once you accept that.
+  track.addEventListener("wheel", function (e) {
+    if (mode !== "damped") return;
+
+    var raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    var d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * track.clientWidth : raw;
+
+    if (wheelSettling) {
+      // A settle is easing us out of the room. Late momentum is ignored so it
+      // cannot contest the animation; a real new gesture aborts it and takes
+      // over, so this can never be the thing that feels stuck.
+      if (Math.abs(d) < wheelInterruptFloor) return;
+      abortSettle(); wheelSettling = false; restoreSnap();
+    }
+
+    cancelUnpad();
+    if (!padLive) setDampedPad(true);
+    // Burst tracking keys off the GESTURE, not off pad installation. v21 tied
+    // them together, so once the room stayed installed across gestures --
+    // which is exactly the stuck case we are hunting -- burstBegin never ran
+    // again and every subsequent burst went unrecorded. Only one B2 burst
+    // survived a 49-second session because of this.
+    if (burstLog === null) {
+      record.wheel.bursts++;
+      wheelBurstStart = performance.now();
+      wheelPeakDelta = 0;
+      wheelLowRun = 0;
+      wheelLastAbs = Infinity;
+      burstBegin(e.deltaMode);
+    }
+
+    function release(how) {
+      if (wheelTimer) { window.clearTimeout(wheelTimer); wheelTimer = 0; }
+      armInterruptFloor();
+      wheelLowRun = 0; wheelPeakDelta = 0; wheelLastAbs = Infinity;
+      record.wheel.lastRelease = how;
+      record.wheel.lastReleaseMs = Math.round(performance.now() - wheelBurstStart);
+      if (Math.abs(overscrollAmount()) > 0.5) record.wheel.settles++;
+      burstEnd(how);
+      wheelSettleFromRoom();   // no-op unless we actually ended inside the room
+    }
+
+    // DURING the burst this path still writes nothing -- no preventDefault, no
+    // scroll write, no snap change -- which is what removed the glitching. All
+    // it does is decide when the burst is over.
+    if (wheelSpent(d)) {
+      if (++wheelLowRun >= WHEEL_RELEASE_RUNS) { record.wheel.decayReleases++; release("decay"); return; }
+    } else {
+      wheelLowRun = 0;
+    }
+    if (wheelTimer) window.clearTimeout(wheelTimer);
+    wheelTimer = window.setTimeout(function () {
+      wheelTimer = 0; record.wheel.idleReleases++; release("idle");
+    }, WHEEL_IDLE_MS);
+
+    window.requestAnimationFrame(function () {
+      burstSample(d);   // AFTER the browser has scrolled, so maxOver is truthful
+      var o = Math.abs(overscrollAmount());
+      if (o > record.wheel.peakOverscroll) record.wheel.peakOverscroll = Math.round(o);
+      if (o > 1) record.wheel.reachedRoom++;
+      pushSample(); report();
+    });
+  }, { passive: true });
+
+  // ---------------------------------------------------------------------
+  // THE RULE this whole path exists to obey:
+  //
+  //   Where the browser is already the scroller, NEVER write the scroll
+  //   position and never disable snapping. Express the overdrag only as a
+  //   transform, which the browser never writes.
+  //
+  // The scroll position has three would-be writers: the compositor (momentum,
+  // which preventDefault only *advises*), scroll snapping (on its own
+  // schedule, at layout changes and gesture end), and this code. Two of them
+  // are not observable from here and cannot be sequenced against. Every wheel
+  // defect in this bench -- the dead edges, the blown-through room, the
+  // cancelled ease, the disturbed sliding, the glitching that scaled with
+  // screen size -- was a race between those three writers, not eight separate
+  // bugs. Giving each writer its own state removes the arbitration entirely:
+  // the browser keeps the scroll position, this code keeps the transform.
+  //
+  // So below: no preventDefault, no scrollBy, no scrollSnapType, ever. Past
+  // the clamped edge the scroller CANNOT move, so its state is stable and
+  // uncontested while we animate the transform. The shortfall between what
+  // the gesture asked for and what the scroller actually did IS the overdrag.
+  //
+  // (The pointer path may still own the scroll position: a mouse drag has no
+  // native scrolling, so the compositor is not a competing writer there. That
+  // asymmetry is why the mouse path stayed clean for twelve revisions while
+  // the wheel path regressed nearly every time.)
+  // ---------------------------------------------------------------------
+  track.addEventListener("wheel", function (e) {
+    if (mode !== "bounce") return;
+    var raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    var d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * track.clientWidth : raw;
+    var cd = -d;                     // desired CONTENT displacement (+ = right)
+
+    if (bounceSettling) {
+      if (Math.abs(d) < wheelInterruptFloor) return;
+      bounceSettling = false;
+    }
+
+    if (burstLog === null) { record.wheel.bursts++; wheelPeakDelta = 0; wheelLowRun = 0; wheelLastAbs = Infinity; burstBegin(e.deltaMode); }
+
+    function release(how) {
+      burstEnd(how);
+      if (wheelTimer) { window.clearTimeout(wheelTimer); wheelTimer = 0; }
+      armInterruptFloor();
+      wheelLowRun = 0; wheelPeakDelta = 0; wheelLastAbs = Infinity;
+      record.wheel.lastRelease = how;
+      if (rawOver) {
+        record.wheel.settles++;
+        bounceSettling = true;
+        // No settle(): the scroller never left its snap point, so there is
+        // nothing to settle. Only the transform comes home.
+        bounceHome(function () { bounceSettling = false; });
+      }
+    }
+
+    // THE EDGE TEST. Synchronous, from layout, transform-invariant -- never
+    // inferred by comparing a request against a later measurement.
+    //
+    // v18 did exactly that: it treated "asked for X, measured less than X a
+    // frame later" as refusal. But the request is synchronous and the scroll
+    // is applied by the compositor ASYNCHRONOUSLY, out of phase with rAF, so
+    // every frame under-reported what moved and a false refusal accumulated.
+    // The recording shows the cost: single momentum flicks of 42, 87 and 212
+    // events, crossing the middle of the carousel where no edge exists,
+    // building up 198, 208 and 212px of transform. That is the whole track
+    // sliding out of its frame.
+    //
+    // A gap is a fact you can read right now: content can only move right if
+    // some still extends past the left edge. Both rects are inside the track,
+    // so the reading is unaffected by our own transform.
+    var g = edgeGaps();
+    var atLimit = cd > 0 ? g.left >= -0.5 : g.right <= 0.5;
+
+    if (atLimit) {
+      rawOver += cd;
+      applyBounce();
+      var r = Math.abs(rawOver);
+      if (r > record.wheel.peakRawOver) record.wheel.peakRawOver = Math.round(r);
+      var o = Math.abs(overscrollAmount());
+      if (o > record.wheel.peakOverscroll) record.wheel.peakOverscroll = Math.round(o);
+      if (o > 1) record.wheel.reachedRoom++;
+      pushSample(); report();
+    }
+    burstSample(d);       // AFTER the update, so maxOver means what it says
+    if (!atLimit && rawOver !== 0 && !bounceHoming) {
+      // Reversed away from the edge. Let the browser scroll unimpeded and
+      // spring the band home -- never unwind it by hand at the same time, or
+      // the content moves twice as fast as the gesture.
+      record.wheel.decayReleases++;
+      release("reversed");
+      return;
+    }
+
+    // Release on velocity decay, as the wheel has no pointerup of its own.
+    if (rawOver !== 0 && wheelSpent(d)) {
+      if (++wheelLowRun >= WHEEL_RELEASE_RUNS) { record.wheel.decayReleases++; release("decay"); return; }
+    } else {
+      wheelLowRun = 0;
+      wheelSpent(d);
+    }
+    if (wheelTimer) window.clearTimeout(wheelTimer);
+    wheelTimer = window.setTimeout(function () {
+      wheelTimer = 0; record.wheel.idleReleases++; release("idle");
+    }, WHEEL_IDLE_MS);
+  }, { passive: true });
+
+  track.addEventListener("scroll", function () { if (!dragging) report(); }, { passive: true });
+  window.addEventListener("resize", report);
+
+  document.getElementById("modes").addEventListener("click", function (e) {
+    var btn = e.target.closest(".mode");
+    if (!btn) return;
+    var all = this.querySelectorAll(".mode");
+    for (var i = 0; i < all.length; i++) all[i].setAttribute("aria-pressed", String(all[i] === btn));
+    tallyDwell();
+    mode = btn.dataset.mode;
+    applyMode();
+    flush();   // first interaction creates the document, so recording is visibly confirmed
+  });
+
+  // Verdict buttons — the one thing the telemetry cannot observe.
+  var asks = document.querySelectorAll("[data-vote]");
+  for (var a = 0; a < asks.length; a++) {
+    asks[a].addEventListener("click", function (e) {
+      var btn = e.target.closest(".choice");
+      if (!btn) return;
+      var key = this.dataset.vote;
+      var all = this.querySelectorAll(".choice");
+      for (var i = 0; i < all.length; i++) all[i].setAttribute("aria-pressed", String(all[i] === btn));
+      record.verdicts[key] = { value: btn.dataset.value, at: new Date().toISOString() };
+      tallyDwell();
+      flush();
+    });
+  }
+
+  // ---- the native control, instrumented ---------------------------------
+  // It is still driven entirely by the platform -- nothing here touches it.
+  // Watching it answers two questions no amount of reasoning could: whether
+  // the OS rubber-band is even VISIBLE to JavaScript (if the slides' rects
+  // never pass the container's edge, the bounce is compositor-only, cannot be
+  // detected, and cannot be imitated), and how long after the final wheel
+  // event the scrolling actually comes to rest. That second number is the
+  // ground truth for "gesture end" -- the thing WHEEL_IDLE_MS, the release
+  // fraction and the plateau ceiling are all estimating from guesses.
+  var nativeTrack = document.getElementById("nativeTrack");
+  if (nativeTrack) {
+    var nB = null, nSampling = false, nLastEventAt = 0, nStillFrames = 0, nLastPos = null;
+
+    function nGaps() {
+      var slides = nativeTrack.querySelectorAll(".slide");
+      var c = nativeTrack.getBoundingClientRect();
+      var minL = Infinity, maxR = -Infinity;
+      for (var i = 0; i < slides.length; i++) {
+        var r = slides[i].getBoundingClientRect();
+        if (r.left < minL) minL = r.left;
+        if (r.right > maxR) maxR = r.right;
+      }
+      return { left: minL - c.left, right: maxR - c.right, pos: nativeTrack.scrollLeft };
+    }
+
+    function nFinish() {
+      if (!nB) return;
+      nB.restAfterLastEventMs = Math.round(performance.now() - nLastEventAt);
+      // FALSE on every burst measured so far, including ones pinned against
+      // the edge for a dozen frames with deltas still above 100px/event: the
+      // platform does NOT elastically overscroll a sub-scroller, or does so
+      // only on the compositor where no rect read can see it. Either way
+      // there is nothing here to defer to.
+      nB.visibleBounce = nB.maxLeft > 0.5 || nB.maxRight < -0.5;
+      record.nativeBursts.push(nB);
+      if (record.nativeBursts.length > 10) record.nativeBursts.shift();
+      nB = null; nSampling = false; nLastPos = null; nStillFrames = 0;
+      flush();
+    }
+
+    function nSample() {
+      if (!nB) { nSampling = false; return; }
+      var g = nGaps();
+      if (g.left > nB.maxLeft) nB.maxLeft = Math.round(g.left * 10) / 10;
+      if (g.right < nB.maxRight) nB.maxRight = Math.round(g.right * 10) / 10;
+      if (nB.trace.length < 90) nB.trace.push(Math.round(g.pos));
+      // "At rest" = the position has not moved for three consecutive frames.
+      if (nLastPos !== null && Math.abs(g.pos - nLastPos) < 0.5) nStillFrames++;
+      else nStillFrames = 0;
+      nLastPos = g.pos;
+      // The bounce itself is invisible, but its INPUT is not: record the
+      // velocity at the moment the position clamps and how much momentum
+      // keeps arriving afterwards. That is what the platform feeds into its
+      // own elastic model, so it is what ours should be checked against.
+      if (nStillFrames === 1 && nB.clampedAt === undefined) {
+        nB.clampedAt = Math.round(performance.now() - nB.startedAt);
+        nB.velocityAtClamp = nB.deltas.length ? Math.abs(nB.deltas[nB.deltas.length - 1]) : 0;
+        nB.eventsAtClamp = nB.events;
+      }
+      if (nStillFrames >= 3 && performance.now() - nLastEventAt > 60) {
+        if (nB.eventsAtClamp !== undefined) nB.eventsAfterClamp = nB.events - nB.eventsAtClamp;
+        nFinish(); return;
+      }
+      window.requestAnimationFrame(nSample);
+    }
+
+    nativeTrack.addEventListener("wheel", function (e) {
+      var raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      var d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * nativeTrack.clientWidth : raw;
+      var ad = Math.abs(d);
+      if (!nB) {
+        nB = { t: new Date().toISOString(), deltaMode: e.deltaMode, events: 0,
+               peak: 0, minDelta: Infinity, deltas: [], trace: [],
+               maxLeft: 0, maxRight: 0, startedAt: performance.now() };
+      }
+      nB.events++;
+      // The native control is the cleanest source for the hardware's quantum:
+      // nothing of ours has touched its event stream. Measured at 1px here,
+      // against the 1.6px floor invented in v11.
+      noteDeviceDelta(ad);
+      if (ad > nB.peak) nB.peak = Math.round(ad * 10) / 10;
+      if (ad > 0 && ad < nB.minDelta) nB.minDelta = Math.round(ad * 100) / 100;
+      if (nB.deltas.length < 90) nB.deltas.push(Math.round(d * 10) / 10);
+      nLastEventAt = performance.now();
+      if (!nSampling) { nSampling = true; nStillFrames = 0; window.requestAnimationFrame(nSample); }
+    }, { passive: true });
+  }
+
+  applyMode();
+})();
+</script>

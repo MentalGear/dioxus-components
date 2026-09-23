@@ -8,7 +8,11 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        div { style: "width: 100%; max-width: 20rem; margin: 0 auto;",
+        // `max-width: 26rem` = 20rem intended card width + 6rem the
+        // component reserves as `.dx-carousel`'s own `padding-inline` for
+        // Previous/Next -- see `variants/main/mod.rs`'s own comment for the
+        // full derivation; kept short here to avoid repeating it per file.
+        div { style: "width: 100%; max-width: 26rem; margin: 0 auto;",
             Carousel { aria_label: "Travel destinations",
                 CarouselPrevious { ChevronLeft {} }
                 CarouselNext { ChevronRight {} }

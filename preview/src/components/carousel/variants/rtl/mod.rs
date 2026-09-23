@@ -14,7 +14,11 @@ use dioxus_primitives::direction::{Direction, DirectionProvider};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        div { dir: "rtl", style: "width: 100%; max-width: 20rem; margin: 0 auto;",
+        // `max-width: 26rem` = 20rem intended card width + 6rem the
+        // component reserves as `.dx-carousel`'s own `padding-inline` for
+        // Previous/Next -- see `variants/main/mod.rs`'s own comment for the
+        // full derivation; kept short here to avoid repeating it per file.
+        div { dir: "rtl", style: "width: 100%; max-width: 26rem; margin: 0 auto;",
             DirectionProvider { direction: Direction::Rtl,
                 Carousel { aria_label: "Right-to-left slideshow demo",
                     CarouselPrevious { ChevronLeft {} }

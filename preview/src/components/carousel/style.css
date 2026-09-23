@@ -8,6 +8,17 @@
 .dx-carousel {
     position: relative;
     width: 100%;
+
+    /* `border-box` (not the `content-box` default) is load-bearing for the
+       orientation rules below: they reserve `padding-inline`/`padding-block`
+       equal to Previous/Next's own footprint, and with `border-box` that
+       reservation comes out of this element's existing `width: 100%` (the
+       track gets narrower) instead of adding on top of it (which would push
+       this element past its own 100% allotment -- the same overflow this
+       construction exists to remove, just moved from the buttons to the
+       root). See the orientation rules' own comment for the carousel-narrow
+       lane's full derivation. */
+    box-sizing: border-box;
 }
 
 .dx-carousel-content {
@@ -90,6 +101,24 @@
        Copied-out components ship without main.css, so this needs to live
        here too. */
     touch-action: manipulation;
+
+    /* Fades the :disabled opacity change below in both directions.
+       Declared here on the base rule, not inside `:disabled`, on purpose --
+       a transition scoped to `:disabled` only applies once that state
+       already matches, so it animates the *entry* into disabled (old
+       opacity 1 -> the new target, using the incoming rule's own
+       transition) but not the *exit* (the post-change style carries no
+       `:disabled` rule to contribute a transition at all, so opacity would
+       snap back to 1 instantly). Putting it on the always-applied base rule
+       keeps a transition active in both the enabled and disabled computed
+       styles. Token/easing pair matches the one already used for an
+       opacity fade three times elsewhere (navbar/style.css, sidebar/
+       style.css x2) rather than inventing a new shape. No
+       prefers-reduced-motion override needed here -- these are native
+       `<button>` elements, already covered by dx-components-theme.css's
+       shared reduced-motion layer's bare `button` selector (confirmed
+       live, see this lane's report). */
+    transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
 .dx-carousel-previous svg,
@@ -132,43 +161,100 @@
    inline edges -- logical properties so these mirror correctly under
    `dir="rtl"` (Previous stays at the *start* edge, Next at the *end*
    edge, whichever physical side that resolves to).
-   `calc(-1 * var(--dx-space-12))` (-48px) rather than a positive inset
-   is what actually moves these fully outside the frame, never overlapping
-   a slide -- shadcn's own measured layout (same live capture as the size/
-   shadow comments above): a 28px button whose near edge sits exactly
-   `--dx-space-12` (48px) from the region's edge is 48 - 28 = 20px clear of
-   it, which is shadcn's own measured `btnOutsideBy`. This replaces the
-   previous `var(--dx-space-2)` (8px *inside*, layered over the track via
-   `z-index` -- this codebase's own prior design, not shadcn's), so
-   `z-index` above is now belt-and-braces rather than load-bearing: the
-   buttons no longer share any pixels with `.dx-carousel-content` at all. */
+   `padding-inline` below RESERVES the room these buttons sit in, rather
+   than the buttons reaching for it with a negative `inset-inline-*` past
+   `.dx-carousel`'s own edge (this rule's previous construction). That
+   negative-outset version clipped on any real-world container with no
+   slack to spare beyond it -- reported live on the `rtl` demo, small
+   viewports, both buttons cut off -- because the space it depended on
+   lives *outside* this element's own box, and nothing in this stylesheet
+   can see how much of it exists on a given page.
+   A `@container` query on `.dx-carousel`'s own `inline-size` (the initial,
+   preferred fix for this bug -- see the carousel-narrow lane's report for
+   the full writeup) cannot fix this either, and not for a subtle reason:
+   `.dx-carousel`'s own rendered width is frequently *decoupled* from how
+   much room surrounds it, because any wrapper with a `max-width` (this
+   package's own demo wrappers included -- `max-width: 20rem`) pins it to
+   the SAME constant regardless of how wide or narrow its own container
+   gets, once that container is wide enough to reach the cap. Measured on
+   this exact demo: `.dx-carousel` renders at an identical 320px both at a
+   1280px viewport (748px frame, buttons fully clear) and at a 768px
+   viewport (388px frame, buttons clipped ~14px) -- the one value a
+   container query could read is the one value that does NOT change
+   between the safe case and the broken one, so no threshold fixes both.
+   Reserving the room INSIDE this element's own box sidesteps the question
+   entirely: it needs no signal about the surrounding page at all.
+   Arithmetic: `--dx-space-12` (48px) is the exact reservation needed, not
+   `48px + button width`. Previous/Next below sit flush with this padding's
+   own outer edge (`inset-inline-start/-end: 0`), so the button's near
+   (track-side) edge lands `--dx-space-12` minus its own `--dx-space-7`
+   (28px) width = 20px shy of the track -- shadcn's own measured
+   `btnOutsideBy` (same live capture as the size/shadow comments above) --
+   and its far edge lands exactly on this padding's own outer edge, i.e.
+   `.dx-carousel`'s own border-box edge (`box-sizing: border-box` above).
+   A 76px reservation would leave 28px of unexplained empty gutter past
+   the button's own far edge; 48px is what the button's actual footprint
+   (48px gutter, occupied from 20px to 48px past the track) needs and no
+   more -- confirmed by building this exact rule and measuring zero
+   overflow at every viewport in the lane's own verification table, not
+   assumed. On screen this is pixel-identical to the previous outside
+   placement (still 28x28, no shadow, 20px clear of the track) -- only
+   which element's own box the buttons now count as part of has changed,
+   so `z-index` above stays belt-and-braces (the buttons still share no
+   pixels with `.dx-carousel-content`), never load-bearing. */
+.dx-carousel[data-orientation="horizontal"] {
+    padding-inline: var(--dx-space-12);
+}
+
 .dx-carousel[data-orientation="horizontal"] .dx-carousel-previous {
     inset-block-start: 50%;
-    inset-inline-start: calc(-1 * var(--dx-space-12));
+    inset-inline-start: 0;
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
 }
 
 .dx-carousel[data-orientation="horizontal"] .dx-carousel-next {
     inset-block-start: 50%;
-    inset-inline-end: calc(-1 * var(--dx-space-12));
+    inset-inline-end: 0;
     transform: translateY(-50%); /* rtl-physical: vertical-only offset, centers on the block axis regardless of dir */
 }
 
-/* Vertical: centered on the inline axis, pinned near the block edges.
-   shadcn has its own vertical ("Orientation") demo on the same docs page,
-   measured the same live-DOM way as the horizontal numbers above (not
-   inferred from the horizontal case): Previous/Next sit fully outside the
-   region on the block axis too, `--dx-space-12` (48px) from its block edge
-   for the same 20px-clear result -- the identical construction as
-   horizontal, just on the other axis, confirmed rather than assumed. */
+/* Vertical: centered on the inline axis, pinned near the block edges --
+   the identical `padding-block` reservation as horizontal's
+   `padding-inline` above, just the other axis, applied for the identical
+   reason (the buttons must never depend on external slack this stylesheet
+   cannot see), even though this repo's own `vertical` demo did not
+   reproduce a block-axis overflow in this lane's own verification table:
+   its wrapper already carries its own `padding-block: var(--dx-space-12)`
+   (`variants/vertical/mod.rs`, predating this lane), which alone was
+   already enough room at every viewport tested. Without this rule, that
+   safety would keep depending on a demo-specific (or any other consumer's
+   own hand-written) workaround rather than living in the component --
+   exactly the "demo problem, not a component problem" shape this lane
+   exists to avoid, just not one with an observed live symptom on this
+   particular page. A `@container` query cannot provide the equivalent
+   conditional behavior on this axis even in principle: `container-type`
+   has no block-only containment mode (only `inline-size` or the both-axes
+   `size`), and `size` would additionally make this element's own
+   currently-auto height stop following its content -- collapsing it to
+   zero whenever no explicit height happens to be set, which nothing here
+   guarantees (confirmed by an isolated check -- see the lane report).
+   Reserving the room unconditionally sidesteps that danger entirely, the
+   same way it sidesteps the horizontal case's own external-slack problem.
+   This makes the `vertical` demo's own wrapper-level padding redundant --
+   left as-is (out of this stylesheet's scope, and a harmless belt-and-
+   braces margin now that the component reserves its own). */
+.dx-carousel[data-orientation="vertical"] {
+    padding-block: var(--dx-space-12);
+}
+
 .dx-carousel[data-orientation="vertical"] .dx-carousel-previous {
-    inset-block-start: calc(-1 * var(--dx-space-12));
+    inset-block-start: 0;
     inset-inline-start: 50%;
     transform: translateX(-50%); /* rtl-physical: centers this control on its own parent's inline axis, symmetric under dir so it needs no sign flip -- same construction as resizable/style.css's own transform-paired centering */
 }
 
 .dx-carousel[data-orientation="vertical"] .dx-carousel-next {
-    inset-block-end: calc(-1 * var(--dx-space-12));
+    inset-block-end: 0;
     inset-inline-start: 50%;
     transform: translateX(-50%); /* rtl-physical: see comment above */
 }

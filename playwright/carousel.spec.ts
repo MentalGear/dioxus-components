@@ -248,40 +248,50 @@ for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as c
 }
 
 /**
- * shadcn-parity geometry: 28x28px buttons, no box-shadow, and fully outside
- * the region -- never overlapping a slide -- on every variant and axis.
- * Values are shadcn/ui's own live-measured carousel
+ * shadcn-parity geometry: 28x28px buttons, no box-shadow, and visually
+ * outside the track -- never overlapping a slide -- on every variant and
+ * axis. Values are shadcn/ui's own live-measured carousel
  * (`ui.shadcn.com/docs/components/carousel`, JS running, 1280x800 @2x):
  * `getBoundingClientRect()` on both buttons reported exactly 28x28,
  * `getComputedStyle().boxShadow` reported "none", and the near edge of each
- * button sat 20px clear of the region's own edge (`--dx-space-12`, 48px,
+ * button sat 20px clear of the track's own edge (`--dx-space-12`, 48px,
  * minus the button's own 28px). Their own vertical ("Orientation") demo
  * confirmed the same 20px-clear rule holds on the block axis too, not just
  * inferred from the horizontal case -- see
  * `preview/src/components/carousel/style.css`'s own comments for the full
  * derivation and the exact numbers this asserts against.
+ *
+ * Clearance is measured against `.dx-carousel-content` (the track), NOT
+ * `role=region` (`.dx-carousel` itself): the carousel-narrow lane moved
+ * Previous/Next from a negative `inset-inline-*`/`inset-block-*` outset
+ * past `.dx-carousel`'s own edge to a `padding-inline`/`padding-block`
+ * RESERVATION inside it, so the buttons now sit fully inside `.dx-carousel`'s
+ * own box (that containment is what the next describe block regression-
+ * tests) -- `region`'s box no longer marks the track's edge, only the
+ * track itself still does. The 20px-clear number is unchanged either way;
+ * only which element it is measured from moved.
  */
 test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement)", () => {
   const BUTTON_SIZE_PX = 28;
   const MIN_CLEAR_PX = 20 - 1; // 1px tolerance for sub-pixel layout rounding
 
   for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
-    test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the region`, async ({ page }) => {
+    test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the track`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
-      const region = frame.getByRole("region");
+      const content = frame.locator(".dx-carousel-content");
       const previous = frame.getByRole("button", { name: "Previous slide" });
       const next = frame.getByRole("button", { name: "Next slide" });
 
       await expect(previous).toHaveCSS("box-shadow", "none");
       await expect(next).toHaveCSS("box-shadow", "none");
 
-      const [regionBox, previousBox, nextBox] = await Promise.all([
-        region.boundingBox(),
+      const [contentBox, previousBox, nextBox] = await Promise.all([
+        content.boundingBox(),
         previous.boundingBox(),
         next.boundingBox(),
       ]);
-      expect(regionBox).not.toBeNull();
+      expect(contentBox).not.toBeNull();
       expect(previousBox).not.toBeNull();
       expect(nextBox).not.toBeNull();
 
@@ -291,20 +301,118 @@ test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement
       }
 
       if (variant === "vertical") {
-        // Block axis: Previous above the region, Next below it.
-        expect(regionBox!.y - (previousBox!.y + previousBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
-        expect(nextBox!.y - (regionBox!.y + regionBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        // Block axis: Previous above the track, Next below it.
+        expect(contentBox!.y - (previousBox!.y + previousBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(nextBox!.y - (contentBox!.y + contentBox!.height)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
       } else if (variant === "rtl") {
         // Inline axis, mirrored: Previous (the *start* edge) resolves to
         // the physical right under dir="rtl"; Next (the *end* edge) to the
         // physical left -- the opposite pairing from every other variant.
-        expect(previousBox!.x - (regionBox!.x + regionBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
-        expect(regionBox!.x - (nextBox!.x + nextBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(previousBox!.x - (contentBox!.x + contentBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(contentBox!.x - (nextBox!.x + nextBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
       } else {
-        expect(regionBox!.x - (previousBox!.x + previousBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
-        expect(nextBox!.x - (regionBox!.x + regionBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(contentBox!.x - (previousBox!.x + previousBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
+        expect(nextBox!.x - (contentBox!.x + contentBox!.width)).toBeGreaterThanOrEqual(MIN_CLEAR_PX);
       }
     });
+  }
+});
+
+/**
+ * carousel-narrow lane regression: Previous/Next must never extend beyond
+ * their own demo frame's box, at any viewport a real consumer's container
+ * could actually be, in either theme. This is the direct, black-box
+ * assertion for the bug this lane fixed (reported live on the `rtl`
+ * variant: both arrows clipped at the frame edge on a narrow viewport) --
+ * see `preview/src/components/carousel/style.css`'s own comment on the
+ * horizontal/vertical placement rules for the construction and the
+ * geometric derivation, and the lane's own report for the full before/
+ * after measurement table this reproduces the shape of.
+ *
+ * Viewports: the six the lane brief itself named as the minimum
+ * (1280/900/768/640/480/390) -- this page's own layout is not simply
+ * narrower at a narrower viewport (a sidebar collapses around 700-750px,
+ * so the rendered frame width is NOT monotonic in viewport width; 640px
+ * actually yields a wider frame than 768px does) -- so this sweeps the
+ * exact set asked for rather than a hand-picked "worst case" that could
+ * miss a non-adjacent regression the way a monotonic assumption would.
+ *
+ * `toBeGreaterThanOrEqual(-0.5)`/`toBeLessThanOrEqual(...+0.5)`: a half
+ * pixel of slack for sub-pixel layout rounding, the same kind of tolerance
+ * `MIN_CLEAR_PX` above already applies -- not a loose bound: the pre-fix
+ * construction overflowed by 12-15px on the horizontal variants at these
+ * same viewports (see the lane report's before/after table), tens of
+ * times this tolerance.
+ */
+test.describe("Carousel: arrows never overflow their frame (carousel-narrow regression)", () => {
+  const VIEWPORTS = [1280, 900, 768, 640, 480, 390];
+  const OVERFLOW_TOLERANCE_PX = 0.5;
+
+  for (const dark of [false, true]) {
+    for (const width of VIEWPORTS) {
+      test(`${dark ? "dark" : "light"} mode, ${width}px viewport: no button escapes its frame`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(
+          `${BASE_URL}/component/?name=carousel&variant=main&${dark ? "dark_mode=true" : ""}`,
+          GOTO_OPTS,
+        );
+
+        for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+          const frame = demoFrame(page, variant);
+          const previous = frame.getByRole("button", { name: "Previous slide" });
+          const next = frame.getByRole("button", { name: "Next slide" });
+
+          // Polls (via `toPass`, the same retry idiom `expectSnappedToBoundary`
+          // above already uses for its own settle) rather than trusting one
+          // instantaneous `boundingBox()` triple: this page mounts five
+          // independent carousels at once, each running its own mount-time
+          // settle effect (`primitives/src/carousel.rs`'s own
+          // `CAROUSEL_SCROLL_INTO_VIEW_JS` effect), and under this suite's
+          // parallel workers sharing one plain `http.server` (slower to
+          // answer four workers' concurrent requests than one), a read
+          // racing that settle can catch the frame and a button mid-shift,
+          // tens of pixels apart, even at the roomiest viewport -- confirmed
+          // by construction: standalone re-measurement (fresh browser
+          // context, no other worker contention) of the exact same variant/
+          // viewport never reproduced a mismatch, and this repo's own
+          // dev-docs already name "grepping/measuring before the page has
+          // actually settled" as a proven false-alarm source for this
+          // component. A real overflow does not self-correct on retry, so
+          // this still fails (after 3s) if the buttons are genuinely
+          // outside their frame.
+          await expect(async () => {
+            const [frameBox, previousBox, nextBox] = await Promise.all([
+              frame.boundingBox(),
+              previous.boundingBox(),
+              next.boundingBox(),
+            ]);
+            expect(frameBox, `${variant}: frame box`).not.toBeNull();
+            expect(previousBox, `${variant}: previous box`).not.toBeNull();
+            expect(nextBox, `${variant}: next box`).not.toBeNull();
+
+            for (const [label, box] of [
+              ["previous", previousBox!],
+              ["next", nextBox!],
+            ] as const) {
+              expect(box.x, `${variant} ${label}: left edge vs frame`).toBeGreaterThanOrEqual(
+                frameBox!.x - OVERFLOW_TOLERANCE_PX,
+              );
+              expect(box.x + box.width, `${variant} ${label}: right edge vs frame`).toBeLessThanOrEqual(
+                frameBox!.x + frameBox!.width + OVERFLOW_TOLERANCE_PX,
+              );
+              expect(box.y, `${variant} ${label}: top edge vs frame`).toBeGreaterThanOrEqual(
+                frameBox!.y - OVERFLOW_TOLERANCE_PX,
+              );
+              expect(box.y + box.height, `${variant} ${label}: bottom edge vs frame`).toBeLessThanOrEqual(
+                frameBox!.y + frameBox!.height + OVERFLOW_TOLERANCE_PX,
+              );
+            }
+          }).toPass({ timeout: 3000 });
+        }
+      });
+    }
   }
 });
 
@@ -744,5 +852,117 @@ test.describe("Carousel: scroll-snap-stop caps a smooth scroll to one slide", ()
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
     await expect(slide(3)).toHaveAttribute("data-selected", "false");
     await expect(slide(4)).toHaveAttribute("data-selected", "false");
+  });
+});
+
+/**
+ * True if `samples` pass strictly through a value between their own first
+ * and last entry, on a scale-relative tolerance.
+ *
+ * Deliberately NOT `passesThroughAnIntermediateValue`: that one guards with
+ * `hi - lo < 2` and bands with `lo + 1`/`hi - 1`, which are pixel
+ * thresholds. Opacity's whole range is 0..1, so a 1 -> 0.5 fade has a span
+ * of 0.5 and would fail that guard unconditionally -- the test would be red
+ * no matter how well the fade worked. This one takes a minimum span and
+ * pads by a fraction of the observed span instead.
+ */
+function passesThroughAnIntermediateFraction(samples: number[], minSpan = 0.05): boolean {
+  if (samples.length < 3) {
+    return false;
+  }
+  const start = samples[0];
+  const end = samples[samples.length - 1];
+  const lo = Math.min(start, end);
+  const hi = Math.max(start, end);
+  if (hi - lo < minSpan) {
+    return false;
+  }
+  const pad = (hi - lo) * 0.1;
+  return samples.some((v) => v > lo + pad && v < hi - pad);
+}
+
+/** Sample an element's computed opacity every frame across `trigger`. */
+async function sampleOpacityDuring(
+  page: Page,
+  selector: string,
+  trigger: () => Promise<void>,
+  windowMs = 1500,
+): Promise<number[]> {
+  await page.evaluate(
+    ({ selector, windowMs }) => {
+      const w = window as unknown as { __dxOpacity: number[]; __dxOpacityDone: boolean };
+      w.__dxOpacity = [];
+      w.__dxOpacityDone = false;
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (!el) {
+        w.__dxOpacityDone = true;
+        return;
+      }
+      const t0 = performance.now();
+      const tick = () => {
+        w.__dxOpacity.push(parseFloat(getComputedStyle(el).opacity));
+        if (performance.now() - t0 > windowMs) {
+          w.__dxOpacityDone = true;
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    { selector, windowMs },
+  );
+  await trigger();
+  await page.waitForFunction(
+    () => (window as unknown as { __dxOpacityDone: boolean }).__dxOpacityDone === true,
+    undefined,
+    { timeout: windowMs + 5000 },
+  );
+  return page.evaluate(() => (window as unknown as { __dxOpacity: number[] }).__dxOpacity);
+}
+
+/**
+ * The disabled-state fade (round 6, user-reported): Previous/Next are
+ * genuinely `disabled` at the first/last slide, and that opacity change used
+ * to apply instantly. The transition lives on the BASE rule rather than
+ * inside `:disabled` -- scoped to `:disabled` it would animate entering the
+ * state but not leaving it, since the non-disabled style would then carry no
+ * transition of its own. So both directions are asserted here.
+ */
+test.describe("Carousel: the disabled-state opacity change actually fades", () => {
+  test("Next fades both entering and leaving :disabled", async ({ page }) => {
+    await goto(page, "main");
+    const reducedMotion = await page.evaluate(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    test.skip(
+      reducedMotion,
+      "test browser reports prefers-reduced-motion: reduce -- the shared theme layer deliberately suppresses this fade, so whether it animates cannot be asked honestly here",
+    );
+
+    const frame = demoFrame(page, "main");
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const previous = frame.getByRole("button", { name: "Previous slide" });
+
+    // Walk to the second-to-last slide so the next click disables Next.
+    for (let i = 0; i < 3; i++) {
+      await next.click();
+      await page.waitForTimeout(700);
+    }
+
+    const disabling = await sampleOpacityDuring(page, ".dx-carousel-next", () => next.click());
+    await expect(next).toBeDisabled();
+    expect(
+      passesThroughAnIntermediateFraction(disabling),
+      `entering :disabled should pass through an intermediate opacity; got ${JSON.stringify(disabling)}`,
+    ).toBe(true);
+
+    await page.waitForTimeout(700);
+
+    const enabling = await sampleOpacityDuring(page, ".dx-carousel-next", () => previous.click());
+    await expect(next).toBeEnabled();
+    expect(
+      passesThroughAnIntermediateFraction(enabling),
+      `leaving :disabled should pass through an intermediate opacity; got ${JSON.stringify(enabling)}`,
+    ).toBe(true);
   });
 });
