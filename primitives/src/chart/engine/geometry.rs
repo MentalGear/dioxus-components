@@ -11,24 +11,6 @@
 //! `(start, start + width)`) already produces it -- see that type's own
 //! doc and test.
 
-/// Split one series' `values` (one entry per datum, `None` = missing) into
-/// contiguous runs of `(x, value)` pairs, breaking at every `None` -- the
-/// gap a line/area must not bridge by drawing a fake segment across it.
-/// `xs` and `values` are positional (one x position, e.g. a
-/// [`super::scale::BandScale`]'s per-datum centers, per value); a length
-/// mismatch is handled defensively by stopping at the shorter of the two
-/// rather than panicking. Values are returned *unscaled* -- the caller
-/// maps each run's `y` through its own [`super::scale::LinearScale`]
-/// afterward, so this function stays decoupled from any particular scale.
-///
-/// ```
-/// use dioxus_primitives::chart::engine::geometry::plot_runs;
-///
-/// let xs = vec![0.0, 1.0, 2.0, 3.0];
-/// let values = vec![Some(1.0), Some(2.0), None, Some(3.0)];
-/// let runs = plot_runs(&xs, &values);
-/// assert_eq!(runs, vec![vec![(0.0, 1.0), (1.0, 2.0)], vec![(3.0, 3.0)]]);
-/// ```
 /// A bar's pixel extent along its *value* axis (y for a vertical bar, x for
 /// a horizontal one -- the caller places this pair on whichever screen axis
 /// actually carries values, see `components::series::bar`): given the
@@ -75,6 +57,24 @@ pub fn bar_extent(value_px: f64, zero_px: f64) -> (f64, f64) {
     }
 }
 
+/// Split one series' `values` (one entry per datum, `None` = missing) into
+/// contiguous runs of `(x, value)` pairs, breaking at every `None` -- the
+/// gap a line/area must not bridge by drawing a fake segment across it.
+/// `xs` and `values` are positional (one x position, e.g. a
+/// [`super::scale::BandScale`]'s per-datum centers, per value); a length
+/// mismatch is handled defensively by stopping at the shorter of the two
+/// rather than panicking. Values are returned *unscaled* -- the caller
+/// maps each run's `y` through its own [`super::scale::LinearScale`]
+/// afterward, so this function stays decoupled from any particular scale.
+///
+/// ```
+/// use dioxus_primitives::chart::engine::geometry::plot_runs;
+///
+/// let xs = vec![0.0, 1.0, 2.0, 3.0];
+/// let values = vec![Some(1.0), Some(2.0), None, Some(3.0)];
+/// let runs = plot_runs(&xs, &values);
+/// assert_eq!(runs, vec![vec![(0.0, 1.0), (1.0, 2.0)], vec![(3.0, 3.0)]]);
+/// ```
 pub fn plot_runs(xs: &[f64], values: &[Option<f64>]) -> Vec<Vec<(f64, f64)>> {
     let n = xs.len().min(values.len());
     let mut runs = Vec::new();

@@ -112,6 +112,7 @@ pub fn Demo() -> Element {
             ChartDatum {
                 label: label.clone(),
                 values: vec![Some(value)],
+                ..Default::default()
             }
         })
         .collect();
