@@ -1,11 +1,13 @@
 //! Combobox option components.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::ComboboxContext;
 use crate::{
     collection::{collection_item, use_item},
     listbox::{ListboxContext, ListboxItemIndicator},
+    merge_attributes,
     selectable::{
         pointer_select_cancel, pointer_select_commit, pointer_select_start, use_selectable_option,
         RcPartialEqValue, SelectableOptionConfig,
@@ -77,20 +79,24 @@ pub fn ComboboxOption<T: PartialEq + Clone + 'static>(props: ComboboxOptionProps
 
     let render = use_context::<ListboxContext>().render;
 
+    // All owned: role/aria-selected/aria-disabled define this option's
+    // widget semantics, the `data-*` pair mirrors its own state.
+    let owned = attributes!(div {
+        role: "option",
+        aria_selected: (option.selected)(),
+        aria_disabled: (option.disabled)(),
+        "data-highlighted": (option.focused)(),
+        "data-disabled": (option.disabled)(),
+        "data-selected": (option.selected)(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         if render() && visible() {
             div {
-                role: "option",
                 id: option.id,
-
-                aria_selected: (option.selected)(),
-                aria_disabled: (option.disabled)(),
                 aria_label: props.aria_label.clone(),
                 aria_roledescription: props.aria_roledescription.clone(),
-
-                "data-highlighted": (option.focused)(),
-                "data-disabled": (option.disabled)(),
-                "data-selected": (option.selected)(),
 
                 onmouseenter: move |_| {
                     if !(option.disabled)() {
@@ -109,7 +115,7 @@ pub fn ComboboxOption<T: PartialEq + Clone + 'static>(props: ComboboxOptionProps
                     pointer_select_cancel(option.down_pos);
                 },
 
-                ..props.attributes,
+                ..merged,
                 {props.children}
             }
         }

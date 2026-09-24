@@ -1,12 +1,10 @@
 //! ComboboxList component.
 
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 use super::super::context::ComboboxContext;
 use crate::listbox::use_listbox_container;
-#[cfg(feature = "web")]
 use crate::merge_attributes;
 
 /// Props for [`ComboboxList`].
@@ -151,13 +149,16 @@ fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Elemen
     // (`docs/conformance-harness.md` hydration-parity Rule 4).
     let attributes =
         crate::top_layer::anchored_content_attributes(&ctx.input_id.cloned(), attributes);
+    let owned = attributes!(div {
+        role: "listbox",
+        popover: crate::top_layer::PopoverKind::Manual.as_str(),
+        "data-state": if open() { "open" } else { "closed" },
+    });
+    let attributes = merge_attributes(vec![attributes, owned]);
 
     rsx! {
         div {
             id: id.clone(),
-            role: "listbox",
-            popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 event.prevent_default();
             },
@@ -176,11 +177,15 @@ fn ComboboxListRendered(id: String, attributes: Vec<Attribute>, children: Elemen
     let ctx: ComboboxContext = use_context();
     let open = ctx.selectable.open;
 
+    let owned = attributes!(div {
+        role: "listbox",
+        "data-state": if open() { "open" } else { "closed" },
+    });
+    let attributes = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         div {
             id,
-            role: "listbox",
-            "data-state": if open() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 event.prevent_default();
             },
