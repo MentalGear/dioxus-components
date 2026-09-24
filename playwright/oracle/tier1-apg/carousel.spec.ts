@@ -231,7 +231,17 @@ test.describe("Reference: W3C's own Carousel example (carousel-1-prev-next.html)
     // this, stable with it.
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(referenceUrl);
-    await expectNoAxeViolations(page, "carousel reference (carousel-1-prev-next.html)");
+    // Scoped to `#ex1` (the carousel widget itself, per this file's own
+    // `libraryFrame`-style convention of scanning only the subject under
+    // test): the unscoped page also contains this reference page's own
+    // documentation, including a `<pre><code id="sc1">` source-code sample
+    // further down that trips axe's `scrollable-region-focusable` rule --
+    // a pre-existing defect in the vendored W3C reference's own doc
+    // chrome, not in the carousel pattern this file calibrates against,
+    // and not something this repo edits (dev-docs/backlog.md row 101).
+    await expectNoAxeViolations(page, "carousel reference (carousel-1-prev-next.html)", {
+      include: "#ex1",
+    });
   });
 });
 
