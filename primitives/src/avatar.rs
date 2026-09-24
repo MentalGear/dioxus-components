@@ -1,8 +1,9 @@
 //! Defines the [`Avatar`] component and its subcomponents, which manage user profile images with fallback options.
 
 use dioxus::{document, prelude::*};
+use dioxus_attributes::attributes;
 
-use crate::{use_id_or, use_unique_id};
+use crate::{merge_attributes, use_id_or, use_unique_id};
 
 /// Represents the different states an Avatar can be in
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,16 +133,20 @@ pub fn Avatar(props: AvatarProps) -> Element {
     let show_fallback =
         use_memo(move || matches!(state(), AvatarState::Error | AvatarState::Empty));
 
+    let owned = attributes!(span {
+        role: "img",
+        "data-state": match state() {
+            AvatarState::Loading => "loading",
+            AvatarState::Loaded => "loaded",
+            AvatarState::Error => "error",
+            AvatarState::Empty => "empty",
+        },
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         span {
-            role: "img",
-            "data-state": match state() {
-                AvatarState::Loading => "loading",
-                AvatarState::Loaded => "loaded",
-                AvatarState::Error => "error",
-                AvatarState::Empty => "empty",
-            },
-            ..props.attributes,
+            ..merged,
 
             // Children (which may include AvatarImage and AvatarFallback)
             {props.children}
@@ -395,6 +400,11 @@ pub fn AvatarImage(props: AvatarImageProps) -> Element {
         return rsx!({});
     }
 
+    let owned = attributes!(img {
+        style: "width: 100%; height: 100%; object-fit: cover;"
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         img {
             id: image_id,
@@ -402,8 +412,7 @@ pub fn AvatarImage(props: AvatarImageProps) -> Element {
             alt: props.alt.clone().unwrap_or_default(),
             onload: handle_load,
             onerror: handle_error,
-            style: "width: 100%; height: 100%; object-fit: cover;",
-            ..props.attributes,
+            ..merged,
         }
     }
 }

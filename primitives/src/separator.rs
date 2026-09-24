@@ -1,6 +1,8 @@
 //! Defines the [`Separator`] component for creating visual or semantic separators.
 
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The props for the [`Separator`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -57,13 +59,14 @@ pub fn Separator(props: SeparatorProps) -> Element {
         false => "vertical",
     };
 
+    let owned = attributes!(div {
+        role: if !props.decorative { "separator" } else { "none" },
+        aria_orientation: if !props.decorative { orientation },
+        "data-orientation": orientation,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
-        div {
-            role: if !props.decorative { "separator" } else { "none" },
-            aria_orientation: if !props.decorative { orientation },
-            "data-orientation": orientation,
-            ..props.attributes,
-            {props.children}
-        }
+        div { ..merged, {props.children} }
     }
 }

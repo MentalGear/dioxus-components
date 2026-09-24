@@ -1,6 +1,8 @@
 //! Defines the [`Label`] component
 
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The props for the [`Label`] component
 #[derive(Props, Clone, PartialEq)]
@@ -42,10 +44,14 @@ pub struct LabelProps {
 #[component]
 pub fn Label(props: LabelProps) -> Element {
     // TODO: (?) the Radix primitive prevents selection on double click (but not intentional highlighting)
+    let owned = attributes!(label {
+        r#for: props.html_for
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         label {
-            for: props.html_for,
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }

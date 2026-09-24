@@ -1,6 +1,8 @@
 //! Defines the [`AspectRatio`] component, which maintains a specific aspect ratio for its children.
 
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The props for the [`AspectRatio`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -40,12 +42,16 @@ pub struct AspectRatioProps {
 pub fn AspectRatio(props: AspectRatioProps) -> Element {
     let ratio = 100.0 / (props.ratio);
 
+    let owned = attributes!(div {
+        style: "position: absolute; inset: 0;"
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             style: "position: relative; width: 100%; padding-bottom: {ratio}%;",
             div {
-                style: "position: absolute; inset: 0;",
-                ..props.attributes,
+                ..merged,
 
                 {props.children}
             }
