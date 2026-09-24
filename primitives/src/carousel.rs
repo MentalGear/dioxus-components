@@ -68,9 +68,11 @@
 
 use crate::{
     direction::{use_direction, Direction, HorizontalNav},
-    fold_style_attributes, has_own_accessible_name, use_controlled, use_id_or, use_unique_id,
+    fold_style_attributes, has_own_accessible_name, merge_attributes, use_controlled, use_id_or,
+    use_unique_id,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The axis a [`Carousel`] pages along.
 ///
@@ -1358,16 +1360,33 @@ pub fn Carousel(props: CarouselProps) -> Element {
         );
     }
 
-    rsx! {
-        div {
+    // Merged (caller-wins for anything presentational, then component-owned
+    // state wins last), not a literal beside a bare `..props.attributes`
+    // spread: `role`/`aria_roledescription`/the two `data-*` attributes have
+    // no typed field in `CarouselProps` claiming their names, so SSR would
+    // otherwise emit both this literal and a same-named caller override,
+    // which the HTML parser and a hydrating client resolve to opposite
+    // values (`scripts/check-attr-spread-collision.sh`,
+    // `dev-docs/issues/duplicate-attribute-root-cause.md`). These are all
+    // structural/ARIA state this component must control, so they go last
+    // (owned-wins) -- preserves today's production (SSR+hydrate) behavior
+    // exactly, since the browser's own parser already resolves a duplicate
+    // to the first (library) value.
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "region",
             aria_roledescription: "carousel",
-            dir: direction.as_str(),
             "data-orientation": orientation().as_str(),
             "data-direction": direction.as_str(),
+        }),
+    ]);
 
+    rsx! {
+        div {
+            dir: direction.as_str(),
             onkeydown,
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }
@@ -1767,14 +1786,30 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
-    rsx! {
-        div {
-            id,
-            style,
+    // Merged (owned-wins), spreading only the merged result -- never a
+    // literal `style`/`tabindex`/`data-*` beside a raw `..rest_attrs`
+    // spread (`scripts/check-attr-spread-collision.sh`). `rest_attrs`
+    // already excludes any caller `style` (`fold_style_attributes` above
+    // folded it into `style`, which is why it is safe to place `style`
+    // itself in the owned group rather than concatenate it again here);
+    // `tabindex`/the two `data-*` attributes are structural state this
+    // component must keep correct (the scroll region's own focusability,
+    // and the axis/drag-opt-out this crate's own CSS keys off), so they go
+    // last, same as `Carousel`'s own root.
+    let attributes = merge_attributes(vec![
+        rest_attrs,
+        attributes!(div {
+            style: style.clone(),
             tabindex: "0",
             "data-orientation": orientation.as_str(),
             "data-draggable": draggable,
-            ..rest_attrs,
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
+            ..attributes,
 
             {props.children}
         }
@@ -1864,15 +1899,30 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
+    // Merged (owned-wins for structural/ARIA state; `aria_label` is a
+    // presentational *default* -- caller-overridable, per `default_label`'s
+    // own `has_own_accessible_name` gating above, which already never
+    // computes a `Some` once the caller supplied their own name -- so it
+    // is placed first rather than last, same as `CarouselPrevious`/
+    // `CarouselNext`'s own default label below). Never a literal beside a
+    // bare `..rest_attrs` spread (`scripts/check-attr-spread-collision.sh`).
+    let attributes = merge_attributes(vec![
+        attributes!(div {
+            aria_label: default_label
+        }),
+        rest_attrs,
+        attributes!(div {
+            role: "group",
+            aria_roledescription: "slide",
+            style: style.clone(),
+            "data-selected": is_selected,
+        }),
+    ]);
+
     rsx! {
         div {
             id,
-            role: "group",
-            aria_roledescription: "slide",
-            aria_label: default_label,
-            style,
-            "data-selected": is_selected,
-            ..rest_attrs,
+            ..attributes,
 
             {props.children}
         }
@@ -1913,15 +1963,32 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
 
+    // Merged (caller-wins for the presentational defaults, then
+    // component-owned state wins last), not a literal beside a bare
+    // `..props.attributes` spread (`scripts/check-attr-spread-collision.sh`).
+    // `type`/`aria_label` are overridable defaults (a caller wanting
+    // `type="submit"` or their own label still can); `aria_controls`/
+    // `disabled` are ARIA-relationship and real-boundary state this
+    // component must keep correct, so they go last -- owned-wins preserves
+    // today's production (SSR+hydrate) behavior exactly, since a caller
+    // could otherwise (attempt to) re-enable a button already correctly
+    // disabled at a real boundary.
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            r#type: "button",
+            aria_label: default_label
+        }),
+        props.attributes,
+        attributes!(button {
+            aria_controls,
+            disabled
+        }),
+    ]);
+
     rsx! {
         button {
-            r#type: "button",
-            aria_label: default_label,
-            aria_controls,
-            disabled,
-
             onclick: move |_| ctx.set_selected.call(prev_selected((ctx.selected)())),
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }
@@ -1944,15 +2011,24 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
 
+    // See `CarouselPrevious`'s identical construction, just above, for the
+    // full precedence rationale.
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            r#type: "button",
+            aria_label: default_label
+        }),
+        props.attributes,
+        attributes!(button {
+            aria_controls,
+            disabled
+        }),
+    ]);
+
     rsx! {
         button {
-            r#type: "button",
-            aria_label: default_label,
-            aria_controls,
-            disabled,
-
             onclick: move |_| ctx.set_selected.call(next_selected((ctx.selected)(), (ctx.count)())),
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }
