@@ -5,12 +5,14 @@ use std::time::Duration;
 
 use crate::{
     direction::{use_direction, Direction},
+    merge_attributes,
     selectable::{
         use_selectable_root, use_single_selectable_value, RcPartialEqValue, SelectionMode,
     },
     use_controlled, use_effect, use_form_reset_listener, use_unique_id, Controlled,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use dioxus_core::Task;
 
 use super::super::context::SelectContext;
@@ -339,13 +341,17 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
     let hidden_select_id = use_unique_id();
     use_form_reset_listener(hidden_select_id, move || reset_to_default.call(()));
 
+    let owned = attributes!(div {
+        "data-state": if open() { "open" } else { "closed" },
+        "data-disabled": (props.disabled)(),
+        "data-direction": ctx.direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             dir: ctx.direction.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-disabled": (props.disabled)(),
-            "data-direction": ctx.direction.as_str(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
 
@@ -517,13 +523,17 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
         },
     );
 
+    let owned = attributes!(div {
+        "data-state": if open() { "open" } else { "closed" },
+        "data-disabled": (props.disabled)(),
+        "data-direction": ctx.direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             dir: ctx.direction.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-disabled": (props.disabled)(),
-            "data-direction": ctx.direction.as_str(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }

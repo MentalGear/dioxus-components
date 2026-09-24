@@ -1,8 +1,10 @@
 //! SelectValue component implementation.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::SelectContext;
+use crate::merge_attributes;
 
 /// The props for the [`SelectValue`] component
 #[derive(Props, Clone, PartialEq)]
@@ -74,12 +76,11 @@ pub fn SelectValue(props: SelectValueProps) -> Element {
         .selected_text()
         .unwrap_or_else(|| props.placeholder.cloned());
 
+    let owned = attributes!(span { "data-placeholder": is_empty() });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         // Add placeholder option if needed
-        span {
-            "data-placeholder": is_empty(),
-            ..props.attributes,
-            {display_value}
-        }
+        span { ..merged, {display_value} }
     }
 }
