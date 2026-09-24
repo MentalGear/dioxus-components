@@ -2,8 +2,9 @@
 
 use crate::collection::{collection_item, use_item, CollectionOptions, CollectionState};
 use crate::dioxus_elements::Key;
-use crate::{use_animated_open, use_id_or, use_unique_id};
+use crate::{merge_attributes, use_animated_open, use_id_or, use_unique_id};
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 // TODO: controlled version
 // TODO: rewrite this to use collapsible
@@ -192,16 +193,18 @@ pub fn Accordion(props: AccordionProps) -> Element {
         )
     });
 
+    let owned = attributes!(div { "data-disabled": (props.disabled)() });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             id: props.id,
-            "data-disabled": (props.disabled)(),
 
             onfocusout: move |_| {
                 ctx.focus.clear_focus();
             },
 
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -304,11 +307,15 @@ pub fn AccordionItem(props: AccordionItemProps) -> Element {
         props.on_change.call(open)
     });
 
+    let owned = attributes!(div {
+        "data-open": ctx.is_open(item.id),
+        "data-disabled": ctx.is_disabled() || item.is_disabled(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            "data-open": ctx.is_open(item.id),
-            "data-disabled": ctx.is_disabled() || item.is_disabled(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -373,12 +380,14 @@ pub fn AccordionContent(props: AccordionContentProps) -> Element {
 
     let render_element = use_animated_open(id, open);
 
+    let owned = attributes!(div { "data-open": open });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         if render_element() {
             div {
                 id: id,
-                "data-open": open,
-                ..props.attributes,
+                ..merged,
 
                 {props.children}
             }
@@ -439,15 +448,21 @@ pub fn AccordionTrigger(props: AccordionTriggerProps) -> Element {
     let id_signal = use_signal(|| item.id);
     let onmounted = use_item(collection_item(ctx.focus, id_signal).disabled(disabled)).onmounted();
 
+    // `type` is an overridable default; the rest is this trigger's own
+    // functional state (managed `disabled`/`tabindex`, and aria-controls/
+    // aria-expanded reflecting its real relationship/state).
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        disabled: disabled(),
+        tabindex: "0",
+        aria_controls: item.aria_id(),
+        aria_expanded: ctx.is_open(item.id),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
             id: props.id,
-            disabled: disabled(),
-            tabindex: "0",
-            type: "button",
-
-            aria_controls: item.aria_id(),
-            aria_expanded: ctx.is_open(item.id),
 
             onmounted,
             onfocus: move |_| {
@@ -486,7 +501,7 @@ pub fn AccordionTrigger(props: AccordionTriggerProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
