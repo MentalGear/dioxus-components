@@ -1,7 +1,8 @@
 //! Defines the [`Switch`] component and its sub-components.
 
-use crate::{use_controlled, use_form_reset_listener, use_unique_id};
+use crate::{merge_attributes, use_controlled, use_form_reset_listener, use_unique_id};
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use std::rc::Rc;
 
 /// The props for the [`Switch`] component.
@@ -89,17 +90,24 @@ pub fn Switch(props: SwitchProps) -> Element {
     // Radix UI / Headless UI / Material UI do for the same reason.
     let mut button_ref: Signal<Option<Rc<MountedData>>> = use_signal(|| None);
 
+    // `type` is an overridable default; the rest is this switch's own
+    // functional state (role/aria-checked/aria-required define the widget,
+    // the `data-*` pair mirrors its real state).
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        role: "switch",
+        aria_checked: checked,
+        aria_required: props.required,
+        "data-state": if checked() { "checked" } else { "unchecked" },
+        // Only add data-disabled when actually disabled
+        "data-disabled": if (props.disabled)() { "true" } else { "false" },
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            type: "button",
-            role: "switch",
             value: props.value,
-            aria_checked: checked,
-            aria_required: props.required,
             disabled: props.disabled,
-            "data-state": if checked() { "checked" } else { "unchecked" },
-            // Only add data-disabled when actually disabled
-            "data-disabled": if (props.disabled)() { "true" } else { "false" },
 
             onmounted: move |evt| button_ref.set(Some(evt.data())),
             onclick: move |_| {
@@ -119,7 +127,7 @@ pub fn Switch(props: SwitchProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
 

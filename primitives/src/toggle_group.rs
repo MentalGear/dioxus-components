@@ -3,10 +3,12 @@
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
+    merge_attributes,
     toggle::Toggle,
     use_controlled,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use std::collections::HashSet;
 
 // Todo: docs, test controlled version
@@ -172,15 +174,19 @@ pub fn ToggleGroup(props: ToggleGroupProps) -> Element {
         direction,
     });
 
+    let owned = attributes!(div {
+        "data-orientation": ctx.orientation(),
+        "data-allow-multiple-pressed": ctx.allow_multiple_pressed,
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             dir: direction.as_str(),
             onfocusout: move |_| ctx.focus.clear_focus(),
 
-            "data-orientation": ctx.orientation(),
-            "data-allow-multiple-pressed": ctx.allow_multiple_pressed,
-            "data-direction": direction.as_str(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
