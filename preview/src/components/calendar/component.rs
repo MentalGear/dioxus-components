@@ -301,13 +301,10 @@ pub(crate) fn CalendarMonthView(offset: u8, month_count: u8) -> Element {
 
 #[component]
 fn CalendarView(props: CalendarViewProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-view" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarView {
-            class: "dx-calendar-view",
-            offset: props.offset,
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarView { offset: props.offset, attributes: merged, {props.children} }
     }
 }
 
@@ -320,8 +317,10 @@ fn CalendarHeader(props: CalendarHeaderProps) -> Element {
 
 #[component]
 fn CalendarNavigation(props: CalendarNavigationProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-navigation" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarNavigation { class: "dx-calendar-navigation", attributes: props.attributes, {props.children} }
+        calendar::CalendarNavigation { attributes: merged, {props.children} }
     }
 }
 
@@ -329,8 +328,10 @@ fn CalendarNavigation(props: CalendarNavigationProps) -> Element {
 fn CalendarPreviousMonthButton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
+    let base = attributes!(button { class: "dx-calendar-nav-prev" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
-        calendar::CalendarPreviousMonthButton { class: "dx-calendar-nav-prev", attributes,
+        calendar::CalendarPreviousMonthButton { attributes: merged,
             ChevronLeft { size: "20px" }
         }
     }
@@ -340,8 +341,10 @@ fn CalendarPreviousMonthButton(
 fn CalendarNextMonthButton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
 ) -> Element {
+    let base = attributes!(button { class: "dx-calendar-nav-next" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
-        calendar::CalendarNextMonthButton { class: "dx-calendar-nav-next", attributes,
+        calendar::CalendarNextMonthButton { attributes: merged,
             ChevronRight { size: "20px" }
         }
     }
@@ -349,10 +352,11 @@ fn CalendarNextMonthButton(
 
 #[component]
 fn CalendarSelectMonth(props: CalendarSelectMonthProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-month-select-container" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         calendar::CalendarSelectMonth {
-            attributes: props.attributes,
-            class: "dx-calendar-month-select-container",
+            attributes: merged,
             CalendarSelectMonthSelect {}
             CalendarSelectMonthValue {
                 DropDownIcon { }
@@ -364,31 +368,29 @@ fn CalendarSelectMonth(props: CalendarSelectMonthProps) -> Element {
 
 #[component]
 fn CalendarSelectMonthSelect(props: CalendarSelectMonthSelectProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-month-select" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarSelectMonthSelect {
-            class: "dx-calendar-month-select",
-            attributes: props.attributes,
-        }
+        calendar::CalendarSelectMonthSelect { attributes: merged }
     }
 }
 
 #[component]
 fn CalendarSelectMonthValue(props: CalendarSelectMonthValueProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-month-select-value" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarSelectMonthValue {
-            class: "dx-calendar-month-select-value",
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarSelectMonthValue { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 fn CalendarSelectYear(props: CalendarSelectYearProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-year-select-container" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         calendar::CalendarSelectYear {
-            attributes: props.attributes,
-            class: "dx-calendar-year-select-container",
+            attributes: merged,
             CalendarSelectYearSelect {}
             CalendarSelectYearValue {
                 DropDownIcon { }
@@ -400,22 +402,19 @@ fn CalendarSelectYear(props: CalendarSelectYearProps) -> Element {
 
 #[component]
 fn CalendarSelectYearSelect(props: CalendarSelectYearSelectProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-year-select" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarSelectYearSelect {
-            class: "dx-calendar-year-select",
-            attributes: props.attributes,
-        }
+        calendar::CalendarSelectYearSelect { attributes: merged }
     }
 }
 
 #[component]
 fn CalendarSelectYearValue(props: CalendarSelectYearValueProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-year-select-value" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarSelectYearValue {
-            class: "dx-calendar-year-select-value",
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarSelectYearValue { attributes: merged, {props.children} }
     }
 }
 
@@ -457,13 +456,10 @@ fn CalendarGrid(
 
 #[component]
 fn CalendarGridRoot(props: CalendarGridRootProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarGridRoot {
-            class: "dx-calendar-grid",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarGridRoot { id: props.id, attributes: merged, {props.children} }
     }
 }
 
@@ -479,46 +475,37 @@ fn CalendarGridHead(props: CalendarGridHeadProps) -> Element {
 
 #[component]
 fn CalendarGridHeaderRow(props: CalendarGridHeaderRowProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid-header" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarGridHeaderRow {
-            class: "dx-calendar-grid-header",
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarGridHeaderRow { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 fn CalendarGridDayHeader(props: CalendarGridDayHeaderProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid-day-header" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarGridDayHeader {
-            class: "dx-calendar-grid-day-header",
-            weekday: props.weekday,
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarGridDayHeader { weekday: props.weekday, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 fn CalendarGridBody(props: CalendarGridBodyProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid-body" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarGridBody {
-            class: "dx-calendar-grid-body",
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarGridBody { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 fn CalendarGridWeek(props: CalendarGridWeekProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid-week" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        calendar::CalendarGridWeek {
-            class: "dx-calendar-grid-week",
-            attributes: props.attributes,
-            {props.children}
-        }
+        calendar::CalendarGridWeek { attributes: merged, {props.children} }
     }
 }
 
@@ -534,11 +521,12 @@ fn CalendarGridCell(props: CalendarGridCellProps) -> Element {
 
 #[component]
 fn CalendarDay(props: CalendarDayProps) -> Element {
+    let base = attributes!(div { class: "dx-calendar-grid-cell" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         calendar::CalendarDay {
-            class: "dx-calendar-grid-cell",
             date: props.date,
-            attributes: props.attributes,
+            attributes: merged,
             children: props.children,
         }
     }

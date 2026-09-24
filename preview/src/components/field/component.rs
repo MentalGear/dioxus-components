@@ -47,16 +47,21 @@ pub fn Field(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-field" });
+    // `role`/`data-orientation`/`data-invalid` reflect this wrapper's own
+    // typed `orientation`/`invalid` props, not a caller-overridable default,
+    // so they are merged in LAST (owned wins) -- see the merge-precedence
+    // policy in dev-docs/issues/duplicate-attribute-findings.md.
+    let owned = attributes!(div {
+        role: "group",
+        "data-orientation": orientation.class(),
+        "data-invalid": invalid,
+    });
+    let merged = merge_attributes(vec![base, attributes, owned]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        div {
-            class: "dx-field",
-            role: "group",
-            "data-orientation": orientation.class(),
-            "data-invalid": invalid,
-            ..attributes,
-            {children}
-        }
+        div { ..merged, {children} }
     }
 }
 
@@ -67,9 +72,11 @@ pub fn FieldGroup(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-field-group" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        div { class: "dx-field-group", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -84,9 +91,11 @@ pub fn FieldSet(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(fieldset { class: "dx-field-set" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        fieldset { class: "dx-field-set", ..attributes, {children} }
+        fieldset { ..merged, {children} }
     }
 }
 
@@ -96,9 +105,11 @@ pub fn FieldLegend(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(legend { class: "dx-field-legend" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        legend { class: "dx-field-legend", ..attributes, {children} }
+        legend { ..merged, {children} }
     }
 }
 
@@ -131,9 +142,11 @@ pub fn FieldContent(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-field-content" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        div { class: "dx-field-content", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -143,9 +156,11 @@ pub fn FieldDescription(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(p { class: "dx-field-description" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        p { class: "dx-field-description", ..attributes, {children} }
+        p { ..merged, {children} }
     }
 }
 
@@ -156,9 +171,15 @@ pub fn FieldError(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-field-error" });
+    // `role="alert"` is required semantics for the wrapper's validation
+    // message, not a caller default -- owned-wins, merged after the caller's
+    // own attributes.
+    let owned = attributes!(div { role: "alert" });
+    let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        div { class: "dx-field-error", role: "alert", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -170,9 +191,11 @@ pub fn FieldSeparator(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     #[props(default)] children: Option<Element>,
 ) -> Element {
+    let base = attributes!(div { class: "dx-field-separator" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/field/style.css") }
-        div { class: "dx-field-separator", ..attributes,
+        div { ..merged,
             Separator { horizontal: true, decorative: true }
             if let Some(children) = &children {
                 span { class: "dx-field-separator-label", {children.clone()} }
