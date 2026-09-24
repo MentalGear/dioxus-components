@@ -55,8 +55,12 @@
 //! `aria-hidden="true"` presentational layer and contribute nothing to the
 //! accessibility tree.
 
-use crate::{use_controlled, use_form_reset_listener, use_id_or, use_previous, use_unique_id};
+use crate::{
+    merge_attributes, use_controlled, use_form_reset_listener, use_id_or, use_previous,
+    use_unique_id,
+};
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct InputOtpCtx {
@@ -211,6 +215,22 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
         disabled,
     });
 
+    // `spellcheck`/`autocapitalize` are overridable defaults; the rest
+    // defines this control's own functional shape (numeric-only input,
+    // one-time-code autofill, the length bound matching the slot count).
+    let defaults = attributes!(input {
+        spellcheck: "false",
+        autocapitalize: "off",
+    });
+    let owned = attributes!(input {
+        r#type: "text",
+        inputmode: "numeric",
+        pattern: "[0-9]*",
+        autocomplete: "one-time-code",
+        maxlength: "{max_length}",
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
             position: "relative",
@@ -218,13 +238,6 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
 
             input {
                 id: id.cloned(),
-                r#type: "text",
-                inputmode: "numeric",
-                pattern: "[0-9]*",
-                autocomplete: "one-time-code",
-                spellcheck: "false",
-                autocapitalize: "off",
-                maxlength: "{max_length}",
                 value: value(),
                 name,
                 required,
@@ -292,7 +305,7 @@ pub fn InputOtp(props: InputOtpProps) -> Element {
                     });
                 },
 
-                ..props.attributes,
+                ..merged,
             }
 
             // Purely visual/presentational -- the real input above is the
@@ -528,14 +541,15 @@ pub fn InputOtpSlot(props: InputOtpSlotProps) -> Element {
     let active = use_memo(move || active_index() == Some(index));
     let disabled = ctx.disabled;
 
+    let owned = attributes!(div {
+        "data-active": active(),
+        "data-disabled": disabled(),
+        "data-slot-index": "{index}",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
-        div {
-            "data-active": active(),
-            "data-disabled": disabled(),
-            "data-slot-index": "{index}",
-            ..props.attributes,
-            {ch()}
-        }
+        div { ..merged, {ch()} }
     }
 }
 
