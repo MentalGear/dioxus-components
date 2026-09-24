@@ -420,6 +420,139 @@ const CAROUSEL_DRAG_JS: &str = "\
     // pending, or null if neither is. See `onPointerDown`'s own comment.
     let cancelPendingSnapRestore = null;
 
+    // -- Edge rubber-band (mode B3, port of the closed design in
+    // dev-docs/research/carousel-overscroll-2026-09-23.md; the eight
+    // numbered invariants below are that doc's own §6) --
+    //
+    // A mouse/pen drag has no native scrolling behind it, so THE RULE
+    // (research doc §3) permits this path to keep owning the scroll
+    // position the way it already did before this port -- unlike the
+    // wheel bridge (`CAROUSEL_WHEEL_BOUNCE_JS`, attached separately to
+    // this same element), which never may, because a wheel/trackpad
+    // gesture has a compositor and a snap engine also trying to write it.
+    let rawOver = 0; // signed content displacement the scroller refused, physical px
+    let bounceToken = 0; // see `bounceHome`'s own doc -- invariant 4
+    const RUBBER_C = 0.55; // WebKit's own published rubber-band constant (research doc §4)
+
+    function axisSize() {
+        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+    }
+    function rubberLimit() {
+        // Asymptote at trackWidth/0.55 (research doc §4/§5) -- no fixed
+        // room to run out of, so the depth can never reach a wall the way
+        // a padded-margin approach's would.
+        return axisSize() / RUBBER_C;
+    }
+    function rubber(depth) {
+        const L = rubberLimit();
+        return (L * depth) / (depth + L);
+    }
+    function rubberSigned(x) {
+        return x < 0 ? -rubber(-x) : rubber(x);
+    }
+    // Invariant 1: never `scrollLeft`/`scrollTop` -- a `getBoundingClientRect`
+    // diff is a physical rectangle regardless of `dir`, so this needs no
+    // RTL branch at all.
+    function contentOffset() {
+        const first = el.children[0];
+        if (!first) {
+            return 0;
+        }
+        const r = first.getBoundingClientRect();
+        const c = el.getBoundingClientRect();
+        return orientation === 'horizontal' ? r.left - c.left : r.top - c.top;
+    }
+    function applyBounce() {
+        if (!rawOver) {
+            el.style.transform = '';
+            return;
+        }
+        const depth = rubberSigned(rawOver).toFixed(2);
+        el.style.transform =
+            orientation === 'horizontal' ? `translateX(${depth}px)` : `translateY(${depth}px)`;
+    }
+    // Ask the scroller for the whole of `cd` first (a real `scrollBy`,
+    // exactly as this drag already issued before this port); whatever it
+    // REFUSES -- because it is already at an edge -- is the overdrag. That
+    // refusal is how the edge is located: no margin, no scroll-coordinate
+    // reasoning, no direction branch. `prefers-reduced-motion` drops the
+    // whole effect rather than merely skipping the spring-back animation:
+    // this is cosmetic feedback, not functional scrolling, so 'no bounce'
+    // is the correct reading of that preference here.
+    function feedOverdrag(cd) {
+        if (!cd) {
+            return;
+        }
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            if (rawOver) {
+                rawOver = 0;
+                applyBounce();
+            }
+            if (orientation === 'horizontal') {
+                el.scrollBy({ left: -cd, behavior: 'instant' });
+            } else {
+                el.scrollBy({ top: -cd, behavior: 'instant' });
+            }
+            return;
+        }
+        const before = contentOffset();
+        if (orientation === 'horizontal') {
+            el.scrollBy({ left: -cd, behavior: 'instant' });
+        } else {
+            el.scrollBy({ top: -cd, behavior: 'instant' });
+        }
+        const moved = contentOffset() - before;
+        const refused = cd - moved;
+        if (!refused && !rawOver) {
+            return;
+        }
+        const prev = rawOver;
+        const next = prev + refused;
+        // Collapse through zero rather than let a sign flip leave a
+        // residual fractional depth once the scroller has fully absorbed
+        // the request -- a corner case the bench's own equivalent
+        // (`feedBounce`) does not guard against.
+        rawOver = prev !== 0 && prev > 0 !== next > 0 ? 0 : next;
+        applyBounce();
+    }
+    // The rubber-band return, driven by us (never `scrollIntoView` --
+    // invariant 3) so it can be SUPERSEDED rather than merely cancelled: a
+    // fresh drag starting mid-ease bumps `bounceToken` (see `onPointerDown`),
+    // and the superseded loop below stops touching `rawOver` on its very
+    // next frame instead of racing a new gesture's own `feedOverdrag`
+    // writes to the same variable -- invariant 4, restated for a token
+    // rather than the bench's own boolean guard, which left a stale
+    // in-flight loop free to keep writing after being 'cancelled.'
+    function bounceHome(done) {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const from = rawOver;
+        if (!from || reduce) {
+            rawOver = 0;
+            applyBounce();
+            done && done();
+            return;
+        }
+        const myToken = ++bounceToken;
+        const t0 = performance.now();
+        const DUR = 340;
+        (function step() {
+            if (myToken !== bounceToken) {
+                return;
+            }
+            const t = Math.min(1, (performance.now() - t0) / DUR);
+            const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
+            rawOver = from * (1 - k);
+            applyBounce();
+            if (t < 1) {
+                window.requestAnimationFrame(step);
+            } else {
+                rawOver = 0;
+                applyBounce();
+                done && done();
+            }
+        })();
+    }
+
     const onPointerDown = (e) => {
         // Mouse and pen only -- touch already scrolls this track natively
         // (this module's own 'never intercept touch' rule -- touch-action
@@ -434,6 +567,11 @@ const CAROUSEL_DRAG_JS: &str = "\
         originX = lastX = e.clientX;
         originY = lastY = e.clientY;
         dragging = false;
+        // Supersede any spring-back still easing from the previous gesture
+        // (invariant 4) -- this new gesture's own `feedOverdrag` is about to
+        // start writing `rawOver` again, and a stale `bounceHome` loop must
+        // stop touching it rather than race those writes.
+        bounceToken++;
         if (cancelPendingSnapRestore !== null) {
             // The previous gesture's own scroll-snap-type restore never
             // got to run -- harmless to abandon: this new drag's own
@@ -507,11 +645,13 @@ const CAROUSEL_DRAG_JS: &str = "\
         // never moved (correct -- there is nothing before slide 1);
         // dragging right produced the identical `scrollLeft` change
         // (`0 -> -153`) the Next button's own `scrollIntoView` produces.
-        if (orientation === 'horizontal') {
-            el.scrollBy({ left: -dx, behavior: 'instant' });
-        } else {
-            el.scrollBy({ top: -dy, behavior: 'instant' });
-        }
+        //
+        // Routed through `feedOverdrag` rather than a bare `scrollBy`
+        // (mode B3 port, see this constant's own 'Edge rubber-band' doc
+        // above): mid-range this is a no-op wrapper around the identical
+        // `scrollBy` call this always issued, and at an edge it is what
+        // turns the refused remainder into the bounce transform.
+        feedOverdrag(orientation === 'horizontal' ? dx : dy);
     };
 
     const endDrag = (e) => {
@@ -523,6 +663,15 @@ const CAROUSEL_DRAG_JS: &str = "\
             el.removeAttribute('data-dragging');
             try { el.releasePointerCapture(pointerId); } catch (err) {}
 
+            // Mode B3: ease any overdrag back to identity BEFORE searching
+            // for the nearest slide below -- that search reads live
+            // `getBoundingClientRect` geometry, which the bounce transform
+            // itself would otherwise skew. When there was no overdrag
+            // (the overwhelmingly common case) `bounceHome` invokes this
+            // callback immediately, so release behaves exactly as before
+            // this port. This never restarts an in-flight ease (invariant
+            // 4) -- see `bounceHome`'s own doc.
+            bounceHome(() => {
             // This element's own 'Release settle' doc has the full
             // reasoning; short version: find the slide nearest the raw
             // drag position -- the same getBoundingClientRect-based
@@ -587,6 +736,7 @@ const CAROUSEL_DRAG_JS: &str = "\
                 // rather than leaving scroll-snap-type suspended forever.
                 restoreSnap();
             }
+            });
         }
         pointerId = null;
         dragging = false;
@@ -660,6 +810,297 @@ fn use_carousel_drag(
             enabled(),
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
         ));
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
+/// Long-lived (mount-to-unmount): the wheel/trackpad half of the edge
+/// rubber-band (mode B3), attached to [`CarouselContent`]'s own element
+/// alongside [`CAROUSEL_DRAG_JS`] -- a **separate** `document::eval`, not
+/// folded into that one, because the two obey different rules and must
+/// not share a JS closure that could let one's state leak into the
+/// other's: a mouse/pen drag has no native scrolling behind it, so
+/// [`CAROUSEL_DRAG_JS`] may keep issuing `scrollBy` (THE RULE,
+/// dev-docs/research/carousel-overscroll-2026-09-23.md §3), while a
+/// wheel/trackpad gesture on this same element has a compositor and a
+/// snap engine also trying to write its scroll position, so this script
+/// may **never** call `scrollBy`, `scrollLeft`/`scrollTop`, `preventDefault`,
+/// or touch `scroll-snap-type` -- the whole reason ~20 bench revisions of
+/// exactly that glitched (research doc §2/§5). The numbered invariants
+/// cited below are that doc's own §6.
+///
+/// The edge is read directly from layout (`edgeGaps`, invariant 2) rather
+/// than from a scroll coordinate, so this needs no [`Direction`]/RTL
+/// branch either -- `getBoundingClientRect` is already a physical,
+/// direction-agnostic rectangle. `passive: true` throughout: this script
+/// makes no decision that ever needs to block the browser's own native
+/// scroll, since it only ever *observes* geometry and writes its own
+/// `transform`, never the scroll position.
+const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
+    const [id, orientation] = await dioxus.recv();
+    const el = document.getElementById(id);
+    if (!el) {
+        await dioxus.recv();
+        return;
+    }
+
+    const RUBBER_C = 0.55;
+    // Fallbacks only, until the device's own quantum is learned below --
+    // invariant 8: every pixel threshold here is derived from that
+    // quantum once it is known, never a bare guess.
+    const WHEEL_RELEASE_DELTA = 1.6;
+    const WHEEL_FLOOR_MULT = 2;
+    const WHEEL_PLATEAU_MULT = 3;
+    const WHEEL_PLATEAU_MAX = 4;
+    const WHEEL_RELEASE_FRACTION = 0.12;
+    const WHEEL_RELEASE_MAX = 10;
+    const WHEEL_RELEASE_RUNS = 2;
+    const WHEEL_INTERRUPT_DELTA = 6;
+    // Backstop only -- measured rest after the last wheel event on real
+    // hardware is 64-78ms (research doc §4); this is twice that, so it
+    // essentially never fires before the decay/plateau tests above already
+    // have.
+    const WHEEL_IDLE_MS = 90;
+
+    let rawOver = 0;
+    let bounceHoming = false;
+    let bounceToken = 0;
+    let bounceSettling = false;
+    let wheelTimer = 0;
+    let wheelLowRun = 0;
+    let wheelPeakDelta = 0;
+    let wheelLastAbs = Infinity;
+    let wheelInterruptFloor = WHEEL_INTERRUPT_DELTA;
+    let deviceMinDelta = Infinity; // learned: the smallest step this hardware sends
+
+    function axisSize() {
+        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+    }
+    function rubberLimit() {
+        return axisSize() / RUBBER_C;
+    }
+    function rubber(depth) {
+        const L = rubberLimit();
+        return (L * depth) / (depth + L);
+    }
+    function rubberSigned(x) {
+        return x < 0 ? -rubber(-x) : rubber(x);
+    }
+    function applyBounce() {
+        if (!rawOver) {
+            el.style.transform = '';
+            return;
+        }
+        const depth = rubberSigned(rawOver).toFixed(2);
+        el.style.transform =
+            orientation === 'horizontal' ? `translateX(${depth}px)` : `translateY(${depth}px)`;
+    }
+    // Invariant 2: the edge is read synchronously from layout, in the same
+    // turn as the decision -- never inferred by comparing this event's
+    // request against a measurement taken a frame later (that phase
+    // mismatch against the compositor is what produced 198-212px of false
+    // overdrag mid-range on the bench, research doc §6).
+    function edgeGaps() {
+        const children = el.children;
+        if (!children.length) {
+            return { start: 0, end: 0 };
+        }
+        const c = el.getBoundingClientRect();
+        let minStart = Infinity;
+        let maxEnd = -Infinity;
+        for (let i = 0; i < children.length; i++) {
+            const r = children[i].getBoundingClientRect();
+            const s = orientation === 'horizontal' ? r.left : r.top;
+            const e = orientation === 'horizontal' ? r.right : r.bottom;
+            if (s < minStart) minStart = s;
+            if (e > maxEnd) maxEnd = e;
+        }
+        const cs = orientation === 'horizontal' ? c.left : c.top;
+        const ce = orientation === 'horizontal' ? c.right : c.bottom;
+        return { start: minStart - cs, end: maxEnd - ce };
+    }
+    function noteDeviceDelta(ad) {
+        if (ad > 0 && ad < deviceMinDelta) {
+            deviceMinDelta = ad;
+        }
+    }
+    function deviceFloor() {
+        return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_FLOOR_MULT : WHEEL_RELEASE_DELTA;
+    }
+    function plateauCeiling() {
+        return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_PLATEAU_MULT : WHEEL_PLATEAU_MAX;
+    }
+    function wheelReleaseThreshold() {
+        return Math.min(WHEEL_RELEASE_MAX, Math.max(deviceFloor(), wheelPeakDelta * WHEEL_RELEASE_FRACTION));
+    }
+    // A wheel has no `pointerup`; its release is inferred from velocity
+    // DECAY, not from the event stream going silent (a trackpad's momentum
+    // tail keeps firing events long after the fingers lift). A PLATEAU
+    // (small and not rising) also counts as spent, so a hand still pushing
+    // gently at a low, flat delta is not mistaken for one still building.
+    function wheelSpent(d) {
+        const ad = Math.abs(d);
+        if (ad > wheelPeakDelta) wheelPeakDelta = ad;
+        noteDeviceDelta(ad);
+        const spent = ad <= wheelReleaseThreshold() || (ad <= plateauCeiling() && ad <= wheelLastAbs);
+        wheelLastAbs = ad;
+        return spent;
+    }
+    function armInterruptFloor() {
+        // The interrupt floor MUST stay strictly above the release
+        // threshold that was just used to release, or a delta between the
+        // two would both trigger a new release and immediately re-trigger
+        // this one on the very next event.
+        wheelInterruptFloor = Math.max(WHEEL_INTERRUPT_DELTA, wheelReleaseThreshold() * 3);
+    }
+    // Driven by us, never `scrollIntoView` (invariant 3) -- and superseded
+    // rather than restarted (invariant 4) via `bounceToken`, the same
+    // construction `CAROUSEL_DRAG_JS`'s own `bounceHome` uses, for the
+    // identical reason: a stale in-flight ease must stop touching `rawOver`
+    // the moment a new gesture owns it, not race that gesture's writes.
+    function bounceHome(done) {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const from = rawOver;
+        if (!from || reduce) {
+            rawOver = 0;
+            applyBounce();
+            bounceHoming = false;
+            done && done();
+            return;
+        }
+        bounceHoming = true;
+        const myToken = ++bounceToken;
+        const t0 = performance.now();
+        const DUR = 340;
+        (function step() {
+            if (myToken !== bounceToken) {
+                return;
+            }
+            const t = Math.min(1, (performance.now() - t0) / DUR);
+            const k = 1 - Math.pow(1 - t, 3);
+            rawOver = from * (1 - k);
+            applyBounce();
+            if (t < 1) {
+                window.requestAnimationFrame(step);
+            } else {
+                rawOver = 0;
+                applyBounce();
+                bounceHoming = false;
+                done && done();
+            }
+        })();
+    }
+    function release(how) {
+        if (wheelTimer) {
+            window.clearTimeout(wheelTimer);
+            wheelTimer = 0;
+        }
+        armInterruptFloor();
+        wheelLowRun = 0;
+        wheelPeakDelta = 0;
+        wheelLastAbs = Infinity;
+        if (rawOver) {
+            bounceSettling = true;
+            // No scroll-based settle here (unlike the pointer-drag path):
+            // this scroller never left its snap point in the first place --
+            // only the transform ever moved -- so there is nothing to
+            // realign to a slide, only the transform to bring home.
+            bounceHome(() => {
+                bounceSettling = false;
+            });
+        }
+    }
+
+    // THE RULE, restated for this listener specifically: no `preventDefault`,
+    // no `scrollBy`, no `scrollLeft`/`scrollTop` read or write, no
+    // `scroll-snap-type` write, ever, in this function. Past a genuinely
+    // clamped edge the scroller cannot move, so its state is stable and
+    // uncontested while this animates the transform; the shortfall between
+    // what the gesture asked for and what the scroller actually did IS the
+    // overdrag, and it is read from `edgeGaps()`, never from attempting a
+    // write and measuring the refusal (that trick is only safe on the
+    // pointer-drag path above, which owns the scroll position).
+    const onWheel = (e) => {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            if (rawOver) {
+                rawOver = 0;
+                applyBounce();
+            }
+            return;
+        }
+        const raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+        const d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * axisSize() : raw;
+        const cd = -d; // desired physical content displacement, + = toward the end
+
+        if (bounceSettling) {
+            if (Math.abs(d) < wheelInterruptFloor) {
+                return;
+            }
+            bounceSettling = false;
+            bounceToken++; // supersede the in-flight ease -- this gesture owns rawOver now
+        }
+
+        const g = edgeGaps();
+        const atLimit = cd > 0 ? g.start >= -0.5 : g.end <= 0.5;
+
+        if (atLimit) {
+            rawOver += cd;
+            applyBounce();
+        }
+
+        if (!atLimit && rawOver !== 0 && !bounceHoming) {
+            // Reversed away from the edge: let the browser scroll
+            // unimpeded and spring the band home, never unwind it by hand
+            // at the same time (that would move the content twice as fast
+            // as the gesture).
+            release('reversed');
+            return;
+        }
+
+        if (rawOver !== 0 && wheelSpent(d)) {
+            if (++wheelLowRun >= WHEEL_RELEASE_RUNS) {
+                release('decay');
+                return;
+            }
+        } else {
+            wheelLowRun = 0;
+            wheelSpent(d);
+        }
+        if (wheelTimer) {
+            window.clearTimeout(wheelTimer);
+        }
+        wheelTimer = window.setTimeout(() => {
+            wheelTimer = 0;
+            release('idle');
+        }, WHEEL_IDLE_MS);
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: true });
+    await dioxus.recv();
+    el.removeEventListener('wheel', onWheel);
+    if (rawOver) {
+        rawOver = 0;
+        el.style.transform = '';
+    }";
+
+/// Attach [`CAROUSEL_WHEEL_BOUNCE_JS`] to the element with the given `id`
+/// for as long as the calling component stays mounted -- mirrors
+/// [`use_carousel_drag`]'s own shape exactly, one layer simpler still
+/// (nothing here is ever disableable the way [`CarouselContentProps::draggable`]
+/// disables the pointer-drag gesture: a wheel/trackpad user has no
+/// equivalent opt-out today, and the edge bounce is purely cosmetic
+/// feedback on top of scrolling that already happens regardless).
+fn use_carousel_wheel_bounce(
+    id: impl Readable<Target = String> + Copy + 'static,
+    orientation: ReadSignal<CarouselOrientation>,
+) {
+    crate::use_effect_with_cleanup(move || {
+        let id = id.cloned();
+        let orientation_str = orientation().as_str().to_string();
+        let eval = document::eval(CAROUSEL_WHEEL_BOUNCE_JS);
+        let _ = eval.send((id, orientation_str));
         move || {
             let _ = eval.send(true);
         }
@@ -1087,25 +1528,80 @@ pub struct CarouselContentProps {
 /// see "## scroll-snap-stop" below, "Known limitation," which still
 /// applies, now for a restated reason.
 ///
-/// ## No elastic rubber-band past the first/last slide
+/// ## Edge rubber-band (mode B3)
 ///
-/// Dragging past either end does not produce an elastic "rubber-band"
-/// bounce -- a deliberate omission, not a bug: [`CarouselPrevious`]/
-/// [`CarouselNext`] are already genuinely `disabled` at the ends (module
-/// doc, "Accessibility"), which already signals the boundary. Building an
-/// elastic bounce for this one gesture would need a `transform` layered
-/// over this same native scroll container while its own scroll position
-/// stays put underneath -- a second piece of visual state that the snap
-/// points and `use_carousel_scroll_tracking`'s own settle detection
-/// would have to be kept from disagreeing with, plus a damping curve, a
-/// release animation, RTL mirroring, and a block-axis variant -- considered
-/// and dropped as neither cheap nor reliably correct for a purely cosmetic
-/// effect. It is also not simply "missing" what native touch/trackpad
-/// scrolling gets for free: elastic overscroll is a macOS/iOS compositor
-/// behavior specifically, not a universal property of scroll-snap
-/// containers -- the same native touch scroll on Linux or Windows does not
-/// rubber-band either, so this gesture's own lack of one is not purely a
-/// consequence of it being synthetic.
+/// Dragging (mouse/pen) or scrolling (wheel/trackpad) past either end now
+/// produces a damped elastic bounce, ported from a closed design (five
+/// mechanisms benched side by side, `dev-docs/research/carousel-overscroll-2026-09-23.md`,
+/// `dev-docs/backlog.md` row 102) rather than reimplemented from scratch
+/// here. The full mechanism, its measurements, and the eight binding port
+/// invariants live in that doc's §3-§6; this section records only the
+/// shape of the port and what stays true of it.
+///
+/// **THE RULE this is built on:** at any moment during a wheel/trackpad
+/// gesture on a scroll-snap container, the scroll position has three
+/// would-be writers -- the compositor's own momentum animation (where
+/// `preventDefault` is only advisory once momentum is live), scroll
+/// snapping on its own schedule, and this crate's own code -- and two of
+/// the three are neither observable nor sequenceable from JS. So where the
+/// browser is already the scroller, this crate never writes the scroll
+/// position and never disables snapping mid-gesture; the overdrag is
+/// expressed purely as a `transform` on [`CarouselContent`]'s own element,
+/// which the browser never writes and therefore never contests
+/// (`CAROUSEL_WHEEL_BOUNCE_JS`, above). A mouse/pen drag has no native
+/// scrolling behind it, so that same rule permits `CAROUSEL_DRAG_JS`'s own
+/// pointer path to keep owning the scroll position exactly as it already
+/// did before this port (`feedOverdrag`, which asks the scroller for the
+/// whole of the requested motion and treats whatever it refuses as the
+/// overdrag) -- the negative evidence behind this asymmetry (the pointer
+/// path stayed clean for 20+ bench revisions untouched while the wheel
+/// path glitched nearly every time) is measured, not assumed; see the
+/// research doc §2.
+///
+/// **Why the transform lands on [`CarouselContent`], never the
+/// [`Carousel`] root.** The bench's own mode C (a whole-element damped
+/// transform) felt closest to native but created a z-index problem: a
+/// transform establishes a new containing block, and translating the
+/// *root* -- an ancestor of [`CarouselPrevious`]/[`CarouselNext`] -- would
+/// have dragged their own absolutely-positioned placement along with it.
+/// [`CarouselContent`] is a *sibling* of those buttons under [`Carousel`],
+/// so transforming it alone leaves them untouched; this is what dissolves
+/// that problem rather than working around it (research doc §5). No extra
+/// clipping wrapper is added around it either: [`CarouselContent`] already
+/// clips its own children via its own `overflow-{x,y}` (module doc,
+/// "Engine"), and that clip is a property of the element's own box, not of
+/// where the box is painted -- translating the box does not change what it
+/// clips. (The bench's own `.viewport` ancestor needed an explicit
+/// `overflow: clip` specifically for its *mode C*, which translated a
+/// larger magnitude for a different, no-longer-relevant reason; this is
+/// noted here as a deliberate divergence from the bench's own markup, not
+/// an oversight, and is worth a real-device check alongside the wheel
+/// gesture itself -- see this crate's own top-level report on this port
+/// for what still wants a human's trackpad.)
+///
+/// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
+/// attribute: both mutate `element.style.transform` as a plain DOM write,
+/// the same escape hatch `CAROUSEL_DRAG_JS`'s own `scroll-snap-type`
+/// suspend/restore already uses and for the same reason (`document::eval`
+/// is outside the vdom entirely). So first-render/SSR markup is
+/// unaffected by construction, not by a special case: there is no signal,
+/// no conditional render, nothing for hydration to reconcile.
+///
+/// **`prefers-reduced-motion`** drops the whole effect on both paths
+/// (checked fresh per gesture/event, not cached at mount) rather than
+/// merely skipping the spring-back animation -- this is cosmetic feedback
+/// layered on scrolling that already happens regardless, so "no bounce" is
+/// the correct reading of that preference, not a faster one.
+///
+/// **What this does not close.** [`CarouselPrevious`]/[`CarouselNext`]
+/// remain genuinely `disabled` at the ends regardless (module doc,
+/// "Accessibility") -- the bounce is additional physical feedback for a
+/// drag/scroll gesture, not a replacement for that signal. Headless
+/// synthetic wheel events (`playwright/carousel.spec.ts`'s own "edge
+/// rubber-band" tests, via `page.mouse.wheel`) can exercise the edge-limit
+/// branch and the spring-back, but cannot reproduce a real trackpad's
+/// momentum/decay feel -- that remains a real-hardware check, as it was
+/// for the bench itself (research doc's own header).
 ///
 /// ## scroll-snap-stop
 ///
@@ -1251,6 +1747,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
 
     use_carousel_scroll_tracking(id, ctx.orientation, ctx.set_selected);
     use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_wheel_bounce(id, ctx.orientation);
 
     let orientation = (ctx.orientation)();
     let draggable = (props.draggable)();

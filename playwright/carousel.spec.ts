@@ -92,6 +92,47 @@ async function dragBy(page: Page, target: Locator, dx: number, dy: number, steps
 }
 
 /**
+ * Like `dragBy`, but leaves the pointer DOWN at the end (no `mouse.up()`) --
+ * for the edge rubber-band tests below, which need to read the track's
+ * transform WHILE still dragging, before release's own `bounceHome` eases
+ * it back to identity. Callers must release with `page.mouse.up()`
+ * themselves once they are done inspecting the held state.
+ */
+async function dragHold(page: Page, target: Locator, dx: number, dy: number, steps = 12) {
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  if (!box) {
+    throw new Error("dragHold: target has no bounding box");
+  }
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(startX + (dx * i) / steps, startY + (dy * i) / steps);
+    await page.waitForTimeout(16);
+  }
+}
+
+/**
+ * The carousel track's own inline `transform` (mode B3's edge rubber-band,
+ * `primitives/src/carousel.rs`'s `CAROUSEL_DRAG_JS`/`CAROUSEL_WHEEL_BOUNCE_JS`
+ * -- both mutate `element.style.transform` directly via `document::eval`,
+ * never through a Dioxus-rendered attribute, so this reads the live inline
+ * style, not a rendered one). Empty string means identity (no bounce).
+ */
+async function readContentTransform(content: Locator): Promise<string> {
+  return content.evaluate((el) => (el as HTMLElement).style.transform);
+}
+
+/** Parses the single `translateX(...)`/`translateY(...)` px value mode B3
+ * writes, or `null` if the transform is empty/identity. */
+function parseTranslatePx(transform: string): number | null {
+  const match = transform.match(/translate[XY]\(([-\d.]+)px\)/);
+  return match ? Number.parseFloat(match[1]) : null;
+}
+
+/**
  * The carousel track's own per-slide pitch (px, along the given axis),
  * measured live from a rendered slide's own box rather than assumed --
  * every distance-based drag test below derives its drag length from this,
@@ -964,5 +1005,277 @@ test.describe("Carousel: the disabled-state opacity change actually fades", () =
       passesThroughAnIntermediateFraction(enabling),
       `leaving :disabled should pass through an intermediate opacity; got ${JSON.stringify(enabling)}`,
     ).toBe(true);
+  });
+});
+
+/**
+ * Edge rubber-band (mode B3), backlog row 102 -- port of the closed design
+ * in `dev-docs/research/carousel-overscroll-2026-09-23.md`. See
+ * `primitives/src/carousel.rs`'s own `CarouselContent` doc, "Edge
+ * rubber-band (mode B3)" section, for the construction these tests hold
+ * to: a `transform` on `.dx-carousel-content` only, never a scroll-position
+ * write on the wheel path, never a spacer child, and never a change to
+ * `selected`.
+ *
+ * RED-FIRST: written and run against the pre-port `carousel.rs` (mode A,
+ * plain clamping) before any of this file's own port landed -- every test
+ * below failed (`readContentTransform` always returned `""`, since nothing
+ * ever wrote `style.transform`). All pass against the ported code.
+ *
+ * A note on the wheel tests specifically: `page.mouse.wheel` fires
+ * synthetic, discrete `wheel` events with no compositor momentum behind
+ * them at all -- it can drive the same edge-detection/transform/spring-back
+ * code path a real trackpad gesture does, but it cannot reproduce a real
+ * trackpad's momentum, deceleration curve, or "feel." Headless Chromium has
+ * no way to fake that honestly; the owner still needs to feel-test this on
+ * real hardware (a real mouse drag and a real trackpad, both directions,
+ * both axes) before calling the feel itself settled.
+ */
+test.describe("Carousel: edge rubber-band (mode B3)", () => {
+  test("pointer overdrag past the first slide produces a bounded, nonzero transform that returns to identity on release", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    expect(await readContentTransform(content)).toBe("");
+
+    const pitch = await slidePitch(slide(1));
+    // Positive dx at slide 1 (the start) asks for a "previous" slide that
+    // does not exist -- see `CAROUSEL_DRAG_JS`'s own "Pointer drag" doc for
+    // why a positive drag is the physical-previous direction in this
+    // (LTR, horizontal) variant.
+    const rawTravel = pitch * 1.5;
+    await dragHold(page, content, rawTravel, 0);
+
+    const transform = await readContentTransform(content);
+    const depth = parseTranslatePx(transform);
+    expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
+    expect(depth!).toBeGreaterThan(0);
+    // Damped: the visible depth is strictly less than the raw pointer
+    // travel that produced it -- the rubber function's whole point.
+    expect(depth!).toBeLessThan(rawTravel);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+
+    // Never a second source of truth for the index (research doc's own
+    // framing): the bounce never moved `selected`.
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expect(frame.getByRole("button", { name: "Previous slide" })).toBeDisabled();
+  });
+
+  test("pointer overdrag past the last slide produces a bounded, nonzero transform that returns to identity on release", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    const next = frame.getByRole("button", { name: "Next slide" });
+
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+      await expectSnappedToBoundary(content, slide(i + 2));
+    }
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+    await expect(next).toBeDisabled();
+
+    const pitch = await slidePitch(slide(5));
+    const rawTravel = pitch * 1.5;
+    // Negative dx at the last slide asks for a "next" slide that does not
+    // exist.
+    await dragHold(page, content, -rawTravel, 0);
+
+    const transform = await readContentTransform(content);
+    const depth = parseTranslatePx(transform);
+    expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
+    expect(depth!).toBeLessThan(0);
+    expect(Math.abs(depth!)).toBeLessThan(rawTravel);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+    await expect(next).toBeDisabled();
+  });
+
+  test("pointer overdrag at the start boundary works under dir=rtl", async ({ page }) => {
+    await goto(page, "rtl");
+    const frame = demoFrame(page, "rtl");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    const pitch = await slidePitch(slide(1));
+    const rawTravel = pitch * 1.5;
+    // Negative dx is the physical-previous direction under RTL (mirrored
+    // from LTR -- see the "pointer drag" describe block's own rtl test,
+    // which drags positive to advance).
+    await dragHold(page, content, -rawTravel, 0);
+
+    const transform = await readContentTransform(content);
+    const depth = parseTranslatePx(transform);
+    expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
+    expect(depth!).toBeLessThan(0);
+    expect(Math.abs(depth!)).toBeLessThan(rawTravel);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("pointer overdrag at the start boundary works in the vertical variant", async ({ page }) => {
+    await goto(page, "vertical");
+    const frame = demoFrame(page, "vertical");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    const pitch = await slidePitch(slide(1), "vertical");
+    const rawTravel = pitch * 1.5;
+    // Positive dy is the physical-previous direction on the block axis
+    // (the "pointer drag" describe block's own vertical test drags
+    // negative to advance).
+    await dragHold(page, content, 0, rawTravel);
+
+    const transform = await readContentTransform(content);
+    const depth = parseTranslatePx(transform);
+    expect(depth, `expected a nonzero translateY, got "${transform}"`).not.toBeNull();
+    expect(depth!).toBeGreaterThan(0);
+    expect(depth!).toBeLessThan(rawTravel);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("a mid-range pointer drag produces no transform and still pages correctly (regression guard)", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    const pitch = await slidePitch(slide(1));
+    await dragBy(page, content, -pitch * 0.7, 0);
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    expect(await readContentTransform(content)).toBe("");
+  });
+
+  test("wheel overdrag at the start boundary produces a transform that settles back to identity, without paging", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    await content.hover();
+    // `deltaX`, not `deltaY`: measured live against this exact server that
+    // a plain vertical wheel delta on a HORIZONTALLY-scrolling container
+    // does not scroll it at all in headless Chromium (no vertical overflow
+    // to redirect) -- the event reaches the element (confirmed by a direct
+    // listener probe) but `scrollLeft` never moves, so the page scrolls
+    // instead and the next synthetic event lands somewhere else entirely.
+    // `deltaX` is also the physically correct simulated gesture for a real
+    // trackpad's horizontal two-finger swipe. Negative at slide 1 (the
+    // start) asks for more "previous" than exists. Several events in quick
+    // succession, matching a real burst, so the accumulated overdrag is
+    // comfortably measurable.
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(-120, 0);
+    }
+
+    await expect(async () => {
+      const transform = await readContentTransform(content);
+      const depth = parseTranslatePx(transform);
+      expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
+      expect(depth!).toBeGreaterThan(0);
+    }).toPass({ timeout: 2000 });
+
+    // Settles back on its own once the burst goes idle (no pointerup for a
+    // wheel gesture) -- bounded well above the idle backstop (90ms) plus
+    // the spring-back's own duration (340ms).
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 3000 });
+
+    // The wheel path never wrote the scroll position at all (THE RULE) --
+    // `selected` is unchanged.
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("wheel overdrag at the end boundary produces a transform that settles back to identity, without paging", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    const next = frame.getByRole("button", { name: "Next slide" });
+
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+      await expectSnappedToBoundary(content, slide(i + 2));
+    }
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+
+    await content.hover();
+    // `deltaX` -- see the start-boundary test's own comment above.
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(120, 0);
+    }
+
+    await expect(async () => {
+      const transform = await readContentTransform(content);
+      const depth = parseTranslatePx(transform);
+      expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
+      expect(depth!).toBeLessThan(0);
+    }).toPass({ timeout: 2000 });
+
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 3000 });
+
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("a mid-range wheel scroll produces no lingering transform and still pages correctly (regression guard)", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await content.hover();
+    // `deltaX` -- see the start-boundary test's own comment above.
+    const pitch = await slidePitch(slide(1));
+    for (let i = 0; i < 8; i++) {
+      await page.mouse.wheel(pitch / 6, 0);
+    }
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
   });
 });
