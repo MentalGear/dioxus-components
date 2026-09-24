@@ -34,11 +34,17 @@ see `primitives/src/chart/engine/curve.rs` for the exact algorithm and its own c
 
 ## Dots
 
-`show_dots: true` draws a small circle at every defined data point, filled with that series'
-color. `Chart`'s default row already grew a `desktop`-only demo (`dots`) — per-point custom
-colors, a caller-supplied dot renderer, and value/category labels above each point are gallery
-variants layered on top of this same `show_dots` mechanism (see each variant's own doc comment
-once landed).
+`Chart { line: LineOptions { dots: true, .. } }` draws a small circle at every defined data
+point, filled with that series' color (or `ChartDatum::color` per point, when set) and doubled in
+radius when hovered/keyboard-focused. `LineOptions::dot` replaces the default circle entirely with
+a caller-supplied renderer, given a [`DotContext`] (already-scaled position, raw value, whether
+this point is active) for every defined point.
+
+## Labels
+
+`LineOptions::labels` draws a text label above each defined point: `LineLabels::Value` (the
+point's own value, formatted like the hidden table's cells) or `LineLabels::Custom` (a
+caller-supplied callback given the point's index, e.g. to label by category instead of value).
 
 ## Variants
 
@@ -48,6 +54,13 @@ once landed).
 - **step** (`chart-line-step.tsx`) — same data, `Curve::Step`.
 - **multiple** (`chart-line-multiple.tsx`) — two series (desktop/mobile), legend-free tooltip
   showing both rows.
-- **dots** (`chart-line-dots.tsx`) — `show_dots: true`.
+- **dots** (`chart-line-dots.tsx`) — `LineOptions::dots: true`.
+- **dots_colors** (`chart-line-dots-colors.tsx`) — one series over browser categories, each
+  point's own dot colored individually via `ChartDatum::color`.
+- **dots_custom** (`chart-line-dots-custom.tsx`) — `LineOptions::dot` draws a diamond in place of
+  the default circle.
+- **label** (`chart-line-label.tsx`) — `LineLabels::Value`, grid and y-axis hidden.
+- **label_custom** (`chart-line-label-custom.tsx`) — `LineLabels::Custom` labels each point by its
+  own category name instead of its value.
 - **interactive** (`chart-line-interactive.tsx`) — a two-button header (a `CardAction`) toggles
   which of two series the chart actually draws, each button showing that series' running total.

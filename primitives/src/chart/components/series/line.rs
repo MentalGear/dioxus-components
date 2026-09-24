@@ -513,21 +513,14 @@ mod tests {
 
     #[test]
     fn a_custom_dot_renderer_replaces_the_default_circle() {
-        let dot = DotRenderer(Callback::new(|ctx: DotContext| {
-            rsx! {
-                rect {
-                    key: "{ctx.index}",
-                    "data-slot": "chart-custom-dot",
-                    "data-index": "{ctx.index}",
-                    x: "{ctx.cx}",
-                    y: "{ctx.cy}",
-                }
-            }
-        }));
-        let html = render(LineOptions {
-            dot: Some(dot),
-            ..Default::default()
-        });
+        // `render_custom_dot`/`CustomDotHarness` (not the plain `render`
+        // helper): `Callback::new` panics ("must be called from inside a
+        // Dioxus runtime") when called directly from a plain `#[test]` fn,
+        // before any `VirtualDom` exists to provide one -- this harness
+        // builds its `DotRenderer` INSIDE a component body instead, which
+        // runs with a runtime already active. See `CustomDotHarness`'s own
+        // doc comment.
+        let html = render_custom_dot(false);
         assert_eq!(html.matches(r#"data-slot="chart-custom-dot""#).count(), 2);
         assert!(!html.contains(r#"data-slot="chart-dot""#));
     }
@@ -536,17 +529,9 @@ mod tests {
     fn dots_flag_is_ignored_once_a_custom_dot_renderer_is_set() {
         // `dots: false` alongside `dot: Some(..)` still draws every point
         // -- `Self::dot`'s own doc: a custom renderer is never gated
-        // behind a second flag.
-        let dot = DotRenderer(Callback::new(|ctx: DotContext| {
-            rsx! {
-                rect { key: "{ctx.index}", "data-slot": "chart-custom-dot" }
-            }
-        }));
-        let html = render(LineOptions {
-            dots: false,
-            dot: Some(dot),
-            ..Default::default()
-        });
+        // behind a second flag. See the previous test's own comment for
+        // why this goes through `render_custom_dot`, not `render`.
+        let html = render_custom_dot(true);
         assert_eq!(html.matches(r#"data-slot="chart-custom-dot""#).count(), 2);
     }
 
@@ -571,10 +556,12 @@ mod tests {
 
     #[test]
     fn custom_labels_call_back_with_the_point_index() {
-        let html = render(LineOptions {
-            labels: LineLabels::Custom(Callback::new(|i: usize| format!("point-{i}"))),
-            ..Default::default()
-        });
+        // `render_custom_label`/`CustomLabelHarness`, not the plain
+        // `render` helper -- see `a_custom_dot_renderer_replaces_the_
+        // default_circle`'s own comment above for why `Callback::new`
+        // needs an active Dioxus runtime, which only a component body
+        // (not a plain `#[test]` fn) provides.
+        let html = render_custom_label();
         assert!(html.contains(">point-0<"));
         assert!(html.contains(">point-1<"));
     }
@@ -623,17 +610,36 @@ mod tests {
             ),
             Some("186.5".to_string())
         );
-        assert_eq!(
-            label_text(
-                &LineOptions {
-                    labels: LineLabels::Custom(Callback::new(|i: usize| format!("#{i}"))),
-                    ..Default::default()
-                },
-                3,
-                0.0,
-            ),
-            Some("#3".to_string())
-        );
+        // `LineLabels::Custom`'s own case needs a real `Callback`, which
+        // `Callback::new` cannot build outside a Dioxus runtime -- see
+        // `label_text_matches_line_labels_custom_variant` below (a
+        // component-body test, the same "run assertions inside a component
+        // body, then build one `VirtualDom`" shape `a_custom_dot_renderer_
+        // replaces_the_default_circle`'s own harness uses), not this plain
+        // `#[test]` fn.
+    }
+
+    /// The `LineLabels::Custom` half of `label_text_matches_line_labels_
+    /// variant` above, split out because it needs a live `Callback`
+    /// (`Callback::new` panics -- "must be called from inside a Dioxus
+    /// runtime" -- when called directly from a plain `#[test]` fn, before
+    /// any `VirtualDom` exists to provide one). Runs its assertion inside
+    /// the component body itself (which DOES run with a runtime active),
+    /// then builds exactly one throwaway `VirtualDom` to trigger that body
+    /// -- simpler than threading a result back out through a signal for a
+    /// pure, side-effect-free check like this one.
+    #[test]
+    fn label_text_matches_line_labels_custom_variant() {
+        #[component]
+        fn Probe() -> Element {
+            let opts = LineOptions {
+                labels: LineLabels::Custom(Callback::new(|i: usize| format!("#{i}"))),
+                ..Default::default()
+            };
+            assert_eq!(label_text(&opts, 3, 0.0), Some("#3".to_string()));
+            rsx! {}
+        }
+        VirtualDom::new(Probe).rebuild_in_place();
     }
 
     #[test]

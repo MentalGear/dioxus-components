@@ -244,7 +244,7 @@ examples!(
     item[variant, size, image, group],
     kbd,
     label,
-    line_chart[linear, step, multiple, dots, interactive],
+    line_chart[linear, step, multiple, dots, dots_colors, dots_custom, label, label_custom, interactive],
     menubar[rtl],
     native_select,
     navigation_menu,
