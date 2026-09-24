@@ -14,7 +14,9 @@
 use dioxus::prelude::*;
 
 use crate::chart::engine::scale::{fmt_decimal, fmt_num};
-use crate::chart::{stack, BandScale, ChartConfig, ChartDatum, ChartKind, Curve, LinearScale};
+use crate::chart::{
+    stack_with_mode, BandScale, ChartConfig, ChartDatum, ChartKind, Curve, LinearScale, StackMode,
+};
 use crate::direction::Direction;
 
 /// Fixed MVP layout constants (logical SVG units, scaled visually by CSS --
@@ -49,6 +51,23 @@ pub(crate) struct LayoutParams<'a> {
     /// (e.g. `props.stacked && matches!(kind, Area | Bar)`) -- this module
     /// applies no kind-based gating of its own.
     pub stacked: bool,
+    /// Which [`stack_with_mode`] mode `stacked`'s spans use -- ignored
+    /// entirely when `stacked` is `false`. Defaults to
+    /// [`StackMode::Normal`] (`#[derive(Default)]` on `StackMode` itself),
+    /// so every existing call site that doesn't set this field keeps
+    /// today's exact behavior. Stage-2 chart round, §4(c) of the handoff:
+    /// before this field existed, `AreaOptions::stack_mode ==
+    /// StackMode::Expand` was read by `series::area::render` alone, which
+    /// recomputed its own local percent spans + a local `(0.0,
+    /// 1.0)`-domain scale for the marks -- correct for the marks
+    /// themselves, but `Chart`'s shared grid lines/y-axis ticks/tooltip
+    /// vertical anchor still read the raw, non-percent `y_scale` this
+    /// struct computes, and visually disagreed with a percent-stacked
+    /// chart. Once a caller threads its own `AreaOptions`/`BarOptions`
+    /// `stack_mode` through to this field, `y_scale`/`stacked_spans` here
+    /// reflect the same mode the marks use, and the family's own `render`
+    /// can read them instead of recomputing a local copy.
+    pub stack_mode: StackMode,
     pub curve: Curve,
     pub dir: Direction,
     pub active_index: Option<usize>,
@@ -160,7 +179,7 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
     };
     let xs: Vec<f64> = (0..n).map(|i| x_scale.center(i)).collect();
 
-    let (y_min, y_max) = y_extent(p.config, p.data, p.stacked);
+    let (y_min, y_max) = y_extent(p.config, p.data, p.stacked, p.stack_mode);
     let y_domain = crate::chart::nice_domain(y_min, y_max);
     let y_scale = LinearScale {
         domain: y_domain,
@@ -171,7 +190,7 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
 
     let stacked_spans: Vec<Vec<(f64, f64)>> = if p.stacked {
         let rows: Vec<Vec<Option<f64>>> = p.data.iter().map(|d| d.values.clone()).collect();
-        stack(&rows)
+        stack_with_mode(&rows, p.stack_mode)
     } else {
         Vec::new()
     };
@@ -201,14 +220,20 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
 
 /// The y-domain input before [`crate::chart::nice_domain`]: the min/max
 /// across every configured series' values, or (for `stacked`) across
-/// [`stack()`]'s own per-row spans -- a stacked chart's axis must span the
-/// *cumulative* totals, not each series' own raw values.
-fn y_extent(config: &ChartConfig, data: &[ChartDatum], stacked: bool) -> (f64, f64) {
+/// [`stack_with_mode`]'s own per-row spans -- a stacked chart's axis must
+/// span the *cumulative* (or, under [`StackMode::Expand`], the normalized
+/// 0..1) totals, not each series' own raw values.
+fn y_extent(
+    config: &ChartConfig,
+    data: &[ChartDatum],
+    stacked: bool,
+    stack_mode: StackMode,
+) -> (f64, f64) {
     let mut lo = 0.0f64;
     let mut hi = 0.0f64;
     if stacked {
         let rows: Vec<Vec<Option<f64>>> = data.iter().map(|d| d.values.clone()).collect();
-        for row in stack(&rows) {
+        for row in stack_with_mode(&rows, stack_mode) {
             for (y0, y1) in row {
                 lo = lo.min(y0).min(y1);
                 hi = hi.max(y0).max(y1);

@@ -354,3 +354,117 @@
   border-radius: var(--dx-radius-xs);
   background-color: var(--series-color);
 }
+
+/* ---------------------------------------------------------------------- *
+ * Tooltip indicators, per-series icons, a formatter-built total row
+ * (`chart_tooltip` gallery -- s2-tooltip lane, §4(e) of the stage-2 chart
+ * handoff). Dot (the default) already matches the base swatch rule above
+ * unchanged; None/hide_indicator render no swatch element at all, so
+ * neither needs a rule here -- only Line and Dashed do.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip[data-indicator="line"] [data-slot="chart-tooltip-item"],
+.dx-chart-tooltip[data-indicator="dashed"] [data-slot="chart-tooltip-item"] {
+  align-items: stretch;
+}
+
+.dx-chart-tooltip [data-slot="chart-swatch"][data-indicator="line"] {
+  width: 4px;
+  height: auto;
+  align-self: stretch;
+  border-radius: var(--dx-radius-xs);
+  background-color: var(--series-color);
+}
+
+.dx-chart-tooltip [data-slot="chart-swatch"][data-indicator="dashed"] {
+  width: 0;
+  height: auto;
+  align-self: stretch;
+  border-radius: 0;
+  background-color: transparent;
+  border-inline-start: 1.5px dashed var(--series-color); /* rtl-physical: a vertical rule at the row's own start edge, not a reading-direction concept */
+}
+
+/* Per-series icons (ChartSeries.icon), in place of the swatch, in both the
+ * tooltip and the legend. */
+.dx-chart-tooltip [data-slot="chart-icon"],
+.dx-chart-legend [data-slot="chart-icon"] {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--secondary-color-5);
+}
+
+.dx-chart-tooltip [data-slot="chart-icon"] svg,
+.dx-chart-legend [data-slot="chart-icon"] svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Legend icons read slightly larger than tooltip ones -- shadcn's own
+ * `[&>svg]:h-3 [&>svg]:w-3` (legend) vs `[&>svg]:h-2.5 [&>svg]:w-2.5`
+ * (tooltip), chart.tsx. */
+.dx-chart-legend [data-slot="chart-icon"] {
+  width: 12px;
+  height: 12px;
+}
+
+/* A ChartTooltipProps::formatter-built total row (chart_tooltip gallery's
+ * `advanced` demo). */
+.dx-chart-tooltip [data-slot="chart-tooltip-total"] {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  border-block-start: 1px solid var(--dx-chart-grid);
+  font-weight: 600;
+  margin-block-start: var(--dx-space-1);
+  padding-block-start: var(--dx-space-1);
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-total-value"] {
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: auto;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Radar family (`ChartKind::Radar`, s2-radar lane, §4(e) of the stage-2
+ * chart handoff). One closed polygon per series (both filled and stroked
+ * by the same element -- unlike Area, there is no separate fill/stroke
+ * path pair). fill-opacity is a per-chart configurable value
+ * (RadarOptions::fill_opacity), so it is set as a direct `fill-opacity`
+ * SVG presentation attribute by the primitive, not here. Everything else
+ * Radar draws reuses existing slots (dots, axis labels, hit-bands)
+ * unchanged.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart [data-slot="chart-radar-area"] {
+  fill: var(--series-color);
+  stroke: var(--series-color);
+  stroke-width: 2;
+}
+
+/* Grid rings (RadarGrid::{Polygon,Circle,CircleFill,Fill,CircleNoLines,Custom}),
+ * both the `<circle>` and closed polygon `<path>` shapes. */
+.dx-chart [data-slot="chart-grid-ring"] {
+  fill: none;
+  stroke: var(--dx-chart-grid);
+  stroke-width: 1;
+}
+
+/* RadarGrid::{CircleFill,Fill}: the primitive sets
+ * `--grid-fill-color: var(--color-<first-series-key>)` inline on the
+ * `g[data-slot="chart-grid"]` wrapper (same inherited-custom-property
+ * technique as `--series-color`), and `data-fill="true"` on each ring that
+ * should show it. */
+.dx-chart [data-slot="chart-grid-ring"][data-fill="true"] {
+  fill: var(--grid-fill-color);
+  fill-opacity: 0.2;
+}
+
+.dx-chart [data-slot="chart-grid-spoke"] {
+  stroke: var(--dx-chart-grid);
+  stroke-width: 1;
+}

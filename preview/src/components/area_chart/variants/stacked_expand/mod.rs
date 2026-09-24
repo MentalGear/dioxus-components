@@ -11,15 +11,11 @@ use dioxus_icons::lucide::TrendingUp;
 /// `stack_with_mode`, d3 `offset/expand.js` semantics) so every month's
 /// stack reaches exactly 100% regardless of its raw total.
 ///
-/// `show_grid: false` here is a deliberate, documented workaround, not a
-/// stylistic choice: `AreaOptions`'s own doc comment (`primitives/src/
-/// chart/components/series/area.rs`) explains that `Expand` mode's percent
-/// domain is computed locally by that file alone -- `Chart`'s *shared* grid
-/// lines (`components::layout`, `s2-bar`-owned) still reflect the raw,
-/// non-percent domain, which would draw actively misleading reference
-/// lines rather than merely unpolished ones. A ledger request
-/// (`$S/stage2-lanes.md`) proposes the by-construction fix; this demo
-/// avoids shipping the mismatch until it lands.
+/// The grid is shown (unlike an earlier draft of this demo): stage-2's
+/// §4(c) construction made `components::layout::build` itself
+/// `StackMode`-aware, so `Chart`'s shared grid lines/y-axis ticks now
+/// reflect the same normalized 0..1 domain the marks draw against -- no
+/// more mismatch to work around by hiding the grid.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64, f64); 6] = [
         ("January", 186.0, 80.0, 45.0),
@@ -57,7 +53,6 @@ pub fn Demo() -> Element {
                         Chart {
                             aria_label: "Visitors by month, desktop, mobile, and other, as a percentage of the month's total",
                             stacked: true,
-                            show_grid: false,
                             area: AreaOptions {
                                 stack_mode: StackMode::Expand,
                                 ..Default::default()

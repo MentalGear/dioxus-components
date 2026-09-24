@@ -4,6 +4,8 @@ use dioxus::prelude::*;
 
 use crate::chart::context::use_chart;
 use crate::chart::engine::scale::fmt_decimal;
+use crate::dioxus_attributes::attributes;
+use crate::{fold_style_attributes, merge_attributes};
 
 /// The props for the [`ChartTooltip`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -86,31 +88,57 @@ pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
 
     let state = if active.is_some() { "open" } else { "closed" };
 
-    // Percent position from the active index's band center / top value --
-    // never read when `data-state="closed"` (a themed stylesheet hides
-    // it), so an arbitrary fallback is fine whenever either half of this
-    // is still unset.
-    let (left_pct, top_pct) = match (active, &layout) {
-        (Some(i), Some(layout)) if i < data.len() && layout.width > 0.0 && layout.height > 0.0 => {
-            let x = layout.x_scale.center(i);
-            let y = layout
-                .top_value
-                .get(i)
-                .map_or(0.0, |v| layout.y_scale.scale(*v));
-            (x / layout.width * 100.0, y / layout.height * 100.0)
-        }
-        _ => (50.0, 50.0),
-    };
+    // The active index's own `(left%, top%)` anchor, computed by whichever
+    // family rendered (§4(d) of the stage-2 handoff -- `ChartLayout`'s own
+    // doc) -- never read when `data-state="closed"` (a themed stylesheet
+    // hides it), so an arbitrary fallback is fine whenever either half of
+    // this is still unset (no layout yet, or this family hasn't populated
+    // an anchor for the active index).
+    let (left_pct, top_pct) = active
+        .and_then(|i| layout.as_ref().and_then(|l| l.anchor_percent.get(i)))
+        .copied()
+        .unwrap_or((50.0, 50.0));
 
     let active_datum = active.and_then(|i| data.get(i));
 
+    // `data-slot`/`data-state`/`aria-hidden` are structural/aria wiring
+    // this component owns (`data-slot` is the themed stylesheet's whole
+    // selector; `data-state`/`aria-hidden` are this tooltip's own
+    // open/closed and sighted-only contract, this module's own doc) --
+    // `merge_attributes` (`scripts/check-attr-spread-collision.sh`'s own
+    // fix, replacing a raw `..props.attributes` beside these as plain
+    // literals) makes "owned wins" explicit and SSR/CSR-consistent instead
+    // of accidental.
+    //
+    // `style` is handled separately, via `fold_style_attributes`
+    // (`resizable.rs`'s/`context_menu.rs`'s own identical fix, cited in
+    // that helper's own doc): this component's own position is a literal
+    // `style` string, but a caller may also pass CSS the *shorthand* way
+    // (e.g. a themed wrapper's `padding`), which becomes its own separate
+    // `namespace="style"` attributes rather than colliding on the `style`
+    // name itself -- folding them into one string first is what
+    // `merge_attributes` (name+namespace keyed) cannot do.
+    let (caller_style, attributes) = fold_style_attributes(props.attributes);
+    let position_style = format!(
+        "left:{}%;top:{}%",
+        fmt_decimal(left_pct, 3),
+        fmt_decimal(top_pct, 3)
+    );
+    let style = match caller_style {
+        Some(extra) => format!("{position_style};{extra}"),
+        None => position_style,
+    };
+    let owned = attributes!(div {
+        "data-slot": "chart-tooltip",
+        "data-state": state,
+        "aria-hidden": "true",
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         div {
-            "data-slot": "chart-tooltip",
-            "data-state": state,
-            "aria-hidden": "true",
-            style: "left:{fmt_decimal(left_pct, 3)}%;top:{fmt_decimal(top_pct, 3)}%",
-            ..props.attributes,
+            style,
+            ..merged,
 
             if let Some(children) = &props.children {
                 {children}

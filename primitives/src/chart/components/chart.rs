@@ -41,7 +41,9 @@ use crate::chart::context::{use_chart, ChartLayout};
 use crate::chart::engine::scale::fmt_num;
 use crate::chart::engine::table::{table_rows, table_rows_single_series};
 use crate::chart::{ChartKind, Curve};
+use crate::dioxus_attributes::attributes;
 use crate::direction::{use_direction, Direction, HorizontalNav};
+use crate::merge_attributes;
 
 /// The props for the [`Chart`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -304,6 +306,17 @@ pub fn Chart(props: ChartProps) -> Element {
     // in here.)
     let stacked = props.stacked && matches!(kind, ChartKind::Area | ChartKind::Bar);
     let is_cartesian = kind.is_cartesian();
+    // §4(c) of the stage-2 chart-round handoff: `components::layout::build`
+    // needs the *effective* family's own stack mode, not a chart-wide
+    // constant, so a percent-stacked ("100%"/"expand") chart's shared grid
+    // lines/y-axis ticks/tooltip anchor agree with its marks. Only
+    // `AreaOptions` has a `stack_mode` field today (`BarOptions` is still
+    // `s2-bar`'s empty stub) -- every other kind, and `Bar` until its own
+    // field lands, keeps today's exact `StackMode::Normal` behavior.
+    let stack_mode = match kind {
+        ChartKind::Area => props.area.stack_mode,
+        _ => crate::chart::StackMode::Normal,
+    };
 
     let n = data.len();
     let ctx_layout = layout::build(layout::LayoutParams {
@@ -314,6 +327,7 @@ pub fn Chart(props: ChartProps) -> Element {
         y_tick_count: props.y_tick_count,
         kind,
         stacked,
+        stack_mode,
         curve: props.curve,
         dir: direction,
         active_index: active_index(),
@@ -321,43 +335,48 @@ pub fn Chart(props: ChartProps) -> Element {
         data: &data,
     });
 
-    // Share this render's layout for `ChartTooltip`'s benefit -- see
-    // `ChartLayout`'s own doc for why a plain write here (not an effect)
-    // is correct: it depends only on this component's own props, so
-    // recomputing and re-setting every render is cheap and right, and
-    // `Signal`'s equality check keeps it a no-op once stable.
-    let top_value: Vec<f64> = (0..n)
-        .map(|i| {
-            let top = if stacked {
-                ctx_layout.stacked_spans[i]
-                    .iter()
-                    .map(|(_, y1)| *y1)
-                    .fold(f64::NEG_INFINITY, f64::max)
-            } else {
-                data[i]
-                    .values
-                    .iter()
-                    .take(config.series.len())
-                    .flatten()
-                    .copied()
-                    .fold(f64::NEG_INFINITY, f64::max)
-            };
-            if top.is_finite() {
-                top
-            } else {
-                0.0
-            }
-        })
-        .collect();
-    layout_signal.set(Some(ChartLayout {
-        width: props.width,
-        height: props.height,
-        x_scale: ctx_layout.x_scale,
-        y_scale: ctx_layout.y_scale,
-        top_value,
-    }));
+    // Share this render's tooltip anchors for `ChartTooltip`'s benefit --
+    // see `ChartLayout`'s own doc for why a plain write here (not an
+    // effect) is correct: it depends only on this component's own props,
+    // so recomputing and re-setting every render is cheap and right, and
+    // `Signal`'s equality check keeps it a no-op once stable. Only the
+    // Cartesian kinds populate it today (§4(d) of the stage-2 handoff --
+    // a family-agnostic `(left%, top%)` per datum, not a raw scale pair,
+    // so a future polar family's own vertex math can populate the same
+    // field without `ChartTooltip` branching on `kind`); the three stub
+    // kinds render no hit-bands yet (below), so `active_index` can never
+    // be `Some` for them regardless -- an empty vec here is exactly as
+    // inert as a wrong one would be unreachable.
+    let anchor_percent: Vec<(f64, f64)> = if is_cartesian && props.width > 0.0 && props.height > 0.0
+    {
+        (0..n)
+            .map(|i| {
+                let top = if stacked {
+                    ctx_layout.stacked_spans[i]
+                        .iter()
+                        .map(|(_, y1)| *y1)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                } else {
+                    data[i]
+                        .values
+                        .iter()
+                        .take(config.series.len())
+                        .flatten()
+                        .copied()
+                        .fold(f64::NEG_INFINITY, f64::max)
+                };
+                let top = if top.is_finite() { top } else { 0.0 };
+                let x = ctx_layout.x_scale.center(i);
+                let y = ctx_layout.y_scale.scale(top);
+                (x / props.width * 100.0, y / props.height * 100.0)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    layout_signal.set(Some(ChartLayout { anchor_percent }));
 
-    let rows = if is_cartesian {
+    let rows = if kind.has_full_table() {
         table_rows(&data)
     } else {
         table_rows_single_series(&data)
@@ -377,15 +396,32 @@ pub fn Chart(props: ChartProps) -> Element {
     let wrapper_label = props.keyboard.then(|| props.aria_label.clone());
     let wrapper_tabindex = props.keyboard.then_some(0);
 
+    // `data-slot`/`role`/`aria-roledescription`/`tabindex`/`data-direction`
+    // are structural/aria wiring this component owns -- e.g. `data-slot`
+    // is the very selector the themed stylesheet's whole ruleset hangs
+    // off, and `role`/`aria-roledescription`/`tabindex` together form the
+    // keyboard-navigable-group contract `ChartProps::keyboard`'s own doc
+    // describes -- not overridable presentation. `merge_attributes`
+    // (`scripts/check-attr-spread-collision.sh`'s own fix, replacing a raw
+    // `..props.attributes` beside these as plain literals) makes "owned
+    // wins" explicit and SSR/CSR-consistent instead of accidental; `class`
+    // still concatenates regardless (`merge_attributes`'s own rule), and
+    // `onkeydown` stays a literal on the element itself, never routed
+    // through `merge_attributes` (it isn't an attribute value merge could
+    // meaningfully resolve).
+    let owned = attributes!(div {
+        "data-slot": "chart",
+        role: wrapper_role,
+        "aria-roledescription": wrapper_roledescription,
+        tabindex: wrapper_tabindex,
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes, owned]);
+
     rsx! {
         div {
-            "data-slot": "chart",
-            role: wrapper_role,
-            "aria-roledescription": wrapper_roledescription,
             aria_label: wrapper_label,
-            tabindex: wrapper_tabindex,
             dir: direction.as_str(),
-            "data-direction": direction.as_str(),
             onkeydown: move |evt| {
                 if !props.keyboard || n == 0 {
                     return;
@@ -412,7 +448,7 @@ pub fn Chart(props: ChartProps) -> Element {
                     evt.prevent_default();
                 }
             },
-            ..props.attributes,
+            ..merged,
 
             svg {
                 "data-slot": "chart-svg",

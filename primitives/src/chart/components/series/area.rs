@@ -37,26 +37,13 @@
 //!   across it" behavior this prop asks for, via a function this file
 //!   doesn't need to touch.
 //! - [`AreaOptions::stack_mode`] -- percent ("100%"/"expand") stacking.
-//!   **Known, stated limitation** (not fixable from this file alone,
-//!   filed to the layout owner -- see `$S/stage2-lanes.md`'s "requests for
-//!   the refactor owner" section, s2-area's entry): `components::layout::
-//!   build` computes `SeriesRenderContext::y_scale`/`zero_y`/
-//!   `stacked_spans` once, chart-wide, from the plain (`StackMode::Normal`)
-//!   [`crate::chart::stack()`] -- it has no notion of a per-family stack
-//!   mode, and `layout.rs` is `s2-bar`-owned, not this file. So when
-//!   [`StackMode::Expand`] is set, this file computes its OWN, locally
-//!   scoped percent spans (via [`stack_with_mode`]) and its OWN local
-//!   `LinearScale` with domain `(0.0, 1.0)` for the area/line marks
-//!   themselves (which is what this stage's own acceptance test checks:
-//!   the topmost series' area reaches the plot's top) -- but `Chart`'s
-//!   shared grid lines, y-axis tick *values*, and the tooltip's vertical
-//!   anchor (all computed from `ctx.y_scale`/`ctx.zero_y`, upstream of this
-//!   function, in `chart.rs`/`layout.rs`) still reflect the *raw*
-//!   (non-percent) domain and so will not visually agree with a percent-
-//!   stacked chart's own marks until `layout::build` becomes
-//!   `StackMode`-aware. The `stacked_expand` demo variant works around
-//!   this by turning its own grid off (`show_grid: false`) rather than
-//!   ship a visibly-misleading reference line.
+//!   `components::chart` threads this field through to `components::
+//!   layout::build`'s own `LayoutParams::stack_mode` (stage-2 chart round,
+//!   §4(c) of the handoff), so `ctx.y_scale`/`ctx.stacked_spans` already
+//!   reflect [`StackMode::Expand`]'s normalized 0..1 domain by the time
+//!   this file's own `render` reads them -- no local recompute needed
+//!   here, and `Chart`'s shared grid lines/y-axis ticks/tooltip anchor
+//!   agree with the marks for free.
 
 use dioxus::prelude::*;
 
@@ -64,8 +51,8 @@ use super::super::layout::SeriesRenderContext;
 use crate::chart::context::use_chart;
 use crate::chart::engine::curve::{area_between_path, area_path, line_path};
 use crate::chart::engine::geometry::plot_runs;
-use crate::chart::engine::scale::{fmt_num, LinearScale};
-use crate::chart::engine::stack::{stack_with_mode, StackMode};
+use crate::chart::engine::scale::fmt_num;
+use crate::chart::engine::stack::StackMode;
 
 /// [`crate::chart::ChartKind::Area`]'s own options. See this module's own
 /// doc for how each field is implemented without touching any other
@@ -156,42 +143,22 @@ fn render_one(ctx: &SeriesRenderContext, s: usize, opts: &AreaOptions, fill: &st
     let fill_opacity = fmt_num(opts.fill_opacity);
     if ctx.stacked {
         let n = ctx.xs.len();
-        // Each arm's own `.collect::<Vec<_>>()` turbofish (not an outer
+        // `ctx.y_scale`/`ctx.stacked_spans` already reflect `opts.stack_mode`
+        // (`components::layout::build` reads `LayoutParams::stack_mode`,
+        // §4(c) of the stage-2 handoff -- `components::chart` threads
+        // `AreaOptions::stack_mode` through to it), so `StackMode::Normal`
+        // and `StackMode::Expand` read the identical shared scale/spans
+        // here; no per-mode branch or local recompute needed. Each arm's
+        // own `.collect::<Vec<_>>()` turbofish (not an outer
         // `(Vec<(f64, f64)>, Vec<(f64, f64)>)` annotation on the `let`
         // itself, which trips clippy's `type_complexity` lint) pins the
         // target collection type at the point of collection.
-        let (top, bottom) = match opts.stack_mode {
-            StackMode::Normal => (
-                (0..n)
-                    .map(|i| (ctx.xs[i], ctx.y_scale.scale(ctx.stacked_spans[i][s].1)))
-                    .collect::<Vec<_>>(),
-                (0..n)
-                    .map(|i| (ctx.xs[i], ctx.y_scale.scale(ctx.stacked_spans[i][s].0)))
-                    .collect::<Vec<_>>(),
-            ),
-            // See this module's own doc: `ctx.y_scale`/`ctx.stacked_spans`
-            // were computed chart-wide from `StackMode::Normal` (
-            // `components::layout::build`, `s2-bar`-owned) -- Expand
-            // recomputes its own percent spans and its own local (0.0,
-            // 1.0)-domain scale here instead of reading either.
-            StackMode::Expand => {
-                let rows: Vec<Vec<Option<f64>>> =
-                    ctx.data.iter().map(|d| d.values.clone()).collect();
-                let spans = stack_with_mode(&rows, StackMode::Expand);
-                let percent_scale = LinearScale {
-                    domain: (0.0, 1.0),
-                    range: (ctx.plot_y1, ctx.plot_y0),
-                };
-                (
-                    (0..n)
-                        .map(|i| (ctx.xs[i], percent_scale.scale(spans[i][s].1)))
-                        .collect::<Vec<_>>(),
-                    (0..n)
-                        .map(|i| (ctx.xs[i], percent_scale.scale(spans[i][s].0)))
-                        .collect::<Vec<_>>(),
-                )
-            }
-        };
+        let top: Vec<(f64, f64)> = (0..n)
+            .map(|i| (ctx.xs[i], ctx.y_scale.scale(ctx.stacked_spans[i][s].1)))
+            .collect();
+        let bottom: Vec<(f64, f64)> = (0..n)
+            .map(|i| (ctx.xs[i], ctx.y_scale.scale(ctx.stacked_spans[i][s].0)))
+            .collect();
         let area_d = area_between_path(&top, &bottom, ctx.curve);
         let line_d = line_path(&top, ctx.curve);
         rsx! {

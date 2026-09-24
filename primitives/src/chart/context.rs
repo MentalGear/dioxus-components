@@ -11,7 +11,7 @@
 use dioxus::prelude::*;
 
 use super::config::ChartConfig;
-use super::engine::{BandScale, ChartDatum, ChartKind, LinearScale};
+use super::engine::{ChartDatum, ChartKind};
 
 /// The pixel-space layout `Chart` computed for its own SVG, shared so
 /// `ChartTooltip` can position itself "from the same scales" (per
@@ -26,22 +26,30 @@ use super::engine::{BandScale, ChartDatum, ChartKind, LinearScale};
 /// its exact position doesn't matter yet), which covers every real case:
 /// nothing can set `active_index` to `Some` before `Chart` -- the thing
 /// that owns the hit bands that set it -- has rendered.
+///
+/// Family-agnostic by construction (stage-2 chart round, §4(d) of the
+/// handoff): this used to store the raw `x_scale: BandScale`/`y_scale:
+/// LinearScale`/`top_value: Vec<f64>` `ChartTooltip` combined into a
+/// percent position itself, which only works for a Cartesian
+/// (Area/Bar/Line) layout -- `BandScale::center(i)` is an affine function
+/// of the datum index `i`, but a polar family's vertex position (e.g.
+/// Radar's `center + point_radial(angle(i), radius(value))`) is a
+/// sinusoidal function of `i` that no `BandScale` can reproduce. Storing
+/// the already-resolved `(left%, top%)` per datum instead moves that
+/// family-specific math to whichever side computed the layout in the
+/// first place (`Chart`'s own Cartesian dispatch today; a family like
+/// Radar's own `render`, once it needs an open tooltip, tomorrow), so
+/// `ChartTooltip` itself indexes this uniformly with no per-`ChartKind`
+/// branch of its own.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct ChartLayout {
-    /// The SVG viewBox's own width/height -- percentages are relative to
-    /// these, not the (smaller) plot area the scales below draw within.
-    pub width: f64,
-    pub height: f64,
-    /// The x scale `Chart` drew its bands with.
-    pub x_scale: BandScale,
-    /// The y scale `Chart` drew its values with.
-    pub y_scale: LinearScale,
-    /// The topmost (max) raw value across all series at each datum,
-    /// post-stacking if the chart is stacked -- what the tooltip anchors
-    /// its y position to ("the active band center / max value point",
-    /// `$S/chart-api.md`), so `ChartTooltip` needs no stacking-awareness
-    /// of its own. `0.0` for a datum with no defined values at all.
-    pub top_value: Vec<f64>,
+    /// Each datum's tooltip anchor as `(left%, top%)` of the chart's own
+    /// logical width/height (the SVG viewBox, not the smaller plot area
+    /// inset by margins) -- `ChartTooltip` reads `anchor_percent[i]`
+    /// directly at the active index, with no scale of its own. Empty (or
+    /// shorter than the data) is treated exactly like `active_index ==
+    /// None` -- see `ChartTooltip`'s own fallback.
+    pub anchor_percent: Vec<(f64, f64)>,
 }
 
 /// The state `ChartContainer` provides to every descendant -- fetch it
