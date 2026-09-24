@@ -29,7 +29,10 @@ pub fn Demo() -> Element {
         ChartContainer { config, data: generate_data(), kind: ChartKind::Line,
             Chart {
                 aria_label: "Visitors by month, desktop",
-                line: LineOptions { dots: true },
+                line: LineOptions {
+                    dots: true,
+                    ..Default::default()
+                },
             }
             ChartTooltip {}
         }

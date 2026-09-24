@@ -12,11 +12,8 @@ const URL = `${BASE_URL}/component/?name=line_chart&`;
  * `component-preview-frame-<name>` appended, so they can never collide
  * (the same fix `popover`'s `non_modal` variant needed).
  *
- * Kept as an explicit map (not derived from a shared list) so a variant
- * added in a follow-up commit (`dots_colors`, `dots_custom`, `label`,
- * `label_custom`, once the primitive-side dot/label work in
- * `components/series/line.rs` lands) is a one-line addition here, visible
- * in the diff.
+ * Kept as an explicit map (not derived from a shared list) so a new variant
+ * is a one-line addition here, visible in the diff.
  */
 const FRAME_IDS: Record<string, string> = {
   main: "component-preview-frame",
@@ -24,6 +21,10 @@ const FRAME_IDS: Record<string, string> = {
   step: "component-preview-frame-step",
   multiple: "component-preview-frame-multiple",
   dots: "component-preview-frame-dots",
+  dots_colors: "component-preview-frame-dots_colors",
+  dots_custom: "component-preview-frame-dots_custom",
+  label: "component-preview-frame-label",
+  label_custom: "component-preview-frame-label_custom",
   interactive: "component-preview-frame-interactive",
 };
 
@@ -108,14 +109,54 @@ test.describe("Line chart", () => {
     await expect(tooltip).toHaveAttribute("data-state", "closed");
   });
 
-  // Deferred to the follow-up commit that lands `components/series/
-  // line.rs`'s active-dot enlargement (`$S/stage2-common.md`'s ownership
-  // table: "active-dot enlargement on hover via `data-active`"): a
-  // behavioural assertion that hovering/focusing a data point sets
-  // `data-active="true"` on that point's own `[data-slot="chart-dot"]`
-  // (and only that one) belongs here once that primitive feature exists.
-  // Tracked in `$S/stage2-lanes.md`'s "s2-line" entry, not silently
-  // dropped.
+  test("dots: hovering a point's own hit-band doubles that point's own dot radius", async ({
+    page,
+  }) => {
+    const scope = frame(page, "dots");
+    const firstDot = scope.locator('[data-slot="chart-dot"]').first();
+    const restingRadius = await firstDot.getAttribute("r");
+    expect(restingRadius).not.toBeNull();
+
+    await scope.locator('[data-slot="chart-hit-band"]').first().hover();
+    await expect(firstDot).toHaveAttribute("data-active", "true");
+    const activeRadius = await firstDot.getAttribute("r");
+    expect(Number(activeRadius)).toBeCloseTo(Number(restingRadius) * 2, 5);
+
+    // Every OTHER dot stays at rest.
+    const otherDots = scope.locator('[data-slot="chart-dot"]:not([data-active="true"])');
+    await expect(otherDots).toHaveCount(5);
+  });
+
+  test("dots_colors: each dot resolves to its own distinct fill color", async ({ page }) => {
+    const dots = frame(page, "dots_colors").locator('[data-slot="chart-dot"]');
+    await expect(dots).toHaveCount(5);
+    const fills = await Promise.all(
+      (await dots.all()).map((d) => d.evaluate((el) => getComputedStyle(el).fill)),
+    );
+    expect(new Set(fills).size).toBeGreaterThan(1);
+  });
+
+  test("dots_custom: renders a custom marker in place of the default circle", async ({ page }) => {
+    const scope = frame(page, "dots_custom");
+    await expect(scope.locator('[data-slot="chart-custom-dot"]')).toHaveCount(6);
+    await expect(scope.locator('[data-slot="chart-dot"]')).toHaveCount(0);
+  });
+
+  test("label: draws one value label above each point, grid and y-axis hidden", async ({
+    page,
+  }) => {
+    const scope = frame(page, "label");
+    await expect(scope.locator('[data-slot="chart-label"]')).toHaveCount(6);
+    await expect(scope.locator('[data-slot="chart-grid"]')).toHaveCount(0);
+    await expect(scope.locator('[data-axis="y"]')).toHaveCount(0);
+  });
+
+  test("label_custom: labels every point with its own category name", async ({ page }) => {
+    const scope = frame(page, "label_custom");
+    const labels = scope.locator('[data-slot="chart-label"]');
+    await expect(labels).toHaveCount(6);
+    await expect(labels.first()).toHaveText("Jan");
+  });
 
   test.describe("Axe automated scan", () => {
     for (const variant of Object.keys(FRAME_IDS) as (keyof typeof FRAME_IDS)[]) {
