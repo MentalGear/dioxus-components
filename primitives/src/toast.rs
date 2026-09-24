@@ -918,22 +918,26 @@ pub fn Toast(props: ToastProps) -> Element {
             style: "{item_style}",
         }),
         props_attributes,
-    ]);
-
-    rsx! {
-        div {
-            id,
+        // Owned by this component -- role/aria wiring/state must win over
+        // a caller's own attributes (`docs/backlog.md` row 93's
+        // duplicate-attribute hazard).
+        attributes!(div {
             role: "alertdialog",
             aria_labelledby: "{label_id}",
             aria_describedby: description_id,
             aria_modal: "false",
             tabindex: "0",
-
             "data-type": props.toast_type.as_str(),
             "data-permanent": props.permanent,
             "data-toast-even": (props.index % 2 == 0).then_some("true"),
             "data-toast-odd": (props.index % 2 == 1).then_some("true"),
             "data-top": (props.index == 0).then_some("true"),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             ..attributes,
 
             {children}
@@ -944,13 +948,19 @@ pub fn Toast(props: ToastProps) -> Element {
 /// The content wrapper inside a toast.
 #[component]
 pub fn ToastContent(props: ToastContentProps) -> Element {
-    rsx! {
-        div {
+    // Owned by this component -- role/aria wiring must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "alert",
             aria_atomic: "true",
-            ..props.attributes,
-            {props.children}
-        }
+        }),
+    ]);
+
+    rsx! {
+        div { ..attributes, {props.children} }
     }
 }
 
@@ -963,12 +973,17 @@ pub fn ToastTitle(props: ToastTitleProps) -> Element {
         rsx! { {title} }
     });
 
+    // Owned by this component -- `id` is the labelledby target `Toast`'s
+    // `aria-labelledby` reads back, so it must win over a caller's own
+    // `id` rather than risk the SSR duplicate-attribute hazard
+    // (`docs/backlog.md` row 93 names this exact site).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div { id: ctx.label_id }),
+    ]);
+
     rsx! {
-        div {
-            id: ctx.label_id,
-            ..props.attributes,
-            {children}
-        }
+        div { ..attributes, {children} }
     }
 }
 
@@ -984,12 +999,12 @@ pub fn ToastDescription(props: ToastDescriptionProps) -> Element {
         rsx! { {description} }
     });
 
+    // Owned by this component -- see `ToastTitle`'s identical
+    // construction above (`docs/backlog.md` row 93 names this exact site).
+    let attributes = merge_attributes(vec![props.attributes, attributes!(div { id })]);
+
     rsx! {
-        div {
-            id,
-            ..props.attributes,
-            {children}
-        }
+        div { ..attributes, {children} }
     }
 }
 
@@ -1000,16 +1015,26 @@ pub fn ToastCloseButton(props: ToastCloseButtonProps) -> Element {
     let render_ctx = use_context::<ToastRenderCtx>();
     let children = props.children.unwrap_or_else(|| rsx! { "×" });
 
-    rsx! {
-        button {
+    // `aria-label`/`type="button"` are overridable defaults, not owned
+    // state (construction policy) -- caller wins, so this is
+    // `merge_attributes(vec![defaults, caller])`, not
+    // `vec![caller, owned]` (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
             aria_label: "close",
             type: "button",
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        button {
             onclick: move |e| {
                 // Focus the region again after closing
                 ctx.focus_region.call(());
                 render_ctx.on_close.call(e);
             },
-            ..props.attributes,
+            ..attributes,
             {children}
         }
     }

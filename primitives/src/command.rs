@@ -91,11 +91,13 @@
 //! separate, unscoped feature -- not built here, per the plan doc.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use crate::{
     collection::{collection_item, use_item},
     combobox::default_combobox_filter,
     listbox::use_listbox_id,
+    merge_attributes,
     selectable::{
         pointer_select_cancel, pointer_select_commit, pointer_select_start, use_selectable_option,
         use_selectable_root, use_single_selectable_value, OptionState, RcPartialEqValue,
@@ -291,12 +293,18 @@ fn use_command_root<T: Clone + PartialEq + 'static>(
 pub fn Command<T: Clone + PartialEq + 'static>(props: CommandProps<T>) -> Element {
     use_command_root(&props);
 
-    rsx! {
-        div {
+    // Owned by this component -- disabled state must win over a caller's
+    // own attributes (`docs/backlog.md` row 93's duplicate-attribute
+    // hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             "data-disabled": (props.disabled)(),
-            ..props.attributes,
-            {props.children}
-        }
+        }),
+    ]);
+
+    rsx! {
+        div { ..attributes, {props.children} }
     }
 }
 
@@ -427,9 +435,12 @@ pub fn CommandInput(props: CommandInputProps) -> Element {
         _ => {}
     };
 
-    rsx! {
-        input {
-            id,
+    // Owned by this component -- input semantics/aria wiring/state must
+    // win over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(input {
             r#type: "text",
             value: query.cloned(),
             placeholder: props.placeholder,
@@ -437,12 +448,17 @@ pub fn CommandInput(props: CommandInputProps) -> Element {
             spellcheck: "false",
             disabled: (ctx.selectable.disabled)(),
             autofocus: true,
-
             role: "combobox",
             aria_autocomplete: "list",
             aria_expanded: "true",
             aria_controls: ctx.selectable.list_id,
             aria_activedescendant: active_descendant(),
+        }),
+    ]);
+
+    rsx! {
+        input {
+            id,
             aria_label: props.aria_label.clone(),
 
             onmounted: move |evt: Event<MountedData>| {
@@ -460,7 +476,7 @@ pub fn CommandInput(props: CommandInputProps) -> Element {
             },
             onkeydown,
 
-            ..props.attributes,
+            ..attributes,
         }
     }
 }
@@ -496,12 +512,15 @@ pub fn CommandList(props: CommandListProps) -> Element {
     let ctx = use_context::<CommandContext>();
     let id = use_listbox_id(props.id, ctx.selectable.list_id);
 
+    // Owned by this component -- role must win over a caller's own
+    // attributes (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![props.attributes, attributes!(div { role: "listbox" })]);
+
     rsx! {
         div {
             id,
-            role: "listbox",
             aria_label: props.aria_label.clone(),
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -530,12 +549,17 @@ pub fn CommandEmpty(props: CommandEmptyProps) -> Element {
         return rsx! {};
     }
 
+    // Owned by this component -- role must win over a caller's own
+    // attributes (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
+            role: "presentation"
+        }),
+    ]);
+
     rsx! {
-        div {
-            role: "presentation",
-            ..props.attributes,
-            {props.children}
-        }
+        div { ..attributes, {props.children} }
     }
 }
 
@@ -579,13 +603,22 @@ pub fn CommandGroup(props: CommandGroupProps) -> Element {
     let labeled_by = use_signal(|| None);
     use_context_provider(|| CommandGroupContext { labeled_by });
 
-    rsx! {
-        div {
-            id: props.id,
+    // Owned by this component -- role/disabled/labelledby wiring must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "group",
             aria_disabled: disabled,
             aria_labelledby: labeled_by,
-            ..props.attributes,
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id: props.id,
+            ..attributes,
             {props.children}
         }
     }
@@ -704,18 +737,25 @@ pub fn CommandItem<T: PartialEq + Clone + 'static>(props: CommandItemProps<T>) -
         return rsx! {};
     }
 
-    rsx! {
-        div {
+    // Owned by this component -- role/selection state must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "option",
-            id: option.id,
-
             aria_selected: (option.selected)(),
             aria_disabled: (option.disabled)(),
-            aria_label: props.aria_label.clone(),
-
             "data-highlighted": (option.focused)(),
             "data-disabled": (option.disabled)(),
             "data-selected": (option.selected)(),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id: option.id,
+            aria_label: props.aria_label.clone(),
 
             onmouseenter: move |_| {
                 if !(option.disabled)() {
@@ -734,7 +774,7 @@ pub fn CommandItem<T: PartialEq + Clone + 'static>(props: CommandItemProps<T>) -
                 pointer_select_cancel(option.down_pos);
             },
 
-            ..props.attributes,
+            ..attributes,
             {props.children}
             if let Some(shortcut) = &props.shortcut {
                 // A plain `data-*` marker, not a class -- gives a themed
