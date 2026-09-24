@@ -1,10 +1,12 @@
 //! Defines the [`ColorPicker`] component and its sub-components.
 
 use crate::dioxus_elements::geometry::ClientPoint;
+use crate::merge_attributes;
 use crate::move_interaction::{use_move_interaction, MoveEvent};
 use dioxus::html::geometry::euclid::Size2D;
 use dioxus::html::geometry::PixelsSize;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use palette::{encoding, FromColor, Hsv, RgbHue, Srgb};
 
 use std::rc::Rc;
@@ -155,12 +157,18 @@ pub fn ColorPicker(props: ColorPickerProps) -> Element {
         on_color_change: props.on_color_change,
     });
 
+    let defaults = attributes!(div {
+        aria_label: "Color picker"
+    });
+    let owned = attributes!(div {
+        role: "group",
+        "data-disabled": (props.disabled)(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "group",
-            aria_label: "Color picker",
-            "data-disabled": (props.disabled)(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -256,9 +264,11 @@ pub fn ColorArea(props: ColorAreaProps) -> Element {
         set_area_value(picker_ctx, clamp_area_value(new_value, (area_ctx.step)()));
     });
 
+    let owned = attributes!(div { role: "group" });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "group",
             onmounted: move |e| async move {
                 let mut movement = movement;
                 movement.set_mounted(e.data()).await;
@@ -294,7 +304,7 @@ pub fn ColorArea(props: ColorAreaProps) -> Element {
                     dragging.set(true);
                 });
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -328,10 +338,14 @@ pub fn AreaTrack(props: AreaTrackProps) -> Element {
         .into_format(),
     );
 
+    let owned = attributes!(div {
+        style: "--area-color: {area_color}"
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            style: "--area-color: {area_color}",
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -402,13 +416,19 @@ pub fn AreaThumb(props: AreaThumbProps) -> Element {
     );
     let thumb_color = color_hex(Srgb::<f64>::from_color(picker_ctx.color()).into_format());
 
+    let defaults = attributes!(div {
+        aria_label: "Color area"
+    });
+    let owned = attributes!(div {
+        "data-dragging": area_ctx.dragging,
+        style,
+        tabindex: 0,
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            aria_label: "Color area",
-            "data-dragging": area_ctx.dragging,
-            style,
             background_color: thumb_color,
-            tabindex: 0,
             onmounted: move |evt| {
                 // Store the mounted data for focus management
                 button_ref.set(Some(evt.data()));
@@ -442,7 +462,7 @@ pub fn AreaThumb(props: AreaThumbProps) -> Element {
                     _ = target.set_focus(true).await;
                 }
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -462,18 +482,28 @@ pub fn AreaThumbSaturationInput(props: AreaThumbSaturationInputProps) -> Element
     let step = (area_ctx.step)();
     let color_label = color_name(Srgb::<f64>::from_color(picker_ctx.color()).into_format());
 
+    // `aria_label`/`aria_roledescription` are overridable defaults; the
+    // rest is this axis input's own functional state (type/orientation
+    // define the widget, min/max/step/value are the controlled binding,
+    // tabindex is the roving-focus wiring) and is owned.
+    let defaults = attributes!(input {
+        aria_label: "Saturation",
+        aria_roledescription: "2D Slider",
+    });
+    let owned = attributes!(input {
+        r#type: "range",
+        aria_valuetext: format!("Saturation {:.0}%, {color_label}", percent.width),
+        aria_orientation: "horizontal",
+        tabindex: "-1",
+        min: "{min}",
+        max: "{max}",
+        step: "{step}",
+        value: format!("{}", current.x),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         input {
-            r#type: "range",
-            aria_label: "Saturation",
-            aria_roledescription: "2D Slider",
-            aria_valuetext: format!("Saturation {:.0}%, {color_label}", percent.width),
-            aria_orientation: "horizontal",
-            tabindex: "-1",
-            min: "{min}",
-            max: "{max}",
-            step: "{step}",
-            value: format!("{}", current.x),
             onmounted: move |evt| {
                 thumb_ctx.saturation_input_ref.set(Some(evt.data()));
             },
@@ -504,7 +534,7 @@ pub fn AreaThumbSaturationInput(props: AreaThumbSaturationInputProps) -> Element
                     picker_ctx.set_sv(scaled, v);
                 }
             },
-            ..props.attributes,
+            ..merged,
         }
     }
 }
@@ -523,18 +553,25 @@ pub fn AreaThumbValueInput(props: AreaThumbValueInputProps) -> Element {
     let step = (area_ctx.step)();
     let color_label = color_name(Srgb::<f64>::from_color(picker_ctx.color()).into_format());
 
+    // Same reasoning as `AreaThumbSaturationInput` above.
+    let defaults = attributes!(input {
+        aria_label: "Value",
+        aria_roledescription: "2D Slider",
+    });
+    let owned = attributes!(input {
+        r#type: "range",
+        aria_valuetext: format!("Value {:.0}%, {color_label}", percent.height),
+        aria_orientation: "vertical",
+        tabindex: "-1",
+        min: "{min}",
+        max: "{max}",
+        step: "{step}",
+        value: format!("{}", current.y),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         input {
-            r#type: "range",
-            aria_label: "Value",
-            aria_roledescription: "2D Slider",
-            aria_valuetext: format!("Value {:.0}%, {color_label}", percent.height),
-            aria_orientation: "vertical",
-            tabindex: "-1",
-            min: "{min}",
-            max: "{max}",
-            step: "{step}",
-            value: format!("{}", current.y),
             onmounted: move |evt| {
                 thumb_ctx.value_input_ref.set(Some(evt.data()));
             },
@@ -561,7 +598,7 @@ pub fn AreaThumbValueInput(props: AreaThumbValueInputProps) -> Element {
                     picker_ctx.set_sv(s, scaled);
                 }
             },
-            ..props.attributes,
+            ..merged,
         }
     }
 }
