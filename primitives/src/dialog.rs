@@ -45,10 +45,11 @@
 #[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use crate::{
-    use_animated_open, use_controlled, use_global_escape_listener, use_id_or, use_outside_dismiss,
-    use_unique_id,
+    merge_attributes, use_animated_open, use_controlled, use_global_escape_listener, use_id_or,
+    use_outside_dismiss, use_unique_id,
 };
 
 /// Context for the [`DialogRoot`] component
@@ -185,14 +186,22 @@ pub fn DialogRoot(props: DialogRootProps) -> Element {
 
     let render = use_animated_open(id, open);
 
+    // Owned by this component -- open state must win over a caller's own
+    // attributes (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
+            aria_hidden: (!open()).then_some("true"),
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
+
     rsx! {
         {crate::focus_trap_script()}
         if render() {
             div {
                 id,
-                aria_hidden: (!open()).then_some("true"),
-                "data-state": if open() { "open" } else { "closed" },
-                ..props.attributes,
+                ..attributes,
                 {props.children}
             }
         }
@@ -334,13 +343,22 @@ fn DialogContentNonModal(
     use_global_escape_listener(move || set_open.call(false));
     use_outside_dismiss(id, move || set_open.call(false));
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- dialog role/aria wiring must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "dialog",
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             class,
             ..attributes,
             {children}
@@ -388,13 +406,21 @@ fn DialogContentModal(
         let _ = eval.send(open.cloned());
     });
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- see `DialogContentNonModal`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "dialog",
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             class,
             ..attributes,
             {children}
@@ -433,13 +459,21 @@ fn DialogContentModal(
     // why `use_outside_dismiss` itself can't be reused here.
     crate::use_dialog_backdrop_dismiss(id, move || set_open.call(false));
 
-    rsx! {
-        dialog {
-            id,
+    // Owned by this component -- see `DialogContentNonModal`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(dialog {
             role: "dialog",
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+        }),
+    ]);
+
+    rsx! {
+        dialog {
+            id,
             class,
             ..attributes,
             {children}
