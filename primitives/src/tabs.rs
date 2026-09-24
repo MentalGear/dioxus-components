@@ -3,9 +3,10 @@
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
-    use_controlled, use_id_or, use_unique_id,
+    merge_attributes, use_controlled, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct TabsContext {
@@ -136,15 +137,19 @@ pub fn Tabs(props: TabsProps) -> Element {
         tab_content_ids: Signal::new(Vec::new()),
     });
 
+    let owned = attributes!(div {
+        "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
+        "data-disabled": (props.disabled)(),
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             dir: direction.as_str(),
-            "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
-            "data-disabled": (props.disabled)(),
-            "data-direction": direction.as_str(),
 
             onfocusout: move |_| ctx.focus.clear_focus(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -207,10 +212,12 @@ pub struct TabListProps {
 /// ```
 #[component]
 pub fn TabList(props: TabListProps) -> Element {
+    let owned = attributes!(div { role: "tablist" });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "tablist",
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -308,18 +315,25 @@ pub fn TabTrigger(props: TabTriggerProps) -> Element {
     let onmounted = item.onmounted();
     let tab_index = item.tabindex;
 
+    // `type` is an overridable default; the rest is this trigger's own
+    // functional state (role/tabindex define the tab widget and its
+    // roving-focus wiring, aria_selected/data-state/data-disabled mirror
+    // its real state, aria_controls references its `TabContent` by id).
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        role: "tab",
+        tabindex: tab_index,
+        aria_selected: selected,
+        aria_controls: (ctx.tab_content_ids)().get((props.index)()).cloned(),
+        "data-state": if selected() { "active" } else { "inactive" },
+        "data-disabled": disabled(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            role: "tab",
             id: props.id,
             class: props.class,
-            tabindex: tab_index,
-            type: "button",
-
-            aria_selected: selected,
-            aria_controls: (ctx.tab_content_ids)().get((props.index)()).cloned(),
-            "data-state": if selected() { "active" } else { "inactive" },
-            "data-disabled": disabled(),
             disabled: disabled(),
 
             onmounted,
@@ -355,8 +369,7 @@ pub fn TabTrigger(props: TabTriggerProps) -> Element {
                 }
             },
 
-            ..props.attributes,
-
+            ..merged,
             {props.children}
         }
     }
@@ -448,16 +461,19 @@ pub fn TabContent(props: TabContentProps) -> Element {
         tab_ids[index] = id();
     });
 
+    let owned = attributes!(div {
+        role: "tabpanel",
+        tabindex: "0",
+        "data-state": if selected() { "active" } else { "inactive" },
+        hidden: !selected(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "tabpanel",
             id,
             class: props.class,
-
-            tabindex: "0",
-            "data-state": if selected() { "active" } else { "inactive" },
-            hidden: !selected(),
-            ..props.attributes,
+            ..merged,
 
             if selected() {
                 {props.children}

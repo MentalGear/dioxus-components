@@ -351,18 +351,23 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
         attributes,
     );
 
+    // All owned: role/popover/dir define this listbox's widget semantics,
+    // `tabindex`/`aria_multiselectable` are managed focus/selection-mode
+    // state, and the `data-*` pair mirrors its open/direction state.
+    let owned = attributes!(div {
+        role: "listbox",
+        tabindex: if focused() { "0" } else { "-1" },
+        aria_multiselectable: ctx.multi(),
+        popover: crate::top_layer::PopoverKind::Auto.as_str(),
+        dir: ctx.direction.as_str(),
+        "data-state": if open() { "open" } else { "closed" },
+        "data-direction": ctx.direction.as_str(),
+    });
+    let attributes = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         div {
             id: id.clone(),
-            role: "listbox",
-            tabindex: if focused() { "0" } else { "-1" },
-            aria_multiselectable: ctx.multi(),
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            dir: ctx.direction.as_str(),
-
-            // Data attributes
-            "data-state": if open() { "open" } else { "closed" },
-            "data-direction": ctx.direction.as_str(),
 
             onmounted: move |evt| listbox_ref.set(Some(evt.data())),
             onkeydown,
@@ -423,19 +428,20 @@ fn SelectListRendered(id: String, attributes: Vec<Attribute>, children: Element)
             aria_labelledby: "{ctx.selectable.trigger_id}"
         })
     };
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    // Same reasoning as the web arm above.
+    let owned = attributes!(div {
+        role: "listbox",
+        tabindex: if focused() { "0" } else { "-1" },
+        aria_multiselectable: ctx.multi(),
+        dir: ctx.direction.as_str(),
+        "data-state": if open() { "open" } else { "closed" },
+        "data-direction": ctx.direction.as_str(),
+    });
+    let attributes = merge_attributes(vec![attributes, labelledby, owned]);
 
     rsx! {
         div {
             id,
-            role: "listbox",
-            tabindex: if focused() { "0" } else { "-1" },
-            aria_multiselectable: ctx.multi(),
-            dir: ctx.direction.as_str(),
-
-            // Data attributes
-            "data-state": if open() { "open" } else { "closed" },
-            "data-direction": ctx.direction.as_str(),
 
             onmounted: move |evt| listbox_ref.set(Some(evt.data())),
             onkeydown,
