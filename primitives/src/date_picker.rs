@@ -1172,9 +1172,19 @@ pub fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
     let min_year = base_ctx.enabled_date_range.start().year();
     let max_year = base_ctx.enabled_date_range.end().year();
 
+    // `aria_label: "year"` used to be forwarded as its own ad-hoc keyed prop
+    // alongside a separately-threaded `attributes: props.attributes` --
+    // `DateSegment` has no typed `aria_label` field, so both landed as
+    // independent entries in the same forwarded `Vec<Attribute>`, the
+    // component-forward shape of backlog row 93's duplicate-attribute
+    // hazard. Folding it into the same `merge_attributes` call as an
+    // overridable default (a caller's own `aria_label` wins) closes that
+    // the same way the element-level sites in this file do.
+    let defaults = attributes!(div { aria_label: "year" });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone()]);
+
     rsx! {
         DateSegment {
-            aria_label: "year",
             index: ctx.start_index,
             value: ctx.year_value,
             default: today.year(),
@@ -1188,7 +1198,7 @@ pub fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
             // not wrap its year sub-field either).
             wrap: false,
             on_format_placeholder: ctx.on_format_year_placeholder,
-            attributes: props.attributes,
+            attributes: merged,
         }
     }
 }
@@ -1242,9 +1252,14 @@ pub fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
         .and_then(|m| Month::try_from(m).ok())
         .map(|m| ctx.on_format_month.call(m));
 
+    // Same reasoning as `DatePickerYearSegment` above.
+    let defaults = attributes!(div {
+        aria_label: "month"
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone()]);
+
     rsx! {
         DateSegment {
-            aria_label: "month",
             index: ctx.start_index + 1usize,
             value: ctx.month_value,
             default: today.month() as u8,
@@ -1261,7 +1276,7 @@ pub fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
             wrap: true,
             on_format_placeholder: ctx.on_format_month_placeholder,
             value_text,
-            attributes: props.attributes,
+            attributes: merged,
         }
     }
 }
@@ -1319,9 +1334,12 @@ pub fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
         max_date,
     );
 
+    // Same reasoning as `DatePickerYearSegment` above.
+    let defaults = attributes!(div { aria_label: "day" });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone()]);
+
     rsx! {
         DateSegment {
-            aria_label: "day",
             index: ctx.start_index + 2usize,
             value: ctx.day_value,
             default: today.day(),
@@ -1334,7 +1352,7 @@ pub fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
             // day sub-field. See `DatePickerMonthSegment`'s identical note.
             wrap: true,
             on_format_placeholder: ctx.on_format_day_placeholder,
-            attributes: props.attributes,
+            attributes: merged,
         }
     }
 }

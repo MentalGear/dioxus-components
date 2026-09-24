@@ -256,6 +256,22 @@ pub fn ToggleItem(props: ToggleItemProps) -> Element {
     let tab_index = item.tabindex;
     let onmounted = item.onmounted();
 
+    // `tabindex`/`data-orientation` used to be forwarded as their own
+    // ad-hoc keyed props alongside a separately-threaded
+    // `attributes: props.attributes.clone()` -- `Toggle` has no typed field
+    // for either, so both landed as independent entries in the same
+    // forwarded `Vec<Attribute>`, the component-forward shape of backlog
+    // row 93's duplicate-attribute hazard (only `tabindex` is in the
+    // analyzer's debt register; `data-orientation` is the identical
+    // mechanism caught here by construction rather than left as a
+    // lookalike). Both are owned (roving-focus wiring / the group's real
+    // orientation state), so they win over the caller's attributes.
+    let owned = attributes!(button {
+        tabindex: tab_index,
+        "data-orientation": ctx.orientation(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         Toggle {
             onmounted,
@@ -285,16 +301,14 @@ pub fn ToggleItem(props: ToggleItemProps) -> Element {
                 }
             },
 
-            tabindex: tab_index,
             disabled: disabled(),
-            "data-orientation": ctx.orientation(),
 
             pressed: pressed(),
             on_pressed_change: move |pressed| {
                 ctx.set_pressed(props.index.cloned(), pressed);
             },
 
-            attributes: props.attributes.clone(),
+            attributes: merged,
 
             {props.children}
         }
