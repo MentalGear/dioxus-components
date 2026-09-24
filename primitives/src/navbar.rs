@@ -146,28 +146,37 @@ pub fn Navbar(props: NavbarProps) -> Element {
         .iter()
         .find_map(|attr| (attr.name == "aria-label").then(|| attr.value.clone()));
 
+    // Owned by this component -- role/direction/disabled/roving-focus state
+    // must win over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
+            // Deliberately NOT routed through `menu_semantics`: this is
+            // the Menu and Menubar pattern's own top-level container
+            // role, the same element `Menubar`'s identical bare
+            // `role: "menubar"` literal renders (`menubar.rs`) --
+            // `menu_semantics`'s module doc states this exact case is
+            // out of its scope ("`menubar`'s own top-level container
+            // role ... a distinct element of the Menu and Menubar
+            // pattern, not shared with a menu-button's popup"). Leaving
+            // it inline here keeps `Navbar` consistent with `Menubar`
+            // rather than widening the module to cover a role it
+            // explicitly disclaims.
+            role: "menubar",
+            dir: direction.as_str(),
+            "data-disabled": (props.disabled)(),
+            "data-direction": direction.as_str(),
+            tabindex: (!ctx.focus.any_focused()).then_some("0"),
+        }),
+    ]);
+
     rsx! {
         div {
             role: "navigation",
             display: "content",
             aria_label,
             div {
-                // Deliberately NOT routed through `menu_semantics`: this is
-                // the Menu and Menubar pattern's own top-level container
-                // role, the same element `Menubar`'s identical bare
-                // `role: "menubar"` literal renders (`menubar.rs`) --
-                // `menu_semantics`'s module doc states this exact case is
-                // out of its scope ("`menubar`'s own top-level container
-                // role ... a distinct element of the Menu and Menubar
-                // pattern, not shared with a menu-button's popup"). Leaving
-                // it inline here keeps `Navbar` consistent with `Menubar`
-                // rather than widening the module to cover a role it
-                // explicitly disclaims.
-                role: "menubar",
-                dir: direction.as_str(),
-                "data-disabled": (props.disabled)(),
-                "data-direction": direction.as_str(),
-                tabindex: (!ctx.focus.any_focused()).then_some("0"),
                 // If the menu receives focus, focus the most recently focused menu item.
                 onfocus: move |_| {
                     ctx.focus.set_focus(Some(ctx.focus.recent_focus_or_default()));
@@ -221,7 +230,7 @@ pub fn Navbar(props: NavbarProps) -> Element {
                     event.prevent_default();
                 },
 
-                ..props.attributes,
+                ..attributes,
 
                 {props.children}
             }
@@ -392,8 +401,11 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
         }
     });
 
-    rsx! {
-        div {
+    // Owned by this component -- see `Navbar`'s identical construction
+    // above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             // Pattern-class popup role, shared with `MenubarMenu`'s
             // identical always-rendered wrapper div (`menubar.rs`) -- see
             // `menu_semantics`'s module doc for why this is the `menu` half
@@ -402,7 +414,11 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
             role: crate::menu_semantics::MENU_ROLE,
             "data-state": if is_open() { "open" } else { "closed" },
             "data-disabled": (ctx.disabled)() || (props.disabled)(),
+        }),
+    ]);
 
+    rsx! {
+        div {
             onmouseenter: move |_| {
                 if !disabled() {
                     let index = Some(nav_ctx.index.cloned());
@@ -444,7 +460,7 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
                 event.prevent_default();
             },
 
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -583,6 +599,21 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     // present; see that function's own doc.
     let attributes =
         crate::top_layer::anchored_trigger_attributes(&nav_ctx.content_id.cloned(), attributes);
+    // Owned by this component -- role/type/roving-focus state must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(button {
+            // Pattern-class activatable-item role -- see
+            // `MenubarTrigger`'s identical `crate::menu_semantics::
+            // MENU_ITEM_ROLE` (`menubar.rs`): this trigger is itself an
+            // item within the parent navbar's `role="menubar"` container.
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
+            type: "button",
+            tabindex: if is_focused() { "0" } else { "-1" },
+        }),
+    ]);
 
     rsx! {
         button {
@@ -604,13 +635,6 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
                     ctx.set_open_nav.call(None);
                 }
             },
-            // Pattern-class activatable-item role -- see
-            // `MenubarTrigger`'s identical `crate::menu_semantics::
-            // MENU_ITEM_ROLE` (`menubar.rs`): this trigger is itself an
-            // item within the parent navbar's `role="menubar"` container.
-            role: crate::menu_semantics::MENU_ITEM_ROLE,
-            type: "button",
-            tabindex: if is_focused() { "0" } else { "-1" },
             ..attributes,
             {props.children}
         }
@@ -850,6 +874,18 @@ fn NavbarContentRendered(
             class: "dx-anchor-navbar"
         }),
         labelledby,
+        // Owned by this component -- menu semantics + top-layer wiring
+        // must win over a caller's own attributes (`docs/backlog.md` row
+        // 93's duplicate-attribute hazard).
+        attributes!(div {
+            // Pattern-class popup role -- see `MenubarContentRendered`'s
+            // identical web-arm `crate::menu_semantics::MENU_ROLE`
+            // (`menubar.rs`), which this mirrors.
+            role: crate::menu_semantics::MENU_ROLE,
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+            "data-open-menu-direction": "{open_direction}",
+        }),
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -864,13 +900,6 @@ fn NavbarContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            // Pattern-class popup role -- see `MenubarContentRendered`'s
-            // identical web-arm `crate::menu_semantics::MENU_ROLE`
-            // (`menubar.rs`), which this mirrors.
-            role: crate::menu_semantics::MENU_ROLE,
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-open-menu-direction": "{open_direction}",
             ..attributes,
             {children}
         }
@@ -903,17 +932,24 @@ fn NavbarContentRendered(
             aria_labelledby: "{nav_ctx.trigger_id}"
         })
     };
-    let attributes = merge_attributes(vec![attributes, labelledby]);
-
-    rsx! {
-        div {
-            id,
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
             // Pattern-class popup role -- see `MenubarContentRendered`'s
             // identical native-arm `crate::menu_semantics::MENU_ROLE`
             // (`menubar.rs`), which this mirrors.
             role: crate::menu_semantics::MENU_ROLE,
             "data-state": if (nav_ctx.is_open)() { "open" } else { "closed" },
             "data-open-menu-direction": "{open_direction}",
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             ..attributes,
             {children}
         }
