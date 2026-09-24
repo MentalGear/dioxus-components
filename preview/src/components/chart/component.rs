@@ -45,23 +45,26 @@ pub use dioxus_primitives::chart::{
 /// "API changes" #4: an `Element`-typed child has no way to attach
 /// attributes to its already-rendered parent without a post-mount effect,
 /// which would make them absent from the first SSR render).
+///
+/// Forwards via `..props` (§4(a)'s stage-2 chart-round construction, the
+/// same shape as `Chart` below) rather than a hand-listed field-by-field
+/// call, so a newly added `ChartContainerProps` field forwards for free
+/// instead of silently compiling away.
 #[component]
 pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let base = attributes!(div {
         class: "dx-chart",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()`, not a move: `..props` below needs `props` intact --
+    // moving `props.attributes` out first (as the non-spread `Chart`/
+    // `ChartTooltip`/`ChartLegend` bodies safely could not, either, if they
+    // needed to override `attributes` the same way) would make `props` a
+    // partially-moved value, which struct-update syntax rejects (E0382).
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartContainer {
-            id: props.id,
-            config: props.config,
-            data: props.data,
-            kind: props.kind,
-            attributes: merged,
-            {props.children}
-        }
+        chart::ChartContainer { attributes: merged, ..props }
     }
 }
 
@@ -90,11 +93,8 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
 /// how this file's own pre-stage-2 list had already gone stale (API change
 /// #8's `x_label`/`max_x_ticks` were never added to it, so a demo setting
 /// either was silently ignored; fixed for free by this same spread, not
-/// tracked as its own change). `ChartTooltip`/`ChartLegend` below have the
-/// same class of gap for their own newer props -- left as found, since
-/// neither is a field this round touches (see `$S/stage2-lanes.md`'s own
-/// s2-tooltip entry, which independently flagged both and will apply the
-/// same construction to them).
+/// tracked as its own change). `ChartTooltip`/`ChartLegend`/`ChartContainer`
+/// now use the identical shape (§4(a) of the stage-2 handoff).
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
     rsx! {
@@ -107,51 +107,48 @@ pub fn Chart(props: ChartProps) -> Element {
 /// `role="graphics-symbol"` swatch per row. Rendered even when closed
 /// (`data-state="closed"`, hidden by CSS) so there is nothing to attach
 /// post-hydration. Optional -- omit it for a chart that doesn't need one.
+///
+/// Forwards via `..props` (§4(a)): a plain struct-update spread rather than
+/// a hand-listed field-by-field call, so a newly added `ChartTooltipProps`
+/// field (e.g. `indicator`/`label_key`/`name_key`/`formatter`) reaches the
+/// real primitive without an edit here. This also folds `children` back
+/// into the spread instead of a separately named field -- `..props` moves
+/// the whole struct (`Option<Element>` included) in one shot, so there is
+/// no separate "trailing brace sugar always populates `Some`" pitfall to
+/// avoid: nothing here is written as trailing braces.
 #[component]
 pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
     let base = attributes!(div {
         class: "dx-chart-tooltip",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()` -- see `ChartContainer`'s identical comment above: `..props`
+    // below needs `props` intact, not partially moved.
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartTooltip {
-            label_format: props.label_format,
-            value_format: props.value_format,
-            hide_label: props.hide_label,
-            hide_indicator: props.hide_indicator,
-            attributes: merged,
-            // A named field, not the trailing `{props.children}` brace
-            // sugar: that sugar always populates the inner component's
-            // `children` with `Some(..)` (something was syntactically
-            // written in the child-node position, even if the expression
-            // itself evaluates to `None`), so every demo's plain
-            // `ChartTooltip {}` -- providing no custom content -- was
-            // tripping the primitive's "custom children replace the
-            // default" branch and rendering nothing at all. Assigning the
-            // `Option<Element>` value directly to the named field forwards
-            // it unchanged, so `None` reaches the primitive as `None`.
-            children: props.children,
-        }
+        chart::ChartTooltip { attributes: merged, ..props }
     }
 }
 
 /// The legend: one `role="graphics-symbol"` swatch + label per configured
 /// series, in `config` order. Optional -- a single/dual-series chart
 /// usually doesn't need one.
+///
+/// Forwards via `..props` (§4(a)), the same shape as `ChartTooltip` above --
+/// this is the fix that lets a newly added `ChartLegendProps` field (e.g.
+/// `hide_icon`) actually reach `chart::ChartLegend`.
 #[component]
 pub fn ChartLegend(props: ChartLegendProps) -> Element {
     let base = attributes!(ul {
         class: "dx-chart-legend",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()` -- see `ChartContainer`'s identical comment above: `..props`
+    // below needs `props` intact, not partially moved.
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartLegend {
-            vertical_align: props.vertical_align,
-            attributes: merged,
-        }
+        chart::ChartLegend { attributes: merged, ..props }
     }
 }

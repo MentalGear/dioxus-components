@@ -3,6 +3,8 @@
 use dioxus::prelude::*;
 
 use crate::chart::context::use_chart;
+use crate::dioxus_attributes::attributes;
+use crate::merge_attributes;
 
 /// Where a [`ChartLegend`] sits relative to the chart it's paired with.
 /// Rendered as this element's own `data-align` attribute (not named in the
@@ -72,11 +74,23 @@ pub fn ChartLegend(props: ChartLegendProps) -> Element {
     let ctx = use_chart();
     let config = (ctx.config)();
 
+    // `data-slot`/`data-align` are structural wiring, not overridable
+    // presentation -- `data-slot` is the selector the themed stylesheet's
+    // whole ruleset hangs off, and `data-align` is what
+    // `ChartLegendProps::vertical_align` exists to control (this
+    // component's own doc). `merge_attributes` (`scripts/
+    // check-attr-spread-collision.sh`'s own fix, replacing a raw
+    // `..props.attributes` beside these as plain literals) makes "owned
+    // wins" explicit and SSR/CSR-consistent instead of accidental.
+    let owned = attributes!(ul {
+        "data-slot": "chart-legend",
+        "data-align": props.vertical_align.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes, owned]);
+
     rsx! {
         ul {
-            "data-slot": "chart-legend",
-            "data-align": props.vertical_align.as_str(),
-            ..props.attributes,
+            ..merged,
 
             for series in config.series.iter() {
                 li {

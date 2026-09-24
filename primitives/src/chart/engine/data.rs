@@ -92,6 +92,23 @@ impl ChartKind {
     pub(crate) fn is_cartesian(self) -> bool {
         matches!(self, Self::Area | Self::Bar | Self::Line)
     }
+
+    /// Whether this kind's hidden data table has one value per series per
+    /// category (`engine::table::table_rows`) rather than one reduced value
+    /// per category (`engine::table::table_rows_single_series`). Distinct
+    /// from [`Self::is_cartesian`] on purpose (stage-2 chart round, §4(b) of
+    /// the handoff): that method answers "does this kind draw a Cartesian
+    /// grid/axis," which happens to coincide with "does this kind hold N
+    /// values per category" for Area/Bar/Line but diverges for Radar (a
+    /// polar kind that still overlays N series per category, exactly like
+    /// Area/Bar/Line) vs. Pie/RadialBar (a polar kind where a slice/ring is
+    /// genuinely one value per category -- summing or listing "all series"
+    /// for a pie slice isn't a meaningful reading the way it is for a bar
+    /// group). `Pie` has its own further-reduced `table_rows_pie` shape
+    /// (a `Percent` column) layered on top of the `false` case here.
+    pub(crate) fn has_full_table(self) -> bool {
+        !matches!(self, Self::Pie | Self::RadialBar)
+    }
 }
 
 #[cfg(test)]

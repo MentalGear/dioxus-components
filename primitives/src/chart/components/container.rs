@@ -5,7 +5,8 @@ use dioxus::prelude::*;
 use crate::chart::config::ChartConfig;
 use crate::chart::context::{ChartContext, ChartLayout};
 use crate::chart::engine::{ChartDatum, ChartKind};
-use crate::{use_id_or, use_unique_id};
+use crate::dioxus_attributes::attributes;
+use crate::{merge_attributes, use_id_or, use_unique_id};
 
 /// The props for the [`ChartContainer`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -116,11 +117,25 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
         rule
     });
 
+    // `data-chart`/`data-kind` are structural wiring, not overridable
+    // presentation: `data-chart` scopes the `--color-<key>` style rule this
+    // very component just built, and `data-kind` is what a themed
+    // wrapper's own CSS switches its whole ruleset on -- either being
+    // silently dropped by a caller's same-named attribute would break the
+    // component, not just its styling. `merge_attributes` (not a raw
+    // `..props.attributes` beside a literal, `scripts/
+    // check-attr-spread-collision.sh`'s own fix) makes that precedence
+    // explicit and SSR/CSR-consistent instead of accidental: owned wins,
+    // listed last.
+    let owned = attributes!(div {
+        "data-chart": id,
+        "data-kind": kind_str,
+    });
+    let merged = merge_attributes(vec![props.attributes, owned]);
+
     rsx! {
         div {
-            "data-chart": id,
-            "data-kind": kind_str,
-            ..props.attributes,
+            ..merged,
 
             style { "{style_rule}" }
             {props.children}
