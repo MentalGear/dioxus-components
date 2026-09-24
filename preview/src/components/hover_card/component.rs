@@ -1,19 +1,22 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::hover_card::{
     self, HoverCardContentProps, HoverCardProps, HoverCardTriggerProps,
 };
+use dioxus_primitives::merge_attributes;
 
 #[component]
 pub fn HoverCard(props: HoverCardProps) -> Element {
+    let base = attributes!(div { class: "dx-hover-card" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
         hover_card::HoverCard {
-            class: "dx-hover-card",
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,
             disabled: props.disabled,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -21,28 +24,26 @@ pub fn HoverCard(props: HoverCardProps) -> Element {
 
 #[component]
 pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
+    let base = attributes!(button { class: "dx-hover-card-trigger" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
-        hover_card::HoverCardTrigger {
-            class: "dx-hover-card-trigger",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        hover_card::HoverCardTrigger { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn HoverCardContent(props: HoverCardContentProps) -> Element {
+    let base = attributes!(div { class: "dx-hover-card-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/hover_card/style.css") }
         hover_card::HoverCardContent {
-            class: "dx-hover-card-content",
             side: props.side,
             align: props.align,
             id: props.id,
             force_mount: props.force_mount,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }

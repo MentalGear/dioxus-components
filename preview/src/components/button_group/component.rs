@@ -13,15 +13,17 @@ pub fn ButtonGroup(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-button-group" });
+    // `role="group"`/`data-orientation` are this wrapper's own required
+    // semantics/typed-prop state, not a caller default -- owned-wins.
+    let owned = attributes!(div {
+        role: "group",
+        "data-orientation": if orientation_vertical { "vertical" } else { "horizontal" },
+    });
+    let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/button_group/style.css") }
-        div {
-            class: "dx-button-group",
-            role: "group",
-            "data-orientation": if orientation_vertical { "vertical" } else { "horizontal" },
-            ..attributes,
-            {children}
-        }
+        div { ..merged, {children} }
     }
 }
 
@@ -56,8 +58,10 @@ pub fn ButtonGroupText(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-button-group-text" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/button_group/style.css") }
-        div { class: "dx-button-group-text", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
