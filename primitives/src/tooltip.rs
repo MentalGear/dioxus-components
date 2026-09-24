@@ -112,13 +112,19 @@ pub fn Tooltip(props: TooltipProps) -> Element {
         tooltip_id,
     });
 
-    rsx! {
-        div {
+    // Owned by this component -- open/disabled state must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
-            ..props.attributes,
-            {props.children}
-        }
+        }),
+    ]);
+
+    rsx! {
+        div { ..attributes, {props.children} }
     }
 }
 
@@ -417,6 +423,16 @@ fn TooltipContentRendered(
         attributes!(div {
             class: "dx-anchor-tooltip"
         }),
+        // Owned by this component -- role/top-layer wiring/positioning
+        // state must win over a caller's own attributes
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: "tooltip",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            "data-state": if open.cloned() { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+        }),
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -428,11 +444,6 @@ fn TooltipContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "tooltip",
-            popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            "data-state": if open.cloned() { "open" } else { "closed" },
-            "data-side": side.as_str(),
-            "data-align": align.as_str(),
             ..attributes,
             {children}
         }
@@ -459,13 +470,20 @@ fn TooltipContentRendered(
     children: Element,
 ) -> Element {
     let _ = set_open;
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- see the web arm's identical construction
+    // above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "tooltip",
             "data-state": if open.cloned() { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+        }),
+    ]);
+    rsx! {
+        div {
+            id,
             ..attributes,
             {children}
         }

@@ -214,11 +214,19 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
         content_id,
     });
 
+    // Owned by this component -- open state must win over a caller's own
+    // attributes (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
+
     rsx! {
         div {
             id: root_id,
-            "data-state": if open() { "open" } else { "closed" },
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -453,17 +461,26 @@ fn PopoverModalContent(
         let _ = eval.send(open.cloned());
     });
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- dialog role/aria wiring/state must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "dialog",
             aria_modal: "true",
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
-            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
+            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
             ..attributes,
             {children}
         }
@@ -534,18 +551,25 @@ fn PopoverModalContent(
     // alongside `..attributes` is the duplicate-`style` hazard
     // (`docs/conformance-harness.md` hydration-parity Rule 4).
     let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
-
-    rsx! {
-        dialog {
-            id: id.clone(),
+    // Owned by this component -- see the native arm's identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(dialog {
             role: "dialog",
             aria_modal: "true",
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
-            class,
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+        }),
+    ]);
+
+    rsx! {
+        dialog {
+            id: id.clone(),
+            class,
             ..attributes,
             {children}
         }
@@ -648,17 +672,25 @@ fn PopoverNonModalContent(
     // alongside `..attributes` is the duplicate-`style` hazard
     // (`docs/conformance-harness.md` hydration-parity Rule 4).
     let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
+    // Owned by this component -- top-layer wiring/aria/state must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(dialog {
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            aria_labelledby: ctx.labelledby,
+            aria_hidden: (!is_open).then_some("true"),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+        }),
+    ]);
 
     rsx! {
         dialog {
             id: id.clone(),
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            aria_labelledby: ctx.labelledby,
-            aria_hidden: (!is_open).then_some("true"),
             class,
-            "data-state": if is_open { "open" } else { "closed" },
-            "data-side": side.as_str(),
-            "data-align": align.as_str(),
             ..attributes,
             {children}
         }
@@ -685,16 +717,24 @@ fn PopoverNonModalContent(
     use_global_escape_listener(move || set_open.call(false));
     use_outside_dismiss(ctx.root_id, move || set_open.call(false));
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- see the web arm's identical construction
+    // above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "dialog",
             aria_labelledby: ctx.labelledby,
             aria_hidden: (!is_open).then_some("true"),
-            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
+            class: class.unwrap_or_else(|| "dx-popover-content".to_string()),
             ..attributes,
             {children}
         }
