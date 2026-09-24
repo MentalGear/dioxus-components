@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::X;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::tag_group::{
     self, TagGroupEmptyProps, TagGroupLabelProps, TagGroupMultiProps, TagGroupProps, TagListProps,
 };
@@ -23,10 +25,11 @@ use dioxus_primitives::tag_group::{
 // `style.css` -- see `scripts/check-dx-class-prefix.sh`.
 #[component]
 pub fn TagGroup(props: TagGroupProps<String>) -> Element {
+    let base = attributes!(div { class: "dx-tag-group" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
         tag_group::TagGroup {
-            class: "dx-tag-group",
             value: props.value,
             default_value: props.default_value,
             on_value_change: props.on_value_change,
@@ -35,7 +38,7 @@ pub fn TagGroup(props: TagGroupProps<String>) -> Element {
             allow_empty_selection: props.allow_empty_selection,
             escape_clears_selection: props.escape_clears_selection,
             roving_loop: props.roving_loop,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -43,10 +46,11 @@ pub fn TagGroup(props: TagGroupProps<String>) -> Element {
 
 #[component]
 pub fn TagGroupMulti(props: TagGroupMultiProps<String>) -> Element {
+    let base = attributes!(div { class: "dx-tag-group" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
         tag_group::TagGroupMulti {
-            class: "dx-tag-group",
             values: props.values,
             default_values: props.default_values,
             on_values_change: props.on_values_change,
@@ -55,7 +59,7 @@ pub fn TagGroupMulti(props: TagGroupMultiProps<String>) -> Element {
             allow_empty_selection: props.allow_empty_selection,
             escape_clears_selection: props.escape_clears_selection,
             roving_loop: props.roving_loop,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -63,38 +67,31 @@ pub fn TagGroupMulti(props: TagGroupMultiProps<String>) -> Element {
 
 #[component]
 pub fn TagGroupLabel(props: TagGroupLabelProps) -> Element {
+    let base = attributes!(div { class: "dx-tag-group-label" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
-        tag_group::TagGroupLabel {
-            class: "dx-tag-group-label",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        tag_group::TagGroupLabel { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn TagGroupEmpty(props: TagGroupEmptyProps) -> Element {
+    let base = attributes!(div { class: "dx-tag-group-empty" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
-        tag_group::TagGroupEmpty {
-            class: "dx-tag-group-empty",
-            attributes: props.attributes,
-            {props.children}
-        }
+        tag_group::TagGroupEmpty { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn TagList(props: TagListProps) -> Element {
+    let base = attributes!(div { class: "dx-tag-group-list" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
-        tag_group::TagList {
-            class: "dx-tag-group-list",
-            attributes: props.attributes,
-            {props.children}
-        }
+        tag_group::TagList { attributes: merged, {props.children} }
     }
 }
 
@@ -115,16 +112,17 @@ pub struct TagProps {
 
 #[component]
 pub fn Tag(props: TagProps) -> Element {
+    let base = attributes!(div { class: "dx-tag-group-tag" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
         tag_group::TagOption::<String> {
-            class: "dx-tag-group-tag",
             value: props.value,
             text_value: props.text_value,
             disabled: props.disabled,
             id: props.id,
             index: props.index,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -135,11 +133,12 @@ pub fn RemoveButton(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(button { class: "dx-tag-group-remove-button" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/tag_group/style.css") }
         tag_group::TagRemoveButton {
-            class: "dx-tag-group-remove-button",
-            attributes,
+            attributes: merged,
             {children}
             X { size: "12px" }
         }

@@ -85,9 +85,11 @@ pub fn SheetHeader(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-sheet-header", "data-slot": "sheet-header" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
-        div { class: "dx-sheet-header", "data-slot": "sheet-header", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -96,37 +98,31 @@ pub fn SheetFooter(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-sheet-footer", "data-slot": "sheet-footer" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
-        div { class: "dx-sheet-footer", "data-slot": "sheet-footer", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
 #[component]
 pub fn SheetTitle(props: DialogTitleProps) -> Element {
+    let base = attributes!(div { class: "dx-sheet-title", "data-slot": "sheet-title" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
-        dialog::DialogTitle {
-            id: props.id,
-            class: "dx-sheet-title",
-            "data-slot": "sheet-title",
-            attributes: props.attributes,
-            {props.children}
-        }
+        dialog::DialogTitle { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn SheetDescription(props: DialogDescriptionProps) -> Element {
+    let base = attributes!(div { class: "dx-sheet-description", "data-slot": "sheet-description" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
-        dialog::DialogDescription {
-            id: props.id,
-            class: "dx-sheet-description",
-            "data-slot": "sheet-description",
-            attributes: props.attributes,
-            {props.children}
-        }
+        dialog::DialogDescription { id: props.id, attributes: merged, {props.children} }
     }
 }
 

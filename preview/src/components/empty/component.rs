@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 /// The visual treatment of an [`EmptyMedia`] -- a plain icon glyph, or an
 /// icon inside a filled rounded square.
@@ -28,9 +30,11 @@ pub fn Empty(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div { class: "dx-empty", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -40,9 +44,11 @@ pub fn EmptyHeader(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty-header" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div { class: "dx-empty-header", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -55,14 +61,14 @@ pub fn EmptyMedia(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty-media" });
+    // `data-style` reflects this wrapper's own typed `variant` prop, not a
+    // caller default -- owned-wins.
+    let owned = attributes!(div { "data-style": variant.class() });
+    let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div {
-            class: "dx-empty-media",
-            "data-style": variant.class(),
-            ..attributes,
-            {children}
-        }
+        div { ..merged, {children} }
     }
 }
 
@@ -72,9 +78,11 @@ pub fn EmptyTitle(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty-title" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div { class: "dx-empty-title", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -84,9 +92,11 @@ pub fn EmptyDescription(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty-description" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div { class: "dx-empty-description", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -96,8 +106,10 @@ pub fn EmptyContent(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-empty-content" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/empty/style.css") }
-        div { class: "dx-empty-content", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
