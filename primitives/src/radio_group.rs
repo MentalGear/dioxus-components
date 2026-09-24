@@ -7,9 +7,11 @@ use crate::{
         collection_item, use_collection_provider_with, use_item, CollectionOptions, CollectionState,
     },
     direction::{use_direction, Direction, HorizontalNav},
-    use_controlled, use_effect_with_cleanup, use_form_reset_listener, use_unique_id,
+    merge_attributes, use_controlled, use_effect_with_cleanup, use_form_reset_listener,
+    use_unique_id,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct RadioGroupCtx {
@@ -205,17 +207,21 @@ pub fn RadioGroup(props: RadioGroupProps) -> Element {
         direction,
     });
 
+    let owned = attributes!(div {
+        role: "radiogroup",
+        "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
+        "data-disabled": (props.disabled)(),
+        "data-direction": direction.as_str(),
+        aria_required: props.required,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "radiogroup",
             dir: direction.as_str(),
-            "data-orientation": if (props.horizontal)() { "horizontal" } else { "vertical" },
-            "data-disabled": (props.disabled)(),
-            "data-direction": direction.as_str(),
-            aria_required: props.required,
 
             onfocusout: move |_| ctx.set_focus(None),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -336,17 +342,24 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
     });
     let is_default = use_memo(move || (ctx.default_value)() == (props.value)());
 
+    // `type` is an overridable default; the rest is this item's own
+    // functional state (role/tabindex define the widget and its
+    // roving-focus wiring, aria-checked/data-state/data-disabled mirror
+    // its real state).
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        role: "radio",
+        tabindex: tab_index,
+        aria_checked: checked,
+        "data-state": if checked() { "checked" } else { "unchecked" },
+        "data-disabled": disabled(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            role: "radio",
             id: props.id,
             class: props.class,
-            tabindex: tab_index,
-            type: "button",
-
-            aria_checked: checked,
-            "data-state": if checked() { "checked" } else { "unchecked" },
-            "data-disabled": disabled(),
             disabled: disabled(),
 
             onclick: move |_| {
@@ -379,7 +392,7 @@ pub fn RadioItem(props: RadioItemProps) -> Element {
                     event.prevent_default();
                 }
             },
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
