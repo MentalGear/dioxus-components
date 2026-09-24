@@ -11,9 +11,12 @@ use crate::{
 };
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use num_integer::Integer;
 use std::{fmt::Display, str::FromStr};
 use time::{macros::date, Date, Month, OffsetDateTime, Weekday};
+
+use crate::merge_attributes;
 
 /// The context provided by the [`DatePicker`] component to its children.
 #[derive(Copy, Clone)]
@@ -152,12 +155,16 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
         selected_date: props.selected_date,
     });
 
+    let defaults = attributes!(div { aria_label: "Date" });
+    let owned = attributes!(div {
+        role: "group",
+        "data-disabled": (props.disabled)(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "group",
-            aria_label: "Date",
-            "data-disabled": (props.disabled)(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -287,12 +294,18 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
         set_selected_range: props.on_range_change,
     });
 
+    let defaults = attributes!(div {
+        aria_label: "Date Range"
+    });
+    let owned = attributes!(div {
+        role: "group",
+        "data-disabled": (props.disabled)(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "group",
-            aria_label: "Date Range",
-            "data-disabled": (props.disabled)(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -1027,53 +1040,64 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
     let span_id = use_unique_id();
     let id = use_memo(move || format!("span-{span_id}"));
 
+    // `id`/`spellcheck`/`enterkeyhint` are overridable defaults (this `id`
+    // is a generated fallback, not referenced by any aria wiring -- see the
+    // removed `aria-labelledby` above); the rest is this segment's own
+    // functional state (role/aria-value*/inputmode/contenteditable define
+    // the widget, `tabindex`/the data attributes are managed) and is owned.
+    let defaults = attributes!(span {
+        id,
+        spellcheck: false,
+        enterkeyhint: "next",
+    });
+    // `Option<String>` (rather than always-a-string): Dioxus omits the
+    // attribute entirely when `None`, the same convention this crate
+    // already uses for other optional ARIA state (e.g. `navigation_menu.rs`'s
+    // `aria_current: props.active.then_some("page")`) -- see `now_value`'s
+    // own doc above for why this must be absent, not a substituted default,
+    // while untouched.
+    //
+    // No `aria-labelledby` here: per the APG Spin Button pattern's own
+    // Roles/States/Properties section ("If the spinbutton has a visible
+    // label, it is referenced by aria-labelledby ... . Otherwise, the
+    // spinbutton element has a label provided by aria-label" --
+    // `$S/aria-practices` content/patterns/spinbutton/
+    // spinbutton-pattern.html#roles_states_properties, commit 7e4034b), and
+    // every caller here (`DatePickerYearSegment` etc., below) always passes
+    // a plain `aria_label: "year"`/`"month"`/`"day"` -- there never is a
+    // separate *visible* label element for `aria-labelledby` to reference.
+    // This span used to also render `aria-labelledby="{id}-label"`, but
+    // nothing in this module (or its preview consumers) ever rendered an
+    // element with that id -- confirmed by execution before this fix: every
+    // one of a live page's spinbuttons carried a dangling reference
+    // (`document.getElementById(idref)` === `null`). Chromium's own
+    // accessible-name computation happens to fall back to `aria-label` when
+    // `aria-labelledby`'s IDREFs don't resolve (confirmed live via
+    // Playwright's `ariaSnapshot()`, and axe-core's ruleset does not flag it
+    // either), so this was not user-visible in this repo's own harness --
+    // but it is dead, misleading markup that contradicts the cited rule
+    // outright (an `aria-labelledby` with nothing to reference is not
+    // "referencing a visible label"), and relying on a fallback another
+    // AT/browser might implement differently is exactly the kind of
+    // fragility the cited either/or rule exists to avoid. `aria-label`
+    // alone (already present via `props.attributes`, merged below) is the
+    // correct, sufficient source per that rule.
+    let owned = attributes!(span {
+        role: "spinbutton",
+        aria_valuemin: props.min.to_string(),
+        aria_valuemax: props.max.to_string(),
+        aria_valuenow: now_value().map(|v| v.to_string()),
+        aria_valuetext: props.value_text.clone(),
+        inputmode: "numeric",
+        contenteditable: !(ctx.read_only)(),
+        tabindex: "0",
+        "no-date": (props.value)().is_none(),
+        "data-disabled": (ctx.disabled)(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         span {
-            id,
-            role: "spinbutton",
-            aria_valuemin: props.min.to_string(),
-            aria_valuemax: props.max.to_string(),
-            // `Option<String>` (rather than always-a-string): Dioxus omits
-            // the attribute entirely when `None`, the same convention this
-            // crate already uses for other optional ARIA state (e.g.
-            // `navigation_menu.rs`'s `aria_current: props.active.then_some
-            // ("page")`) -- see `now_value`'s own doc above for why this
-            // must be absent, not a substituted default, while untouched.
-            aria_valuenow: now_value().map(|v| v.to_string()),
-            aria_valuetext: props.value_text.clone(),
-            // No `aria-labelledby` here: per the APG Spin Button pattern's
-            // own Roles/States/Properties section ("If the spinbutton has a
-            // visible label, it is referenced by aria-labelledby ... .
-            // Otherwise, the spinbutton element has a label provided by
-            // aria-label" -- `$S/aria-practices` content/patterns/
-            // spinbutton/spinbutton-pattern.html#roles_states_properties,
-            // commit 7e4034b), and every caller here (`DatePickerYearSegment`
-            // etc., below) always passes a plain `aria_label: "year"`/
-            // `"month"`/`"day"` -- there never is a separate *visible* label
-            // element for `aria-labelledby` to reference. This span used to
-            // also render `aria-labelledby="{id}-label"`, but nothing in
-            // this module (or its preview consumers) ever rendered an
-            // element with that id -- confirmed by execution before this
-            // fix: every one of a live page's spinbuttons carried a
-            // dangling reference (`document.getElementById(idref)` ===
-            // `null`). Chromium's own accessible-name computation happens
-            // to fall back to `aria-label` when `aria-labelledby`'s IDREFs
-            // don't resolve (confirmed live via Playwright's
-            // `ariaSnapshot()`, and axe-core's ruleset does not flag it
-            // either), so this was not user-visible in this repo's own
-            // harness -- but it is dead, misleading markup that contradicts
-            // the cited rule outright (an `aria-labelledby` with nothing to
-            // reference is not "referencing a visible label"), and relying
-            // on a fallback another AT/browser might implement differently
-            // is exactly the kind of fragility the cited either/or rule
-            // exists to avoid. `aria-label` alone (already present via
-            // `props.attributes`, spread below) is the correct, sufficient
-            // source per that rule.
-            inputmode: "numeric",
-            contenteditable: !(ctx.read_only)(),
-            spellcheck: false,
-            tabindex: "0",
-            enterkeyhint: "next",
             onkeydown: handle_keydown,
             onmounted,
             onfocus: move |_| {
@@ -1083,9 +1107,7 @@ fn DateSegment<T: Clone + Copy + Integer + FromStr + Display + 'static>(
                     ctx.open.set(false);
                 }
             },
-            "no-date": (props.value)().is_none(),
-            "data-disabled": (ctx.disabled)(),
-            ..props.attributes,
+            ..merged,
             {display_value}
         }
     }
@@ -1320,15 +1342,16 @@ pub fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
 /// A separator in a date input.
 #[component]
 pub fn DatePickerSeparator(props: DatePickerSeparatorProps) -> Element {
+    let owned = attributes!(span {
+        aria_hidden: "true",
+        tabindex: "-1",
+        "is-separator": true,
+        "no-date": true,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
-        span {
-            aria_hidden: "true",
-            tabindex: "-1",
-            "is-separator": true,
-            "no-date": true,
-            ..props.attributes,
-            "{props.symbol}"
-        }
+        span { ..merged, "{props.symbol}" }
     }
 }
 

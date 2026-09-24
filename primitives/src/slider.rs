@@ -2,9 +2,11 @@
 //! a range input control for selecting a single value or a value range within a specified range.
 
 use crate::direction::{use_direction, Direction};
+use crate::merge_attributes;
 use crate::move_interaction::{use_move_interaction, MoveEvent};
 use crate::use_controlled;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -436,13 +438,20 @@ fn SliderImpl(props: SliderImplProps) -> Element {
         ctx.set_thumb.call((idx, ctx.clamp_for(idx, raw)));
     });
 
+    // `role`/the `data-*` state are owned; merge with the caller's
+    // attributes so an override survives hydration instead of colliding
+    // with these literals on the same element (backlog row 93).
+    let owned = attributes!(div {
+        role: "group",
+        "data-disabled": props.disabled,
+        "data-orientation": orientation,
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "group",
             dir: direction.as_str(),
-            "data-disabled": props.disabled,
-            "data-orientation": orientation,
-            "data-direction": direction.as_str(),
 
             onmounted: move |evt| async move {
                 let mut movement = movement;
@@ -513,7 +522,7 @@ fn SliderImpl(props: SliderImplProps) -> Element {
                 });
             },
 
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -574,11 +583,15 @@ pub fn SliderTrack(props: SliderTrackProps) -> Element {
         "vertical"
     };
 
+    let owned = attributes!(div {
+        "data-disabled": ctx.disabled,
+        "data-orientation": orientation,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            "data-disabled": ctx.disabled,
-            "data-orientation": orientation,
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -666,12 +679,16 @@ pub fn SliderRange(props: SliderRangeProps) -> Element {
         }
     });
 
+    let owned = attributes!(div {
+        "data-disabled": ctx.disabled,
+        "data-orientation": orientation,
+        style,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            "data-disabled": ctx.disabled,
-            "data-orientation": orientation,
-            style,
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -791,22 +808,30 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
     let aria_label = ctx.label;
     let (_, vmin, vmax) = bounds();
 
+    // `aria_label` is an overridable default (the `Slider`'s own `label`
+    // prop, threaded down); the rest is this thumb's own functional state
+    // (role/aria-value*/aria-orientation define the widget, the `data-*`
+    // attributes and computed `style`/`tabindex` are managed) and is owned.
+    let defaults = attributes!(button { aria_label });
+    let owned = attributes!(button {
+        r#type: "button",
+        role: "slider",
+        aria_valuemin: vmin,
+        aria_valuemax: vmax,
+        aria_valuenow: value,
+        aria_orientation: orientation,
+        "data-disabled": ctx.disabled,
+        "data-orientation": orientation,
+        "data-dragging": ctx.dragging,
+        "data-index": index as i64,
+        "data-direction": ctx.direction.as_str(),
+        style,
+        tabindex: 0,
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            type: "button",
-            role: "slider",
-            aria_valuemin: vmin,
-            aria_valuemax: vmax,
-            aria_valuenow: value,
-            aria_orientation: orientation,
-            aria_label,
-            "data-disabled": ctx.disabled,
-            "data-orientation": orientation,
-            "data-dragging": ctx.dragging,
-            "data-index": index as i64,
-            "data-direction": ctx.direction.as_str(),
-            style,
-            tabindex: 0,
             onmounted: move |evt| {
                 // Store the mounted data for focus management
                 button_ref.set(Some(evt.data()));
@@ -850,7 +875,7 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                 // Clamp (against neighbor in range mode) and snap, then commit.
                 ctx.set_thumb.call((index, ctx.clamp_for(index, new_value)));
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }

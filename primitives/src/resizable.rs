@@ -9,9 +9,11 @@
 //! pattern's "Keyboard Interaction" and "WAI-ARIA Roles, States, and Properties" sections by name.
 
 use crate::direction::{use_direction, Direction};
+use crate::merge_attributes;
 use crate::move_interaction::{use_move_interaction, MoveEvent, MoveInteraction};
 use crate::{use_controlled, use_unique_id};
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The layout axis of a [`ResizablePanelGroup`]: which way its panels are arranged, and, in
 /// turn, which arrow keys its [`ResizableHandle`]s respond to.
@@ -403,20 +405,27 @@ pub fn ResizablePanelGroup(props: ResizablePanelGroupProps) -> Element {
         }
     });
 
+    // `data-*`/`style` are owned; `attributes` has already had any caller
+    // `style` folded out above, so merging just puts this literal `style`
+    // back in with nothing left to collide with.
+    let owned = attributes!(div {
+        "data-orientation": orientation,
+        "data-disabled": ctx.disabled,
+        "data-direction": text_direction.as_str(),
+        style,
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         div {
             dir: text_direction.as_str(),
-            "data-orientation": orientation,
-            "data-disabled": ctx.disabled,
-            "data-direction": text_direction.as_str(),
-            style,
             onmounted: move |evt| async move {
                 group_movement.set_mounted(evt.data()).await;
             },
             onresize: move |_| async move {
                 group_movement.refresh_rect().await;
             },
-            ..attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -520,15 +529,21 @@ pub fn ResizablePanel(props: ResizablePanelProps) -> Element {
         }
     });
 
+    // `id` is owned: `ResizableHandle` below reads it back via
+    // `ctx.panel_id`/`aria_controls`, so a caller override would strand that
+    // wiring on a dead id (backlog row 93 names this site explicitly).
+    // `data-*`/`style` are owned too; `attributes` has already had any
+    // caller `style` folded out above (see the comment there).
+    let owned = attributes!(div {
+        id: id(),
+        "data-panel": "true",
+        "data-collapsed": collapsed,
+        style,
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
-        div {
-            id: id(),
-            "data-panel": "true",
-            "data-collapsed": collapsed,
-            style,
-            ..attributes,
-            {props.children}
-        }
+        div { ..merged, {props.children} }
     }
 }
 
@@ -647,18 +662,25 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
     let data_state = use_memo(move || if dragging() { "dragging" } else { "idle" });
     let tabindex = use_memo(move || if (handle_disabled)() { "-1" } else { "0" });
 
+    // All owned: role/tabindex/aria-orientation define this separator's
+    // widget semantics, the rest is its own functional state (the resize
+    // position, drag state, and the id-reference to the panel it controls).
+    let owned = attributes!(div {
+        role: "separator",
+        tabindex,
+        aria_orientation,
+        "data-orientation": data_orientation,
+        "data-disabled": handle_disabled,
+        "data-state": data_state,
+        aria_valuenow: size_now,
+        aria_valuemin: value_min,
+        aria_valuemax: value_max,
+        aria_controls: controls,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "separator",
-            tabindex,
-            aria_orientation,
-            "data-orientation": data_orientation,
-            "data-disabled": handle_disabled,
-            "data-state": data_state,
-            aria_valuenow: size_now,
-            aria_valuemin: value_min,
-            aria_valuemax: value_max,
-            aria_controls: controls,
             aria_label,
             aria_labelledby,
 
@@ -781,7 +803,7 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
