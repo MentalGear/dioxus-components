@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::radio_group::{self, RadioGroupProps, RadioItemProps};
 
 // docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
@@ -15,10 +17,11 @@ use dioxus_primitives::radio_group::{self, RadioGroupProps, RadioItemProps};
 // `scripts/check-dx-class-prefix.sh`.
 #[component]
 pub fn RadioGroup(props: RadioGroupProps) -> Element {
+    let base = attributes!(div { class: "dx-radio-group" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/radio_group/style.css") }
         radio_group::RadioGroup {
-            class: "dx-radio-group",
             value: props.value,
             default_value: props.default_value,
             on_value_change: props.on_value_change,
@@ -27,7 +30,7 @@ pub fn RadioGroup(props: RadioGroupProps) -> Element {
             name: props.name,
             horizontal: props.horizontal,
             roving_loop: props.roving_loop,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
