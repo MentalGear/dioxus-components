@@ -129,6 +129,17 @@
   rx: var(--dx-radius-xs);
 }
 
+/* `BarOptions::active_index` (s2-bar lane) -- shadcn's `chart-bar-active`:
+ * every OTHER bar dims once some bar in the same svg is marked active.
+ * Scoped with `:has()` (not a plain `[data-active="false"]` rule) so an
+ * ordinary bar chart -- no `active_index` set, every bar's own
+ * `data-active` is `"false"` by default -- is never affected: this rule
+ * only fires once at least one sibling bar's `data-active` is `"true"`. */
+.dx-chart svg:has([data-slot="chart-bar"][data-active="true"])
+  [data-slot="chart-bar"][data-active="false"] {
+  opacity: 0.3;
+}
+
 .dx-chart [data-slot="chart-dot"] {
   fill: var(--series-color);
   stroke: var(--primary-color-1);

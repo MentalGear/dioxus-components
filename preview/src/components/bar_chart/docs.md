@@ -36,11 +36,28 @@ whichever one the user has picked, and re-map each `ChartDatum` down to just tha
 before passing it to `ChartContainer`. See this gallery's `interactive` variant for the full
 pattern, including per-series running totals shown in the card header.
 
-## Coming in a follow-up
+## Horizontal orientation
 
-This gallery currently ships the variants that need no new primitive feature: the default,
-multiple-series, stacked (with and without a legend), and interactive demos above. A horizontal
-orientation, negative values with a drawn zero line, per-datum colors, value/inside labels, and a
-single highlighted ("active") bar are tracked as this component's own follow-up commits (see
-`primitives/src/chart/components/series/bar.rs`'s own module doc once it lands) and will be added
-to this gallery and this file as they ship.
+`Chart { bar: BarOptions { horizontal: true, .. } }` draws the category axis running top-to-bottom
+and values running left-to-right instead of the default vertical layout -- hide both of `Chart`'s
+default axes (`show_x_axis`/`show_y_axis: false`) the way shadcn's own horizontal demos do, since
+this family draws its own category labels at the plot's left edge when `horizontal` is set.
+
+## Negative values and per-datum color
+
+Set `ChartDatum::color` per datum (e.g. one color for a positive value, another for negative) to
+color each bar independently instead of from one flat series color. `ChartKind::Bar` always draws
+an explicit zero-line, so a chart mixing positive and negative values has a visible baseline.
+
+## Value and inside labels
+
+`BarOptions::value_labels` draws each bar's own value just outside its far end.
+`BarOptions::inside_labels` (takes precedence when both are set) additionally draws the datum's
+category name inside the bar near its start -- useful paired with `horizontal` and every axis
+hidden, so the labels themselves carry the information an axis normally would.
+
+## A highlighted ("active") bar
+
+`BarOptions::active_index` marks one bar `data-active="true"` (every other bar `"false"`); the
+themed stylesheet dims every non-active bar once at least one is marked active, independent of
+hover.

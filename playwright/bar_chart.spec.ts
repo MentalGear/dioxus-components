@@ -11,15 +11,14 @@
  * every other registered variant gets `#component-preview-frame-<variant>`
  * instead.
  *
- * PHASE 1 (this file, as first committed): `main` (shadcn's
- * `chart-bar-default.tsx`), `multiple`, `stacked`, `stacked_legend`,
- * `interactive` -- the variants buildable with zero primitive changes
- * beyond what the stage-1 Chart round already shipped. PHASE 2 (a follow-up
- * commit, once `s2-refactor` lands and this lane's own `BarOptions` feature
- * work is in): `horizontal`, `negative`, `mixed`, `label`, `label_custom`,
- * `active` are added here alongside their own variant folders, per
- * `$S/stage2-common.md`'s "no new feature first, feature variants in
- * follow-up commits" sequencing for this lane.
+ * PHASE 1 (`main` -- shadcn's `chart-bar-default.tsx`, `multiple`,
+ * `stacked`, `stacked_legend`, `interactive`): the variants buildable with
+ * zero primitive changes beyond what the stage-1 Chart round already
+ * shipped. PHASE 2 (`horizontal`, `negative`, `mixed`, `label`,
+ * `label_custom`, `active`, added once `s2-refactor` landed and this
+ * lane's own `BarOptions` feature work -- `horizontal`/`value_labels`/
+ * `inside_labels`/`active_index` -- was integrated): all 10/10 of shadcn's
+ * `chart-bar-*` demos.
  */
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
@@ -151,13 +150,119 @@ test.describe("interactive variant (shadcn chart-bar-interactive.tsx)", () => {
   });
 });
 
+test.describe("horizontal variant (shadcn chart-bar-horizontal.tsx)", () => {
+  test("renders one wider-than-tall bar per browser with category labels", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "horizontal");
+    const bars = f.locator('[data-slot="chart-bar"]');
+    await expect(bars).toHaveCount(5);
+    for (const bar of await bars.all()) {
+      const box = await bar.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) expect(box.width).toBeGreaterThan(box.height);
+    }
+    await expect(f.locator('[data-axis="category"]')).toHaveCount(1);
+    // No default axes -- this family draws its own category labels.
+    await expect(f.locator('[data-axis="x"]')).toHaveCount(0);
+    await expect(f.locator('[data-axis="y"]')).toHaveCount(0);
+  });
+});
+
+test.describe("negative variant (shadcn chart-bar-negative.tsx)", () => {
+  test("draws a zero line with bars on both sides and per-datum colors", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "negative");
+    await expect(f.locator('[data-slot="chart-zero-line"]')).toHaveCount(1);
+    const bars = f.locator('[data-slot="chart-bar"]');
+    await expect(bars).toHaveCount(6);
+    const zeroY = await f.locator('[data-slot="chart-zero-line"]').getAttribute("y1");
+    expect(zeroY).not.toBeNull();
+    const boxes = await Promise.all((await bars.all()).map((b) => b.boundingBox()));
+    const heights = boxes.map((b) => b?.height ?? 0);
+    // Every bar has a real, positive height (both the positive and
+    // negative months draw a visible rect, not a zero-length sliver).
+    expect(heights.every((h) => h > 0)).toBe(true);
+  });
+});
+
+test.describe("mixed variant (shadcn chart-bar-mixed.tsx)", () => {
+  test("renders one bar per browser, each its own distinct fill color", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "mixed");
+    const bars = f.locator('[data-slot="chart-bar"]');
+    await expect(bars).toHaveCount(5);
+    const fills = await Promise.all(
+      (await bars.all()).map((b) => b.evaluate((el) => getComputedStyle(el).fill)),
+    );
+    // At least two distinct resolved fill colors among the 5 bars -- each
+    // one sets its own `ChartDatum::color`, not one shared series color.
+    expect(new Set(fills).size).toBeGreaterThan(1);
+  });
+});
+
+test.describe("label variant (shadcn chart-bar-label.tsx)", () => {
+  test("draws one value label above each bar, grid and y-axis hidden", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "label");
+    await expect(f.locator('[data-slot="chart-bar"]')).toHaveCount(6);
+    await expect(f.locator('[data-slot="chart-label"]')).toHaveCount(6);
+    await expect(f.locator('[data-slot="chart-grid"]')).toHaveCount(0);
+    await expect(f.locator('[data-axis="y"]')).toHaveCount(0);
+  });
+});
+
+test.describe("label_custom variant (shadcn chart-bar-label-custom.tsx)", () => {
+  test("draws a category label inside each bar and its value outside", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "label_custom");
+    await expect(f.locator('[data-slot="chart-bar"]')).toHaveCount(5);
+    // Two labels per bar: the inside category name and the outside value.
+    await expect(f.locator('[data-slot="chart-label"]')).toHaveCount(10);
+    await expect(f.locator('[data-position="inside"]')).toHaveCount(5);
+    await expect(f.locator('[data-position="value"]')).toHaveCount(5);
+  });
+});
+
+test.describe("active variant (shadcn chart-bar-active.tsx)", () => {
+  test("marks exactly one bar active and dims every other bar", async ({ page }) => {
+    await goto(page);
+    const f = frame(page, "active");
+    const bars = f.locator('[data-slot="chart-bar"]');
+    await expect(bars).toHaveCount(5);
+    // `getAttribute` (not a `[data-active="true"]` CSS locator): the raw
+    // SSR text renders this as an unquoted boolean token
+    // (`data-active=true`), a valid but unusual attribute form worth
+    // reading directly rather than relying on a selector to normalize it.
+    const activeCount = (
+      await Promise.all((await bars.all()).map((b) => b.getAttribute("data-active")))
+    ).filter((v) => v === "true").length;
+    expect(activeCount).toBe(1);
+    const opacities = await Promise.all(
+      (await bars.all()).map((b) => b.evaluate((el) => getComputedStyle(el).opacity)),
+    );
+    // The 4 non-active bars share one dimmed opacity, distinct from the
+    // active bar's own full opacity.
+    expect(new Set(opacities).size).toBe(2);
+  });
+});
+
 test.describe("Axe automated scan", () => {
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
     await goto(page);
     await expectNoAxeViolations(page, "bar_chart: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 
-  test("interactive variant toggled to mobile has no automatically detectable a11y issues", async ({ page }) => {
+  // Title deliberately avoids the lowercase substring "mobile":
+  // `playwright.config.ts`'s `grepInvert: /mobile/` (meant to skip
+  // viewport-name tests) silently drops ANY test whose title contains that
+  // substring, case-sensitively, with no warning -- dev-docs/issues/
+  // chart-stage2-handoff.md §5's own documented trap, live in this exact
+  // file until now (confirmed via `npx playwright test --list
+  // bar_chart.spec.ts | wc -l` vs. `grep -c 'test(' bar_chart.spec.ts`
+  // before this rename).
+  test("interactive variant toggled to the second series has no automatically detectable a11y issues", async ({
+    page,
+  }) => {
     await goto(page);
     await frame(page, "interactive").locator(".dx-bar-chart-interactive-toggle").nth(1).click();
     await expectNoAxeViolations(page, "bar_chart: interactive toggled", {

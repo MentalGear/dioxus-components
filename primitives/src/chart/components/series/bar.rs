@@ -443,7 +443,10 @@ fn render_horizontal_series(
 /// already styles (`fill`/`font-size`), so no new CSS is needed for the
 /// text to look right, only for the different attribute value on this
 /// group.
-fn render_horizontal_category_labels(ctx: &SeriesRenderContext, category_scale: &BandScale) -> Element {
+fn render_horizontal_category_labels(
+    ctx: &SeriesRenderContext,
+    category_scale: &BandScale,
+) -> Element {
     rsx! {
         g { "data-slot": "chart-axis", "data-axis": "category",
             for (i , datum) in ctx.data.iter().enumerate() {
@@ -598,9 +601,17 @@ mod tests {
         // Two bars, each width > height (a 600x300 default viewBox, two
         // categories -- each band is far taller-looking in the category
         // sense but the RECT itself, spanning most of the plot's width for
-        // a large positive value, is wider than the band is tall).
+        // a large positive value, is wider than the band is tall). Only
+        // `data-slot="chart-bar"` rects: `chart.rs`'s own (vertical-only,
+        // un-marked) hit-bands and this family's own horizontal hit-bands
+        // are ALSO `<rect>`s on this same page (the module doc's own
+        // "what this does NOT fix" section), so a plain "every `<rect>`"
+        // scan would wrongly include them.
         assert_eq!(html.matches(r#"data-slot="chart-bar""#).count(), 2);
         for line in html.split("<rect").skip(1) {
+            if !line.trim_start().starts_with(r#"data-slot="chart-bar""#) {
+                continue;
+            }
             let width: f64 = attr_f64(line, "width");
             let height: f64 = attr_f64(line, "height");
             assert!(
@@ -633,7 +644,10 @@ mod tests {
             stacked: false,
         });
         assert!(html.contains(r#"data-axis="category""#));
-        assert!(html.contains(">chr<"), "expected a truncated category label: {html}");
+        assert!(
+            html.contains(">chr<"),
+            "expected a truncated category label: {html}"
+        );
         assert!(html.contains(">saf<"));
     }
 
@@ -667,8 +681,28 @@ mod tests {
             },
             stacked: false,
         });
-        assert_eq!(html.matches(r#"data-active="true""#).count(), 2, "both series' February bar: {html}");
-        assert_eq!(html.matches(r#"data-active="false""#).count(), 2, "both series' January bar: {html}");
+        // `data-active` is a plain `bool` attribute
+        // (`dioxus_ssr::renderer::write_attribute`'s own `AttributeValue::
+        // Bool` arm writes ` name=value`, unquoted, always -- the same
+        // convention `navigation_menu.rs`'s/`carousel.rs`'s own
+        // `"data-active": <bool>` already use elsewhere in this crate), not
+        // a quoted string: `data-active=true`/`data-active=false` in the
+        // raw SSR text. This is still a fully valid unquoted HTML
+        // attribute token, and CSS's own `[data-active="true"]` matches it
+        // in the real DOM regardless of the source's quoting (a browser's
+        // HTML parser and `dioxus-web`'s own CSR `set_attribute` both
+        // resolve it to the identical attribute VALUE string) -- this
+        // module's own doc/CSS-selector citations above stay accurate.
+        assert_eq!(
+            html.matches("data-active=true").count(),
+            2,
+            "both series' February bar: {html}"
+        );
+        assert_eq!(
+            html.matches("data-active=false").count(),
+            2,
+            "both series' January bar: {html}"
+        );
     }
 
     #[test]
@@ -679,8 +713,9 @@ mod tests {
             bar: BarOptions::default(),
             stacked: false,
         });
-        assert!(!html.contains(r#"data-active="true""#));
-        assert_eq!(html.matches(r#"data-active="false""#).count(), 4);
+        // See the previous test's own comment for why this is unquoted.
+        assert!(!html.contains("data-active=true"));
+        assert_eq!(html.matches("data-active=false").count(), 4);
     }
 
     #[test]
@@ -731,11 +766,20 @@ mod tests {
         assert!(html.contains(r#"data-slot="chart-zero-line""#));
         let zero_y = attr_f64_after(&html, r#"data-slot="chart-zero-line""#, "y1");
 
-        // Two rects: the positive one's own y+height must land AT OR ABOVE
-        // (<=) the zero line (it sits above the baseline), the negative
-        // one's y must land AT OR BELOW (>=) the zero line (it starts at
-        // or below the baseline and extends further down).
-        let rects: Vec<&str> = html.split("<rect").skip(1).collect();
+        // Two `data-slot="chart-bar"` rects (in DOM/config order, so
+        // `rects[0]` is January and `rects[1]` is February): `chart.rs`'s
+        // own per-datum hit-bands are ALSO `<rect>`s on this same page,
+        // rendered after the marks, so a plain "every `<rect>`" scan would
+        // wrongly pick some of those up too. The positive one's own
+        // y+height must land AT OR ABOVE (<=) the zero line (it sits above
+        // the baseline), the negative one's y must land AT OR BELOW (>=)
+        // the zero line (it starts at or below the baseline and extends
+        // further down).
+        let rects: Vec<&str> = html
+            .split("<rect")
+            .skip(1)
+            .filter(|line| line.trim_start().starts_with(r#"data-slot="chart-bar""#))
+            .collect();
         assert_eq!(rects.len(), 2);
         let pos_y = attr_f64(rects[0], "y");
         let pos_h = attr_f64(rects[0], "height");
@@ -814,10 +858,15 @@ mod tests {
     /// `dioxus_ssr::render`'s own flat HTML string naturally splits).
     fn attr_f64(fragment: &str, attr: &str) -> f64 {
         let needle = format!("{attr}=\"");
-        let start = fragment.find(&needle).unwrap_or_else(|| panic!("no {attr} attribute in: {fragment}")) + needle.len();
+        let start = fragment
+            .find(&needle)
+            .unwrap_or_else(|| panic!("no {attr} attribute in: {fragment}"))
+            + needle.len();
         let rest = &fragment[start..];
         let end = rest.find('"').unwrap();
-        rest[..end].parse().unwrap_or_else(|_| panic!("non-numeric {attr} in: {fragment}"))
+        rest[..end]
+            .parse()
+            .unwrap_or_else(|_| panic!("non-numeric {attr} in: {fragment}"))
     }
 
     /// Like [`attr_f64`], but searches the whole `html` starting from the
@@ -825,7 +874,9 @@ mod tests {
     /// specific element, e.g. the zero-line, without assuming a following
     /// element ordering).
     fn attr_f64_after(html: &str, marker: &str, attr: &str) -> f64 {
-        let start = html.find(marker).unwrap_or_else(|| panic!("marker {marker} not found in: {html}"));
+        let start = html
+            .find(marker)
+            .unwrap_or_else(|| panic!("marker {marker} not found in: {html}"));
         attr_f64(&html[start..], attr)
     }
 }

@@ -25,7 +25,8 @@ pub use crate::components::card::{
     Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
 };
 pub use crate::components::chart::{
-    Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartLegend, ChartTooltip,
+    BarOptions, Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartLegend,
+    ChartTooltip,
 };
 
 /// The "Trending up by 5.2% this month" footer shadcn repeats, byte-for-byte,
