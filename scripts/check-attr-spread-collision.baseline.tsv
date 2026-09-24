@@ -8,27 +8,6 @@
 # (duplicates meaningful -- a multiset, not a set; see the .sh header for why). Do not
 # hand-edit: adding a line here to silence a real new finding defeats the gate: fix the
 # site instead, or re-run with --update-baseline and explain why in the commit.
-primitives/src/carousel.rs	Carousel	aria_roledescription
-primitives/src/carousel.rs	Carousel	data-direction
-primitives/src/carousel.rs	Carousel	data-orientation
-primitives/src/carousel.rs	Carousel	role
-primitives/src/carousel.rs	CarouselContent	data-draggable
-primitives/src/carousel.rs	CarouselContent	data-orientation
-primitives/src/carousel.rs	CarouselContent	style
-primitives/src/carousel.rs	CarouselContent	tabindex
-primitives/src/carousel.rs	CarouselItem	aria_label
-primitives/src/carousel.rs	CarouselItem	aria_roledescription
-primitives/src/carousel.rs	CarouselItem	data-selected
-primitives/src/carousel.rs	CarouselItem	role
-primitives/src/carousel.rs	CarouselItem	style
-primitives/src/carousel.rs	CarouselNext	aria_controls
-primitives/src/carousel.rs	CarouselNext	aria_label
-primitives/src/carousel.rs	CarouselNext	disabled
-primitives/src/carousel.rs	CarouselNext	type
-primitives/src/carousel.rs	CarouselPrevious	aria_controls
-primitives/src/carousel.rs	CarouselPrevious	aria_label
-primitives/src/carousel.rs	CarouselPrevious	disabled
-primitives/src/carousel.rs	CarouselPrevious	type
 primitives/src/chart/components/chart.rs	Chart	aria-roledescription
 primitives/src/chart/components/chart.rs	Chart	data-direction
 primitives/src/chart/components/chart.rs	Chart	data-slot
