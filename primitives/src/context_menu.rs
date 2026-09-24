@@ -826,20 +826,28 @@ fn ContextMenuContentRendered(
     // `DropdownMenu`/`Menubar`'s identical construction.
     let labelledby =
         crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- menu semantics, top-layer wiring and
+        // roving focus must win over a caller's own attributes
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            aria_orientation: "vertical",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            tabindex: if focused() { "0" } else { "-1" },
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
 
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            aria_orientation: "vertical",
-            popover: crate::top_layer::PopoverKind::Manual.as_str(),
             position: "fixed",
             left: "{x}px",
             top: "{y}px",
-            tabindex: if focused() { "0" } else { "-1" },
             pointer_events: open().then_some("auto"),
-            "data-state": if open() { "open" } else { "closed" },
             onkeydown,
             onblur: move |_| {
                 if focused() {
@@ -962,19 +970,26 @@ fn ContextMenuContentRendered(
     // alongside `..attributes`.
     let labelledby =
         crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            aria_orientation: "vertical",
+            tabindex: if focused() { "0" } else { "-1" },
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
 
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            aria_orientation: "vertical",
             position: "fixed",
             left: "{x}px",
             top: "{y}px",
-            tabindex: if focused() { "0" } else { "-1" },
             pointer_events: open().then_some("auto"),
-            "data-state": if open() { "open" } else { "closed" },
             onkeydown,
             onblur: move |_| {
                 if focused() {
@@ -1110,10 +1125,20 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
         }
     };
 
-    rsx! {
-        div {
+    // Owned by this component -- see `ContextMenuContentRendered`'s
+    // identical construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             tabindex: tab_index,
+            aria_disabled: disabled(),
+            "data-disabled": disabled(),
+        }),
+    ]);
+
+    rsx! {
+        div {
             onpointerdown: move |event| {
                 pointer_select_start(&event, disabled(), down_pos);
             },
@@ -1134,9 +1159,7 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
                 }
             },
             onmounted,
-            aria_disabled: disabled(),
-            "data-disabled": disabled(),
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }
@@ -1588,6 +1611,16 @@ fn ContextMenuSubContentRendered(
             class: "dx-anchor-dropdown-menu"
         }),
         labelledby,
+        // Owned by this component -- menu semantics, top-layer wiring and
+        // direction state must win over a caller's own attributes
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            dir: ctx.direction.as_str(),
+            "data-direction": ctx.direction.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+        }),
     ]);
     let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
 
@@ -1642,10 +1675,6 @@ fn ContextMenuSubContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            dir: ctx.direction.as_str(),
-            "data-direction": ctx.direction.as_str(),
             // Mirrors `ContextMenuContentRendered`'s identical inline
             // override (this file, above): `.dx-context-menu-content`
             // (`preview/src/components/context_menu/style.css`) sets
@@ -1668,7 +1697,6 @@ fn ContextMenuSubContentRendered(
             // `:popover-open`, `opacity:1` submenu resolved to unrelated
             // page content behind it, not the submenu itself.
             pointer_events: open().then_some("auto"),
-            "data-state": if open() { "open" } else { "closed" },
             onkeydown,
             // See `SubMenuState::hover_close`'s doc: mirrors
             // `ContextMenuSubTrigger`'s identical pair on the same shared
@@ -1721,7 +1749,18 @@ fn ContextMenuSubContentRendered(
             aria_labelledby: "{sub.trigger_id}"
         })
     };
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            dir: ctx.direction.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
+        }),
+    ]);
 
     // See `SubMenuState::hover_close`'s doc: this arm still gets the same
     // shared-timer fix as the web arm, for parity even though Blitz mouse
@@ -1773,15 +1812,11 @@ fn ContextMenuSubContentRendered(
     rsx! {
         div {
             id,
-            role: crate::menu_semantics::MENU_ROLE,
-            dir: ctx.direction.as_str(),
             // See the web arm's identical `pointer_events` doc above -- this
             // arm's CSS never loads (Blitz doesn't load `style.css`), but
             // set for parity with `ContextMenuContentRendered`'s own native
             // arm, which sets the same override.
             pointer_events: open().then_some("auto"),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-direction": ctx.direction.as_str(),
             onkeydown,
             onmouseenter: move |_| {
                 hover_open.cancel();
@@ -1900,10 +1935,20 @@ pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
         }
     };
 
-    rsx! {
-        div {
+    // Owned by this component -- see `ContextMenuItem`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             tabindex: tab_index,
+            aria_disabled: disabled(),
+            "data-disabled": disabled(),
+        }),
+    ]);
+
+    rsx! {
+        div {
             onpointerdown: move |event| {
                 pointer_select_start(&event, disabled(), down_pos);
             },
@@ -1928,9 +1973,7 @@ pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
                 }
             },
             onmounted,
-            aria_disabled: disabled(),
-            "data-disabled": disabled(),
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }

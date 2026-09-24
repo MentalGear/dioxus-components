@@ -142,19 +142,28 @@ pub fn Menubar(props: MenubarProps) -> Element {
         }
     });
 
-    rsx! {
-        div {
+    // Owned by this component -- role/direction/disabled/roving-focus state
+    // must win over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "menubar",
             dir: direction.as_str(),
             "data-disabled": (props.disabled)(),
             "data-direction": direction.as_str(),
             tabindex: (!ctx.focus.any_focused()).then_some("0"),
+        }),
+    ]);
+
+    rsx! {
+        div {
             // If the menu receives focus, focus the most recently focused menu item.
             onfocus: move |_| {
                 ctx.focus.set_focus(Some(ctx.focus.recent_focus_or_default()));
             },
 
-            ..props.attributes,
+            ..attributes,
 
             {props.children}
         }
@@ -594,6 +603,17 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
     // present; see that function's own doc.
     let attributes =
         crate::top_layer::anchored_trigger_attributes(&menu_ctx.content_id.cloned(), attributes);
+    // Owned by this component -- role/type/roving-focus state must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(button {
+            role: crate::menu_semantics::MENU_ITEM_ROLE,
+            type: "button",
+            tabindex: if is_focused() { "0" } else { "-1" },
+        }),
+    ]);
 
     rsx! {
         button {
@@ -627,9 +647,6 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
             // based construction `DropdownMenu`/`ContextMenu` already use
             // (see `DropdownMenuTrigger`'s doc in `dropdown_menu.rs` for
             // the full root-cause writeup), so this handler is redundant.
-            role: crate::menu_semantics::MENU_ITEM_ROLE,
-            type: "button",
-            tabindex: if is_focused() { "0" } else { "-1" },
             ..attributes,
             {props.children}
         }
@@ -885,6 +902,14 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
             class: "dx-anchor-menubar"
         }),
         labelledby,
+        // Owned by this component -- menu semantics + top-layer wiring
+        // must win over a caller's own attributes (`docs/backlog.md` row
+        // 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+        }),
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -896,9 +921,6 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
             ..attributes,
             {children}
         }
@@ -930,13 +952,20 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     // alongside `..attributes`.
     let labelledby =
         crate::menu_root::content_labelledby_attributes(&attributes, &menu_ctx.trigger_id.cloned());
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
+        }),
+    ]);
 
     rsx! {
         div {
             id,
-            role: crate::menu_semantics::MENU_ROLE,
-            "data-state": if (menu_ctx.is_open)() { "open" } else { "closed" },
             ..attributes,
             {children}
         }
@@ -1065,8 +1094,11 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
 
     let onmounted = item.onmounted();
 
-    rsx! {
-        div {
+    // Owned by this component -- see `MenubarTrigger`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             // Found via an axe `color-contrast` finding on this pattern
             // class's disabled state (docs/backlog.md row 39): see
@@ -1077,7 +1109,11 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
             aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
+        }),
+    ]);
 
+    rsx! {
+        div {
             onpointerdown: {
                 let value = props.value.clone();
                 move |_| {
@@ -1130,7 +1166,7 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
             // rs`) for the full root-cause writeup this shares.
             // `MenubarContentRendered`'s own `use_outside_dismiss` call
             // now owns this job, DOM-truth-based rather than signal-based.
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
