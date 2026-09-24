@@ -31,9 +31,11 @@ pub fn InputGroup(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-input-group" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/input_group/style.css") }
-        div { class: "dx-input-group", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -77,14 +79,14 @@ pub fn InputGroupAddon(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-input-group-addon" });
+    // `data-align` reflects this wrapper's own typed `align` prop, not a
+    // caller default -- owned-wins.
+    let owned = attributes!(div { "data-align": align.class() });
+    let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/input_group/style.css") }
-        div {
-            class: "dx-input-group-addon",
-            "data-align": align.class(),
-            ..attributes,
-            {children}
-        }
+        div { ..merged, {children} }
     }
 }
 
@@ -95,8 +97,10 @@ pub fn InputGroupText(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(span { class: "dx-input-group-text" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/input_group/style.css") }
-        span { class: "dx-input-group-text", ..attributes, {children} }
+        span { ..merged, {children} }
     }
 }

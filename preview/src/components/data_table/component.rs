@@ -72,13 +72,16 @@ pub struct DataTableColumnHeaderProps {
 #[component]
 pub fn DataTableColumnHeader(props: DataTableColumnHeaderProps) -> Element {
     let aria_sort = props.sorted.map_or("none", SortDirection::aria_sort);
+    let base = attributes!(th { class: "dx-data-table-column-header" });
+    // `aria-sort` is required APG Table-pattern state this wrapper computes
+    // from `props.sorted`, not a caller default -- owned-wins.
+    let owned = attributes!(th { aria_sort });
+    let merged = merge_attributes(vec![base, props.attributes, owned]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/data_table/style.css") }
         TableHead {
-            aria_sort,
-            class: "dx-data-table-column-header",
-            attributes: props.attributes,
+            attributes: merged,
             Button {
                 variant: ButtonVariant::Ghost,
                 size: ButtonSize::Sm,
@@ -127,13 +130,13 @@ pub struct DataTableToolbarProps {
 /// A toolbar holding a text filter [`Input`](crate::components::input::Input).
 #[component]
 pub fn DataTableToolbar(props: DataTableToolbarProps) -> Element {
-    let base = attributes!(div { class: "dx-data-table-toolbar" });
+    let base = attributes!(div { class: "dx-data-table-toolbar", "data-slot": "data-table-toolbar" });
     let merged = merge_attributes(vec![base, props.attributes]);
     let value = (props.value)();
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/data_table/style.css") }
-        div { "data-slot": "data-table-toolbar", ..merged,
+        div { ..merged,
             crate::components::input::Input {
                 class: "dx-data-table-filter",
                 "data-slot": "data-table-filter",
@@ -189,7 +192,7 @@ pub struct DataTablePaginationProps {
 /// of m" readout, and Previous/Next [`Button`]s, disabled at either end.
 #[component]
 pub fn DataTablePagination(props: DataTablePaginationProps) -> Element {
-    let base = attributes!(div { class: "dx-data-table-pagination" });
+    let base = attributes!(div { class: "dx-data-table-pagination", "data-slot": "data-table-pagination" });
     let merged = merge_attributes(vec![base, props.attributes]);
     let at_start = props.page == 0;
     let at_end = props.page + 1 >= props.page_count;
@@ -200,7 +203,7 @@ pub fn DataTablePagination(props: DataTablePaginationProps) -> Element {
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/data_table/style.css") }
-        div { "data-slot": "data-table-pagination", ..merged,
+        div { ..merged,
             div { class: "dx-data-table-pagination-selected",
                 "{props.selected_count} of {props.total_count} row(s) selected."
             }
