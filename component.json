@@ -68,6 +68,7 @@
     "preview/src/components/area_chart",
     "preview/src/components/bar_chart",
     "preview/src/components/line_chart",
-    "preview/src/components/chart_tooltip"
+    "preview/src/components/chart_tooltip",
+    "preview/src/components/radar_chart"
   ]
 }

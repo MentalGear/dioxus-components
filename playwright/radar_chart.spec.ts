@@ -6,7 +6,10 @@
  * series/radar.rs). Render + axe per variant, plus one behavioural
  * assertion per feature this lane added:
  *
- *   - one `path[data-slot="chart-radar-area"][data-series]` per series,
+ *   - one `g[data-series] path[data-slot="chart-radar-area"]` per series
+ *     (`data-series` lives on the wrapping `<g>`, not the `<path>` itself --
+ *     the same convention `area`/`line` document, e.g.
+ *     `primitives/src/chart/components/series/area.rs`'s own module doc),
  *     each a closed polygon with exactly N vertices (one per category --
  *     parsed from its own `d`, not assumed);
  *   - the grid variants render the DOM shape their name promises (a
@@ -93,7 +96,7 @@ test.describe("render + axe per variant", () => {
 test.describe("behavioural", () => {
   test("main: one radar path per series, each with 6 vertices (one per month)", async ({ page }) => {
     await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
-    const paths = frame(page, "main").locator('path[data-slot="chart-radar-area"][data-series]');
+    const paths = frame(page, "main").locator('g[data-series] path[data-slot="chart-radar-area"]');
     await expect(paths).toHaveCount(1); // shadcn's default demo: one "desktop" series
 
     const d = await paths.first().getAttribute("d");
@@ -121,14 +124,19 @@ test.describe("behavioural", () => {
 
   test("multiple: two series, each a 6-vertex polygon", async ({ page }) => {
     await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
-    const paths = frame(page, "multiple").locator('path[data-slot="chart-radar-area"][data-series]');
+    const paths = frame(page, "multiple").locator('g[data-series] path[data-slot="chart-radar-area"]');
     await expect(paths).toHaveCount(2);
     for (const p of await paths.all()) {
       const d = await p.getAttribute("d");
       expect(vertexCount(d ?? "")).toBe(6);
     }
-    // Distinct series -- distinct `data-series` values.
-    const keys = await paths.evaluateAll((els) => els.map((el) => el.getAttribute("data-series")));
+    // Distinct series -- distinct `data-series` values. `data-series` lives
+    // on each path's own parent `<g>` (the selector above, and this file's
+    // own header comment), not the `<path>` itself, so read it off the
+    // closest ancestor that carries it rather than the path element.
+    const keys = await paths.evaluateAll((els) =>
+      els.map((el) => el.closest("[data-series]")?.getAttribute("data-series")),
+    );
     expect(new Set(keys).size).toBe(2);
   });
 
@@ -175,7 +183,7 @@ test.describe("behavioural", () => {
 
   test("dots: one dot per category per series", async ({ page }) => {
     await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
-    const seriesPaths = frame(page, "dots").locator('path[data-slot="chart-radar-area"][data-series]');
+    const seriesPaths = frame(page, "dots").locator('g[data-series] path[data-slot="chart-radar-area"]');
     const seriesCount = await seriesPaths.count();
     expect(seriesCount).toBeGreaterThan(0);
 
@@ -190,7 +198,7 @@ test.describe("behavioural", () => {
       await expect(table).toHaveCount(1);
 
       const seriesCount = await frame(page, variant)
-        .locator('path[data-slot="chart-radar-area"][data-series]')
+        .locator('g[data-series] path[data-slot="chart-radar-area"]')
         .count();
       const rows = table.locator("tbody tr");
       await expect(rows).toHaveCount(6); // 6 months

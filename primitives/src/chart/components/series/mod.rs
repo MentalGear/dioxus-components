@@ -85,5 +85,11 @@ pub use bar::BarOptions;
 // lanes editing the same shared file concurrently without conflict.
 pub use line::{DotContext, DotRenderer, LineLabels, LineOptions};
 pub use pie::PieOptions;
-pub use radar::RadarOptions;
+// `RadarGrid`, not just `RadarOptions` itself: a caller-facing type (the
+// `radar_chart` gallery's `grid_circle`/`grid_circle_fill`/
+// `grid_circle_no_lines`/`grid_custom`/`grid_fill`/`grid_none` variants all
+// name one of its variants directly, e.g. `RadarGrid::Circle`) gains no
+// reachability from being `pub` inside `radar.rs` alone -- same rationale
+// as `line`'s own multi-type re-export above.
+pub use radar::{RadarGrid, RadarOptions};
 pub use radial::RadialOptions;
