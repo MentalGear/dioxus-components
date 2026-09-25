@@ -28,7 +28,10 @@ async function goto(page: Page, variant: string) {
 }
 
 /** See this file's own header ("SCOPING"). */
-function demoFrame(page: Page, variant: "main" | "multiple" | "indicators" | "vertical" | "rtl"): Locator {
+function demoFrame(
+  page: Page,
+  variant: "main" | "multiple" | "indicators" | "vertical" | "rtl" | "looping" | "autoplay" | "tabs",
+): Locator {
   const id = variant === "main" ? "component-preview-frame" : `component-preview-frame-${variant}`;
   return page.locator(`#${id}`);
 }
@@ -1277,5 +1280,385 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     await expect(async () => {
       expect(await readContentTransform(content)).toBe("");
     }).toPass({ timeout: 2000 });
+  });
+});
+
+/**
+ * `loop`: rewind-style wraparound (backlog row 91, approved fast-follow).
+ * The `looping` variant (5 slides, LTR) and `looping_rtl` variant (4
+ * slides, `dir="rtl"`) close both directions and the RTL key-swap
+ * together -- see `preview/src/components/carousel/variants/looping{,_rtl}/mod.rs`.
+ */
+test.describe("Carousel: loop (rewind-style wraparound)", () => {
+  test("Previous and Next are never disabled, even at the first/last slide", async ({ page }) => {
+    await goto(page, "looping");
+    const frame = demoFrame(page, "looping");
+    const previous = frame.getByRole("button", { name: /previous/i });
+    const next = frame.getByRole("button", { name: /next/i });
+
+    await expect(previous).toBeEnabled();
+    await expect(next).toBeEnabled();
+
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+    }
+    await expect(frame.getByRole("group", { name: "5 of 5" })).toHaveAttribute("data-selected", "true");
+    // A non-loop carousel would have `next` disabled here (see the
+    // library-only v1 describe block above) -- `loop` never does.
+    await expect(next).toBeEnabled();
+    await expect(previous).toBeEnabled();
+  });
+
+  test("Next at the last slide rewinds to the first; Previous at the first rewinds to the last", async ({ page }) => {
+    await goto(page, "looping");
+    const frame = demoFrame(page, "looping");
+    const content = frame.locator(".dx-carousel-content");
+    const previous = frame.getByRole("button", { name: /previous/i });
+    const next = frame.getByRole("button", { name: /next/i });
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    // Previous from slide 1 wraps to slide 5.
+    await previous.click();
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+    await expectSnappedToBoundary(content, slide(5));
+
+    // Next from slide 5 wraps back to slide 1.
+    await next.click();
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expectSnappedToBoundary(content, slide(1));
+
+    // Root-level ArrowRight at the last slide also wraps.
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+    }
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+    await next.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("under RTL, loop still wraps both directions with the swapped arrow keys", async ({ page }) => {
+    await goto(page, "looping_rtl");
+    const frame = demoFrame(page, "looping_rtl");
+    const previous = frame.getByRole("button", { name: /previous/i });
+    const next = frame.getByRole("button", { name: /next/i });
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+
+    await expect(previous).toBeEnabled();
+    await expect(next).toBeEnabled();
+
+    // Previous from slide 1 wraps to slide 4.
+    await previous.click();
+    await expect(slide(4)).toHaveAttribute("data-selected", "true");
+    await expect(previous).toBeEnabled();
+
+    // Next from slide 4 wraps back to slide 1.
+    await next.click();
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    // RTL root keyboard: ArrowLeft means next (swapped), so it should wrap
+    // from the last slide back to the first too.
+    for (let i = 0; i < 3; i++) {
+      await next.click();
+    }
+    await expect(slide(4)).toHaveAttribute("data-selected", "true");
+    await next.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
+    await goto(page, "looping");
+    const frame = demoFrame(page, "looping");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    // A large rightward drag from slide 1 (nothing before it) should
+    // rubber-band, not wrap to slide 5 -- `loop` only governs
+    // Previous/Next/the root keyboard (this crate's own module doc).
+    await dragBy(page, content, 250, 0);
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("axe: the looping variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "looping");
+    await expectNoAxeViolations(page, "carousel: looping variant", {
+      include: "#component-preview-frame-looping",
+    });
+  });
+});
+
+/**
+ * Autoplay + rotation control (APG "auto-rotating" carousel). The
+ * `autoplay` variant's own `delay_ms: 1200` (see its own doc for why) --
+ * tests below wait a bit past that, never past a second full delay, to
+ * stay fast without being flaky.
+ */
+test.describe("Carousel: autoplay + rotation control", () => {
+  test("the rotation control precedes Previous/Next/the slide content in document order, and toggles its own label", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+    const previous = frame.getByRole("button", { name: "Previous slide" });
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const firstSlide = frame.getByRole("group", { name: "1 of 5" });
+
+    await expect(rotation).toHaveAttribute("aria-label", "Stop automatic slide show");
+    await expect(rotation).not.toHaveAttribute("aria-pressed");
+
+    // Document order, matching the R4 oracle rule's own construction
+    // (`playwright/oracle/tier1-apg/carousel.spec.ts`'s `precedes`) --
+    // APG's own requirement that the rotation control precede everything
+    // else focusable in the carousel.
+    const precedes = async (a: Locator, b: Locator) => {
+      const bHandle = await b.elementHandle();
+      return a.evaluate(
+        (elA, elB) => !!(elA.compareDocumentPosition(elB as Node) & Node.DOCUMENT_POSITION_FOLLOWING),
+        bHandle,
+      );
+    };
+    expect(await precedes(rotation, previous)).toBe(true);
+    expect(await precedes(rotation, next)).toBe(true);
+    expect(await precedes(rotation, firstSlide)).toBe(true);
+
+    await rotation.click();
+    await expect(rotation).toHaveAttribute("aria-label", "Start automatic slide show");
+    await rotation.click();
+    await expect(rotation).toHaveAttribute("aria-label", "Stop automatic slide show");
+  });
+
+  test("aria-live on the slides container toggles with rotation state", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const content = frame.locator(".dx-carousel-content");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+
+    await expect(content).toHaveAttribute("aria-live", "off");
+    await rotation.click();
+    await expect(content).toHaveAttribute("aria-live", "polite");
+    await rotation.click();
+    // Clicking the rotation button leaves the pointer hovering the
+    // carousel (the button is inside it) -- and hover legitimately pauses
+    // rotation regardless of `playing` (this component's own doc
+    // deliberately does NOT port the vendored reference's own
+    // "ignore hover/focus once explicitly started" quirk, the same class
+    // of bug already flagged and left unported for the basic reference's
+    // own `hasUserActivatedPlay` latch, `dev-docs/research/carousel-2026-09-19.md`
+    // §1.3 point 3) -- so the pointer must move away first to observe the
+    // live region reflect `playing` again.
+    await page.mouse.move(5, 5);
+    await expect(content).toHaveAttribute("aria-live", "off");
+  });
+
+  test("autoplay advances the slide on its own", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expect(slide(2)).toHaveAttribute("data-selected", "true", { timeout: 3000 });
+  });
+
+  test("keyboard focus entering the carousel stops rotation, and it does not resume on its own", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const content = frame.locator(".dx-carousel-content");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+
+    await content.focus();
+    // The rotation control's own label reflects the user's *intent*
+    // (`playing`), unaffected by an ambient, temporary pause -- only the
+    // live region (`rotating`) does. It stays "Stop automatic slide show"
+    // throughout this whole test; asserted once here as the baseline.
+    await expect(rotation).toHaveAttribute("aria-label", "Stop automatic slide show");
+    await expect(content).toHaveAttribute("aria-live", "polite");
+
+    const selectedAt = async () =>
+      frame.locator('[role="group"][data-selected="true"]').getAttribute("aria-label");
+    const before = await selectedAt();
+    // Wait past two full ticks -- focus is still inside the content
+    // element, so this must never advance regardless of elapsed time.
+    await page.waitForTimeout(2600);
+    expect(await selectedAt()).toBe(before);
+
+    // Losing focus alone does not resume it either (only the rotation
+    // control does) -- move focus elsewhere on the page.
+    await page.keyboard.press("Tab");
+    await expect(content).toHaveAttribute("aria-live", "polite");
+    await page.waitForTimeout(1600);
+    expect(await selectedAt()).toBe(before);
+  });
+
+  test("hovering the carousel stops rotation, and moving away resumes it", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const content = frame.locator(".dx-carousel-content");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+
+    await content.hover();
+    // The button's own label is unaffected (reflects intent, not the
+    // ambient pause) -- only the live region does. See the focus test's
+    // own identical note.
+    await expect(rotation).toHaveAttribute("aria-label", "Stop automatic slide show");
+    await expect(content).toHaveAttribute("aria-live", "polite");
+
+    const selectedAt = async () =>
+      frame.locator('[role="group"][data-selected="true"]').getAttribute("aria-label");
+    const before = await selectedAt();
+    await page.waitForTimeout(1600);
+    expect(await selectedAt()).toBe(before);
+
+    // Move the mouse well away from the carousel -- resumes on its own,
+    // unlike the focus case above (the vendored tabbed reference's own
+    // accessibility prose: "Automatic rotation resumes when the mouse
+    // moves away ... unless another condition ... has been triggered").
+    await page.mouse.move(5, 5);
+    await expect(content).toHaveAttribute("aria-live", "off");
+    await expect
+      .poll(selectedAt, { timeout: 3000 })
+      .not.toBe(before);
+  });
+
+  test("Previous/Next stop rotation for good (stopOnInteraction)", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+    const next = frame.getByRole("button", { name: "Next slide" });
+
+    await expect(rotation).toHaveAttribute("aria-label", "Stop automatic slide show");
+    await next.click();
+    await expect(rotation).toHaveAttribute("aria-label", "Start automatic slide show");
+  });
+
+  test("prefers-reduced-motion: reduce never starts rotation at all", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const rotation = frame.getByRole("button", { name: /automatic slide show/i });
+    const content = frame.locator(".dx-carousel-content");
+
+    await expect(rotation).toHaveAttribute("aria-label", "Start automatic slide show");
+    await expect(content).toHaveAttribute("aria-live", "polite");
+
+    const selectedAt = async () =>
+      frame.locator('[role="group"][data-selected="true"]').getAttribute("aria-label");
+    const before = await selectedAt();
+    await page.waitForTimeout(1600);
+    expect(await selectedAt()).toBe(before);
+  });
+
+  test("axe: the autoplay variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "autoplay");
+    await expectNoAxeViolations(page, "carousel: autoplay variant", {
+      include: "#component-preview-frame-autoplay",
+    });
+  });
+});
+
+/**
+ * Tablist (dot-picker) variant -- APG's "tabbed" carousel style. The
+ * `tabs` variant has 5 slides, no separate Previous/Next (matching the
+ * vendored reference's own structure).
+ */
+test.describe("Carousel: tablist (dot-picker) variant", () => {
+  test("roles: tablist/tab/tabpanel, roving tabindex, aria-selected sync with the current slide", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tablist = frame.getByRole("tablist");
+    const tabs = frame.getByRole("tab");
+    const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
+
+    await expect(tablist).toBeVisible();
+    await expect(tabs).toHaveCount(5);
+    await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.nth(0)).toHaveAttribute("tabindex", "0");
+    for (let i = 1; i < 5; i++) {
+      await expect(tabs.nth(i)).toHaveAttribute("aria-selected", "false");
+      await expect(tabs.nth(i)).toHaveAttribute("tabindex", "-1");
+    }
+    await expect(slide(1)).toBeVisible();
+  });
+
+  test("clicking a tab activates its slide and moves the roving tab stop", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tabs = frame.getByRole("tab");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
+
+    await tabs.nth(2).click();
+    await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.nth(2)).toHaveAttribute("tabindex", "0");
+    await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "false");
+    await expect(tabs.nth(0)).toHaveAttribute("tabindex", "-1");
+    await expect(slide(3)).toHaveAttribute("data-selected", "true");
+    await expectSnappedToBoundary(content, slide(3));
+  });
+
+  test("ArrowRight/ArrowLeft move focus and automatically activate the newly focused tab (no Enter needed)", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tabs = frame.getByRole("tab");
+    const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
+
+    await tabs.nth(0).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(1)).toBeFocused();
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(tabs.nth(0)).toBeFocused();
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("ArrowLeft/ArrowRight wrap at both ends of the tablist", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tabs = frame.getByRole("tab");
+
+    await tabs.nth(0).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(tabs.nth(4)).toBeFocused();
+    await expect(tabs.nth(4)).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(0)).toBeFocused();
+  });
+
+  test("Home/End move focus to the first/last tab and activate it", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tabs = frame.getByRole("tab");
+    const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
+
+    await tabs.nth(0).focus();
+    await page.keyboard.press("End");
+    await expect(tabs.nth(4)).toBeFocused();
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+
+    await page.keyboard.press("Home");
+    await expect(tabs.nth(0)).toBeFocused();
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("each tab's aria-controls points at its matching tabpanel's id", async ({ page }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const firstTab = frame.getByRole("tab").nth(0);
+    const firstPanelId = await frame.locator('[role="tabpanel"]').nth(0).getAttribute("id");
+    expect(firstPanelId).toBeTruthy();
+    await expect(firstTab).toHaveAttribute("aria-controls", firstPanelId!);
+  });
+
+  test("axe: the tabs variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "tabs");
+    await expectNoAxeViolations(page, "carousel: tabs variant", {
+      include: "#component-preview-frame-tabs",
+    });
   });
 });
