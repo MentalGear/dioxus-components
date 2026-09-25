@@ -67,12 +67,16 @@
 //! silently compensating underneath it, which this crate does not have).
 
 use crate::{
+    collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
-    fold_style_attributes, has_own_accessible_name, merge_attributes, use_controlled, use_id_or,
-    use_unique_id,
+    fold_style_attributes, has_own_accessible_name, merge_attributes, use_controlled,
+    use_effect_cleanup, use_id_or, use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
+use dioxus_core::Task;
+use dioxus_sdk_time::sleep;
+use std::time::Duration;
 
 /// The axis a [`Carousel`] pages along.
 ///
@@ -152,6 +156,41 @@ fn next_selected(selected: usize, count: usize) -> usize {
 /// wrapping -- see [`can_scroll_prev`]'s doc).
 fn prev_selected(selected: usize) -> usize {
     selected.saturating_sub(1)
+}
+
+/// The index one step back from `selected`, honoring `loop_enabled` --
+/// approved fast-follow decision (backlog row 91, `dev-docs/research/carousel-2026-09-19.md`
+/// §8.2): **rewind-style** looping. From the first slide, wraps to the
+/// last (`count - 1`) rather than saturating; the actual scroll is still a
+/// single [`CAROUSEL_SCROLL_INTO_VIEW_JS`] paging call to that far index
+/// (a visible "rewind" across every intervening slide), not an
+/// embla-style cloned-node illusion -- clones would violate the overscroll
+/// port's own invariant 5 (`dev-docs/research/carousel-overscroll-2026-09-23.md`
+/// §6): they would enter the snap engine's own candidate list, the "N of
+/// M" slide count, and `:nth-child` styling. Falls back to
+/// [`prev_selected`]'s ordinary saturating behavior when `loop_enabled` is
+/// `false` (still v1's default) or `count == 0` (nothing to wrap to
+/// either way).
+fn step_prev(selected: usize, count: usize, loop_enabled: bool) -> usize {
+    if loop_enabled && count > 0 {
+        if selected == 0 {
+            count - 1
+        } else {
+            selected - 1
+        }
+    } else {
+        prev_selected(selected)
+    }
+}
+
+/// The mirror of [`step_prev`]: one step forward, wrapping from the last
+/// slide back to the first under `loop_enabled`.
+fn step_next(selected: usize, count: usize, loop_enabled: bool) -> usize {
+    if loop_enabled && count > 0 {
+        (selected + 1) % count
+    } else {
+        next_selected(selected, count)
+    }
 }
 
 /// The default accessible name for a slide with no name of its own:
@@ -1136,6 +1175,105 @@ struct CarouselContext {
     /// `dev-docs/conformance-harness.md`'s tier-2 Rule 14 describes for
     /// `SelectTrigger`/`DropdownMenuTrigger`/etc.).
     content_id: Signal<String>,
+    /// Whether `loop`ing is enabled -- see [`CarouselProps::r#loop`].
+    loop_enabled: ReadSignal<bool>,
+    /// The resolved text direction -- the exact same value [`Carousel`]'s
+    /// own root already computed via `use_direction(props.dir)`, republished
+    /// here so [`CarouselTabList`]/[`CarouselTab`] reuse it verbatim rather
+    /// than calling `use_direction(None)` a second time, which would
+    /// silently disagree with the root's own resolution whenever a caller
+    /// passes an explicit `dir` prop on [`Carousel`] itself rather than
+    /// relying on an ambient [`crate::direction::DirectionProvider`].
+    direction: Direction,
+    /// Autoplay/rotation-control state -- always present, every field
+    /// initialized to an inert "no autoplay" value, so [`CarouselContent`]
+    /// can read `autoplay.present`/`autoplay.rotating` unconditionally for
+    /// its own `aria-live` whether or not a [`CarouselAutoplay`] child
+    /// actually exists. The same "publish into a shared, always-initialized
+    /// slot" idiom `content_id` above already uses.
+    autoplay: AutoplayContext,
+    /// Published (`true`) by [`CarouselTabList`] on mount so
+    /// [`CarouselItem`] can switch its own role from `group` to
+    /// `tabpanel` -- see that component's own "Tablist variant" doc.
+    tablist_present: Signal<bool>,
+}
+
+/// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
+/// only for readability -- every field lives for the whole [`Carousel`]'s
+/// lifetime regardless of whether a [`CarouselAutoplay`] is ever mounted.
+///
+/// ## The pause/resume state machine
+///
+/// `rotating` (the one field every other component actually reads) is
+/// `true` only when ALL of the following hold: `playing` (the user's own
+/// high-level intent, toggled only by [`CarouselRotationControl`]'s click
+/// handler), NOT `resume_blocked`, NOT `focus_within`, and NOT (`hover`
+/// AND `stop_on_mouse_enter`). Two different "pause" shapes are
+/// deliberate, not an oversight, both read directly from the vendored
+/// tabbed reference's own accessibility-features prose
+/// (`examples/carousel-2-tablist.html`, "Controlling Automatic Slide
+/// Rotation"), not the basic reference's own JS (which has a documented
+/// latch bug on this exact point, `dev-docs/research/carousel-2026-09-19.md`
+/// §1.3 point 3 -- deliberately not ported):
+///
+/// - **Hover** clears freely: `hover` going back to `false` alone can make
+///   `rotating` `true` again ("Automatic rotation resumes when the mouse
+///   moves away... unless another condition... has been triggered").
+/// - **Focus** is sticky: `focus_within` going back to `false` does *not*
+///   by itself resume anything, because `resume_blocked` (set the instant
+///   focus enters, alongside `focus_within`) stays `true` until
+///   [`CarouselRotationControl`] is clicked again ("Automatic rotation
+///   only resumes if the user explicitly activates the ... button").
+///
+/// [`CarouselRotationControl`]'s own click handler always clears
+/// `resume_blocked` (whichever direction it toggles `playing`), matching
+/// the same reference's own "if a user activates the rotation control
+/// button ... it is assumed the user wants auto-rotation to start
+/// immediately."
+#[derive(Clone, Copy, PartialEq)]
+struct AutoplayContext {
+    /// `true` once a [`CarouselAutoplay`] has mounted at least once.
+    present: Signal<bool>,
+    /// The user's own high-level intent -- see this struct's own doc.
+    playing: Signal<bool>,
+    hover: Signal<bool>,
+    focus_within: Signal<bool>,
+    resume_blocked: Signal<bool>,
+    /// Mirrors [`CarouselAutoplayProps::stop_on_interaction`]; published
+    /// here (not read directly off the props) so [`AutoplayContext::note_interaction`]
+    /// can be called from components (`CarouselPrevious`/`CarouselNext`/
+    /// `CarouselTab`/[`use_carousel`]) that have no direct access to
+    /// [`CarouselAutoplay`]'s own props.
+    stop_on_interaction: Signal<bool>,
+    /// Mirrors [`CarouselAutoplayProps::stop_on_mouse_enter`]; see
+    /// `stop_on_interaction`'s own doc for why this is republished here.
+    stop_on_mouse_enter: Signal<bool>,
+    /// `true` exactly when the timer should be actively ticking -- see
+    /// this struct's own "pause/resume state machine" doc.
+    rotating: Memo<bool>,
+}
+
+impl AutoplayContext {
+    /// Stop autoplay for good (until [`CarouselRotationControl`] is
+    /// explicitly clicked again) if a [`CarouselAutoplay`] is present with
+    /// `stop_on_interaction` enabled (its own default `true`) -- called
+    /// from every *manual, discrete* paging entry point:
+    /// [`CarouselPrevious`]/[`CarouselNext`], [`Carousel`]'s own root
+    /// keyboard handler, [`CarouselTab`], and [`CarouselApi::scroll_to`].
+    /// Mirrors embla-carousel's own `embla-carousel-autoplay` plugin
+    /// option of the same name.
+    ///
+    /// Deliberately **not** called from the native pointer-drag/wheel
+    /// scroll-tracking bridge (`use_carousel_scroll_tracking`) -- a
+    /// documented v1 scope cut: only the discrete actions above count as
+    /// "interaction" for this purpose. See
+    /// [`CarouselAutoplayProps::stop_on_interaction`]'s own doc.
+    fn note_interaction(&self) {
+        if (self.present)() && (self.stop_on_interaction)() {
+            let mut playing = self.playing;
+            playing.set(false);
+        }
+    }
 }
 
 /// The props for the [`Carousel`] component.
@@ -1149,6 +1287,25 @@ pub struct CarouselProps {
     /// The controlled selected slide index (0-based). `None` for
     /// uncontrolled use (see [`Self::default_value`]).
     pub value: ReadSignal<Option<usize>>,
+
+    /// Whether Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`)
+    /// wrap around at the ends -- **rewind-style**, not an
+    /// embla-style seamless illusion: from the last slide, Next goes to
+    /// the first (and vice versa for Previous), via the same
+    /// `scrollIntoView` paging path every other transition already uses,
+    /// which visibly scrolls back across the intervening slides rather
+    /// than teleporting. No cloned edge slides are ever added -- they
+    /// would violate the overscroll port's own invariant 5 (they'd enter
+    /// the snap engine's candidate list, the "N of M" slide count, and
+    /// `:nth-child` styling). Dragging or wheeling past a physical edge
+    /// still rubber-bands (mode B3) regardless of this flag -- there is no
+    /// wrap on a drag/wheel gesture, only on Previous/Next/the root
+    /// keyboard. When `true`, [`CarouselPrevious`]/[`CarouselNext`] are
+    /// never `disabled`. Defaults to `false` (matches shadcn's own
+    /// `opts={{ loop: false }}` default). Approved fast-follow decision,
+    /// backlog row 91 / `dev-docs/research/carousel-2026-09-19.md` §8.2.
+    #[props(default)]
+    pub r#loop: ReadSignal<bool>,
 
     /// The initial selected slide index when uncontrolled.
     #[props(default)]
@@ -1259,6 +1416,40 @@ pub fn Carousel(props: CarouselProps) -> Element {
         set_raw_selected.call(clamp_selected(index, *count.peek()));
     });
     let content_id: Signal<String> = use_signal(String::new);
+    let loop_enabled = props.r#loop;
+
+    // Autoplay state -- always created (see `AutoplayContext`'s own doc
+    // for why: `CarouselContent` reads `autoplay.present`/`autoplay.rotating`
+    // unconditionally for its own `aria-live`, regardless of whether a
+    // `CarouselAutoplay` child exists at all). `stop_on_interaction`/
+    // `stop_on_mouse_enter` default to `true` -- the same defaults
+    // `CarouselAutoplayProps` itself uses, so a carousel with no
+    // `CarouselAutoplay` at all behaves identically to one whose (never
+    // mounted) autoplay would have used the ordinary defaults.
+    let autoplay_present = use_signal(|| false);
+    let autoplay_playing = use_signal(|| false);
+    let mut autoplay_hover = use_signal(|| false);
+    let mut autoplay_focus_within = use_signal(|| false);
+    let mut autoplay_resume_blocked = use_signal(|| false);
+    let autoplay_stop_on_interaction = use_signal(|| true);
+    let autoplay_stop_on_mouse_enter = use_signal(|| true);
+    let autoplay_rotating = use_memo(move || {
+        if !autoplay_playing() || autoplay_resume_blocked() || autoplay_focus_within() {
+            return false;
+        }
+        !(autoplay_hover() && autoplay_stop_on_mouse_enter())
+    });
+    let autoplay = AutoplayContext {
+        present: autoplay_present,
+        playing: autoplay_playing,
+        hover: autoplay_hover,
+        focus_within: autoplay_focus_within,
+        resume_blocked: autoplay_resume_blocked,
+        stop_on_interaction: autoplay_stop_on_interaction,
+        stop_on_mouse_enter: autoplay_stop_on_mouse_enter,
+        rotating: autoplay_rotating,
+    };
+    let tablist_present = use_signal(|| false);
 
     use_context_provider(|| CarouselContext {
         orientation,
@@ -1267,6 +1458,10 @@ pub fn Carousel(props: CarouselProps) -> Element {
         count,
         item_ids,
         content_id,
+        loop_enabled,
+        direction,
+        autoplay,
+        tablist_present,
     });
 
     // Scroll the selected slide into view whenever it changes, regardless
@@ -1344,12 +1539,26 @@ pub fn Carousel(props: CarouselProps) -> Element {
         let Some(intent) = carousel_key_intent(&key, orientation(), direction) else {
             return;
         };
+        let loop_now = loop_enabled();
         match intent {
-            HorizontalNav::Prev => set_selected.call(prev_selected(selected())),
-            HorizontalNav::Next => set_selected.call(next_selected(selected(), count())),
+            HorizontalNav::Prev => set_selected.call(step_prev(selected(), count(), loop_now)),
+            HorizontalNav::Next => set_selected.call(step_next(selected(), count(), loop_now)),
         }
+        autoplay.note_interaction();
         event.prevent_default();
     };
+
+    // Autoplay pause-on-hover/pause-on-focus -- always wired (cheap plain
+    // signal writes; a harmless no-op with no `CarouselAutoplay` mounted,
+    // since `autoplay_rotating` above can never be `true` without one).
+    // See `AutoplayContext`'s own doc for the hover-vs-focus asymmetry.
+    let onmouseenter = move |_| autoplay_hover.set(true);
+    let onmouseleave = move |_| autoplay_hover.set(false);
+    let onfocusin = move |_| {
+        autoplay_focus_within.set(true);
+        autoplay_resume_blocked.set(true);
+    };
+    let onfocusout = move |_| autoplay_focus_within.set(false);
 
     if !has_own_accessible_name(&props.attributes) {
         tracing::warn!(
@@ -1386,6 +1595,10 @@ pub fn Carousel(props: CarouselProps) -> Element {
         div {
             dir: direction.as_str(),
             onkeydown,
+            onmouseenter,
+            onmouseleave,
+            onfocusin,
+            onfocusout,
             ..attributes,
 
             {props.children}
@@ -1770,6 +1983,26 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
 
     let orientation = (ctx.orientation)();
     let draggable = (props.draggable)();
+
+    // `aria-live` -- only when a `CarouselAutoplay` is actually present
+    // (APG's own "optional" framing, `carousel-pattern.html`'s Roles
+    // table -- a manually-paged carousel has no rotation to announce
+    // around, so this stays absent exactly like it did before autoplay
+    // existed at all, matching every already-shipped non-autoplay
+    // variant/test). `"off"` while rotating (so a screen reader is not
+    // interrupted every few seconds), `"polite"` once stopped (so
+    // activating a tab/pressing Previous/Next while stopped is announced)
+    // -- `dev-docs/research/carousel-2026-09-19.md` §1.2/§1.3 point 2:
+    // deliberately no `aria-atomic`, matching the tested reference rather
+    // than its own (self-contradicting) prose.
+    let aria_live = (ctx.autoplay.present)().then(|| {
+        if (ctx.autoplay.rotating)() {
+            "off"
+        } else {
+            "polite"
+        }
+    });
+
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
@@ -1801,6 +2034,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         attributes!(div {
             style: style.clone(),
             tabindex: "0",
+            aria_live: aria_live,
             "data-orientation": orientation.as_str(),
             "data-draggable": draggable,
         }),
@@ -1889,6 +2123,21 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     let has_name = has_own_accessible_name(&props.attributes);
     let default_label = (!has_name && count > 0).then(|| slide_label(index(), count));
 
+    // `role="tabpanel"` (in lieu of `group`) once a `CarouselTabList` has
+    // registered -- the APG tabbed style, `carousel-2-tablist.html`'s own
+    // markup. `aria-roledescription="slide"` stays regardless: the
+    // vendored tabbed example's own markup keeps it alongside `tabpanel`
+    // (`<div ... role="tabpanel" aria-roledescription="slide" ...>`),
+    // contradicting the pattern page's own (unfollowed) prose that a
+    // tabpanel "does not have the aria-roledescription property" --
+    // `dev-docs/research/carousel-2026-09-19.md` §1.3 point 1 already
+    // recommends following the tested example over the abstract prose.
+    let role = if (ctx.tablist_present)() {
+        "tabpanel"
+    } else {
+        "group"
+    };
+
     // `scroll-snap-stop:always` -- see `CarouselContent`'s own doc, "##
     // scroll-snap-stop" section, for what this is, its known limitations,
     // and why this is a plain inline declaration rather than a stylesheet
@@ -1912,7 +2161,7 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
         }),
         rest_attrs,
         attributes!(div {
-            role: "group",
+            role: role,
             aria_roledescription: "slide",
             style: style.clone(),
             "data-selected": is_selected,
@@ -1948,17 +2197,19 @@ pub struct CarouselPreviousProps {
 ///
 /// A native `<button type="button">` that moves to the previous slide,
 /// genuinely `disabled` (not merely `aria-disabled`) when already at the
-/// first slide -- v1 has no `loop`, so this is a real boundary. Default
-/// accessible name `"Previous slide"`, overridable with your own
-/// `aria-label`/`aria-labelledby`. `aria-controls` points at the sibling
-/// [`CarouselContent`]'s own id.
+/// first slide -- unless [`CarouselProps::r#loop`] is enabled, in which
+/// case this is never `disabled` at all (it wraps to the last slide
+/// instead). Default accessible name `"Previous slide"`, overridable with
+/// your own `aria-label`/`aria-labelledby`. `aria-controls` points at the
+/// sibling [`CarouselContent`]'s own id.
 ///
 /// This must be used inside a [`Carousel`] component.
 #[component]
 pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
-    let disabled = !can_scroll_prev(selected);
+    let loop_enabled = (ctx.loop_enabled)();
+    let disabled = !loop_enabled && !can_scroll_prev(selected);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Previous slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -1987,7 +2238,11 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
 
     rsx! {
         button {
-            onclick: move |_| ctx.set_selected.call(prev_selected((ctx.selected)())),
+            onclick: move |_| {
+                let loop_now = (ctx.loop_enabled)();
+                ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), loop_now));
+                ctx.autoplay.note_interaction();
+            },
             ..attributes,
 
             {props.children}
@@ -1998,7 +2253,9 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
 /// # CarouselNext
 ///
 /// The mirror of [`CarouselPrevious`]: moves to the next slide, `disabled`
-/// at the last slide, default accessible name `"Next slide"`.
+/// at the last slide unless [`CarouselProps::r#loop`] is enabled (in which
+/// case it wraps to the first slide instead and is never `disabled`),
+/// default accessible name `"Next slide"`.
 ///
 /// This must be used inside a [`Carousel`] component.
 #[component]
@@ -2006,7 +2263,8 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
-    let disabled = !can_scroll_next(selected, count);
+    let loop_enabled = (ctx.loop_enabled)();
+    let disabled = !loop_enabled && !can_scroll_next(selected, count);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Next slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -2027,7 +2285,11 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
 
     rsx! {
         button {
-            onclick: move |_| ctx.set_selected.call(next_selected((ctx.selected)(), (ctx.count)())),
+            onclick: move |_| {
+                let loop_now = (ctx.loop_enabled)();
+                ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), loop_now));
+                ctx.autoplay.note_interaction();
+            },
             ..attributes,
 
             {props.children}
@@ -2053,6 +2315,7 @@ pub struct CarouselApi {
     /// Whether [`Self::scroll_to`] to `selected + 1` would move anywhere.
     pub can_scroll_next: bool,
     scroll_to: Callback<usize>,
+    autoplay: AutoplayContext,
 }
 
 impl CarouselApi {
@@ -2060,7 +2323,10 @@ impl CarouselApi {
     /// same way every other path in this module is). For building a
     /// custom picker (e.g. a row of dot indicators) alongside
     /// [`CarouselPrevious`]/[`CarouselNext`], which only ever step by one.
+    /// Counts as "interaction" for [`CarouselAutoplayProps::stop_on_interaction`]
+    /// the same way clicking Previous/Next does.
     pub fn scroll_to(&self, index: usize) {
+        self.autoplay.note_interaction();
         self.scroll_to.call(index);
     }
 }
@@ -2093,12 +2359,527 @@ pub fn use_carousel() -> CarouselApi {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
+    let loop_enabled = (ctx.loop_enabled)();
     CarouselApi {
         selected,
         count,
-        can_scroll_prev: can_scroll_prev(selected),
-        can_scroll_next: can_scroll_next(selected, count),
+        can_scroll_prev: (loop_enabled && count > 0) || can_scroll_prev(selected),
+        can_scroll_next: (loop_enabled && count > 0) || can_scroll_next(selected, count),
         scroll_to: ctx.set_selected,
+        autoplay: ctx.autoplay,
+    }
+}
+
+/// One-shot: reads `window.matchMedia('(prefers-reduced-motion: reduce)').matches`
+/// and reports it back. The one required JS read even under this module's
+/// "almost no JS" posture (`dev-docs/research/carousel-2026-09-19.md` §5.2)
+/// that has to be observed from the *Rust* side rather than only ever
+/// branched on inside a script -- [`CarouselAutoplay`] needs the answer to
+/// decide whether to start its own timer at all, a decision that lives in
+/// Rust. Mirrors the reduced-motion checks already inline inside
+/// `CAROUSEL_DRAG_JS`/`CAROUSEL_WHEEL_BOUNCE_JS`, just surfaced instead of
+/// only ever consulted in place.
+const CAROUSEL_REDUCED_MOTION_JS: &str =
+    "dioxus.send(window.matchMedia('(prefers-reduced-motion: reduce)').matches);";
+
+/// The props for the [`CarouselAutoplay`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct CarouselAutoplayProps {
+    /// Milliseconds between automatic slide advances. Mirrors
+    /// `embla-carousel-autoplay`'s own `delay` option, including its
+    /// default (`4000`).
+    #[props(default = ReadSignal::new(Signal::new(4000)))]
+    pub delay_ms: ReadSignal<u64>,
+
+    /// Whether rotation stops for good (until [`CarouselRotationControl`]
+    /// is explicitly clicked again) after a manual paging action --
+    /// Previous/Next, the root keyboard handler, a [`CarouselTab`], or a
+    /// custom picker's own [`CarouselApi::scroll_to`]. Mirrors
+    /// `embla-carousel-autoplay`'s own `stopOnInteraction` option and its
+    /// default (`true`).
+    ///
+    /// **Scope note (v1):** a native pointer-drag or wheel/trackpad scroll
+    /// does **not** count as "interaction" here -- only the discrete
+    /// paging actions above do. Wiring the drag/wheel bridges too is a
+    /// fast-follow, not a silent gap: see [`AutoplayContext::note_interaction`]'s
+    /// own doc for exactly which call sites are wired.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub stop_on_interaction: ReadSignal<bool>,
+
+    /// Whether hovering anywhere in the carousel pauses rotation --
+    /// resuming once the pointer leaves, unless focus is *also* currently
+    /// holding it paused (see [`AutoplayContext`]'s own "pause/resume
+    /// state machine" doc for the hover-vs-focus asymmetry, taken directly
+    /// from the vendored tabbed reference's own accessibility prose).
+    /// Mirrors `embla-carousel-autoplay`'s own `stopOnMouseEnter` option
+    /// and its default (`true`).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub stop_on_mouse_enter: ReadSignal<bool>,
+
+    /// Whether this carousel should start rotating on mount at all --
+    /// before the one-shot `prefers-reduced-motion` check below, which
+    /// always forces it off regardless of this value (APG's own reference
+    /// does the same: `dev-docs/research/carousel-2026-09-19.md` §1.3
+    /// point 4). Defaults to `true`, matching `embla-carousel-autoplay`'s
+    /// own default of starting immediately.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub default_playing: ReadSignal<bool>,
+}
+
+/// # CarouselAutoplay
+///
+/// Installs the APG "auto-rotating" carousel's timer behavior: ticks every
+/// [`CarouselAutoplayProps::delay_ms`], paging through the same [`step_next`]
+/// path [`CarouselNext`] uses (so [`CarouselProps::r#loop`] applies
+/// identically -- without `loop`, rotation simply stops once it reaches
+/// the last slide, rather than ticking forever against a no-op the way
+/// `embla-carousel-autoplay`'s own documented behavior does; with `loop`,
+/// it rewinds and keeps going). Renders no DOM of its own -- pair it with
+/// a [`CarouselRotationControl`] (placed **first**, before any other
+/// focusable content, per APG's own requirement) to give the user a way to
+/// toggle it, and see [`AutoplayContext`]'s own doc for the full
+/// pause/resume state machine (hover, focus, and the sticky
+/// "does not auto-resume after focus" rule).
+///
+/// `aria-live` on [`CarouselContent`] (`"off"` while rotating, `"polite"`
+/// once stopped) and the rotation control's own toggling label are both
+/// driven by this component's presence -- neither exists at all in a
+/// [`Carousel`] with no [`CarouselAutoplay`] mounted, preserving every
+/// already-shipped non-autoplay variant's markup exactly.
+///
+/// `prefers-reduced-motion: reduce` always forces rotation off at mount,
+/// regardless of [`CarouselAutoplayProps::default_playing`] -- checked
+/// once, client-side only, via a post-mount effect that starts from the
+/// same deterministic value SSR and the client's own pre-hydration first
+/// render already agree on, so there is no hydration mismatch (mirrors
+/// [`Carousel`]'s own `is_first`/mount-settle construction).
+///
+/// This must be used inside a [`Carousel`] component.
+#[component]
+pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
+    let ctx: CarouselContext = use_context();
+    let autoplay = ctx.autoplay;
+
+    // Publish presence + the two opt-outs every render -- plain signal
+    // writes, cheap even when unchanged (Dioxus signals already no-op a
+    // same-value write), the same "publish into a shared context slot"
+    // idiom `CarouselContent`'s own `content_id` publish above uses.
+    use_effect(move || {
+        let mut present = autoplay.present;
+        let mut stop_on_interaction = autoplay.stop_on_interaction;
+        let mut stop_on_mouse_enter = autoplay.stop_on_mouse_enter;
+        present.set(true);
+        stop_on_interaction.set((props.stop_on_interaction)());
+        stop_on_mouse_enter.set((props.stop_on_mouse_enter)());
+    });
+
+    // Mount-time default + the one-shot `prefers-reduced-motion` read,
+    // consumed exactly once -- mirrors `Carousel`'s own `is_first`
+    // construction (see that effect's own doc): SSR and the client's
+    // pre-hydration first render both start `playing` from the same
+    // deterministic value (`default_playing`), so there is no hydration
+    // mismatch; this effect then corrects it once, client-side only, if
+    // the platform prefers reduced motion.
+    let mut checked_reduced_motion = use_signal(|| false);
+    use_effect(move || {
+        if *checked_reduced_motion.peek() {
+            return;
+        }
+        checked_reduced_motion.set(true);
+        let mut playing = autoplay.playing;
+        playing.set((props.default_playing)());
+        spawn(async move {
+            let mut eval = document::eval(CAROUSEL_REDUCED_MOTION_JS);
+            if let Ok(true) = eval.recv::<bool>().await {
+                playing.set(false);
+            }
+        });
+    });
+
+    // The ticking loop. Restarts fresh (no partial-elapsed carry-over
+    // across a pause/resume -- a deliberate v1 simplification) every time
+    // `rotating` flips, cancelling whatever was previously running first
+    // -- mirrors `menu_sub.rs`'s own `DelayedAction::schedule` cancel-
+    // before-reschedule idiom, this crate's established precedent for a
+    // cancellable spawned timer. Always torn down: both on every flip to
+    // `false` (this effect's own re-run, via the `take()` below) and on
+    // unmount (`use_effect_cleanup`), so no timer ever outlives the
+    // component or a single "rotating" span -- `Task::cancel()` is
+    // immediate, not cooperative.
+    let mut running: Signal<Option<Task>> = use_signal(|| None);
+    let count = ctx.count;
+    let selected = ctx.selected;
+    let loop_enabled = ctx.loop_enabled;
+    let set_selected = ctx.set_selected;
+    use_effect(move || {
+        let active = (autoplay.rotating)();
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+        if !active {
+            return;
+        }
+        let delay = Duration::from_millis((props.delay_ms)().max(1));
+        let task = spawn(async move {
+            loop {
+                sleep(delay).await;
+                let count_now = *count.peek();
+                if count_now == 0 {
+                    continue;
+                }
+                let loop_now = *loop_enabled.peek();
+                let current = *selected.peek();
+                // Stops rather than ticking forever against a no-op once a
+                // non-looping carousel reaches its last slide -- see this
+                // component's own doc, "pick shadcn's behavior and
+                // document it": `embla-carousel-autoplay`'s own documented
+                // behavior keeps its interval alive indefinitely once
+                // `scrollNext()` becomes a permanent no-op at the end;
+                // this construction instead cancels the timer outright,
+                // which is observably identical (nothing further ever
+                // advances) but does not spin a no-op interval forever.
+                if !loop_now && current + 1 >= count_now {
+                    break;
+                }
+                set_selected.call(step_next(current, count_now, loop_now));
+            }
+        });
+        running.set(Some(task));
+    });
+    use_effect_cleanup(move || {
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+    });
+
+    rsx! {}
+}
+
+/// The props for the [`CarouselRotationControl`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct CarouselRotationControlProps {
+    /// Additional attributes to apply to the button element.
+    #[props(extends = GlobalAttributes)]
+    #[props(extends = button)]
+    pub attributes: Vec<Attribute>,
+
+    /// The children of the button -- its visible content (e.g. a
+    /// play/pause icon). The accessible name comes from `aria-label`
+    /// (defaulted to the two toggling strings below) regardless of what is
+    /// rendered here.
+    pub children: Element,
+}
+
+/// # CarouselRotationControl
+///
+/// A native `<button type="button">` that toggles [`CarouselAutoplay`]'s
+/// rotation on and off. Accessible name toggles between `"Start automatic
+/// slide show"`/`"Stop automatic slide show"` (overridable) -- deliberately
+/// **no** `aria-pressed`: the changing label itself is the state (APG's
+/// own explicit rotation-control contract, `dev-docs/research/carousel-2026-09-19.md`
+/// §1.2/§1.3). Activating it never moves focus (native `<button>`
+/// semantics), so a user can toggle rotation repeatedly without losing
+/// their place.
+///
+/// **Composition:** place this **first** among [`Carousel`]'s children --
+/// before [`CarouselPrevious`]/[`CarouselTabList`]/[`CarouselContent`] --
+/// so it is the first focusable element in the carousel, matching APG's
+/// own explicit requirement ("Rotation control ... precede\[s\] the slide
+/// content in the Tab sequence"). This component cannot enforce that
+/// order itself, only document it -- the same tradeoff [`Carousel`]'s own
+/// doc already makes for [`CarouselPrevious`]/[`CarouselNext`] preceding
+/// [`CarouselContent`].
+///
+/// This must be used inside a [`Carousel`] alongside a [`CarouselAutoplay`]
+/// -- clicking it before one has mounted is a harmless no-op (there is
+/// nothing to toggle yet).
+#[component]
+pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
+    let ctx: CarouselContext = use_context();
+    let mut autoplay = ctx.autoplay;
+    let playing = (autoplay.playing)();
+    let default_label = (!has_own_accessible_name(&props.attributes)).then_some(if playing {
+        "Stop automatic slide show"
+    } else {
+        "Start automatic slide show"
+    });
+
+    // Merged (caller-wins for the overridable label default), not a
+    // literal beside a bare `..props.attributes` spread
+    // (`scripts/check-attr-spread-collision.sh`).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            r#type: "button",
+            aria_label: default_label
+        }),
+        props.attributes,
+    ]);
+
+    rsx! {
+        button {
+            onclick: move |_| {
+                autoplay.playing.set(!playing);
+                // An explicit click always re-arms resume, whichever
+                // direction it toggles -- "if a user activates the
+                // rotation control button ... it is assumed the user
+                // wants auto-rotation to start immediately" (the vendored
+                // tabbed reference's own accessibility-features prose) --
+                // so a later focus-driven pause never inherits a stale
+                // block left over from before this click.
+                autoplay.resume_blocked.set(false);
+            },
+            // Stops its own `focusin`/`focusout` from reaching `Carousel`'s
+            // root (the `focus_within`/`resume_blocked` pause) -- note
+            // `focusin`/`focusout` specifically, the bubbling pair the root
+            // actually listens for, not `focus`/`blur` (a non-bubbling
+            // pair whose own propagation is a separate dispatch entirely;
+            // stopping *that* one does nothing to the other, confirmed by
+            // execution: an earlier version of this stopped `focus`/`blur`
+            // and the very failure below persisted unchanged). A
+            // narrowly-scoped exemption, NOT the vendored reference's own
+            // broader "ignore hover/focus once explicitly started" quirk
+            // (this module's own doc already declines to port that class
+            // of behavior, `dev-docs/research/carousel-2026-09-19.md` §1.3
+            // point 3): a mouse click on this very button moves DOM focus
+            // onto it (standard Chromium `<button>` behavior), and without
+            // this, `focus_within` would immediately re-pause the very
+            // rotation this click just started, defeating a mouse click's
+            // own visible effect -- confirmed by execution
+            // (`playwright/carousel.spec.ts`'s own "autoplay" describe
+            // block was red without this). Keyboard/pointer focus on every
+            // OTHER focusable piece of the carousel (Previous/Next, the
+            // content track, a `CarouselTab`) still pauses normally.
+            onfocusin: move |event: Event<FocusData>| event.stop_propagation(),
+            onfocusout: move |event: Event<FocusData>| event.stop_propagation(),
+            ..attributes,
+
+            {props.children}
+        }
+    }
+}
+
+/// Shared roving-focus state for one [`CarouselTabList`], consumed by its
+/// [`CarouselTab`] children -- the tablist's *own* [`CollectionState`],
+/// entirely separate from [`CarouselContext`]'s own `selected`/`count`
+/// (which stay the single source of truth for which slide is current;
+/// this collection only tracks *focus* among the tab buttons themselves,
+/// the same separation `tabs.rs`'s own `TabsContext`/`CollectionState`
+/// pair keeps).
+#[derive(Clone, Copy)]
+struct CarouselTabListContext {
+    focus: CollectionState,
+    /// Reused verbatim from [`CarouselContext::direction`] -- see that
+    /// field's own doc for why a fresh `use_direction(None)` call here
+    /// would risk disagreeing with the [`Carousel`] root's own resolution.
+    direction: Direction,
+}
+
+/// The props for the [`CarouselTabList`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct CarouselTabListProps {
+    /// Additional attributes to apply to the tablist element.
+    #[props(extends = GlobalAttributes)]
+    pub attributes: Vec<Attribute>,
+
+    /// The [`CarouselTab`] children.
+    pub children: Element,
+}
+
+/// # CarouselTabList
+///
+/// The slide-picker row for the APG **tabbed** carousel style:
+/// `role="tablist"` containing one [`CarouselTab`] per slide. Composing
+/// this on this crate's own `crate::collection` roving-focus machinery
+/// (the same module [`crate::tabs::Tabs`] itself is built on) rather than
+/// [`crate::tabs::Tabs`]/`TabTrigger`/`TabContent` directly was a
+/// deliberate choice, not an oversight -- two concrete reasons, found by
+/// trying the literal composition first:
+///
+/// 1. **`TabContent` hides its inactive panels** (`hidden: !selected()`).
+///    A carousel's slides must all stay simultaneously present in
+///    [`CarouselContent`]'s own scroll-snap track -- "showing" a slide
+///    here means scrolling to it, never toggling `hidden` -- so
+///    `TabContent` is structurally the wrong shape regardless of any
+///    other consideration. [`CarouselItem`] already exists and is reused
+///    unchanged (just switching its own `role` to `tabpanel`, see that
+///    component's own doc).
+/// 2. **`TabTrigger`'s own arrow-key handling is manual activation**
+///    (`tabs.rs`: arrow keys only move focus; only `Enter`/`Space`/click
+///    actually switches the active tab, via `TabTrigger`'s `onclick`).
+///    APG's tabbed carousel requires **automatic** activation instead --
+///    "Right Arrow: Moves focus to the next tab ... Shows the slide
+///    associated with the newly focused tab" (no `Enter` needed,
+///    `examples/carousel-2-tablist.html`'s own keyboard table). Building
+///    [`CarouselTab`] directly on `crate::collection` (below) makes this
+///    one line (`onfocus` calling [`CarouselContext::set_selected`]
+///    directly) instead of a manual-activation component fighting its own
+///    contract.
+///
+/// What *is* reused, per the brief's own "compose, don't reimplement"
+/// recommendation: the exact same `collection_item`/`use_item`/
+/// `CollectionState` roving-tabindex machinery `TabTrigger` itself is
+/// built on (`crate::collection`, `pub(crate)` and already shared across
+/// this crate) -- so this is still composition on `tabs.rs`'s own
+/// underlying focus engine, one layer below the `Tabs`/`TabTrigger`
+/// components themselves, not a hand-rolled reimplementation of roving
+/// focus.
+///
+/// Arrow-key wrap (`ArrowLeft`/`ArrowRight` -- RTL-aware, reusing
+/// [`Carousel`]'s own resolved [`Direction`] -- wraps at both ends
+/// unconditionally, per APG's own tablist keyboard table ("If focus is on
+/// the last tab, moves focus to the first tab"). This is the *tablist's*
+/// own always-circular navigation, independent of [`CarouselProps::r#loop`]
+/// (which governs [`CarouselPrevious`]/[`CarouselNext`]/the root keyboard
+/// instead, and defaults to `false`).
+///
+/// This must be used inside a [`Carousel`] component.
+#[component]
+pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
+    let ctx: CarouselContext = use_context();
+    let mut tablist_present = ctx.tablist_present;
+
+    use_effect(move || {
+        tablist_present.set(true);
+    });
+
+    // Always wraps (`ReadSignal::new(Signal::new(true))`) -- see this
+    // component's own doc, "Arrow-key wrap."
+    let focus = use_collection_provider(ReadSignal::new(Signal::new(true)));
+    use_context_provider(|| CarouselTabListContext {
+        focus,
+        direction: ctx.direction,
+    });
+
+    let has_name = has_own_accessible_name(&props.attributes);
+    // "Choose slide to display" -- this crate's own design sketch's
+    // suggested name (`dev-docs/research/carousel-2026-09-19.md` §5.4);
+    // the vendored reference itself uses the shorter `aria-label="Slides"`
+    // (`examples/carousel-2-tablist.html`) -- APG requires *a* meaningful
+    // name, not this exact string, so either is conformant; overridable
+    // either way.
+    let default_label = (!has_name).then_some("Choose slide to display");
+
+    let attributes = merge_attributes(vec![
+        attributes!(div {
+            aria_label: default_label
+        }),
+        props.attributes,
+        attributes!(div { role: "tablist" }),
+    ]);
+
+    rsx! {
+        div {
+            ..attributes,
+            {props.children}
+        }
+    }
+}
+
+/// The props for the [`CarouselTab`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct CarouselTabProps {
+    /// The index of the slide this tab controls (0-based) -- the same
+    /// convention [`CarouselItem::index`] and `tabs.rs`'s own
+    /// `TabTrigger`/`TabContent` `index` props use.
+    pub index: ReadSignal<usize>,
+
+    /// Additional attributes to apply to the tab button element.
+    #[props(extends = GlobalAttributes)]
+    #[props(extends = button)]
+    pub attributes: Vec<Attribute>,
+
+    /// The children of the tab -- its visible content (e.g. a dot/thumbnail
+    /// icon). The accessible name comes from `aria-label` (defaulted to
+    /// `"Slide {n}"`, matching the vendored reference's own
+    /// `aria-label="Slide X"`) regardless of what is rendered here.
+    pub children: Element,
+}
+
+/// # CarouselTab
+///
+/// One slide-picker button: `role="tab"`, roving `tabindex`, `aria-selected`,
+/// `aria-controls` pointing at the matching [`CarouselItem`]'s own id.
+/// Focusing a tab -- by `Tab`/`Shift+Tab` landing on it (already the
+/// selected one, roving tabindex) or by `ArrowLeft`/`ArrowRight`/`Home`/`End`
+/// moving focus onto it -- **automatically** selects and scrolls to its
+/// slide (no `Enter`/click needed), matching APG's own tabbed-style
+/// automatic-activation contract. See [`CarouselTabList`]'s own doc for
+/// why this is a purpose-built component on `crate::collection` rather
+/// than [`crate::tabs::TabTrigger`] directly (manual activation there is
+/// the wrong contract for this pattern).
+///
+/// This must be used inside a [`CarouselTabList`] component, with indices
+/// matching the sibling [`CarouselItem`]s one-to-one.
+#[component]
+pub fn CarouselTab(props: CarouselTabProps) -> Element {
+    let carousel_ctx: CarouselContext = use_context();
+    let tablist_ctx: CarouselTabListContext = use_context();
+    let index = props.index;
+
+    let is_selected = use_memo(move || (carousel_ctx.selected)() == index());
+
+    let item =
+        use_item(collection_item(tablist_ctx.focus, index).selected(move || is_selected.cloned()));
+    let onmounted = item.onmounted();
+    let tabindex = item.tabindex;
+
+    let default_label =
+        (!has_own_accessible_name(&props.attributes)).then(|| format!("Slide {}", index() + 1));
+    let aria_controls = (carousel_ctx.item_ids)()
+        .get(index())
+        .cloned()
+        .filter(|s| !s.is_empty());
+
+    // Merged (caller-wins for the overridable label default, then
+    // component-owned ARIA/roving state last), not a literal beside a
+    // bare `..props.attributes` spread (`scripts/check-attr-spread-collision.sh`).
+    let attributes = merge_attributes(vec![
+        attributes!(button {
+            r#type: "button",
+            aria_label: default_label
+        }),
+        props.attributes,
+        attributes!(button {
+            role: "tab",
+            tabindex: tabindex,
+            aria_selected: is_selected(),
+            aria_controls: aria_controls,
+        }),
+    ]);
+
+    rsx! {
+        button {
+            onmounted,
+            onfocus: move |_| {
+                let mut focus = tablist_ctx.focus;
+                focus.set_focus(Some(index()));
+                carousel_ctx.set_selected.call(index());
+                carousel_ctx.autoplay.note_interaction();
+            },
+            onkeydown: move |event: Event<KeyboardData>| {
+                let key = event.key();
+                let mut focus = tablist_ctx.focus;
+                let mut prevent_default = true;
+                match key {
+                    Key::ArrowLeft | Key::ArrowRight => {
+                        match tablist_ctx.direction.resolve_horizontal(&key) {
+                            Some(HorizontalNav::Prev) => focus.focus_prev(),
+                            Some(HorizontalNav::Next) => focus.focus_next(),
+                            None => {}
+                        }
+                    }
+                    Key::Home => focus.focus_first(),
+                    Key::End => focus.focus_last(),
+                    _ => prevent_default = false,
+                }
+                if prevent_default {
+                    event.prevent_default();
+                }
+            },
+            ..attributes,
+
+            {props.children}
+        }
     }
 }
 
@@ -2173,6 +2954,48 @@ mod tests {
     #[test]
     fn prev_selected_stops_at_first_slide_without_wrapping() {
         assert_eq!(prev_selected(0), 0);
+    }
+
+    #[test]
+    fn step_prev_without_loop_matches_prev_selected() {
+        assert_eq!(step_prev(0, 3, false), prev_selected(0));
+        assert_eq!(step_prev(2, 3, false), prev_selected(2));
+    }
+
+    #[test]
+    fn step_prev_with_loop_wraps_from_first_to_last() {
+        assert_eq!(step_prev(0, 3, true), 2);
+    }
+
+    #[test]
+    fn step_prev_with_loop_mid_range_steps_back_by_one() {
+        assert_eq!(step_prev(2, 3, true), 1);
+    }
+
+    #[test]
+    fn step_prev_with_loop_and_zero_slides_stays_zero() {
+        assert_eq!(step_prev(0, 0, true), 0);
+    }
+
+    #[test]
+    fn step_next_without_loop_matches_next_selected() {
+        assert_eq!(step_next(0, 3, false), next_selected(0, 3));
+        assert_eq!(step_next(2, 3, false), next_selected(2, 3));
+    }
+
+    #[test]
+    fn step_next_with_loop_wraps_from_last_to_first() {
+        assert_eq!(step_next(2, 3, true), 0);
+    }
+
+    #[test]
+    fn step_next_with_loop_mid_range_steps_forward_by_one() {
+        assert_eq!(step_next(0, 3, true), 1);
+    }
+
+    #[test]
+    fn step_next_with_loop_and_zero_slides_stays_zero() {
+        assert_eq!(step_next(0, 0, true), 0);
     }
 
     #[test]
@@ -2582,5 +3405,192 @@ mod ssr_tests {
         // The earlier, broken `<style>`-tag construction is gone entirely,
         // not just replaced with a working version of itself.
         assert!(!html.contains("<style>"));
+    }
+
+    // -- `loop` -------------------------------------------------------
+
+    #[component]
+    fn LoopCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                    CarouselItem { index: 2usize, "Three" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn loop_enabled_previous_is_never_disabled_even_before_registration() {
+        // Even on the very first, pre-effect render (`count == 0`, the
+        // same moment `next_button_is_disabled_before_registration_effects_run`
+        // asserts the NON-loop `CarouselNext` conservatively disables) --
+        // `loop` makes both buttons unconditionally not-disabled, per the
+        // approved decision (backlog row 91): they wrap instead of ever
+        // reaching a real boundary.
+        let html = render(LoopCarousel);
+        let previous_tag = button_tag(&html, 0);
+        let next_tag = button_tag(&html, 1);
+        assert!(!previous_tag.contains("disabled"));
+        assert!(!next_tag.contains("disabled"));
+    }
+
+    #[test]
+    fn loop_enabled_previous_stays_enabled_once_items_have_registered() {
+        let mut dom = VirtualDom::new(LoopCarousel);
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.render_immediate(&mut dioxus::core::NoOpMutations);
+        }
+        let html = dioxus_ssr::render(&dom);
+        let previous_tag = button_tag(&html, 0);
+        let next_tag = button_tag(&html, 1);
+        assert!(!previous_tag.contains("disabled"));
+        assert!(!next_tag.contains("disabled"));
+    }
+
+    // -- Autoplay + rotation control -----------------------------------
+
+    #[component]
+    fn AutoplayCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselRotationControl { "Toggle" }
+                CarouselAutoplay {}
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_aria_live_without_a_carousel_autoplay() {
+        // Regression guard: a `Carousel` with no `CarouselAutoplay` at all
+        // must render byte-for-byte the same as it always has -- no
+        // `aria-live` anywhere (APG's own "optional" framing: a
+        // manually-paged carousel has nothing to announce around).
+        let html = render(ThreeSlideCarousel);
+        assert!(!html.contains("aria-live"));
+    }
+
+    #[test]
+    fn no_aria_live_before_carousel_autoplay_has_mounted() {
+        // `CarouselAutoplay` publishes `autoplay.present` via its own
+        // effect, which (like every other registration effect in this
+        // module) never runs during a bare `rebuild_in_place` -- so SSR
+        // and the client's pre-hydration first render both still agree on
+        // "no aria-live yet," the same hydration-parity shape
+        // `item_has_no_default_label_on_first_render_before_registration_effects_run`
+        // already establishes for "N of M" labels.
+        let html = render(AutoplayCarousel);
+        assert!(!html.contains("aria-live"));
+    }
+
+    #[component]
+    fn AutoplayCarouselNotPlaying() -> Element {
+        // `default_playing: false` -- deliberately never `true` in this
+        // fixture. The `rotating=true` (ticking) case needs a real
+        // `sleep().await` registration, which `dioxus_sdk_time::sleep`
+        // asserts requires "a Tokio 1.x runtime" (confirmed by execution,
+        // panicking `render_immediate` under a plain `#[test]`, no reactor
+        // present) -- a synchronous SSR unit test has none, and adding one
+        // just to spawn-and-immediately-abandon a timer would test the
+        // runtime, not this component. The actual tick -> advance ->
+        // aria-live="off" round trip is exercised live instead,
+        // `playwright/carousel.spec.ts`'s own "autoplay" describe block,
+        // where a real browser's own JS timer backs it.
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselRotationControl { "Toggle" }
+                CarouselAutoplay { default_playing: false }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aria_live_polite_and_rotation_label_once_autoplay_has_mounted_and_is_not_playing() {
+        let mut dom = VirtualDom::new(AutoplayCarouselNotPlaying);
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.render_immediate(&mut dioxus::core::NoOpMutations);
+        }
+        let html = dioxus_ssr::render(&dom);
+        // `present` is now `true` (published by `CarouselAutoplay`'s own
+        // effect) but `playing` is `false` (`default_playing: false`), so
+        // `rotating` is `false` and the live region is `"polite"` -- and
+        // the timer never spawns at all (this component's own doc: the
+        // ticking effect's `if !active { return; }` branch), which is
+        // exactly why this fixture -- unlike a default-playing one -- is
+        // safe to drive through `render_immediate` in a plain `#[test]`.
+        assert!(html.contains(r#"aria-live="polite""#));
+        assert!(html.contains(r#"aria-label="Start automatic slide show""#));
+    }
+
+    // -- Tablist variant ------------------------------------------------
+
+    #[component]
+    fn TablistCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselTabList {
+                    CarouselTab { index: 0usize, "1" }
+                    CarouselTab { index: 1usize, "2" }
+                }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn item_is_group_role_before_a_carousel_tab_list_has_mounted() {
+        // Same hydration-parity shape as autoplay's own "before mount"
+        // test above: `CarouselTabList`'s presence publish is effect-driven,
+        // so a bare `rebuild_in_place` (SSR, and the client's own
+        // pre-hydration first render) still sees the ordinary `group` role.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains(r#"role="group""#));
+        assert!(!html.contains(r#"role="tabpanel""#));
+    }
+
+    #[test]
+    fn tablist_wires_role_tablist_tab_and_tabpanel_once_mounted() {
+        let mut dom = VirtualDom::new(TablistCarousel);
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.render_immediate(&mut dioxus::core::NoOpMutations);
+        }
+        let html = dioxus_ssr::render(&dom);
+        assert!(html.contains(r#"role="tablist""#));
+        assert!(html.contains(r#"role="tab""#));
+        assert!(html.contains(r#"role="tabpanel""#));
+        // `aria-roledescription="slide"` stays on the tabpanel too --
+        // deliberately following the tested example over the pattern
+        // page's own contradicting prose (see `CarouselItem`'s own doc).
+        assert!(html.contains(r#"aria-roledescription="slide""#));
+        // Unquoted `true`/`false`, not `"true"`/`"false"` -- a plain
+        // `bool` value renders that way regardless of attribute name
+        // (confirmed by execution; matches `data-draggable=true`'s own
+        // established convention elsewhere in this file's SSR tests, not
+        // an aria-specific special case).
+        assert!(html.contains("aria-selected=true"));
+        assert!(html.contains("aria-selected=false"));
+        assert!(html.contains(r#"aria-label="Slide 1""#));
+        assert!(html.contains(r#"aria-label="Slide 2""#));
+        // Roving tabindex: only the selected tab is a page tab stop.
+        assert!(html.contains(r#"tabindex="0""#));
+        assert!(html.contains(r#"tabindex="-1""#));
     }
 }
