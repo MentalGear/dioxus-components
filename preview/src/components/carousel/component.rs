@@ -1,5 +1,8 @@
 use dioxus::prelude::*;
-use dioxus_primitives::carousel::{self, CarouselContentProps, CarouselItemProps, CarouselPreviousProps};
+use dioxus_primitives::carousel::{
+    self, CarouselAutoplayProps, CarouselContentProps, CarouselItemProps, CarouselPreviousProps,
+    CarouselRotationControlProps, CarouselTabListProps, CarouselTabProps,
+};
 use dioxus_primitives::direction::Direction;
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
@@ -32,6 +35,12 @@ pub struct CarouselProps {
     #[props(default)]
     pub default_value: usize,
 
+    /// Whether Previous/Next (and the root's own arrow keys) wrap around
+    /// at the ends. See [`carousel::Carousel`]'s own doc for the
+    /// rewind-style semantics.
+    #[props(default)]
+    pub r#loop: ReadSignal<bool>,
+
     /// Called whenever the selected slide changes.
     #[props(default)]
     pub on_value_change: Callback<usize>,
@@ -60,6 +69,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
             orientation: props.orientation,
             value: props.value,
             default_value: props.default_value,
+            r#loop: props.r#loop,
             on_value_change: props.on_value_change,
             dir: props.dir,
             attributes: merged,
@@ -154,5 +164,56 @@ pub fn CarouselIndicators() -> Element {
                 }
             }
         }
+    }
+}
+
+#[component]
+pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
+    rsx! {
+        carousel::CarouselAutoplay {
+            delay_ms: props.delay_ms,
+            stop_on_interaction: props.stop_on_interaction,
+            stop_on_mouse_enter: props.stop_on_mouse_enter,
+            default_playing: props.default_playing,
+        }
+    }
+}
+
+#[component]
+pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
+    let base = attributes!(button {
+        class: "dx-carousel-rotation-control"
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
+        carousel::CarouselRotationControl { attributes: merged, {props.children} }
+    }
+}
+
+#[component]
+pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
+    let base = attributes!(div {
+        class: "dx-carousel-tab-list"
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
+        carousel::CarouselTabList { attributes: merged, {props.children} }
+    }
+}
+
+#[component]
+pub fn CarouselTab(props: CarouselTabProps) -> Element {
+    let base = attributes!(button {
+        class: "dx-carousel-tab"
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
+        carousel::CarouselTab { index: props.index, attributes: merged, {props.children} }
     }
 }

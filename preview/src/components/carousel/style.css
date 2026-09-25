@@ -286,3 +286,64 @@
     outline: 2px solid var(--dx-ring-color);
     outline-offset: 2px;
 }
+
+/* Rotation control (autoplay) -- a small circular button, matching
+   Previous/Next's own footprint/border/background so the three read as
+   one control family; placed by the caller (see docs.md's "Autoplay"
+   section) rather than absolutely positioned here, since -- unlike
+   Previous/Next -- APG only requires it precede the slide content in tab
+   order, not any particular visual position. */
+.dx-carousel-rotation-control {
+    display: inline-flex;
+    width: var(--dx-space-7);
+    height: var(--dx-space-7);
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    border-radius: var(--dx-radius-full);
+    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+    box-shadow: none;
+    color: var(--secondary-color-1);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.dx-carousel-rotation-control svg {
+    width: var(--dx-space-4);
+    height: var(--dx-space-4);
+}
+
+.dx-carousel-rotation-control:focus-visible {
+    outline: 2px solid var(--dx-ring-color);
+    outline-offset: 2px;
+}
+
+/* Tablist (dot-picker) variant -- APG's "tabbed" carousel style. */
+.dx-carousel-tab-list {
+    display: flex;
+    justify-content: center;
+    gap: var(--dx-space-2);
+    margin-block-start: var(--dx-space-4);
+}
+
+.dx-carousel-tab {
+    width: var(--dx-space-2);
+    height: var(--dx-space-2);
+    box-sizing: border-box;
+    padding: 0;
+    border: none;
+    border-radius: var(--dx-radius-full);
+    background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.dx-carousel-tab[aria-selected="true"] {
+    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
+}
+
+.dx-carousel-tab:focus-visible {
+    outline: 2px solid var(--dx-ring-color);
+    outline-offset: 2px;
+}
