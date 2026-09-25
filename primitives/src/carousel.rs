@@ -1790,26 +1790,38 @@ pub struct CarouselContentProps {
 /// path glitched nearly every time) is measured, not assumed; see the
 /// research doc §2.
 ///
-/// **Why the transform lands on [`CarouselContent`], never the
-/// [`Carousel`] root.** The bench's own mode C (a whole-element damped
-/// transform) felt closest to native but created a z-index problem: a
-/// transform establishes a new containing block, and translating the
-/// *root* -- an ancestor of [`CarouselPrevious`]/[`CarouselNext`] -- would
-/// have dragged their own absolutely-positioned placement along with it.
-/// [`CarouselContent`] is a *sibling* of those buttons under [`Carousel`],
-/// so transforming it alone leaves them untouched; this is what dissolves
-/// that problem rather than working around it (research doc §5). No extra
-/// clipping wrapper is added around it either: [`CarouselContent`] already
-/// clips its own children via its own `overflow-{x,y}` (module doc,
-/// "Engine"), and that clip is a property of the element's own box, not of
-/// where the box is painted -- translating the box does not change what it
-/// clips. (The bench's own `.viewport` ancestor needed an explicit
-/// `overflow: clip` specifically for its *mode C*, which translated a
-/// larger magnitude for a different, no-longer-relevant reason; this is
-/// noted here as a deliberate divergence from the bench's own markup, not
-/// an oversight, and is worth a real-device check alongside the wheel
-/// gesture itself -- see this crate's own top-level report on this port
-/// for what still wants a human's trackpad.)
+/// **Why the transform lands on [`CarouselContent`]'s own *scroller*,
+/// never the [`Carousel`] root.** The bench's own mode C (a whole-element
+/// damped transform) felt closest to native but created a z-index
+/// problem: a transform establishes a new containing block, and
+/// translating the *root* -- an ancestor of
+/// [`CarouselPrevious`]/[`CarouselNext`] -- would have dragged their own
+/// absolutely-positioned placement along with it. The scroller is a
+/// *sibling* of those buttons under [`Carousel`] (by way of the clipping
+/// viewport wrapper described next), so transforming it alone leaves them
+/// untouched; this is what dissolves that problem rather than working
+/// around it (research doc §5).
+///
+/// **Correction, filed [2026-09-25](../../dev-docs/research/carousel-overscroll-2026-09-23.md):
+/// this element does *not* self-clip a translated overdrag, and an earlier
+/// version of this doc claimed it did.** An element's own `overflow`
+/// clips relative to *its own* box, and a `transform` moves that box (and
+/// its clip region) as one unit -- it does not clip the box against where
+/// it would have painted before the transform. So translating this
+/// element by its own overdrag moves its clip boundary along with its
+/// content, and nothing clips the result: on real hardware a trackpad
+/// overdrag pushed the whole visible slide track outside the carousel,
+/// unclipped, overlapping whatever sat beside it on the page. The fix is
+/// the bench's own construction, restored rather than reinvented: a
+/// *stationary* wrapper -- `data-slot="carousel-viewport"`, `overflow:
+/// clip` -- around this element, so the element inside it is what
+/// translates while the clip boundary around it never moves.
+/// `overflow: clip`, not `overflow: hidden`: a `hidden` box is still a
+/// scroll container, so the paging path's `scrollIntoView` on a slide
+/// would scroll the *wrapper* too and permanently offset the content;
+/// `clip` establishes no scrollport at all, so there is nothing for
+/// `scrollIntoView` to move. See that wrapper's own doc comment, right
+/// above this component's `rsx!` body, for the full construction.
 ///
 /// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
 /// attribute: both mutate `element.style.transform` as a plain DOM write,
@@ -1961,6 +1973,13 @@ pub struct CarouselContentProps {
 /// - `data-dragging`: present (`"true"`) only while an active mouse/pen
 ///   drag has crossed the movement threshold above; this is what the
 ///   themed package's own `cursor: grabbing` styling keys off.
+///
+/// The scroller is wrapped in a presentational `div
+/// [data-slot="carousel-viewport"]` (see this component's "Edge
+/// rubber-band" doc, "Correction" paragraph, above) that a caller's own
+/// stylesheet can target for purely visual purposes; it carries none of
+/// this component's own attributes/ARIA and is not part of the public
+/// props surface.
 #[component]
 pub fn CarouselContent(props: CarouselContentProps) -> Element {
     let mut ctx: CarouselContext = use_context();
@@ -2041,11 +2060,38 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     ]);
 
     rsx! {
+        // Clipping viewport (module doc's "Engine" section, and this
+        // component's own "Edge rubber-band" doc above, have the full
+        // reasoning): a stationary wrapper whose OWN box clips, so
+        // translating the scroller inside it moves the content without
+        // moving the clip boundary along with it. `overflow: clip`, never
+        // `overflow: hidden` -- `hidden` is still a scroll container (the
+        // CSSOM View spec's own "scrolling box" definition keys off any
+        // `overflow` value other than `visible`/`clip`), so the paging
+        // path's `scrollIntoView` on a slide would scroll THIS element
+        // too and permanently offset the whole track; `clip` never
+        // creates a scrollport at all, so there is nothing for it to
+        // scroll. Presentational only -- no `role`, no `id`, no ARIA, and
+        // none of the caller's own `props.attributes` land here (every one
+        // of those still goes on the scroller below, unchanged): this
+        // element carries nothing hydration needs to reconcile and nothing
+        // a caller can already reach through this component's own props,
+        // so it needs no `attributes!`/`merge_attributes` construction
+        // either -- there is no spread onto it for a literal to collide
+        // with (`scripts/check-attr-spread-collision.sh`'s own class).
+        // Present unconditionally on every render (SSR and CSR alike, and
+        // never toggled by an effect), so hydration sees the identical
+        // tree both times.
         div {
-            id,
-            ..attributes,
+            "data-slot": "carousel-viewport",
+            style: "overflow: clip;",
 
-            {props.children}
+            div {
+                id,
+                ..attributes,
+
+                {props.children}
+            }
         }
     }
 }

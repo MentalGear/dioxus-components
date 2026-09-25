@@ -1339,6 +1339,252 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
   });
 });
 
+/** The presentational clipping wrapper `CarouselContent` renders around its
+ * scroller (`primitives/src/carousel.rs`'s `CarouselContent` doc, "Edge
+ * rubber-band (mode B3)" section, "Correction" paragraph). */
+function viewportLocator(frame: Locator): Locator {
+  return frame.locator('[data-slot="carousel-viewport"]');
+}
+
+/**
+ * True if the topmost element actually painted at page coordinate `(x, y)`
+ * -- `document.elementFromPoint`, not rect math -- is `content` itself or
+ * one of its descendants (a slide). Rect math on the transformed element
+ * would flag the same translated box as "outside the viewport" whether or
+ * not anything actually clips it; asking the browser what it painted there
+ * is the only check that distinguishes "clipped" from "not."
+ */
+async function paintsAt(content: Locator, x: number, y: number): Promise<boolean> {
+  return content.evaluate((contentEl, { x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    return !!el && contentEl.contains(el);
+  }, { x, y });
+}
+
+/**
+ * Clipping viewport (backlog row 102's own dated addendum, 2026-09-25):
+ * `CarouselContent` translates its scroller for the edge rubber-band, but
+ * an element's own `overflow` clips relative to ITS OWN box, and a
+ * `transform` moves that box -- clip region included -- as one rigid unit.
+ * So the scroller was never actually clipping its own overdrag; on real
+ * hardware a trackpad overdrag pushed the whole visible slide track ~750px
+ * past the carousel, unclipped, overlapping the rest of the page
+ * (`primitives/src/carousel.rs`'s `CarouselContent` doc has the full
+ * "Correction" writeup). The fix is a stationary wrapper
+ * (`div[data-slot="carousel-viewport"]`, `overflow: clip`) around the
+ * scroller, so translating the scroller moves content inside a clip
+ * boundary that never itself moves.
+ *
+ * RED-FIRST: run against pre-fix `carousel.rs` (the scroller alone, no
+ * wrapper) before this lane's own fix landed -- every "does not paint
+ * outside the viewport" assertion below failed, since nothing clipped the
+ * translated scroller at all; see this lane's own report for the actual
+ * failure output. All pass against the fixed code.
+ */
+test.describe("Carousel: clipping viewport (edge overdrag never paints outside the carousel)", () => {
+  test("the viewport wraps the scroller, clips with overflow: clip (not hidden), and the transformed track is its descendant", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+
+    await expect(viewport).toHaveCount(1);
+    const overflow = await viewport.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { x: cs.overflowX, y: cs.overflowY };
+    });
+    // `clip`, never `hidden`: a `hidden` box is still a scroll container,
+    // which would make the paging path's `scrollIntoView` on a slide scroll
+    // this wrapper too and permanently offset the whole track.
+    expect(overflow.x).toBe("clip");
+    expect(overflow.y).toBe("clip");
+
+    const isDescendant = await viewport.evaluate((vpEl) => vpEl.querySelector(".dx-carousel-content") !== null);
+    expect(isDescendant).toBe(true);
+  });
+
+  test("a pointer overdrag past the first slide (horizontal, LTR) never paints a slide past the viewport's edge", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    const pitch = await slidePitch(slide(1));
+    const rawTravel = pitch * 1.5;
+    // Positive dx at slide 1 -- see the "edge rubber-band" describe block's
+    // identical test above for why this is the physical-previous direction.
+    await dragHold(page, content, rawTravel, 0);
+    await expect(async () => {
+      expect(parseTranslatePx(await readContentTransform(content))).not.toBeNull();
+    }).toPass({ timeout: 2000 });
+
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    // Just past the viewport's right edge, inside the padding-inline
+    // gutter but before Previous/Next's own 20px-clear zone
+    // (`preview/src/components/carousel/style.css`'s own derivation) --
+    // this is squarely "the page, where the translated track would be" if
+    // it were not clipped, and clear of the button so a hit there can only
+    // mean the track itself painted through.
+    const x = box.x + box.width + 10;
+    const y = box.y + box.height * 0.2;
+    expect(await paintsAt(content, x, y), "a slide painted past the viewport's own right edge").toBe(false);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+  });
+
+  test("a pointer overdrag at the start boundary under dir=rtl never paints a slide past the viewport's edge", async ({
+    page,
+  }) => {
+    await goto(page, "rtl");
+    const frame = demoFrame(page, "rtl");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+
+    const pitch = await slidePitch(slide(1));
+    const rawTravel = pitch * 1.5;
+    // Negative dx is the physical-previous direction under RTL -- see the
+    // "edge rubber-band" describe block's identical test above.
+    await dragHold(page, content, -rawTravel, 0);
+    await expect(async () => {
+      expect(parseTranslatePx(await readContentTransform(content))).not.toBeNull();
+    }).toPass({ timeout: 2000 });
+
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    // The track moved left this time (negative translateX), so it is the
+    // LEFT edge that would escape.
+    const x = box.x - 10;
+    const y = box.y + box.height * 0.2;
+    expect(await paintsAt(content, x, y), "a slide painted past the viewport's own left edge").toBe(false);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+  });
+
+  test("a pointer overdrag at the start boundary in the vertical variant never paints a slide past the viewport's edge", async ({
+    page,
+  }) => {
+    await goto(page, "vertical");
+    const frame = demoFrame(page, "vertical");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+
+    const pitch = await slidePitch(slide(1), "vertical");
+    const rawTravel = pitch * 1.5;
+    // Positive dy -- see the "edge rubber-band" describe block's identical
+    // test above.
+    await dragHold(page, content, 0, rawTravel);
+    await expect(async () => {
+      expect(parseTranslatePx(await readContentTransform(content))).not.toBeNull();
+    }).toPass({ timeout: 2000 });
+
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    // The track moved down (positive translateY), so it is the BOTTOM edge
+    // that would escape. `x` stays away from the horizontal center, where
+    // Previous/Next sit (`inset-inline-start: 50%`).
+    const x = box.x + box.width * 0.1;
+    const y = box.y + box.height + 10;
+    expect(await paintsAt(content, x, y), "a slide painted past the viewport's own bottom edge").toBe(false);
+
+    await page.mouse.up();
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 2000 });
+  });
+
+  test("a wheel overdrag at the start boundary never paints a slide past the viewport's edge", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    await content.hover();
+    // `deltaX` -- see the "edge rubber-band" describe block's identical
+    // wheel test above for why.
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(-120, 0);
+    }
+
+    await expect(async () => {
+      const depth = parseTranslatePx(await readContentTransform(content));
+      expect(depth, "expected a nonzero translateX").not.toBeNull();
+      expect(depth!).toBeGreaterThan(0);
+    }).toPass({ timeout: 2000 });
+
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    const x = box.x + box.width + 10;
+    const y = box.y + box.height * 0.2;
+    expect(await paintsAt(content, x, y), "a slide painted past the viewport's own right edge").toBe(false);
+
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 3000 });
+  });
+
+  test("a wheel overdrag at the end boundary never paints a slide past the viewport's edge", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const viewport = viewportLocator(frame);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    const next = frame.getByRole("button", { name: "Next slide" });
+
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+      await expectSnappedToBoundary(content, slide(i + 2));
+    }
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+
+    await content.hover();
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(120, 0);
+    }
+
+    await expect(async () => {
+      const depth = parseTranslatePx(await readContentTransform(content));
+      expect(depth, "expected a nonzero translateX").not.toBeNull();
+      expect(depth!).toBeLessThan(0);
+    }).toPass({ timeout: 2000 });
+
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    const x = box.x - 10;
+    const y = box.y + box.height * 0.2;
+    expect(await paintsAt(content, x, y), "a slide painted past the viewport's own left edge").toBe(false);
+
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 3000 });
+  });
+});
+
 /**
  * `loop`: rewind-style wraparound (backlog row 91, approved fast-follow).
  * The `looping` variant (5 slides, LTR) and `looping_rtl` variant (4
