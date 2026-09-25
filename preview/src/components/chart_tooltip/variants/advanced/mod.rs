@@ -48,11 +48,6 @@ fn kcal(value: Option<f64>) -> String {
 /// + item.payload.swimming`) -- this crate's tooltip has no equivalent
 /// free-form payload object, so the sum is computed once and handed to
 /// every row instead.
-///
-/// Uses [`ChartTooltipFull`], not the themed `ChartTooltip`: `formatter` is
-/// a field `crate::components::chart::ChartTooltip`'s wrapper doesn't
-/// forward yet (see `ChartTooltipFull`'s own doc comment in
-/// `component.rs`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -70,7 +65,7 @@ pub fn Demo() -> Element {
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
                         }
-                        ChartTooltipFull {
+                        ChartTooltip {
                             hide_label: true,
                             formatter: |row: TooltipRow| rsx! {
                                 span {

@@ -60,12 +60,10 @@ fn chart_config() -> ChartConfig {
 }
 
 /// Ports shadcn's `chart-tooltip-icons.tsx` (`hideLabel`, each series'
-/// `icon` renders in place of its indicator swatch). Uses the normal themed
-/// `ChartTooltip`, not `ChartTooltipFull`: `hide_label` is already forwarded
-/// by `crate::components::chart::ChartTooltip`'s current wrapper, and the
-/// icon itself renders from `ChartSeries::icon` (read directly off `config`
-/// by the primitive), not from any `ChartTooltipProps` field this demo
-/// needs to set.
+/// `icon` renders in place of its indicator swatch). The icon itself
+/// renders from `ChartSeries::icon` (read directly off `config` by the
+/// primitive), not from any `ChartTooltipProps` field this demo needs to
+/// set.
 #[component]
 pub fn Demo() -> Element {
     rsx! {

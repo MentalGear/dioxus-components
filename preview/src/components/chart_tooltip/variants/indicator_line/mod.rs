@@ -32,11 +32,6 @@ fn chart_config() -> ChartConfig {
 /// Ports shadcn's `chart-tooltip-indicator-line.tsx`
 /// (`<ChartTooltipContent indicator="line" />`): each row's swatch is a
 /// thin, full-height bar instead of a dot.
-///
-/// Uses [`ChartTooltipFull`], not the themed `ChartTooltip`: `indicator` is
-/// a field `crate::components::chart::ChartTooltip`'s wrapper doesn't
-/// forward yet (see `ChartTooltipFull`'s own doc comment in
-/// `component.rs`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -54,7 +49,7 @@ pub fn Demo() -> Element {
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
                         }
-                        ChartTooltipFull { indicator: TooltipIndicator::Line }
+                        ChartTooltip { indicator: TooltipIndicator::Line }
                     }
                 }
             }

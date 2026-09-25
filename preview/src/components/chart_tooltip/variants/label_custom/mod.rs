@@ -42,11 +42,6 @@ fn chart_config() -> ChartConfig {
 /// (`<ChartTooltipContent labelKey="activities" indicator="line" />`): the
 /// label row reads "Activities" regardless of which day is hovered, instead
 /// of that day's own date.
-///
-/// Uses [`ChartTooltipFull`], not the themed `ChartTooltip`: `label_key`/
-/// `indicator` are fields `crate::components::chart::ChartTooltip`'s
-/// wrapper doesn't forward yet (see `ChartTooltipFull`'s own doc comment in
-/// `component.rs`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -64,7 +59,7 @@ pub fn Demo() -> Element {
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
                         }
-                        ChartTooltipFull {
+                        ChartTooltip {
                             label_key: Some("Activities".to_string()),
                             indicator: TooltipIndicator::Line,
                         }

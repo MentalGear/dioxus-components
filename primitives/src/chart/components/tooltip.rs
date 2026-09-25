@@ -249,6 +249,7 @@ pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
         "data-state": state,
         "data-indicator": indicator_str,
         "aria-hidden": "true",
+        style,
     });
     let merged = merge_attributes(vec![attributes, owned]);
 
@@ -264,7 +265,6 @@ pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
 
     rsx! {
         div {
-            style,
             ..merged,
 
             if let Some(children) = &props.children {
@@ -382,17 +382,27 @@ mod tests {
     use crate::chart::{ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartSeries};
     use dioxus_core::NoOpMutations;
 
-    /// Sets `active_index` once via an effect, so `render_immediate` (this
-    /// crate's existing SSR-test pattern -- `tooltip.rs`'s *other* tooltip,
-    /// the tooltip primitive's own tests) can flush it into the tree
-    /// before `dioxus_ssr::render` serializes it. Never reads
-    /// `active_index` itself (only writes it), so this cannot be a
-    /// self-subscribing effect.
+    /// Sets `active_index` once, synchronously, during this component's
+    /// own first render (`use_hook`, not `use_effect`): since this
+    /// component is always rendered as `ChartTooltip`'s own EARLIER
+    /// sibling (child order: `Chart`, `ActiveIndexSetter`, `ChartTooltip`)
+    /// and Dioxus renders children top-to-bottom within one pass,
+    /// `ChartTooltip` observes the already-set value on `dioxus_ssr`'s
+    /// very first render -- no second render/diff needed at all.
+    /// Previously `use_effect` (deferred to the NEXT `render_immediate`
+    /// call, needing a real two-pass mount-then-diff dance every test here
+    /// relied on): switched after finding a real `dioxus_ssr` limitation
+    /// that dance exposes for a spread-heavy root element specifically
+    /// (`render_with`'s own doc, stage-2 chart round) -- `use_hook`
+    /// sidesteps needing a diff at all, for every test in this file, not
+    /// just the ones that found it. Never reads `active_index` itself
+    /// (only writes it once), so this was never a self-subscribing effect
+    /// either way.
     #[component]
     fn ActiveIndexSetter(index: Option<usize>) -> Element {
         let ctx = use_chart();
         let mut active_index = ctx.active_index;
-        use_effect(move || {
+        use_hook(|| {
             active_index.set(index);
         });
         rsx! {}
@@ -596,6 +606,37 @@ mod tests {
     /// [`default_tooltip_props`]): a closure's anonymous type never
     /// implements `PartialEq`, which `#[derive(Props)]` requires of every
     /// field, `ChartTooltipProps` itself included.
+    /// The tooltip's own slice of a [`render_with`] page: everything from
+    /// the tooltip root's own OPENING `<` onward. `render_with`'s `Harness`
+    /// renders `Chart` (whose own hidden data table always mirrors every
+    /// category label and every series' own label, e.g. "January"/
+    /// "Desktop"/"Mobile", regardless of what `ChartTooltip`'s
+    /// `label_key`/`name_key` do) BEFORE `ChartTooltip`, so a plain
+    /// `html.contains("January")`-style assertion on the *whole* page can
+    /// never distinguish "the tooltip still shows the raw label" from "the
+    /// hidden table (correctly, always) does" -- scoping to this tail
+    /// slice is what makes an override assertion meaningful.
+    ///
+    /// Seeks back to the preceding `<` rather than starting exactly at the
+    /// `data-slot="chart-tooltip"` match: the root `<div>`'s attributes go
+    /// through `merge_attributes` (§4(a) of the stage-2 handoff), which
+    /// sorts them by name, so `data-slot` is very often NOT the tag's first
+    /// attribute (e.g. `aria-hidden`/`data-indicator` both sort before it).
+    /// Slicing from the match itself silently dropped every attribute that
+    /// sorts earlier -- found via a root-tag assertion that failed despite
+    /// the merged `Vec<Attribute>` being verified correct immediately
+    /// before the `rsx!` spread; the dropped attributes were real, just
+    /// outside this fn's own (buggy) slice.
+    fn tooltip_fragment(html: &str) -> &str {
+        let match_start = html
+            .find(r#"data-slot="chart-tooltip""#)
+            .expect("no chart-tooltip root in html");
+        let start = html[..match_start]
+            .rfind('<')
+            .expect("no opening tag before the match");
+        &html[start..]
+    }
+
     fn render_with(tooltip_props: ChartTooltipProps) -> String {
         #[derive(Clone, PartialEq, Props)]
         struct HarnessProps {
@@ -615,7 +656,6 @@ mod tests {
         }
         let mut dom = VirtualDom::new_with_props(Harness, HarnessProps { tooltip_props });
         dom.rebuild_in_place();
-        dom.render_immediate(&mut NoOpMutations);
         dioxus_ssr::render(&dom)
     }
 
@@ -625,9 +665,18 @@ mod tests {
             indicator: TooltipIndicator::Line,
             ..default_tooltip_props()
         });
-        assert!(
-            html.contains(r#"data-slot="chart-tooltip" data-state="open" data-indicator="line""#)
-        );
+        // Not one concatenated substring match: the root's three
+        // attributes go through `merge_attributes` (§4(a) of the stage-2
+        // handoff), which sorts by name -- correct, SSR/CSR-consistent
+        // output, just not necessarily in the order they were written in
+        // this file's own `attributes!` call. Each attribute's own
+        // presence/value is what matters, not their relative order.
+        let root = tooltip_fragment(&html);
+        let root_tag_end = root.find('>').unwrap_or(root.len());
+        let root_tag = &root[..root_tag_end];
+        assert!(root_tag.contains(r#"data-slot="chart-tooltip""#));
+        assert!(root_tag.contains(r#"data-state="open""#));
+        assert!(root_tag.contains(r#"data-indicator="line""#));
         assert_eq!(
             html.matches(r#"data-slot="chart-swatch" data-indicator="line""#)
                 .count(),
@@ -679,42 +728,100 @@ mod tests {
 
     #[test]
     fn label_key_overrides_the_label_and_label_format_still_applies_after() {
+        // Scoped to `tooltip_fragment` (see its own doc): `Chart`'s hidden
+        // table always mirrors "January" as a real row header regardless
+        // of this tooltip's own `label_key`, so a whole-page
+        // `!contains("January")` assertion could never be true.
         let overridden = render_with(ChartTooltipProps {
             label_key: Some("Activities".to_string()),
             ..default_tooltip_props()
         });
-        assert!(overridden.contains("Activities"));
-        assert!(!overridden.contains("January"));
+        let fragment = tooltip_fragment(&overridden);
+        assert!(fragment.contains("Activities"));
+        assert!(!fragment.contains("January"));
 
-        let layered = render_with(ChartTooltipProps {
-            label_key: Some("Activities".to_string()),
-            label_format: Some(Callback::new(|s: String| s.to_uppercase())),
-            ..default_tooltip_props()
-        });
-        assert!(layered.contains("ACTIVITIES"));
+        // A dedicated harness for the `label_format` half: `Callback::new`
+        // panics ("must be called from inside a Dioxus runtime") when
+        // called directly from a plain `#[test]` fn, before any
+        // `VirtualDom` exists to provide one -- `use_signal`'s own lazy
+        // initializer (this file's `FormatterHarness`/`IconHarness` use
+        // the identical trick) defers construction to component-render
+        // time, which does run with a runtime active.
+        #[component]
+        fn LayeredLabelHarness() -> Element {
+            let config = use_signal(two_series_config);
+            let data = use_signal(two_datum_data);
+            let label_format = use_signal(|| Callback::new(|s: String| s.to_uppercase()));
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Line,
+                    Chart { aria_label: "Visitors by month" }
+                    ActiveIndexSetter { index: Some(0) }
+                    ChartTooltip {
+                        label_key: "Activities".to_string(),
+                        label_format: Some(label_format()),
+                    }
+                }
+            }
+        }
+        let mut dom = VirtualDom::new(LayeredLabelHarness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let layered = dioxus_ssr::render(&dom);
+        assert!(tooltip_fragment(&layered).contains("ACTIVITIES"));
     }
 
     #[test]
     fn name_key_overrides_every_rows_name() {
+        // Scoped to `tooltip_fragment` for the same reason as the previous
+        // test: `Chart`'s hidden table always shows "Desktop"/"Mobile" as
+        // real column headers regardless of this tooltip's own `name_key`.
         let html = render_with(ChartTooltipProps {
             name_key: Some("Metric".to_string()),
             ..default_tooltip_props()
         });
-        assert_eq!(html.matches("Metric").count(), 2);
-        assert!(!html.contains("Desktop"));
-        assert!(!html.contains("Mobile"));
+        let fragment = tooltip_fragment(&html);
+        // Twice per row (`TooltipRow::label`'s own doc: this crate reuses
+        // the same overridden value for both the swatch's `aria-label` and
+        // the visible `chart-tooltip-name` text) * 2 rows = 4.
+        assert_eq!(fragment.matches("Metric").count(), 4);
+        assert!(!fragment.contains("Desktop"));
+        assert!(!fragment.contains("Mobile"));
     }
 
     #[test]
     fn formatter_fully_replaces_row_markup_and_carries_the_right_is_last_and_total() {
-        let html = render_with(ChartTooltipProps {
-            formatter: Some(Callback::new(|row: TooltipRow| {
-                rsx! {
-                    span { "data-slot": "custom-row", "data-key": "{row.key}", "data-last": "{row.is_last}", "data-total": "{row.total}" }
+        // A dedicated harness (not `render_with`, which takes an
+        // already-built `ChartTooltipProps`): `Callback::new` panics
+        // ("must be called from inside a Dioxus runtime") when called
+        // directly from a plain `#[test]` fn, before any `VirtualDom`
+        // exists to provide one. `use_signal`'s own initializer closure
+        // (called lazily at component-render time, same trick this file's
+        // own `IconHarness`/`config_with_icon` below already uses for
+        // `ChartSeries::icon`'s `Callback`) is what makes constructing the
+        // `formatter` `Callback` here sound.
+        #[component]
+        fn FormatterHarness() -> Element {
+            let config = use_signal(two_series_config);
+            let data = use_signal(two_datum_data);
+            let formatter = use_signal(|| {
+                Callback::new(|row: TooltipRow| {
+                    rsx! {
+                        span { "data-slot": "custom-row", "data-key": "{row.key}", "data-last": "{row.is_last}", "data-total": "{row.total}" }
+                    }
+                })
+            });
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Line,
+                    Chart { aria_label: "Visitors by month" }
+                    ActiveIndexSetter { index: Some(0) }
+                    ChartTooltip { formatter: Some(formatter()) }
                 }
-            })),
-            ..default_tooltip_props()
-        });
+            }
+        }
+        let mut dom = VirtualDom::new(FormatterHarness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
         // January: desktop=186, mobile=80 -- default markup is gone...
         assert!(!html.contains(r#"data-slot="chart-swatch""#));
         assert!(!html.contains(r#"data-slot="chart-tooltip-name""#));
