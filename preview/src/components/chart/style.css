@@ -479,3 +479,69 @@
   stroke: var(--dx-chart-grid);
   stroke-width: 1;
 }
+
+/* ---------------------------------------------------------------------- *
+ * Polar family (`ChartKind::{Pie,RadialBar}`, s2-polar lane). Both kinds
+ * share the same `path[data-slot="chart-arc"]` mark (an angular slice for
+ * Pie, a concentric proportional ring segment for RadialBar) and the same
+ * hover/forced-active affordance -- a `transform: scale(...)` grown
+ * outward from the arc's own center, never a re-render of the path itself
+ * (`series/pie.rs`'s own module doc: the `d` is always computed at the
+ * slice's *resting* radius). `transform-origin: 0 0` matters here
+ * specifically: every arc's own `d` is drawn in a coordinate space already
+ * centered at the chart's origin (the wrapping `g[transform="translate(cx,
+ * cy)"]` both `pie.rs`/`radial.rs` render), so scaling from `0 0` grows the
+ * slice from the chart's true center -- the default SVG transform-origin
+ * (the element's own bounding box) would instead grow it lopsidedly toward
+ * whichever edge that one slice's own bounding box happens to sit near.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart [data-slot="chart-arc"] {
+  fill: var(--series-color, currentColor);
+  transform-origin: 0 0;
+  transition: transform 120ms var(--dx-motion-ease);
+}
+
+.dx-chart [data-slot="chart-arc"][data-active="true"] {
+  transform: scale(1.05);
+}
+
+/* No dedicated contrast-on-colored-fill token exists in this theme
+ * (`preview/assets/dx-components-theme.css` has no generic "text on an
+ * arbitrary --dx-chart-N swatch" color -- eight rotating hues, none of
+ * them reliably light or dark) -- left unstyled (inherits the default SVG
+ * text fill), the same choice `bar.rs`'s own `value_labels`/
+ * `inside_labels` (`data-slot="chart-label"`, also unstyled here) already
+ * made and shipped with.
+ */
+.dx-chart [data-slot="chart-arc-label"] {
+  font-size: var(--dx-text-xs);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* The donut/gauge center text (`PieOptions::center_text`/
+ * `RadialOptions::center_text`): two `<tspan>`s, the primary value drawn
+ * larger/bolder than the secondary caption below it -- same two-tier
+ * text-color pairing `card/style.css` uses for a title versus its
+ * description. */
+.dx-chart [data-slot="chart-pie-center-text"] {
+  fill: var(--secondary-color-5);
+  font-size: var(--dx-text-sm);
+  pointer-events: none;
+}
+
+.dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
+  fill: var(--secondary-color-4);
+  font-size: var(--dx-text-2xl);
+  font-weight: 700;
+}
+
+/* RadialBar's own optional background track (`RadialOptions::grid`) --
+ * a muted full-sweep arc drawn behind each ring's own value arc, the
+ * radial-chart equivalent of Pie/Cartesian's "grid" concept (shadcn spells
+ * this two different ways -- a `RadialBar background` prop versus a
+ * `PolarGrid` element -- this crate unifies both as one boolean). */
+.dx-chart [data-slot="chart-polar-grid"] {
+  fill: var(--dx-chart-grid);
+}

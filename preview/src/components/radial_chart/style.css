@@ -1,0 +1,12 @@
+/* Radial Chart gallery -- shadcn/ui `chart-radial-*` demo parity
+ * (dev-docs/research/chart-2026-09-19.md §1.2). Every demo composes the
+ * installable `chart` package's own themed pieces (Chart/ChartContainer/
+ * ChartTooltip/ChartLegend, styled by `chart/style.css`, which is where
+ * every `[data-slot="chart-arc"]`/`chart-arc-label`/`chart-pie-center-text`/
+ * `chart-polar-grid` rule actually lives -- shared with `pie_chart`, the
+ * other polar family) plus `Card`; none of this gallery's six demos need
+ * any bespoke chrome of their own beyond that, so this file carries no
+ * rules. It exists only because `preview/src/components/mod.rs`'s
+ * `examples!` macro unconditionally references `/src/components/<name>/
+ * style.css` for every registered component, `radial_chart` included.
+ */

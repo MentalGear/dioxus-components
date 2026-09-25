@@ -195,7 +195,7 @@ pub struct ChartProps {
     #[props(default)]
     pub radar: RadarOptions,
 
-    /// [`ChartKind::RadialBar`]'s own options. **Stub** -- see
+    /// [`ChartKind::RadialBar`]'s own options -- see
     /// [`super::series::radial`].
     #[props(default)]
     pub radial: RadialOptions,

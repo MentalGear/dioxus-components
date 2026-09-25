@@ -84,7 +84,13 @@ pub use bar::BarOptions;
 // `examples!` list and the root `component.json` already use for six
 // lanes editing the same shared file concurrently without conflict.
 pub use line::{DotContext, DotRenderer, LineLabels, LineOptions};
-pub use pie::PieOptions;
+// `PieLabels`, not just `PieOptions` itself: the `pie_chart` gallery's
+// `label`/`label_list`/`label_custom` variants all name one of its variants
+// directly (e.g. `PieLabels::Value`, `PieLabels::List(vec![...])`), and
+// `RadialOptions::labels` (below) reuses this same enum -- same
+// reachability rationale as `line`'s/`radar`'s own multi-type re-exports
+// above.
+pub use pie::{PieLabels, PieOptions};
 // `RadarGrid`, not just `RadarOptions` itself: a caller-facing type (the
 // `radar_chart` gallery's `grid_circle`/`grid_circle_fill`/
 // `grid_circle_no_lines`/`grid_custom`/`grid_fill`/`grid_none` variants all
