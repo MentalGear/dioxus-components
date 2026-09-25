@@ -52,6 +52,47 @@ function demoFrame(
 }
 
 /**
+ * Scroll `locator`'s element into view INSTANTLY (bypassing
+ * `preview/assets/main.css`'s global `html { scroll-behavior: smooth }`
+ * rule) before an action -- `.hover()` in particular -- that would
+ * otherwise trigger Playwright's own actionability pre-check
+ * (`scrollIntoViewIfNeeded`). An *unqualified* scroll's default `behavior:
+ * "auto"` means "respect the scrolling box's own CSS `scroll-behavior`",
+ * not "jump instantly" -- so on a page with that global rule, Playwright's
+ * own pre-hover scroll animates smoothly instead of jumping, and (this
+ * component's demo sits well down the long component-catalog page, so the
+ * scroll distance is large) keeps moving the page for a couple hundred ms
+ * *after* `.hover()` has already dispatched `mouseenter` and returned --
+ * dragging the target out from under the now-stationary cursor and firing
+ * a genuine, browser-native `mouseleave` a few hundred ms later. Calling
+ * this first makes the element already in view, so that pre-check becomes
+ * a no-op and no such scroll ever starts.
+ *
+ * This is the same class `oracle/tier2-html/top-layer.spec.ts`'s own
+ * `pinNearTop` helper exists for (2026-09-18, commit daebe40's global
+ * smooth-scroll rule racing an unqualified scroll call) -- a second
+ * instance, not a new class; see that helper's own doc for the general
+ * shape. Found here by execution (this session): a scratch MutationObserver
+ * + `getBoundingClientRect`/`scrollY` probe against the SSG build showed,
+ * on every repro of "hovering the carousel stops rotation, and moving away
+ * resumes it" flaking, `mouseenter` firing while the page was still
+ * mid-scroll, then a genuine `mouseleave` ~250-300ms later as the
+ * still-animating scroll dragged the carousel out from under the cursor,
+ * then rotation resuming its normal ~1200ms cadence from a fresh cycle --
+ * never a stale tick's tail settling late (which would have ruled out this
+ * mechanism in favor of "before was read mid-transition"). Forcing
+ * `html { scroll-behavior: auto }` for a scratch run took the repro rate
+ * from ~3/10 to 0/15; this instant pre-scroll independently also took it
+ * to 0/15 -- two different ways of removing the same in-flight scroll,
+ * both eliminating the failure, is the confirmation.
+ */
+async function scrollIntoViewInstant(locator: Locator): Promise<void> {
+  await locator.evaluate((el) =>
+    el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }),
+  );
+}
+
+/**
  * Poll until the given slide's inline-axis (horizontal) or block-axis
  * (vertical) start position matches its scroll container's own -- i.e.
  * scroll-snap has actually settled on this slide's boundary, not merely
@@ -1484,6 +1525,16 @@ test.describe("Carousel: autoplay + rotation control", () => {
     const content = frame.locator(".dx-carousel-content");
     const rotation = frame.getByRole("button", { name: /automatic slide show/i });
 
+    // Defense-in-depth, matching the hover test's own fix below: `.focus()`
+    // was NOT observed to reproduce that test's race in this session's
+    // execution (`scrollIntoViewInstant`'s own doc) -- Playwright's
+    // `.focus()` does not require the element to be visible/stable the way
+    // `.hover()`/`.click()` do, so it does not appear to run the same
+    // pre-action `scrollIntoViewIfNeeded` -- but this test reads `before`
+    // in the exact same "immediately after pausing" shape, so the same
+    // cheap guard is applied here too rather than relying on that absence
+    // of evidence holding forever.
+    await scrollIntoViewInstant(content);
     await content.focus();
     // The rotation control's own label reflects the user's *intent*
     // (`playing`), unaffected by an ambient, temporary pause -- only the
@@ -1514,6 +1565,15 @@ test.describe("Carousel: autoplay + rotation control", () => {
     const content = frame.locator(".dx-carousel-content");
     const rotation = frame.getByRole("button", { name: /automatic slide show/i });
 
+    // `scrollIntoViewInstant` (this file's own doc on it, above): without
+    // this, Playwright's own pre-`.hover()` auto-scroll inherits the
+    // page's global smooth-scroll CSS and can still be animating when
+    // `mouseenter` fires, dragging the carousel out from under the cursor
+    // and firing a genuine `mouseleave` a few hundred ms later -- observed
+    // in this session as this exact test's flake (rotation legitimately,
+    // correctly resuming after that real `mouseleave`, not a component
+    // bug).
+    await scrollIntoViewInstant(content);
     await content.hover();
     // The button's own label is unaffected (reflects intent, not the
     // ambient pause) -- only the live region does. See the focus test's
