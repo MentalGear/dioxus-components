@@ -8,17 +8,4 @@
 # (duplicates meaningful -- a multiset, not a set; see the .sh header for why). Do not
 # hand-edit: adding a line here to silence a real new finding defeats the gate: fix the
 # site instead, or re-run with --update-baseline and explain why in the commit.
-primitives/src/chart/components/chart.rs	Chart	aria-roledescription
-primitives/src/chart/components/chart.rs	Chart	data-direction
-primitives/src/chart/components/chart.rs	Chart	data-slot
-primitives/src/chart/components/chart.rs	Chart	role
-primitives/src/chart/components/chart.rs	Chart	tabindex
-primitives/src/chart/components/container.rs	ChartContainer	data-chart
-primitives/src/chart/components/container.rs	ChartContainer	data-kind
-primitives/src/chart/components/legend.rs	ChartLegend	data-align
-primitives/src/chart/components/legend.rs	ChartLegend	data-slot
-primitives/src/chart/components/tooltip.rs	ChartTooltip	aria-hidden
-primitives/src/chart/components/tooltip.rs	ChartTooltip	data-slot
-primitives/src/chart/components/tooltip.rs	ChartTooltip	data-state
-primitives/src/chart/components/tooltip.rs	ChartTooltip	style
 primitives/src/popover.rs	PopoverTrigger	id
