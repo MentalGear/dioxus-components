@@ -20,11 +20,26 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { BASE_URL } from "./base-url";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
+import { gotoHydrated } from "./hydration";
 
+// `waitUntil: "networkidle"` alone (not the default "load") is not enough
+// under the SSG lane: a prerendered page's interactive elements already
+// exist in the served HTML before the wasm bundle finishes loading and
+// hydrating, so an interaction issued right after goto can land on inert
+// markup -- Dioxus's event delegation only attaches once hydration walks
+// the tree, and a missed DOM event (a click, a mouseenter) is gone for
+// good, not queued. Under `dx serve` this race cannot happen (elements are
+// inserted into the DOM only once the client renders them, by which point
+// listeners are already attached), which is why this file's suite was fully
+// green there while two SSG-only interactions (carousel.spec.ts:633's first
+// click, :1512's initial hover) silently landed before hydration/mid-tick
+// and were never observed as intended. `gotoHydrated` (./hydration.ts)
+// waits on networkidle AND a real hydration-ready signal the app now sets,
+// closing the gap networkidle alone leaves open.
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
 
 async function goto(page: Page, variant: string) {
-  await page.goto(`${BASE_URL}/component/?name=carousel&variant=${variant}&`, GOTO_OPTS);
+  await gotoHydrated(page, `${BASE_URL}/component/?name=carousel&variant=${variant}&`, GOTO_OPTS);
 }
 
 /** See this file's own header ("SCOPING"). */

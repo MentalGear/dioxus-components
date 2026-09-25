@@ -103,6 +103,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BASE_URL } from "../../base-url";
 import { expectNoAxeViolations } from "../../axe";
+import { gotoHydrated } from "../../hydration";
 
 const REFERENCE_ROOT = path.resolve(__dirname, "../reference/7e4034b/content/patterns");
 const referenceUrl = pathToFileURL(
@@ -110,6 +111,13 @@ const referenceUrl = pathToFileURL(
 ).href;
 
 const LIBRARY_URL = `${BASE_URL}/component/?name=carousel&variant=main&`;
+// `gotoHydrated` (../../hydration.ts): see that file's own doc -- same
+// construction, same reason (an SSG prerendered page's markup exists before
+// wasm hydration attaches event listeners, so a bare "load", or even
+// "networkidle" alone, can race an interaction against hydration). Only the
+// LIBRARY_URL/TABBED_LIBRARY_URL navigations use this -- the vendored
+// `referenceUrl`/`tabbedReferenceUrl` pages below are static local HTML with
+// no wasm and no hydration step.
 const LIBRARY_GOTO = { timeout: 20 * 60 * 1000 };
 
 // -- Tabbed style (R5-R9) --------------------------------------------
@@ -259,7 +267,7 @@ test.describe("Reference: W3C's own Carousel example (carousel-1-prev-next.html)
 
 test.describe("Library: our own carousel primitive (main variant)", () => {
   test("R1: the carousel region has an accessible name, aria-roledescription=carousel, and the name does not contain the word \"carousel\"", async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     const frame = libraryFrame(page);
     const region = frame.getByRole("region");
     await expect(region).toHaveAttribute("aria-roledescription", "carousel");
@@ -269,7 +277,7 @@ test.describe("Library: our own carousel primitive (main variant)", () => {
   });
 
   test('R2: each slide has role=group, aria-roledescription=slide, and an "N of M" accessible name', async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     const frame = libraryFrame(page);
     // The `main` variant's own demo (preview/src/components/carousel/
     // variants/main/mod.rs) renders 5 slides.
@@ -283,7 +291,7 @@ test.describe("Library: our own carousel primitive (main variant)", () => {
   });
 
   test("R3: Previous/Next are native buttons with a real accessible name, Enter/Space page the carousel, and activating them never moves focus", async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     const frame = libraryFrame(page);
     const previous = frame.getByRole("button", { name: /previous/i });
     const next = frame.getByRole("button", { name: /next/i });
@@ -303,7 +311,7 @@ test.describe("Library: our own carousel primitive (main variant)", () => {
   });
 
   test("R4: Previous and Next both precede the slide content in the Tab (document) order", async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     const frame = libraryFrame(page);
     const previous = frame.getByRole("button", { name: /previous/i });
     const next = frame.getByRole("button", { name: /next/i });
@@ -314,7 +322,7 @@ test.describe("Library: our own carousel primitive (main variant)", () => {
   });
 
   test("axe: the library's carousel demo has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     await expectNoAxeViolations(page, "carousel: library main variant", {
       include: "#component-preview-frame",
     });
@@ -327,7 +335,7 @@ test.describe("Library-only: v1 has no loop, so Previous/Next reach a real, disa
   // and never disables either button, so there is nothing to calibrate
   // this specific behavior against.
   test("Previous is disabled at the first slide; Next becomes disabled at the last and Previous re-enables away from the first", async ({ page }) => {
-    await page.goto(LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, LIBRARY_URL, LIBRARY_GOTO);
     const frame = libraryFrame(page);
     const previous = frame.getByRole("button", { name: /previous/i });
     const next = frame.getByRole("button", { name: /next/i });
@@ -469,7 +477,7 @@ test.describe("Reference: W3C's own Carousel tabbed example (carousel-2-tablist.
 
 test.describe("Library: our own carousel primitive (tabs variant)", () => {
   test("R5: the tablist has role=tablist and an accessible name", async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
     const tablist = frame.getByRole("tablist");
     await expect(tablist).toBeVisible();
@@ -478,7 +486,7 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
   });
 
   test("R6: each tab has role=tab, a unique accessible name, aria-selected, roving tabindex, and aria-controls", async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
     const tabs = frame.getByRole("tab");
     await expect(tabs).toHaveCount(5);
@@ -495,7 +503,7 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
   });
 
   test('R7: each tabpanel has role=tabpanel, aria-roledescription=slide, and an "N of M" accessible name', async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
     const panels = frame.locator('[role="tabpanel"]');
     await expect(panels).toHaveCount(5);
@@ -507,7 +515,7 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
   });
 
   test("R8: ArrowRight/ArrowLeft move focus and automatically activate the newly focused tab (no Enter needed), and wrap at both ends; Home/End go to the first/last tab", async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
     const tabs = frame.getByRole("tab");
     const panel = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -541,7 +549,7 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
   });
 
   test("R9: the tablist precedes the slide content in document order", async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
     const tablist = frame.getByRole("tablist");
     const firstPanel = frame.locator('[role="tabpanel"]').first();
@@ -549,7 +557,7 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
   });
 
   test("axe: the library's tabs variant has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(TABBED_LIBRARY_URL, LIBRARY_GOTO);
+    await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     await expectNoAxeViolations(page, "carousel: library tabs variant", {
       include: "#component-preview-frame-tabs",
     });
