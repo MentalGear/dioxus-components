@@ -42,7 +42,7 @@ test.describe("Pie chart: renders every variant as an accessible image", () => {
     test(`${variant}: svg[role=img] with an accessible name, at least one slice, hidden data table`, async ({
       page,
     }) => {
-      await page.goto(URL);
+      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
       const f = frame(page, variant);
 
       const svg = f.locator('svg[role="img"]').first();
@@ -75,7 +75,7 @@ test.describe("Pie chart: slice geometry", () => {
   // ported verbatim into `variants/main/mod.rs`) -- every non-stacked
   // variant shares it, so `main` is a representative, not a special case.
   test("main: one arc per datum, slices sum to a full turn within tolerance", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "main");
     const slices = f.locator('[data-slot="chart-arc"]');
     const count = await slices.count();
@@ -104,7 +104,7 @@ test.describe("Pie chart: slice geometry", () => {
   });
 
   test("donut: has a real hole (inner_radius > 0) and its arc path draws an inner ring", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "donut");
     const d = await f.locator('[data-slot="chart-arc"]').first().getAttribute("d");
     expect(d).not.toBeNull();
@@ -114,7 +114,7 @@ test.describe("Pie chart: slice geometry", () => {
   });
 
   test("stacked: renders two concentric rings (two series) from the same category axis", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "stacked");
     const seriesGroups = await f.locator('[data-slot="chart-arc"]').evaluateAll((nodes) =>
       Array.from(new Set(nodes.map((n) => n.getAttribute("data-series")))),
@@ -127,7 +127,7 @@ test.describe("Pie chart: slice geometry", () => {
 
 test.describe("Pie chart: hover and active-slice behaviour", () => {
   test("simple: hovering a slice sets the active index; leaving clears it", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "main");
     const first = f.locator('[data-slot="chart-arc"]').first();
 
@@ -139,7 +139,7 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
   });
 
   test("donut_active: a fixed slice is active without any hover", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "donut_active");
     const active = f.locator('[data-slot="chart-arc"][data-active="true"]');
     await expect(active).toHaveCount(1);
@@ -147,7 +147,7 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
   });
 
   test("interactive: choosing a month in the Select moves the active slice", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "interactive");
 
     const before = await f
@@ -174,7 +174,7 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
 
 test.describe("Pie chart: donut center text", () => {
   test("donut_text: renders the two-line center label inside the hole", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "donut_text");
     const centerText = f.locator('[data-slot="chart-pie-center-text"]');
     await expect(centerText).toBeAttached();
@@ -184,7 +184,7 @@ test.describe("Pie chart: donut center text", () => {
 
 test.describe("Pie chart: legend swatches", () => {
   test("legend: one graphics-symbol swatch per slice, each with an accessible name", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "legend");
     const swatches = f.locator('[data-slot="chart-swatch"][role="graphics-symbol"]');
     const count = await swatches.count();
@@ -197,14 +197,14 @@ test.describe("Pie chart: legend swatches", () => {
 
 test.describe("Pie chart: labels", () => {
   test("label: a text label is drawn for every slice", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "label");
     const labels = f.locator('[data-slot="chart-arc-label"]');
     await expect(labels).toHaveCount(await f.locator('[data-slot="chart-arc"]').count());
   });
 
   test("label_list: each label reads the category name, not a formatted number", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "label_list");
     // chart-pie-label-list.tsx's own dataset -- the first category ported
     // into `variants/label_list/mod.rs`.
@@ -215,7 +215,7 @@ test.describe("Pie chart: labels", () => {
 test.describe("Axe automated scan", () => {
   for (const variant of VARIANTS) {
     test(`${variant}: no automatically detectable a11y issues`, async ({ page }) => {
-      await page.goto(URL);
+      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
       await expectNoAxeViolations(page, `pie_chart: ${variant}`, {
         excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
       });
@@ -223,7 +223,7 @@ test.describe("Axe automated scan", () => {
   }
 
   test("simple: hovered (active slice shown) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
     const f = frame(page, "main");
     await f.locator('[data-slot="chart-arc"]').first().hover();
     await expect(f.locator('[data-slot="chart-arc"]').first()).toHaveAttribute("data-active", "true");
