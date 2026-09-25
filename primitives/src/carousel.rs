@@ -18,25 +18,37 @@
 //! CSS scroll-snap, not a ported physics engine and not a JS dependency
 //! (research §8.1/§2.2): [`CarouselContent`] is a native
 //! `overflow-{x,y}: auto; scroll-snap-type` track; [`CarouselItem`]s are
-//! `scroll-snap-align` children. Paging (buttons, keyboard) calls the
-//! target item's own `Element.scrollIntoView()` -- the browser computes
-//! the offset, so there is no manual pixel/offset math to get wrong, and
-//! (per research §2.2's RTL paragraph) no sign-flip step either: DOM
-//! order never changes, so "the next slide" is always "the next
-//! sibling," and `scrollIntoView` already resolves the correct physical
-//! position under `dir="rtl"`. A second, independent JS bridge
-//! (`use_carousel_scroll_tracking`, a private helper) keeps `CarouselContext`'s own `selected`
-//! correct after a *native* drag/wheel/trackpad scroll the caller's own
-//! buttons/keyboard never drove. A third (`use_carousel_drag`, also
-//! private -- see [`CarouselContent`]'s own "Pointer drag" doc) adds a
-//! mouse/pen drag-to-scroll gesture on top of the *same* track, moving it
-//! with plain `scrollBy` calls rather than a parallel transform-based
-//! engine; every `scrollBy` it issues is native scrolling as far as the
-//! browser (and the second bridge above) is concerned, so dragging is
-//! never a second source of truth for `selected`. Release settles the
-//! track with the same `scrollIntoView` paging mechanism buttons/keyboard
-//! already use, not a hand-rolled offset -- see [`CarouselContent`]'s own
-//! "Release settle" doc. All three are `document::eval` call sites, and
+//! `scroll-snap-align` children. Paging (buttons, keyboard) computes the
+//! physical pixel delta between the target item's own
+//! `getBoundingClientRect()` and the scroller's, per axis, and calls
+//! `scroller.scrollBy({ left | top: delta })` on the scroller itself --
+//! never `Element.scrollIntoView()` on the target (backlog row 91's dated
+//! addendum has the incident that replaced it: `scrollIntoView` walks and
+//! scrolls *every* scrollable ancestor between the target and the
+//! viewport, including the document, so autoplay/Next dragged the whole
+//! page back to the carousel whenever it was scrolled elsewhere --
+//! `scrollBy`, called on the scroller directly, only ever writes that one
+//! element's own scroll position). No manual RTL sign-flip step is needed
+//! either: `getBoundingClientRect`/`scrollBy`'s delta are both physical
+//! (per research §2.2's RTL paragraph and
+//! `dev-docs/research/carousel-overscroll-2026-09-23.md` §6 invariant 1),
+//! so "the next slide" resolving to the correct physical position under
+//! `dir="rtl"` falls out of the same physical-delta construction the drag
+//! gesture below already uses, rather than needing its own. A second,
+//! independent JS bridge (`use_carousel_scroll_tracking`, a private
+//! helper) keeps `CarouselContext`'s own `selected` correct after a
+//! *native* drag/wheel/trackpad scroll the caller's own buttons/keyboard
+//! never drove. A third (`use_carousel_drag`, also private -- see
+//! [`CarouselContent`]'s own "Pointer drag" doc) adds a mouse/pen
+//! drag-to-scroll gesture on top of the *same* track, moving it with
+//! plain `scrollBy` calls rather than a parallel transform-based engine;
+//! every `scrollBy` it issues is native scrolling as far as the browser
+//! (and the second bridge above) is concerned, so dragging is never a
+//! second source of truth for `selected`. Release settles the track with
+//! the same scroller-only `scrollBy`-by-delta paging mechanism
+//! buttons/keyboard already use, not a hand-rolled offset -- see
+//! [`CarouselContent`]'s own "Release settle" doc. All three are
+//! `document::eval` call sites, and
 //! all three no-op harmlessly off a real document (native/Blitz, or a
 //! plain `cargo test`), the same as every other un-gated `document::eval`
 //! helper in `crate::lib` (`use_outside_dismiss`, `use_form_reset_listener`,
@@ -83,8 +95,8 @@ use std::time::Duration;
 /// Matches [`crate::resizable::ResizableDirection`]'s own
 /// horizontal/vertical shape and `data-orientation` convention. Vertical
 /// support fell out of the horizontal construction for free (the same
-/// component, an axis-swapped CSS declaration and `scrollIntoView`
-/// option, and `ArrowUp`/`ArrowDown` in place of the RTL-aware
+/// component, an axis-swapped CSS declaration and scroll-delta axis, and
+/// `ArrowUp`/`ArrowDown` in place of the RTL-aware
 /// `ArrowLeft`/`ArrowRight` pair), so it ships in v1 rather than being
 /// deferred -- see the module doc's "Scope" section for what *is*
 /// deferred.
@@ -162,7 +174,7 @@ fn prev_selected(selected: usize) -> usize {
 /// approved fast-follow decision (backlog row 91, `dev-docs/research/carousel-2026-09-19.md`
 /// §8.2): **rewind-style** looping. From the first slide, wraps to the
 /// last (`count - 1`) rather than saturating; the actual scroll is still a
-/// single [`CAROUSEL_SCROLL_INTO_VIEW_JS`] paging call to that far index
+/// single [`CAROUSEL_SCROLL_TO_JS`] paging call to that far index
 /// (a visible "rewind" across every intervening slide), not an
 /// embla-style cloned-node illusion -- clones would violate the overscroll
 /// port's own invariant 5 (`dev-docs/research/carousel-overscroll-2026-09-23.md`
@@ -202,8 +214,8 @@ fn slide_label(index: usize, count: usize) -> String {
     format!("{} of {}", index + 1, count)
 }
 
-/// Whether [`Carousel`]'s own mount-time scroll-into-view effect (below,
-/// in its component body) should ask [`CAROUSEL_SCROLL_INTO_VIEW_JS`] for
+/// Whether [`Carousel`]'s own mount-time paging effect (below,
+/// in its component body) should ask [`CAROUSEL_SCROLL_TO_JS`] for
 /// an instant jump
 /// (`true`) rather than a smooth transition (`false`) on this run.
 ///
@@ -250,34 +262,153 @@ fn carousel_key_intent(
     }
 }
 
-/// Fire-and-forget: scroll the given slide element into view along the
-/// carousel's own axis only. `inline`/`block` are chosen so a horizontal
-/// carousel's `scrollIntoView` can never also nudge the page's *vertical*
-/// scroll position, and vice versa for a vertical one -- the standard
-/// technique for using `scrollIntoView` on one axis of a
-/// multi-directionally-scrollable page. `instant` forces `behavior:
-/// 'auto'` on the very first call (mount), so a non-zero `default_value`
-/// does not visibly animate in on page load; every later call additionally
-/// respects `prefers-reduced-motion` the same way. No response is read
-/// back -- [`CAROUSEL_SCROLL_TRACKING_JS`] is what keeps `selected` in
-/// sync with wherever the scroll position actually ends up.
-const CAROUSEL_SCROLL_INTO_VIEW_JS: &str = "\
-    const [id, orientation, instant] = await dioxus.recv();
+/// Fire-and-forget: scroll the carousel's own scroller element
+/// (`scrollerId`) by the physical pixel delta needed to align
+/// `targetId`'s slide with the scroller's own leading edge, along the
+/// carousel's own axis only -- `scroller.scrollBy({ left: delta })` (or
+/// `top` for [`CarouselOrientation::Vertical`]).
+///
+/// Replaced a `target.scrollIntoView()` call (the original v1/round5
+/// construction; see backlog row 91's dated addendum for the incident
+/// this replaced it over): `scrollIntoView` walks and scrolls *every*
+/// scrollable ancestor between the target and the viewport, including the
+/// document itself, in order to bring the target fully into view -- which
+/// is exactly the "autoplay/Next drags the whole page back to the
+/// carousel" bug the owner reported on the live site, not merely a
+/// coincidental side effect of it. `Element.scrollBy()`, called directly
+/// on the scroller, only ever writes that one element's own scroll
+/// position, so there is no ancestor for it to reach in the first place --
+/// this is a *by-construction* fix, not a guard against the symptom.
+///
+/// The delta is a `getBoundingClientRect()` difference -- a physical
+/// pixel value -- so, per invariant 1 of
+/// `dev-docs/research/carousel-overscroll-2026-09-23.md` §6, it needs no
+/// RTL sign-flip: `scrollBy`'s delta is always physical, the same
+/// property this module's own drag gesture (`CAROUSEL_DRAG_JS`'s
+/// `feedOverdrag`) already relies on for its own `scrollBy` calls. The
+/// `endDrag` release settle below duplicates this exact computation
+/// rather than importing it -- a fresh `document::eval` string is its own
+/// standalone script with no module system to import across (see
+/// [`CarouselContent`]'s own "Release settle" doc for the established
+/// precedent of duplicating rather than sharing JS this way).
+///
+/// `instant` forces `behavior: 'auto'` on the very first call (mount), so
+/// a non-zero `default_value` does not visibly animate in on page load;
+/// every later call additionally respects `prefers-reduced-motion` the
+/// same way. No response is read back -- [`CAROUSEL_SCROLL_TRACKING_JS`]
+/// is what keeps `selected` in sync with wherever the scroll position
+/// actually ends up.
+///
+/// `scroll-snap-type` is suspended for the duration of the scroll, then
+/// restored once it actually finishes -- the exact same construction
+/// [`CAROUSEL_DRAG_JS`]'s own release settle already uses, and for the
+/// identical reason (that constant's own "Release settle" doc has the
+/// full account): found live in this session, `scrollBy({ behavior:
+/// 'smooth' })` on a `scroll-snap-type: ... mandatory` container, left
+/// enabled, truncates a multi-slide jump at the FIRST intervening snap
+/// point rather than reaching the requested delta -- confirmed with a
+/// direct, Dioxus-independent repro (a bare `el.scrollBy({left: 672,
+/// behavior: 'smooth'})` on this exact element landed at `336`, one slide
+/// short, with snapping left enabled; the identical call reached `672`
+/// exactly with `scrollSnapType` set to `'none'` first). `scrollIntoView`
+/// (what this replaced) never had this failure mode, so it was never
+/// visible before this construction existed -- a single-slide step (the
+/// overwhelmingly common case) happens to truncate at the only snap point
+/// in its path anyway, which is also the correct destination, so it read
+/// as correct in isolation; a multi-slide jump (`loop`'s rewind
+/// wraparound, a `CarouselTab` activation more than one tab away,
+/// [`CarouselApi::scroll_to`] to a distant index) is what exposed it, via
+/// a pre-existing, previously-green `carousel.spec.ts` test
+/// (`clicking a tab activates its slide and moves the roving tab stop`,
+/// jumping tab 1 -> tab 3) going red the moment this construction landed
+/// without the fix below. Since a fresh `document::eval` call has no
+/// closure shared with any other call (unlike `CAROUSEL_DRAG_JS`'s single
+/// long-lived script), the "is a restore already pending" hand-off
+/// [`CAROUSEL_DRAG_JS`]'s `onPointerDown` keeps in a closure variable is
+/// instead stashed directly on the scroller element itself
+/// (`scroller.__dxCancelSnapRestore`) -- a plain DOM property survives
+/// across independent eval calls the same way the element's own
+/// `style.scrollSnapType` already does, so two paging calls in quick
+/// succession (before the first one's own scroll has finished) still
+/// cancel-and-replace rather than race a stale restore into firing mid-
+/// second-scroll. Reuses [`CAROUSEL_SNAP_RESTORE_FALLBACK_MS`] for the
+/// same non-`scrollend`-browser fallback [`CAROUSEL_DRAG_JS`] already
+/// needs it for.
+const CAROUSEL_SCROLL_TO_JS: &str = "\
+    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
-    const el = document.getElementById(id);
-    if (el) {
-        el.scrollIntoView({
-            behavior,
-            inline: orientation === 'horizontal' ? 'start' : 'nearest',
-            block: orientation === 'horizontal' ? 'nearest' : 'start',
-        });
+    const scroller = document.getElementById(scrollerId);
+    const target = document.getElementById(targetId);
+    // A real drag (CAROUSEL_DRAG_JS) already owns the scroll position and
+    // `scroll-snap-type` for as long as `data-dragging` is set -- found
+    // live in this session: `use_carousel_scroll_tracking` reports a
+    // changing `selected` continuously WHILE a drag is still in progress
+    // (every incremental `feedOverdrag` scrollBy fires its own `scrollend`
+    // too), so this effect fires repeatedly mid-gesture regardless of this
+    // fix. The old `target.scrollIntoView()` tolerated that safely --
+    // already-near-enough was a harmless no-op (this effect's own Rust-side
+    // doc comment already documents this exact case). A `scrollBy`-by-delta
+    // is not equally forgiving: it competes with the drag's own direct-
+    // manipulation `scrollBy` calls for the same scroll position, and (mode
+    // B3's own already-measured failure, `CAROUSEL_DRAG_JS`'s 'Pointer
+    // drag' doc) its own scroll-snap-type restore firing mid-drag
+    // re-enables mandatory snapping before the gesture ends, which then
+    // fights every remaining `feedOverdrag` call and sends the drag flying
+    // several slides past where the pointer actually stopped -- reproduced
+    // live as every pointer-drag test in this file overshooting by exactly
+    // 2 slide-pitches. Skipping entirely while `data-dragging` is set
+    // defers this bridge to the drag's own release settle, which already
+    // performs the identical scroll-to-nearest-slide alignment once the
+    // gesture actually ends.
+    if (scroller && target && !scroller.hasAttribute('data-dragging')) {
+        const s = scroller.getBoundingClientRect();
+        const t = target.getBoundingClientRect();
+        const delta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+        // A genuine no-op (already aligned -- the mount settle when
+        // `default_value` needs no jump, or `use_carousel_scroll_tracking`
+        // reporting the position a native scroll already reached) must
+        // touch NOTHING, the same as this replaced `scrollIntoView` on an
+        // already-fully-visible element: `scrollBy({ left: 0 })` never
+        // fires `scrollend` (nothing scrolled), so suspending
+        // `scroll-snap-type` for a scroll that is never going to happen
+        // would leave it stuck at `none` forever -- found live in this
+        // session (the mount settle's own zero-delta call is the common
+        // case that hits this on every single carousel).
+        if (Math.abs(delta) < 1) {
+            return;
+        }
+        // Cancel a still-pending restore from a previous paging call, the
+        // same idiom CAROUSEL_DRAG_JS's own onPointerDown uses -- see this
+        // constant's own doc for why this is stashed on the element rather
+        // than a closure variable.
+        if (scroller.__dxCancelSnapRestore) {
+            scroller.__dxCancelSnapRestore();
+            scroller.__dxCancelSnapRestore = null;
+        }
+        scroller.style.scrollSnapType = 'none';
+        if (orientation === 'horizontal') {
+            scroller.scrollBy({ left: delta, behavior });
+        } else {
+            scroller.scrollBy({ top: delta, behavior });
+        }
+        const restoreSnap = () => {
+            scroller.style.scrollSnapType = orientation === 'horizontal' ? 'x mandatory' : 'y mandatory';
+            scroller.__dxCancelSnapRestore = null;
+        };
+        if ('onscrollend' in window) {
+            scroller.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
+            scroller.__dxCancelSnapRestore = () => scroller.removeEventListener('scrollend', restoreSnap);
+        } else {
+            const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
+            scroller.__dxCancelSnapRestore = () => clearTimeout(timer);
+        }
     }";
 
 /// Long-lived (mount-to-unmount): translate a [`CarouselContent`]
 /// element's *actual* scroll position into a slide index, so `selected`
 /// stays correct after a native drag/wheel/trackpad scroll -- one this
-/// crate never drove via [`CAROUSEL_SCROLL_INTO_VIEW_JS`] itself.
+/// crate never drove via [`CAROUSEL_SCROLL_TO_JS`] itself.
 ///
 /// Deliberately not an `IntersectionObserver` (the shape
 /// `dev-docs/research/carousel-2026-09-19.md` §2.2 sketches as the
@@ -391,18 +522,23 @@ fn use_carousel_scroll_tracking(
 /// drag" doc for what this threshold is for.
 const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 
-/// How long, in milliseconds, [`CAROUSEL_DRAG_JS`]'s own release-time
-/// settle waits for a `scrollend` event before falling back to restoring
-/// `scroll-snap-type` unconditionally -- only reached on an engine without
-/// `scrollend` support (this module's own doc: Safari before v26.2).
-/// Comfortably longer than a `scrollIntoView({behavior: 'smooth'})`
-/// transition normally takes to finish, so the fallback essentially never
-/// fires *before* that transition has visibly completed.
+/// How long, in milliseconds, a suspended `scroll-snap-type` waits for a
+/// `scrollend` event before falling back to restoring it unconditionally
+/// -- only reached on an engine without `scrollend` support (this
+/// module's own doc: Safari before v26.2). Shared by both places that
+/// suspend `scroll-snap-type` for a discrete `scrollBy`:
+/// [`CAROUSEL_DRAG_JS`]'s own release-time settle, and
+/// [`CAROUSEL_SCROLL_TO_JS`]'s every-other-paging-path call (see that
+/// constant's own doc for why it needs the identical suspend/restore
+/// construction). Comfortably longer than a `scroller.scrollBy({behavior:
+/// 'smooth'})` transition normally takes to finish, so the fallback
+/// essentially never fires *before* that transition has visibly
+/// completed.
 const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 
 /// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
 /// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
-/// track [`CAROUSEL_SCROLL_INTO_VIEW_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
+/// track [`CAROUSEL_SCROLL_TO_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
 /// already use -- not a second, competing engine. See [`CarouselContent`]'s
 /// own "Pointer drag" doc for the construction and why each piece is
 /// shaped the way it is; the short version: every `scrollBy` this issues
@@ -556,8 +692,9 @@ const CAROUSEL_DRAG_JS: &str = "\
         rawOver = prev !== 0 && prev > 0 !== next > 0 ? 0 : next;
         applyBounce();
     }
-    // The rubber-band return, driven by us (never `scrollIntoView` --
-    // invariant 3) so it can be SUPERSEDED rather than merely cancelled: a
+    // The rubber-band return, driven by us (never the discrete-paging
+    // `scrollBy`-by-delta helper -- invariant 3) so it can be SUPERSEDED
+    // rather than merely cancelled: a
     // fresh drag starting mid-ease bumps `bounceToken` (see `onPointerDown`),
     // and the superseded loop below stops touching `rawOver` on its very
     // next frame instead of racing a new gesture's own `feedOverdrag`
@@ -685,7 +822,7 @@ const CAROUSEL_DRAG_JS: &str = "\
         // variant): dragging left from slide 1 hit the start boundary and
         // never moved (correct -- there is nothing before slide 1);
         // dragging right produced the identical `scrollLeft` change
-        // (`0 -> -153`) the Next button's own `scrollIntoView` produces.
+        // (`0 -> -153`) the Next button's own `scrollBy`-by-delta produces.
         //
         // Routed through `feedOverdrag` rather than a bare `scrollBy`
         // (mode B3 port, see this constant's own 'Edge rubber-band' doc
@@ -719,11 +856,17 @@ const CAROUSEL_DRAG_JS: &str = "\
             // geometry `use_carousel_scroll_tracking`'s own settle()
             // already uses elsewhere on this identical element, since a
             // fresh `document::eval` string cannot import a shared JS
-            // helper -- and explicitly scroll it into view with
-            // `behavior: 'smooth'` (respecting reduced motion, the exact
-            // policy CAROUSEL_SCROLL_INTO_VIEW_JS already applies to
-            // every other paging path), rather than leaving the settle to
-            // however restoring `scroll-snap-type` happens to behave.
+            // helper -- and explicitly `scrollBy` this same element (`el`,
+            // the scroller itself -- never `nearest.scrollIntoView()`,
+            // which would also walk and scroll every scrollable ancestor,
+            // including the page) by the physical delta between `nearest`'s
+            // own leading edge and this element's, with `behavior: 'smooth'`
+            // (respecting reduced motion, the exact policy
+            // CAROUSEL_SCROLL_TO_JS already applies to every other paging
+            // path -- see that constant's own doc for why a scroller-only
+            // `scrollBy` replaced `scrollIntoView` everywhere in this
+            // module), rather than leaving the settle to however restoring
+            // `scroll-snap-type` happens to behave.
             const children = Array.from(el.children);
             let nearest = null;
             let nearestDist = Infinity;
@@ -746,31 +889,50 @@ const CAROUSEL_DRAG_JS: &str = "\
                 cancelPendingSnapRestore = null;
             };
             if (nearest) {
-                // Deferred, not synchronous: setting scroll-snap-type
-                // back to mandatory on an already-stationary position is
-                // what made release never animate in the first place
-                // (measured -- see 'Release settle'). Waiting for this
-                // specific scroll to actually finish (`scrollend`,
-                // falling back to a timeout where unsupported -- the same
-                // feature detection `use_carousel_scroll_tracking` already
-                // uses) means scroll-snap-type is still 'none' for the
-                // whole smooth-scroll animation this call starts, so
-                // there is nothing stationary for the browser to
-                // instantly correct until that animation has already
-                // finished on its own.
                 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                if ('onscrollend' in window) {
-                    el.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
-                    cancelPendingSnapRestore = () => el.removeEventListener('scrollend', restoreSnap);
+                const settleBehavior = reduced ? 'auto' : 'smooth';
+                const s = el.getBoundingClientRect();
+                const t = nearest.getBoundingClientRect();
+                const settleDelta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+                // `nearest` is already exactly where it should be (the
+                // drag released right on a boundary) -- `scrollBy({left:
+                // 0})` never fires `scrollend` (CAROUSEL_SCROLL_TO_JS's
+                // own doc has the same finding), and `scroll-snap-type` is
+                // ALREADY 'none' from this drag's own start, so unlike
+                // that constant's own zero-delta case (which can just
+                // touch nothing) restoring must happen synchronously here
+                // -- there is no scroll for a deferred listener/timeout to
+                // ever key off, and skipping it entirely would leave
+                // snapping suspended until the next gesture happens to
+                // trigger it.
+                if (Math.abs(settleDelta) < 1) {
+                    restoreSnap();
                 } else {
-                    const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
-                    cancelPendingSnapRestore = () => clearTimeout(timer);
+                    // Deferred, not synchronous: setting scroll-snap-type
+                    // back to mandatory on an already-stationary position is
+                    // what made release never animate in the first place
+                    // (measured -- see 'Release settle'). Waiting for this
+                    // specific scroll to actually finish (`scrollend`,
+                    // falling back to a timeout where unsupported -- the same
+                    // feature detection `use_carousel_scroll_tracking` already
+                    // uses) means scroll-snap-type is still 'none' for the
+                    // whole smooth-scroll animation this call starts, so
+                    // there is nothing stationary for the browser to
+                    // instantly correct until that animation has already
+                    // finished on its own.
+                    if ('onscrollend' in window) {
+                        el.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
+                        cancelPendingSnapRestore = () => el.removeEventListener('scrollend', restoreSnap);
+                    } else {
+                        const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
+                        cancelPendingSnapRestore = () => clearTimeout(timer);
+                    }
+                    if (orientation === 'horizontal') {
+                        el.scrollBy({ left: settleDelta, behavior: settleBehavior });
+                    } else {
+                        el.scrollBy({ top: settleDelta, behavior: settleBehavior });
+                    }
                 }
-                nearest.scrollIntoView({
-                    behavior: reduced ? 'auto' : 'smooth',
-                    inline: orientation === 'horizontal' ? 'start' : 'nearest',
-                    block: orientation === 'horizontal' ? 'nearest' : 'start',
-                });
             } else {
                 // No children at all (shouldn't happen in practice) --
                 // fall back to the old unconditional-restore behavior
@@ -1004,11 +1166,12 @@ const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
         // this one on the very next event.
         wheelInterruptFloor = Math.max(WHEEL_INTERRUPT_DELTA, wheelReleaseThreshold() * 3);
     }
-    // Driven by us, never `scrollIntoView` (invariant 3) -- and superseded
-    // rather than restarted (invariant 4) via `bounceToken`, the same
-    // construction `CAROUSEL_DRAG_JS`'s own `bounceHome` uses, for the
-    // identical reason: a stale in-flight ease must stop touching `rawOver`
-    // the moment a new gesture owns it, not race that gesture's writes.
+    // Driven by us, never the discrete-paging `scrollBy`-by-delta helper
+    // (invariant 3) -- and superseded rather than restarted (invariant 4)
+    // via `bounceToken`, the same construction `CAROUSEL_DRAG_JS`'s own
+    // `bounceHome` uses, for the identical reason: a stale in-flight ease
+    // must stop touching `rawOver` the moment a new gesture owns it, not
+    // race that gesture's writes.
     function bounceHome(done) {
         const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const from = rawOver;
@@ -1300,8 +1463,9 @@ pub struct CarouselProps {
     /// wrap around at the ends -- **rewind-style**, not an
     /// embla-style seamless illusion: from the last slide, Next goes to
     /// the first (and vice versa for Previous), via the same
-    /// `scrollIntoView` paging path every other transition already uses,
-    /// which visibly scrolls back across the intervening slides rather
+    /// scroller-only `scrollBy`-by-delta paging path every other
+    /// transition already uses, which visibly scrolls back across the
+    /// intervening slides rather
     /// than teleporting. No cloned edge slides are ever added -- they
     /// would violate the overscroll port's own invariant 5 (they'd enter
     /// the snap engine's candidate list, the "N of M" slide count, and
@@ -1472,12 +1636,12 @@ pub fn Carousel(props: CarouselProps) -> Element {
         tablist_present,
     });
 
-    // Scroll the selected slide into view whenever it changes, regardless
-    // of source (buttons, keyboard, or `use_carousel_scroll_tracking`
-    // reporting a native scroll). In the last case the target slide is
-    // already at/near its snap point, so this is a harmless no-op --
-    // `scrollIntoView` never moves an element that is already fully in
-    // view. `is_first` (peeked, then set -- never tracked-read, so this
+    // Page the scroller to the selected slide whenever it changes,
+    // regardless of source (buttons, keyboard, or
+    // `use_carousel_scroll_tracking` reporting a native scroll). In the
+    // last case the target slide is already at/near its snap point, so
+    // the computed delta is ~0 and `scrollBy` is a harmless no-op.
+    // `is_first` (peeked, then set -- never tracked-read, so this
     // effect never subscribes to its own write, matching
     // `scripts/check-self-subscribing-effects.sh`'s construction) forces
     // an instant jump on mount so a non-zero `default_value` never
@@ -1537,9 +1701,31 @@ pub fn Carousel(props: CarouselProps) -> Element {
         let Some(id) = item_ids.peek().get(index).cloned() else {
             return;
         };
+        // Tracked (like `count()` above), for the identical reason: a
+        // scroller id that only arrives *after* this effect's first
+        // post-registration run must still re-run this effect once it
+        // does, rather than being silently missed the way an untracked
+        // `.peek()` would miss it. In practice this never actually races
+        // `has_items` becoming true -- `CarouselContent` publishes
+        // `content_id` from its own mount effect, which (unlike item
+        // registration) depends on nothing any child does, so it
+        // completes no later than the child `CarouselItem` registrations
+        // that make `has_items` true, within the same initial
+        // render/effect-flush wave this effect's own long comment above
+        // already establishes for item registration.
+        let scroller_id = content_id();
+        if scroller_id.is_empty() {
+            return;
+        }
         let orientation_str = orientation().as_str().to_string();
-        let eval = document::eval(CAROUSEL_SCROLL_INTO_VIEW_JS);
-        let _ = eval.send((id, orientation_str, first));
+        let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
+        let _ = eval.send((
+            scroller_id,
+            id,
+            orientation_str,
+            first,
+            CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+        ));
     });
 
     let onkeydown = move |event: Event<KeyboardData>| {
@@ -1721,13 +1907,16 @@ pub struct CarouselContentProps {
 /// geometry `use_carousel_scroll_tracking`'s own `settle()` already uses
 /// on this same element (a fresh `document::eval` string cannot import a
 /// shared JS helper, so this is duplicated rather than called, but it is
-/// the same technique, not a different one) -- and explicitly scrolls it
-/// into view with `behavior: 'smooth'` (or `'auto'` under
-/// `prefers-reduced-motion: reduce`, the exact policy
-/// `CAROUSEL_SCROLL_INTO_VIEW_JS` already applies to every other paging
-/// path). This reuses that same `scrollIntoView` mechanism/options shape
-/// this crate already pages with everywhere else -- not a second,
-/// hand-rolled animation engine.
+/// the same technique, not a different one) -- and explicitly `scrollBy`s
+/// this element (the scroller itself, never `nearest.scrollIntoView()`)
+/// by the physical delta to that slide, with `behavior: 'smooth'` (or
+/// `'auto'` under `prefers-reduced-motion: reduce`, the exact policy
+/// [`CAROUSEL_SCROLL_TO_JS`] already applies to every other paging
+/// path). This reuses that same scroller-only `scrollBy`-by-delta
+/// mechanism this crate already pages with everywhere else -- not a
+/// second, hand-rolled animation engine, and (see that constant's own
+/// doc) not `scrollIntoView`, which would walk and scroll every
+/// scrollable ancestor including the page.
 ///
 /// This replaced simply restoring `scroll-snap-type` and trusting the
 /// browser's own re-snap to both choose the destination *and* animate the
@@ -1742,15 +1931,15 @@ pub struct CarouselContentProps {
 /// position that is already stationary is not treated by this engine
 /// (Chromium) as "a scrolling operation resuming through skipped snap
 /// points"; it is a synchronous, static re-evaluation, and nothing
-/// animates a style recalculation. Explicitly targeting the destination
-/// slide with its own `scrollIntoView({behavior: 'smooth'})` call sidesteps
+/// animates a style recalculation. Explicitly `scrollBy`-ing this element
+/// to the destination slide's delta with `behavior: 'smooth'` sidesteps
 /// that path entirely: it is a genuine, browser-animated scroll operation,
 /// the same kind "## scroll-snap-stop" below documents as actually
 /// constrained/animated by this engine.
 ///
 /// Restoring `scroll-snap-type` is **deferred**, not synchronous, for the
 /// same reason: doing it immediately, right after starting the
-/// `scrollIntoView` call, reintroduces the exact bug above the instant the
+/// `scrollBy` call, reintroduces the exact bug above the instant the
 /// browser notices the position is (still, momentarily) not yet at a snap
 /// point. So it waits for this specific scroll to actually finish
 /// (`scrollend`, falling back to a fixed timeout where that event is
@@ -1825,11 +2014,16 @@ pub struct CarouselContentProps {
 /// clip` -- around this element, so the element inside it is what
 /// translates while the clip boundary around it never moves.
 /// `overflow: clip`, not `overflow: hidden`: a `hidden` box is still a
-/// scroll container, so the paging path's `scrollIntoView` on a slide
-/// would scroll the *wrapper* too and permanently offset the content;
-/// `clip` establishes no scrollport at all, so there is nothing for
-/// `scrollIntoView` to move. See that wrapper's own doc comment, right
-/// above this component's `rsx!` body, for the full construction.
+/// scroll container, and this module's paging/drag-release-settle paths
+/// no longer risk scrolling it even so -- both now call `scrollBy()` on
+/// the scroller element directly rather than `scrollIntoView()` on a
+/// slide (see [`CAROUSEL_SCROLL_TO_JS`]'s own doc for why, and for the
+/// incident that made that a hard requirement rather than a nice-to-have)
+/// -- but `clip` establishes no scrollport at all regardless, so nothing
+/// here (or added later) can ever scroll this wrapper by accident, the
+/// same defense-in-depth reasoning as never giving it an `id`/ARIA for a
+/// stray selector to latch onto. See that wrapper's own doc comment,
+/// right above this component's `rsx!` body, for the full construction.
 ///
 /// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
 /// attribute: both mutate `element.style.transform` as a plain DOM write,
@@ -2075,10 +2269,12 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         // moving the clip boundary along with it. `overflow: clip`, never
         // `overflow: hidden` -- `hidden` is still a scroll container (the
         // CSSOM View spec's own "scrolling box" definition keys off any
-        // `overflow` value other than `visible`/`clip`), so the paging
-        // path's `scrollIntoView` on a slide would scroll THIS element
-        // too and permanently offset the whole track; `clip` never
-        // creates a scrollport at all, so there is nothing for it to
+        // `overflow` value other than `visible`/`clip`); the paging and
+        // drag-release-settle paths never scroll THIS element either way
+        // (both call `scrollBy()` on the scroller below directly, never
+        // `scrollIntoView()` on a slide -- see `CAROUSEL_SCROLL_TO_JS`'s
+        // own doc), but `clip` never creates a scrollport at all, so
+        // nothing here or added later has anything to
         // scroll. Presentational only -- no `role`, no `id`, no ARIA, and
         // none of the caller's own `props.attributes` land here (every one
         // of those still goes on the scroller below, unchanged): this

@@ -2045,3 +2045,194 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
     });
   });
 });
+
+/**
+ * Owner report (live site): "autoplay scrolls the main page." Root cause,
+ * found by reading `primitives/src/carousel.rs`: every paging path fired
+ * `target.scrollIntoView()` on the newly-selected slide, and
+ * `scrollIntoView` walks and scrolls *every* scrollable ancestor between
+ * the target and the viewport, including the page itself -- so a click,
+ * a keypress, a tab activation, a drag release, or an unattended autoplay
+ * tick would all silently drag a reader back to the carousel, wherever
+ * they had scrolled to. The fix (this lane) replaces every one of those
+ * call sites with `scroller.scrollBy({ left | top: delta })`, called
+ * directly on the carousel's own scroller element -- `scrollBy` only
+ * ever writes the element it is called on, so there is no ancestor for it
+ * to reach. See `CAROUSEL_SCROLL_TO_JS`'s own doc in `carousel.rs` for the
+ * full construction.
+ *
+ * RED-FIRST: every test below was run against the pre-fix `carousel.rs`
+ * (`target.scrollIntoView()` at both call sites) before landing this
+ * lane's own fix, and every one of them failed -- `window.scrollY` moved
+ * by hundreds to thousands of pixels in each case (see this lane's own
+ * report for the exact numbers). All pass against the fixed code.
+ *
+ * Methodology notes specific to this describe block:
+ * - The demo page has its own "jump to the requested `variant=`" scroll
+ *   on load (an unrelated, expected feature, not this bug), which is
+ *   itself `smooth` (`html { scroll-behavior: smooth }`,
+ *   `preview/assets/main.css`, backlog row 110) -- so every test below
+ *   waits for `window.scrollY` to stop changing (`waitForScrollStable`)
+ *   before doing anything else, then repositions the page with an
+ *   *instant* `scrollTo` (never the default/`smooth` behavior, and never
+ *   Playwright's own `.click()`/`.hover()` actionability pre-scroll,
+ *   which also inherits that same global smooth-scroll rule and can still
+ *   be mid-flight when the very next assertion reads `scrollY`).
+ * - Buttons are paged with `dispatchEvent("click")`, not `.click()`, so
+ *   Playwright's own pre-click `scrollIntoViewIfNeeded` never runs and
+ *   never contributes a scroll of its own for this test to (correctly)
+ *   ignore.
+ * - The `tabs` variant's activation test focuses its target tab with
+ *   `el.focus({ preventScroll: true })` rather than Playwright's plain
+ *   `.focus()`. This is deliberate, not a shortcut: found live in this
+ *   session, a *plain* `.focus()` on an off-screen tab still moves the
+ *   page even against the FIXED code, because focusing any off-screen
+ *   element is the browser's own default, spec-mandated behavior for
+ *   `element.focus()` generally -- entirely independent of this
+ *   component, present for every focusable element on the web, and not
+ *   something a carousel's own code can (or should) suppress from the
+ *   outside. `preventScroll: true` is exactly the tool the platform gives
+ *   a caller to opt out of that default when it does its own scroll
+ *   positioning, which is precisely this test's situation; it isolates
+ *   the thing actually under test -- `CarouselTab`'s own `onfocus` handler
+ *   (`carousel_ctx.set_selected.call(...)`) -- from that unrelated native
+ *   behavior. Confirmed live: plain `.focus()` moves the page on *both*
+ *   pre-fix and post-fix code (the native behavior, unaffected by this
+ *   lane); `el.focus({ preventScroll: true })` moves the page only on the
+ *   pre-fix code and never on the fixed code, which is the one signal
+ *   that actually distinguishes this bug from that unrelated mechanism.
+ */
+test.describe("Carousel: paging never scrolls the page (ancestor-scroll regression)", () => {
+  /** Poll `window.scrollY` until it stops changing -- see this describe
+   * block's own "Methodology notes" above for why (the page's own
+   * unrelated "jump to this variant" scroll on load). */
+  async function waitForScrollStable(page: Page): Promise<number> {
+    let previous: number | null = null;
+    for (let i = 0; i < 50; i++) {
+      const y = await page.evaluate(() => window.scrollY);
+      if (y === previous) {
+        return y;
+      }
+      previous = y;
+      await page.waitForTimeout(150);
+    }
+    throw new Error("waitForScrollStable: window.scrollY never settled");
+  }
+
+  test("several autoplay ticks never move window scroll position", async ({ page }) => {
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    const selectedLabel = async () =>
+      frame.locator('[role="group"][data-selected="true"]').getAttribute("aria-label");
+
+    await waitForScrollStable(page);
+    // Instant, never the page's own default `smooth` behavior (see this
+    // describe block's own "Methodology notes").
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
+    const scrollXBefore = await page.evaluate(() => window.scrollX);
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    const before = await selectedLabel();
+
+    // The `autoplay` variant's own `delay_ms: 1200` (this file's own
+    // header note) -- comfortably past two full ticks.
+    await page.waitForTimeout(1200 * 2 + 600);
+
+    // The carousel did actually advance on its own -- otherwise a
+    // never-firing timer would trivially pass this test for the wrong
+    // reason.
+    expect(await selectedLabel()).not.toBe(before);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+    expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+    // The slide the ticks landed on is still exactly snapped -- the fix
+    // changed *how* the scroller pages, never where it lands.
+    const selectedIndex = Number((await selectedLabel())!.split(" ")[0]);
+    await expectSnappedToBoundary(frame.locator(".dx-carousel-content"), slide(selectedIndex));
+  });
+
+  test("a Next click and a Previous click never move window scroll position, with the page scrolled away", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const previous = frame.getByRole("button", { name: "Previous slide" });
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+
+    await waitForScrollStable(page);
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    const scrollXBefore = await page.evaluate(() => window.scrollX);
+
+    // `dispatchEvent`, not `.click()` -- see this describe block's own
+    // "Methodology notes" for why.
+    await next.dispatchEvent("click");
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+    expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+    await expectSnappedToBoundary(content, slide(2));
+
+    await previous.dispatchEvent("click");
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+    expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+    await expectSnappedToBoundary(content, slide(1));
+  });
+
+  test("a CarouselTab activation never moves window scroll position (isolated from the browser's own focus-scroll)", async ({
+    page,
+  }) => {
+    await goto(page, "tabs");
+    const frame = demoFrame(page, "tabs");
+    const tab = frame.getByRole("tab").nth(2);
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
+
+    await waitForScrollStable(page);
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    const scrollXBefore = await page.evaluate(() => window.scrollX);
+
+    // `{ preventScroll: true }` -- see this describe block's own
+    // "Methodology notes" for why this, and not Playwright's plain
+    // `.focus()`, is the correct isolation of the thing under test.
+    await tab.evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(slide(3)).toHaveAttribute("data-selected", "true");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+    expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+    await expectSnappedToBoundary(content, slide(3));
+  });
+
+  test("a pointer-drag release settle never moves window scroll position", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    await waitForScrollStable(page);
+    // Bring the carousel fully into view ourselves first, instantly --
+    // `dragBy` needs real, stable viewport coordinates to drive
+    // `page.mouse`, and would otherwise do this same positioning itself,
+    // uninstrumented, the moment it is called (see this describe block's
+    // own "Methodology notes"; `scrollIntoViewInstant`, this file's own
+    // existing helper above, is the same technique). Establishing it here
+    // means the baseline below is captured on an already-stable page, so
+    // this test isolates the drag+release SETTLE itself
+    // (`CAROUSEL_DRAG_JS`'s own `endDrag`) as the only thing that must not
+    // move the page any further.
+    await scrollIntoViewInstant(content);
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    const scrollXBefore = await page.evaluate(() => window.scrollX);
+
+    const pitch = await slidePitch(slide(1));
+    await dragBy(page, content, -pitch * 0.7, 0);
+
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+    expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+  });
+});
