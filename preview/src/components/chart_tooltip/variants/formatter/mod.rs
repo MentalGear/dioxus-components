@@ -46,11 +46,6 @@ fn kcal(value: Option<f64>) -> String {
 /// `formatter` that lays each row out as name-left, "value kcal"-right --
 /// still the swatch-free layout `hideLabel`'s sibling demos use, but with
 /// a custom unit suffix on the value.
-///
-/// Uses [`ChartTooltipFull`], not the themed `ChartTooltip`: `formatter` is
-/// a field `crate::components::chart::ChartTooltip`'s wrapper doesn't
-/// forward yet (see `ChartTooltipFull`'s own doc comment in
-/// `component.rs`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -68,7 +63,7 @@ pub fn Demo() -> Element {
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
                         }
-                        ChartTooltipFull {
+                        ChartTooltip {
                             hide_label: true,
                             formatter: |row: TooltipRow| rsx! {
                                 span { "data-slot": "chart-tooltip-name", "{row.label}" }

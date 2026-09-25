@@ -1,17 +1,3 @@
-/**
- * STATUS AT WRITE TIME: partially RED, by construction (mirrors this
- * repo's own precedent for writing a spec ahead of the implementation it
- * covers, e.g. `playwright/oracle/tier3-radix/chart.spec.ts`'s own "STATUS
- * AT WRITE TIME: RED" header). Four of the nine variants below (`main`,
- * `indicator_none`, `label_none`, `label_formatter`) are registered and
- * pass today; the other five (`indicator_line`, `label_custom`,
- * `formatter`, `icons`, `advanced`) need `ChartTooltipProps::{indicator,
- * label_key, formatter}` and `ChartSeries.icon`, which land only after
- * `s2-refactor` lands and this lane cherry-picks it (`$S/stage2-lanes.md`)
- * -- until then their routes 404 and every test below for them fails at
- * `goto`, not at a real assertion. Run this file for real once all nine
- * variants are registered in `preview/src/components/mod.rs`.
- */
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
