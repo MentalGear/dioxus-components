@@ -228,6 +228,35 @@
     color: var(--ink-soft);
   }
   .revnote strong { color: var(--ink); }
+  .loop-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+  .loop-btn {
+    font: inherit; font-size: 13.5px; cursor: pointer; background: var(--sunken); color: inherit;
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .loop-btn:hover { border-color: var(--line-strong); }
+  .loop-btn:focus-visible, #loopTrack:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .loop-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+  .loop-dots { display: flex; gap: 6px; margin-inline-start: auto; }
+  .loop-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+  .loop-dot[data-on="true"] { background: var(--accent); }
+  #loopTrack .slide { flex-basis: 100%; }
+  .tune { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .tune[hidden] { display: none; }
+  .tune-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .tune-head strong { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  .tune-reset {
+    font: inherit; font-size: 12.5px; cursor: pointer; background: var(--sunken); color: inherit;
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+  }
+  .tune-reset:hover { border-color: var(--line-strong); }
+  .tune-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .knobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 18px; }
+  .knob label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+  .knob label output { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .knob input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+  .knob input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .knob small { display: block; font-size: 11.5px; color: var(--ink-faint); line-height: 1.35; margin-top: 2px; }
+  .tune-live { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); margin: 10px 0 0; }
   footer { margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 12.5px; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -239,8 +268,11 @@
   <header>
     <p class="eyebrow">Drag physics · scroll-snap</p>
     <h1>Carousel Overscroll Bench</h1>
-    <p>Five ways to handle a mouse drag past the first or last slide, on the same CSS scroll-snap engine our component uses. Drag each with the mouse and compare. The native control at the bottom has no JavaScript at all — on macOS it is the only one that can show real OS elasticity.</p>
-    <p class="revnote"><strong>Revision 28 — B2’s room resized from measurement, and the reason it overshoots is structural.</strong> The recording confirms it sharply: a gesture peaking at <strong>25px per event consumed the entire 260px room</strong>, while at the other edge gestures peaking at 145 and 121 produced 3px and 0px. There is no resistance anywhere in B2’s wheel path — there cannot be, since damping needs ownership of the scroll position and that is exactly the fight that was removed. The room fills at 1:1 with raw travel, so its SIZE is the only thing controlling how far you go, and 260 was chosen back when a damping curve still needed space there. It is now 140, derived rather than guessed: the deliberate end-edge attempts in that session ran 139, 183 and 331px of raw travel, and the platform’s own curve maps their median to 139px of visible depth — so the wall now sits roughly where native would have eased to. That is mitigation, not a fix. B2 trades a long free slide into a far wall for a short one into a near wall; what it cannot do is resist, and v27 already showed it cannot even reach the native asymptote (582px against the 260 it had). Bursts now also record which edge they worked against, so the start/end asymmetry can be read directly next time rather than inferred from the sign of the sum.</p>
+    <p>Six ways to handle a drag or trackpad swipe past the first or last slide, on the same CSS scroll-snap engine our component uses. Drag each with the mouse and compare. The native control at the bottom has no JavaScript at all — on macOS it is the only one that can show real OS elasticity.</p>
+    <p class="revnote"><strong>Revision 32 — three lessons from Embla’s trackpad plugin in mode D.</strong> Embla’s core has no wheel handling at all; shadcn gets trackpad swipes only from the <code>embla-carousel-wheel-gestures</code> plugin, built on <code>xiel/wheel-gestures</code> (MIT). That plugin takes the input over entirely, which our native-scrolling design forbids, but its detection transfers: a sudden jump during momentum now starts a new gesture at once (<em>re-push</em> knob); deltas are paired before the decay test to smooth jitter; and a <em>momentum ceiling</em> (0.97) keeps a steady slow push from reading as coasting. Those make detection sturdier but barely change how far the band goes; replaying your last session, the band limit does that, so its default is now 0.5 × the width (your hardest flicks: 24–39% → 19–28%).</p>
+    <p class="revnote"><strong>Revision 31 — a seamless loop.</strong> The shipped carousel’s <code>loop</code> rewinds: from the last slide it scrolls back through every slide to the first. shadcn’s loop (Embla) is one endless strip in both directions. The new <em>Seamless loop</em> section below does that with virtual slides from data: 12 items, 5 slides in the page, the window shifting by one each time a move settles. It works for every input at once, including trackpad momentum, and it has no edge, so it needs no rubber-band at all.</p>
+    <p class="revnote"><strong>Revision 30 — D tuned from your first session.</strong> Your Firefox session showed the split working: both flicks from the middle into an edge drew 0px from D, leaving the bounce to Firefox. But the pushes D owns drew 204–465px, 25–58% of the 805px track, for two reasons. Firefox’s wheel deltas are pointer-accelerated (150–590px per event, about 1,500px before your fingers lifted), while WebKit’s curve expects finger travel; a new <strong>input gain</strong> knob (default 0.3) scales them. And the release test was fooled by jitter while your fingers were down, so it fired about 14 events late; it now waits for smooth geometric decay, which only momentum produces. The knob panel now shows how far your last owned push went.</p>
+    <p class="revnote"><strong>Revision 29 — mode D, and a correction to the curve every mode used.</strong> Two findings from the shipped component on your trackpad. First, the band stacked on top of the platform’s own: you confirmed the browser already rubber-bands this scroller when momentum carries it into an edge (composited, so no script can see it), and B3 drew a second band over it. That double band is the overshoot. <strong>D draws a band only where the platform draws none</strong>: it decides once, at the start of each gesture, from where the scroller is resting. If the gesture starts away from the edge and scrolls into it, D draws nothing and leaves the bounce to the platform. If the gesture starts already resting at the edge, which the platform leaves dead, D owns the band. Second, the curve. Revision 17 called WebKit’s <code>(1 − 1/(x·c/d + 1))·d</code> “algebraically identical” to our <code>L·x/(x+L)</code> with <code>L = d/c</code>. It is not; they differ by a factor of <code>c</code>. WebKit’s starts at 0.55 px per px and tops out at the track width; ours started at 1:1 and approached 1.8× the width. D uses WebKit’s. B3 is unchanged so you can compare the two directly. D’s knobs are live below the trace, and whatever you settle on is saved with each gesture.</p>
   </header>
 
   <section>
@@ -270,6 +302,11 @@
         <span class="k">C · my proposal</span>
         <span class="n">Damped transform</span>
         <span class="d">Track is translated past the edge, then springs back.</span>
+      </button>
+      <button class="mode" data-mode="onewriter" aria-pressed="false">
+        <span class="k">D · one writer per bounce</span>
+        <span class="n">Platform-aware band</span>
+        <span class="d">Draws a band only where the platform draws none, with WebKit’s real curve. Mouse drag as in B3.</span>
       </button>
     </div>
 
@@ -302,6 +339,38 @@
       </div>
 
       <div class="note" id="modeNote"></div>
+
+      <div class="tune" id="tune" hidden>
+        <div class="tune-head">
+          <strong>Mode D · trackpad knobs</strong>
+          <button class="tune-reset" id="tuneReset" type="button">Reset to defaults</button>
+        </div>
+        <div class="knobs" id="knobs"></div>
+        <p class="tune-live" id="tuneLive"></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Seamless loop · virtual slides from data</h2>
+    <p style="margin:0 0 12px;color:var(--ink-soft)">Twelve items of data, but only five slides are ever in the page: the one you see and two either side. After each move settles, the window shifts by one and the scroller re-centres in the same frame, so there is never an edge and never a jump back to the start. Swipe with two fingers or a finger, use the buttons or the arrow keys, or let it play: every input keeps going round in both directions. The shipped component instead rewinds from the last slide to the first.</p>
+    <div class="bench">
+      <div class="viewport">
+        <span class="void-label">frame · 5 slides in the DOM, 12 in the data</span>
+        <div class="track" id="loopTrack" tabindex="0" role="region" aria-roledescription="carousel" aria-label="Seamless loop demo" style="cursor:default"></div>
+      </div>
+      <div class="loop-controls">
+        <button class="loop-btn" id="loopPrev" type="button" aria-label="Previous slide">‹ Previous</button>
+        <button class="loop-btn" id="loopNext" type="button" aria-label="Next slide">Next ›</button>
+        <button class="loop-btn" id="loopPlay" type="button" aria-pressed="false">Autoplay</button>
+        <div class="loop-dots" id="loopDots" aria-hidden="true"></div>
+      </div>
+      <div class="readout">
+        <div class="stat"><span class="l">showing</span><span class="v" id="lShow">1 of 12</span></div>
+        <div class="stat"><span class="l">DOM slides</span><span class="v" id="lDom">5</span></div>
+        <div class="stat"><span class="l">re-centres</span><span class="v" id="lRecenters">0</span></div>
+        <div class="stat"><span class="l">laps</span><span class="v" id="lLaps">0</span></div>
+      </div>
     </div>
   </section>
 
@@ -332,6 +401,7 @@
           <button class="choice" data-value="damped">B2 · Damped margin</button>
           <button class="choice" data-value="bounce">B3 · Edge transform</button>
           <button class="choice" data-value="transform">C · Transform</button>
+          <button class="choice" data-value="onewriter">D · Platform-aware</button>
           <button class="choice" data-value="none">None of them</button>
         </div>
       </div>
@@ -346,6 +416,15 @@
         <p class="hint">This tells me whether your OS has elasticity at all, which decides whether any of this is worth chasing.</p>
       </div>
 
+      <div class="ask">
+        <p class="q">Does the <em>seamless loop</em> feel like one endless strip?</p>
+        <div class="choices" data-vote="seamlessLoop">
+          <button class="choice" data-value="yes">Yes — no seams</button>
+          <button class="choice" data-value="glitch">I saw a jump or flicker</button>
+          <button class="choice" data-value="prefer-rewind">I prefer the rewind</button>
+        </div>
+      </div>
+
       <p class="status" id="status">Checking whether this page can record…</p>
     </div>
   </section>
@@ -353,6 +432,7 @@
   <section>
     <h2>What to judge</h2>
     <ul class="findings">
+      <li><strong>Mode D is the proposed port.</strong> Judge it on two gestures. A push from rest at an edge should feel like B3 did but stiffer and shorter, because it now uses WebKit’s actual curve. A flick from the middle into an edge should look exactly like the native control below, because D steps aside there. If the owned push still feels off, tune it with the knobs; the values you land on are recorded and become the component’s constants.</li>
       <li><strong>Your two B2 reports were one defect seen twice, and the recording pins it.</strong> The gestures
       carry <code>scrollStart</code> values of both 0 and 260 — the margin was in a different state at the start of
       different drags, which is only possible if its removal was racing the next gesture. Several also recorded
@@ -379,7 +459,7 @@
     </ul>
   </section>
 
-  <footer>Mouse drag only, matching the component — touch is left to the browser here exactly as it is in the real implementation. Reduced-motion settings are respected. Each completed drag records its own measurements (mode, distance, peak overscroll, settle duration) to this artifact so I can read them back; nothing else about you is collected.</footer>
+  <footer>Mouse drag and trackpad, matching the component — touch is left to the browser here exactly as it is in the real implementation. Reduced-motion settings are respected. Each completed drag records its own measurements (mode, distance, peak overscroll, settle duration) to this artifact so I can read them back; nothing else about you is collected.</footer>
 </div>
 
 <script>
@@ -410,16 +490,17 @@
   var PAD_LONG = 140;      // mode B2: the room IS the limit, so it is sized like one
   var MAX_TRANSLATE = 110; // mode C: asymptotic ceiling, so the track cannot run away
   var TRANSLATE_K = 260;   // mode C: how quickly resistance builds
-  // DERIVED, not chosen. The macOS/WebKit rubber-band function is
+  // The macOS/WebKit rubber-band function is
   //     b(x) = (1 - 1/(x*c/d + 1)) * d,  c ~ 0.55, d = viewport dimension
-  // Let u = x*c/d; then b = d*u/(u+1) = x*d/(x + d/c). That is exactly the
-  // hyperbola already in use here, rubber(x) = L*x/(x + L), with L = d/c.
-  // So the SHAPE was right by accident and only the constant was invented:
-  // it should be the track's own width over 0.55, about 1.8x the visible
-  // width, rather than the 221px that came from an arbitrary 260px room.
+  // Let u = x*c/d; then b = d*u/(u+1) = x*c*d/(c*x + d) = x*d/(x + d/c).
+  // CORRECTION (revision 29): revision 17 read that as "exactly" our
+  // rubber(x) = L*x/(x + L) with L = d/c. It is not -- L*x/(x+L) with L = d/c
+  // is x*d/(c*x + d), which is b(x)/c. WebKit's starts at slope c (0.55 px per
+  // px) and approaches d; ours starts at slope 1 and approaches d/c (~1.8x the
+  // width). A-C and B3 keep the old constant so they stay comparable; mode D
+  // uses webkitRubber() below, the real curve.
   // (The formula is recalled, not measured -- the platform's own bounce is
-  // invisible to us, being composited. What IS verified here is the algebra
-  // showing our function and theirs are the same family.)
+  // invisible to us, being composited.)
   var RUBBER_C = 0.55;
   function nativeLimit() { return (track.clientWidth || 320) / RUBBER_C; }
   var DAMP_LIMIT = PAD_LONG * 0.85;  // B2 only: capped by the room it actually has, below
@@ -603,6 +684,12 @@
       "<code>scrollLeft</code> stays pinned at the edge throughout \u2014 but unlike C that is not a disagreement, " +
       "because at a clamped edge it could not have changed anyway. The mouse path still owns the scroll position, " +
       "which is safe precisely because a mouse drag has no native scrolling to compete with.",
+    onewriter:
+      "<strong>What to try:</strong> park on slide 1, pause, then push further left with two fingers: D draws the band, on WebKit’s curve, and springs it home when you lift. " +
+      "Now start on slide 3 and flick hard towards slide 1: D draws nothing, and what you see at the edge is the platform’s own bounce, or no bounce in a browser that has none. " +
+      "That second case is where B3 overshot, by drawing its band on top of the platform’s. " +
+      "The mouse drag is B3’s unchanged, since that one already felt right. " +
+      "Use the knobs below to tune the owned case; they apply to the next gesture and are saved with every burst.",
     transform:
       "<strong>What you should see:</strong> the track slides past the edge with resistance and springs back on release. " +
       "The translation is now bounded at " + MAX_TRANSLATE + "px by the same rubber function, and the frame clips with " +
@@ -620,7 +707,7 @@
   // the native limit (582px) is more than twice the room it has (260px). That
   // is a structural limit of the margin approach, not a tuning choice.
   function rubberLimit() {
-    return mode === "bounce" ? nativeLimit() : Math.min(nativeLimit(), DAMP_LIMIT);
+    return (mode === "bounce" || mode === "onewriter") ? nativeLimit() : Math.min(nativeLimit(), DAMP_LIMIT);
   }
   function rubber(depth) { var L = rubberLimit(); return L * depth / (depth + L); }
   function rubberSigned(x) { return x < 0 ? -rubber(-x) : rubber(x); }
@@ -985,10 +1072,16 @@
     }
     track.style.transform = "";
     bounceSettling = false; bounceHoming = false; burstLog = null;
+    if (typeof ow !== "undefined") {
+      owCancelHome(); ow.raw = 0; ow.lastAt = 0; ow.released = false; owVisible = 0;
+      if (ow.idleTimer) { window.clearTimeout(ow.idleTimer); ow.idleTimer = 0; }
+    }
+    tuneEl.hidden = mode !== "onewriter";
     restoreSnap();
     voidLabel.textContent = mode === "deadspace" ? "frame · dead space at both ends"
       : mode === "damped" ? "frame · room appears only while dragging"
-      : mode === "bounce" ? "frame · no room past the edge, the track moves instead" : "frame";
+      : mode === "bounce" ? "frame · no room past the edge, the track moves instead"
+      : mode === "onewriter" ? "frame · band drawn only where the platform draws none" : "frame";
     modeNote.innerHTML = NOTES[mode];
     traceHint.textContent = mode === "clamped" ? "expect a flat line at the edges" : "";
     samples = [];
@@ -1002,6 +1095,7 @@
   function overscrollAmount() {
     if (mode === "transform") return over;
     if (mode === "bounce") return Math.abs(rubberSigned(rawOver));
+    if (mode === "onewriter") return Math.max(Math.abs(rubberSigned(rawOver)), Math.abs(owVisible));
     if (mode === "damped") {
       // Measured from layout, never inferred from a scroll coordinate, so
       // it reads the same during the drag and during the spring-back -- and
@@ -1116,12 +1210,288 @@
   }
 
 
+  // ---------------------------------------------------------------------
+  // MODE D -- one writer per bounce.
+  //
+  // The platform already rubber-bands this scroller when MOMENTUM carries it
+  // into an edge (the owner confirmed it by hand; it is composited, so no
+  // rect read can see it). B3 drew its own band on top, so a flick into an
+  // edge got two bands at once: the overshoot. It leaves one case dead --
+  // a gesture that STARTS with the scroller resting at the edge and pushes
+  // outward -- and that is the only case D fills.
+  //
+  // So ownership is decided once per gesture, from geometry at its start:
+  //   started away from the edge, scrolled into it  -> platform owns it: draw nothing
+  //   started resting at that edge, pushed outward   -> D owns it: draw the band
+  // A gesture begins after an idle gap longer than the measured rest after a
+  // burst (64-78ms). Within an owned gesture, finger travel goes through
+  // WebKit's real curve; when the deltas decline from their peak (fingers
+  // lifted, momentum decaying) or the stream stops, the band springs home
+  // and the rest of that gesture's tail is ignored.
+  //
+  // Every constant is a knob in the panel below the trace, and the values in
+  // force are saved with each burst, so the feel can be tuned by hand and the
+  // result read back rather than argued about.
+  // ---------------------------------------------------------------------
+  var KNOB_DEFS = [
+    { k: "gain", label: "Input gain (wheel delta → finger travel)", min: 0.05, max: 1, step: 0.05, def: 0.3, fmt: 2,
+      hint: "Wheel deltas are pointer-accelerated; the curve expects finger travel. Your Firefox sent 150–590px per event." },
+    { k: "c", label: "Resistance (WebKit c)", min: 0.2, max: 1, step: 0.01, def: 0.55, fmt: 2,
+      hint: "Slope at the start of the band. Lower is stiffer. WebKit uses 0.55." },
+    { k: "limit", label: "Band limit (× track width)", min: 0.1, max: 1, step: 0.01, def: 0.5, fmt: 2,
+      hint: "Where the curve flattens out. WebKit approaches 1.0 × the width; 0.5 kept your hardest flicks under ~28%." },
+    { k: "gap", label: "New gesture after idle (ms)", min: 40, max: 400, step: 5, def: 100, fmt: 0,
+      hint: "Measured rest after a burst is 64–78 ms, so the default sits just above it." },
+    { k: "smooth", label: "Momentum = each event ≥ this × the last", min: 0.6, max: 0.98, step: 0.01, def: 0.8, fmt: 2,
+      hint: "Momentum decays smoothly (your trackpad: ~0.95 per event); a hand jitters. Below this ratio counts as jitter, not momentum." },
+    { k: "ratioMax", label: "Momentum ceiling (× the last)", min: 0.9, max: 1, step: 0.005, def: 0.97, fmt: 3,
+      hint: "A delta above this fraction of the last is a hand still pushing, not coasting. wheel-gestures uses 0.96." },
+    { k: "repress", label: "Re-push = delta jumps above (× the last)", min: 1.3, max: 4, step: 0.1, def: 2, fmt: 1,
+      hint: "A sudden jump during momentum starts a new gesture at once, instead of waiting for the idle gap. From wheel-gestures." },
+    { k: "runs", label: "Smooth-decay events before release", min: 1, max: 6, step: 1, def: 3, fmt: 0,
+      hint: "Consecutive smoothly-decaying events that mean the fingers have lifted." },
+    { k: "idle", label: "Release when the stream stops (ms)", min: 30, max: 300, step: 5, def: 90, fmt: 0,
+      hint: "Backstop for a slow push that just stops, with no decline to detect." },
+    { k: "home", label: "Spring-back duration (ms)", min: 120, max: 800, step: 10, def: 340, fmt: 0,
+      hint: "Ease-out cubic, like the mouse release." },
+    { k: "cap", label: "Hard cap (× track width)", min: 0.05, max: 1, step: 0.01, def: 1, fmt: 2,
+      hint: "Safety ceiling on the drawn band. 1.0 means off." }
+  ];
+  var knob = {};
+  var KNOB_STORE = "bench-ow-knobs-v4";
+  (function loadKnobs() {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(KNOB_STORE) || "null"); } catch (e) { saved = null; }
+    for (var i = 0; i < KNOB_DEFS.length; i++) {
+      var kd = KNOB_DEFS[i];
+      var v = saved && typeof saved[kd.k] === "number" ? saved[kd.k] : kd.def;
+      knob[kd.k] = Math.min(kd.max, Math.max(kd.min, v));
+    }
+  })();
+  function saveKnobs() {
+    try { localStorage.setItem(KNOB_STORE, JSON.stringify(knob)); } catch (e) {}
+    record.owKnobs = Object.assign({}, knob);
+  }
+  record.owKnobs = Object.assign({}, knob);
+  record.dwellMs.onewriter = 0;
+
+  var knobsEl = document.getElementById("knobs");
+  var tuneEl = document.getElementById("tune");
+  var tuneLive = document.getElementById("tuneLive");
+  var knobInputs = {};
+  function fmtKnob(kd, v) { return kd.fmt ? v.toFixed(kd.fmt) : String(Math.round(v)); }
+  function renderKnobs() {
+    knobsEl.innerHTML = "";
+    KNOB_DEFS.forEach(function (kd) {
+      var wrap = document.createElement("div");
+      wrap.className = "knob";
+      var id = "knob-" + kd.k;
+      wrap.innerHTML = '<label for="' + id + '"><span>' + kd.label + '</span><output id="' + id + '-out"></output></label>' +
+        '<input type="range" id="' + id + '" min="' + kd.min + '" max="' + kd.max + '" step="' + kd.step + '">' +
+        '<small>' + kd.hint + '</small>';
+      knobsEl.appendChild(wrap);
+      var input = wrap.querySelector("input");
+      var out = wrap.querySelector("output");
+      input.value = knob[kd.k];
+      out.textContent = fmtKnob(kd, knob[kd.k]);
+      input.addEventListener("input", function () {
+        knob[kd.k] = parseFloat(input.value);
+        out.textContent = fmtKnob(kd, knob[kd.k]);
+        saveKnobs();
+        describeCurve();
+      });
+      input.addEventListener("change", function () { flush(); });
+      knobInputs[kd.k] = { input: input, out: out, kd: kd };
+    });
+    describeCurve();
+  }
+  var owLast = null;   // { wheel, drawn } of the last owned gesture, for the readout
+  function describeCurve() {
+    var d = track.clientWidth || 320;
+    var at = function (x) { return Math.round(webkitRubber(x * knob.gain)); };
+    var txt = "On this " + Math.round(d) + "px track: 300px of wheel delta draws " + at(300) +
+      "px, 1000px draws " + at(1000) + "px, 2000px draws " + at(2000) + "px.";
+    if (owLast) {
+      txt += " Last owned push: " + Math.round(owLast.wheel) + "px of wheel delta drew " +
+        Math.round(owLast.drawn) + "px (" + Math.round(100 * owLast.drawn / d) + "% of the width).";
+    }
+    tuneLive.textContent = txt;
+  }
+  document.getElementById("tuneReset").addEventListener("click", function () {
+    KNOB_DEFS.forEach(function (kd) {
+      knob[kd.k] = kd.def;
+      knobInputs[kd.k].input.value = kd.def;
+      knobInputs[kd.k].out.textContent = fmtKnob(kd, kd.def);
+    });
+    saveKnobs(); describeCurve(); flush();
+  });
+
+  // WebKit's curve, x*c*d/(d + c*x), with the limit knob scaling d, and the
+  // hard cap as a separate ceiling.
+  function webkitRubber(x) {
+    var w = track.clientWidth || 320;
+    var d = w * knob.limit;
+    var ax = Math.abs(x);
+    var v = ax * knob.c * d / (d + knob.c * ax);
+    v = Math.min(v, w * knob.cap);
+    return x < 0 ? -v : v;
+  }
+  // Inverse (ignoring the cap), so a new push can continue from wherever a
+  // spring-back in flight had got to rather than jumping.
+  function webkitRubberInverse(v) {
+    var w = track.clientWidth || 320;
+    var d = w * knob.limit;
+    var av = Math.min(Math.abs(v), d * 0.999);
+    var x = av * d / (knob.c * (d - av));
+    return v < 0 ? -x : x;
+  }
+
+  var ow = { lastAt: 0, startLeft: false, startRight: false, owned: null, raw: 0,
+             peak: 0, lastAbs: Infinity, lowRun: 0, released: false, wheelSum: 0, drawnMax: 0,
+             prevRaw: 0, lastPair: Infinity, rawLast: 0,
+             homeToken: 0, homing: false, idleTimer: 0 };
+  var owVisible = 0;
+
+  function owApply(v) {
+    owVisible = v;
+    track.style.transform = Math.abs(v) > 0.05 ? "translateX(" + v.toFixed(2) + "px)" : "";
+  }
+  function owHome() {
+    if (ow.idleTimer) { window.clearTimeout(ow.idleTimer); ow.idleTimer = 0; }
+    ow.raw = 0;
+    if (ow.homing) return;                          // never restart one in flight
+    var from = owVisible;
+    if (Math.abs(from) < 0.5 || reduce) { owApply(0); return; }
+    ow.homing = true;
+    var token = ++ow.homeToken, t0 = performance.now(), DUR = knob.home;
+    (function step() {
+      if (token !== ow.homeToken) return;           // superseded by a new owned push
+      var t = Math.min(1, (performance.now() - t0) / DUR);
+      owApply(from * Math.pow(1 - t, 3));           // ease-out cubic
+      pushSample(); report();
+      if (t < 1) window.requestAnimationFrame(step);
+      else { owApply(0); ow.homing = false; }
+    })();
+  }
+  function owFinishOwned(how) {
+    owLast = { wheel: ow.wheelSum, drawn: ow.drawnMax };
+    if (burstLog) {
+      burstLog.owRelease = how;
+      burstLog.owWheelAtRelease = Math.round(ow.wheelSum);
+      burstLog.owDrawnMax = Math.round(ow.drawnMax);
+      burstLog.owPctOfWidth = Math.round(100 * ow.drawnMax / (track.clientWidth || 320));
+    }
+    describeCurve();
+  }
+  function owCancelHome() {
+    if (!ow.homing) return;
+    ow.homeToken++; ow.homing = false;
+  }
+
+  track.addEventListener("wheel", function (e) {
+    if (mode !== "onewriter" || reduce) return;
+    var raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    var d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * track.clientWidth : raw;
+    var cd = -d;                                    // desired CONTENT displacement (+ = right)
+    var ad = Math.abs(d);
+    var now = performance.now();
+    noteDeviceDelta(ad);
+
+    // A new gesture starts after the idle gap, OR at once when a delta jumps
+    // well above the last one while the previous gesture's tail is still
+    // arriving: a re-push during live momentum. (wheel-gestures' own rule,
+    // xiel/wheel-gestures@4c0592b src/wheel-gestures/wheel-gestures.ts:100-111,
+    // MIT: a delta > max(2, lastAbs * 2) ends the gesture.)
+    var repush = ow.lastAt && ow.rawLast > 0 && ad > Math.max(2, ow.rawLast * knob.repress);
+    ow.rawLast = ad;
+    if (now - ow.lastAt > knob.gap || repush) {
+      if (repush && burstLog) burstLog.endedByRepush = true;
+      // A new gesture. Read where the scroller rests BEFORE this event scrolls
+      // it: the wheel event is dispatched ahead of its own default scroll.
+      if (burstLog) burstEnd(ow.released ? "released" : "gap");
+      var g0 = edgeGaps();
+      ow.startLeft = g0.left >= -0.5;
+      ow.startRight = g0.right <= 0.5;
+      ow.owned = null; ow.peak = 0; ow.lastAbs = Infinity; ow.lowRun = 0; ow.released = false;
+      ow.wheelSum = 0; ow.drawnMax = 0; ow.prevRaw = 0; ow.lastPair = Infinity;
+      if (ow.homing) owCancelHome();
+      record.wheel.bursts++;
+      burstBegin(e.deltaMode);
+      burstLog.startedAtEdge = ow.startLeft ? "left" : ow.startRight ? "right" : "none";
+      burstLog.knobs = Object.assign({}, knob);
+    }
+    ow.lastAt = now;
+
+    var g = edgeGaps();
+    var atLimit = cd > 0 ? g.left >= -0.5 : g.right <= 0.5;
+    if (atLimit && ow.owned === null) {
+      ow.owned = cd > 0 ? ow.startLeft : ow.startRight;
+      if (burstLog) burstLog.owned = ow.owned;
+    }
+
+    if (!ow.owned || ow.released) {                 // the platform's bounce, or a spent tail
+      burstSample(d);
+      return;
+    }
+    if (!atLimit) {                                 // reversed off the edge
+      owFinishOwned("reversed");
+      ow.released = true; owHome(); burstSample(d); pushSample(); report();
+      return;
+    }
+
+    // Fingers lifted -> the stream turns into SMOOTH geometric decay (measured
+    // ~0.95 per event on this trackpad). A hand still on the pad jitters
+    // (Firefox recorded 140, 152, 92, 145...), which a plain "lower than the
+    // last one" test keeps mistaking for a lift and then un-mistaking. So only
+    // a run of events that each fall, but by no more than the smoothness knob
+    // allows, counts; and only once the peak is clearly above the device's own
+    // quantum, so a slow flat push is left to the idle backstop.
+    // Paired events (wheel-gestures merges 2 per sample) damp single-event
+    // jitter before the decay test. Momentum = each pair falls, but by a
+    // bounded ratio: at least `smooth` of the last (not a hand jitter) and at
+    // most `ratioMax` (not a hand still pushing steadily).
+    var pair = ow.prevRaw ? (ad + ow.prevRaw) / 2 : ad;
+    ow.prevRaw = ad;
+    var smoothFall = ow.lastPair !== Infinity && pair <= ow.lastPair * knob.ratioMax && pair >= ow.lastPair * knob.smooth;
+    if (ad > ow.peak) ow.peak = ad;
+    if (ow.peak > plateauCeiling() && smoothFall) ow.lowRun++;
+    else ow.lowRun = 0;
+    ow.lastPair = pair;
+    ow.lastAbs = ad;
+    if (ow.lowRun >= knob.runs) {
+      owFinishOwned("smooth-decay");
+      ow.released = true; owHome(); burstSample(d); pushSample(); report();
+      return;
+    }
+
+    if (ow.homing) { owCancelHome(); ow.raw = webkitRubberInverse(owVisible); }
+    ow.raw += cd * knob.gain;
+    ow.wheelSum += Math.abs(cd);
+    owApply(webkitRubber(ow.raw));
+    if (Math.abs(owVisible) > ow.drawnMax) ow.drawnMax = Math.abs(owVisible);
+    var o = Math.abs(owVisible);
+    if (o > record.wheel.peakOverscroll) record.wheel.peakOverscroll = Math.round(o);
+    if (Math.abs(ow.raw) > record.wheel.peakRawOver) record.wheel.peakRawOver = Math.round(Math.abs(ow.raw));
+    burstSample(d);
+    pushSample(); report();
+
+    if (ow.idleTimer) window.clearTimeout(ow.idleTimer);
+    ow.idleTimer = window.setTimeout(function () {
+      ow.idleTimer = 0;
+      if (!ow.released) { owFinishOwned("idle"); ow.released = true; owHome(); }
+    }, knob.idle);
+  }, { passive: true });
+
+  renderKnobs();
+  window.addEventListener("resize", describeCurve);
+
   var gesture = null;
 
   track.addEventListener("pointerdown", function (e) {
     if (e.pointerType === "touch") return;   // touch scrolls natively, as in the component
     if (e.button !== 0) return;
     cancelUnpad();   // this gesture owns the room now, not the last one
+    if (mode === "onewriter") { owCancelHome(); owVisible = 0; }
     armed = true; dragging = false;
     startX = lastX = e.clientX;
     over = 0; rawOver = 0;
@@ -1161,7 +1531,7 @@
       if (!feedDamped(dx)) {
         track.scrollBy({ left: -dx, behavior: "instant" });
       }
-    } else if (mode === "bounce") {
+    } else if (mode === "bounce" || mode === "onewriter") {
       feedBounce(dx);
     } else if (mode === "transform" && ((atStart && dx > 0) || (atEnd && dx < 0))) {
       over += dx;
@@ -1227,7 +1597,7 @@
       over = 0;
       window.setTimeout(function () { track.style.transition = ""; }, reduce ? 0 : 340);
     }
-    if (mode === "bounce") {
+    if (mode === "bounce" || mode === "onewriter") {
       bounceHome(function () { settle(); });
       finishGesture();
       return;
@@ -1559,6 +1929,155 @@
     }, { passive: true });
   }
 
+  // ---------------------------------------------------------------------
+  // SEAMLESS LOOP -- virtual slides from data.
+  //
+  // The data has N items; the DOM holds a window of 2*R+1 slides centred on
+  // the current item, indices taken modulo N. Every input (native trackpad
+  // and touch scrolling, buttons, keys, autoplay) just scrolls the one
+  // scroller, and scroll snapping lands it exactly one slide away. Only
+  // once the scroller is idle (scrollend, or a debounce where unsupported)
+  // does this code touch anything: it rotates DOM nodes from one end of the
+  // window to the other and moves the scroll position by exactly the same
+  // physical distance, in the same task, so no frame is painted in between.
+  // That write happens only while nothing else is scrolling, which is the
+  // one time owning the scroll position is safe (research doc §3).
+  // Deltas are physical (getBoundingClientRect), never scrollLeft.
+  // ---------------------------------------------------------------------
+  (function seamlessLoop() {
+    var loopTrack = document.getElementById("loopTrack");
+    if (!loopTrack) return;
+    var N = 12, R = 2;
+    var HUES = [0, 30, 55, 95, 140, 175, 200, 225, 255, 285, 315, 340];
+    var current = 0, recenters = 0, laps = 0, playing = false, playTimer = 0;
+    var hovered = false, focused = false, settleTimer = 0;
+    var lShow = document.getElementById("lShow"), lDom = document.getElementById("lDom");
+    var lRecenters = document.getElementById("lRecenters"), lLaps = document.getElementById("lLaps");
+    var dotsEl = document.getElementById("loopDots");
+    var playBtn = document.getElementById("loopPlay");
+    function mod(i) { return ((i % N) + N) % N; }
+    for (var di = 0; di < N; di++) {
+      var dot = document.createElement("span"); dot.className = "loop-dot"; dotsEl.appendChild(dot);
+    }
+    function paintSlide(el, idx) {
+      el.dataset.idx = String(idx);
+      el.textContent = String(idx + 1);
+      el.setAttribute("aria-label", (idx + 1) + " of " + N);
+      el.style.boxShadow = "inset 0 -4px 0 hsl(" + HUES[idx] + " 55% 50%)";
+    }
+    for (var k = -R; k <= R; k++) {
+      var sl = document.createElement("div");
+      sl.className = "slide"; sl.setAttribute("role", "group"); sl.setAttribute("aria-roledescription", "slide");
+      paintSlide(sl, mod(current + k));
+      loopTrack.appendChild(sl);
+    }
+    function pitch() {
+      var a = loopTrack.children[0].getBoundingClientRect(), b = loopTrack.children[1].getBoundingClientRect();
+      return b.left - a.left;
+    }
+    function offsetOf(el) { return el.getBoundingClientRect().left - loopTrack.getBoundingClientRect().left; }
+    // Put the middle slide at rest, instantly (initial layout).
+    // `scroll-snap-stop: always` stops even a programmatic scrollBy at the
+    // first snap point it crosses, so a two-slide jump would land one slide
+    // short. Snapping is off for this one alignment, as in recentre().
+    function centreNow() {
+      loopTrack.style.scrollSnapType = "none";
+      var d = offsetOf(loopTrack.children[R]);
+      if (Math.abs(d) > 0.5) loopTrack.scrollBy({ left: d, behavior: "instant" });
+      loopTrack.style.scrollSnapType = "";
+    }
+    function nearestChild() {
+      var best = 0, bestD = Infinity;
+      for (var i = 0; i < loopTrack.children.length; i++) {
+        var d = Math.abs(offsetOf(loopTrack.children[i]));
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return best;
+    }
+    function report2() {
+      lShow.textContent = (current + 1) + " of " + N;
+      lDom.textContent = String(loopTrack.children.length);
+      lRecenters.textContent = String(recenters);
+      lLaps.textContent = String(laps);
+      var dots = dotsEl.children;
+      for (var i = 0; i < dots.length; i++) dots[i].dataset.on = String(i === current);
+    }
+    // The one place the window moves. Called only when the scroller is idle.
+    function recentre() {
+      var at = nearestChild();
+      var shift = at - R;                          // slides moved since the last centre
+      if (!shift) return;
+      var prev = current;
+      current = mod(current + shift);
+      if ((shift > 0 && current < prev) || (shift < 0 && current > prev)) laps++;
+      var target = loopTrack.children[at];         // the slide the reader is looking at
+      // Snapping is suspended for the length of this one idle-time rotation:
+      // browsers keep a snapped element snapped across layout changes, so with
+      // snapping live they re-snap on their own when nodes move and a manual
+      // correction would then be applied twice (seen: one Previous moved two
+      // slides). With it off, one closed-loop correction lands the SAME element
+      // exactly where it was, and restoring snapping on an aligned position
+      // moves nothing.
+      loopTrack.style.scrollSnapType = "none";
+      // Rotate nodes: moving right means the leftmost `shift` slides go to the
+      // end and are repainted as the next items (and vice versa).
+      for (var n = 0; n < Math.abs(shift); n++) {
+        if (shift > 0) {
+          var first = loopTrack.firstElementChild;
+          loopTrack.appendChild(first);
+          paintSlide(first, mod(current + R));
+        } else {
+          var last = loopTrack.lastElementChild;
+          loopTrack.insertBefore(last, loopTrack.firstElementChild);
+          paintSlide(last, mod(current - R));
+        }
+      }
+      var d = offsetOf(target);
+      if (Math.abs(d) > 0.5) loopTrack.scrollBy({ left: d, behavior: "instant" });
+      loopTrack.style.scrollSnapType = "";
+      recenters++;
+      report2();
+      if (record.loop) { record.loop.recenters = recenters; record.loop.laps = laps; }
+    }
+    function onIdle() { if (settleTimer) { clearTimeout(settleTimer); settleTimer = 0; } recentre(); }
+    if ("onscrollend" in window) loopTrack.addEventListener("scrollend", onIdle);
+    loopTrack.addEventListener("scroll", function () {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(onIdle, "onscrollend" in window ? 400 : 140);   // backstop / fallback
+    }, { passive: true });
+    function step(dir) {
+      var p = pitch();
+      loopTrack.scrollBy({ left: dir * p, behavior: reduce ? "instant" : "smooth" });
+      if (reduce) setTimeout(onIdle, 0);
+      if (record.loop) { record.loop.steps = (record.loop.steps || 0) + 1; }
+    }
+    document.getElementById("loopPrev").addEventListener("click", function () { step(-1); stopPlay(); });
+    document.getElementById("loopNext").addEventListener("click", function () { step(1); stopPlay(); });
+    loopTrack.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight") { e.preventDefault(); step(1); stopPlay(); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); stopPlay(); }
+    });
+    function tick() { if (playing && !hovered && !focused) step(1); }
+    function startPlay() {
+      if (reduce) return;
+      playing = true; playBtn.setAttribute("aria-pressed", "true"); playBtn.textContent = "Pause autoplay";
+      if (!playTimer) playTimer = setInterval(tick, 1600);
+    }
+    function stopPlay() {
+      playing = false; playBtn.setAttribute("aria-pressed", "false"); playBtn.textContent = "Autoplay";
+      if (playTimer) { clearInterval(playTimer); playTimer = 0; }
+    }
+    playBtn.addEventListener("click", function () { playing ? stopPlay() : startPlay(); });
+    loopTrack.addEventListener("mouseenter", function () { hovered = true; });
+    loopTrack.addEventListener("mouseleave", function () { hovered = false; });
+    loopTrack.addEventListener("focusin", function () { focused = true; });
+    loopTrack.addEventListener("focusout", function () { focused = false; });
+    record.loop = { recenters: 0, laps: 0, steps: 0 };
+    window.addEventListener("resize", centreNow);
+    requestAnimationFrame(function () { centreNow(); report2(); });
+  })();
+
   applyMode();
 })();
 </script>
+
