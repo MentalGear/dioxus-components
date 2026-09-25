@@ -1,9 +1,11 @@
 //! Root combobox component.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::{default_combobox_filter, ComboboxContext};
 use crate::{
+    merge_attributes,
     selectable::{
         use_selectable_root, use_single_selectable_value, RcPartialEqValue, SelectionMode,
     },
@@ -132,11 +134,15 @@ pub fn Combobox<T: Clone + PartialEq + 'static>(props: ComboboxProps<T>) -> Elem
         props.filter,
     );
 
+    let owned = attributes!(div {
+        "data-state": if open() { "open" } else { "closed" },
+        "data-disabled": (props.disabled)(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            "data-state": if open() { "open" } else { "closed" },
-            "data-disabled": (props.disabled)(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }

@@ -42,13 +42,20 @@
 //!   [`scale::BandScale`], plus [`scale::nice_domain`].
 //! - [`curve`] -- [`curve::Curve`] and the [`curve::line_path`]/
 //!   [`curve::area_path`] SVG path builders.
-//! - [`mod@stack`] -- [`stack::stack`], series stacking.
+//! - [`mod@stack`] -- [`stack::stack`], series stacking, plus
+//!   [`stack::stack_with_mode`]/[`stack::StackMode`] for percent
+//!   ("100% stacked") stacking.
 //! - [`geometry`] -- [`geometry::plot_runs`], gap-aware point-run
 //!   splitting for a line/area series.
 //! - [`table`] -- [`table::table_rows`], the hidden data table's row
 //!   model.
-//! - [`data`] -- the plain data types ([`data::ChartConfig`],
-//!   [`data::ChartSeries`], [`data::ChartDatum`], [`data::ChartKind`]).
+//! - [`data`] -- the plain data types ([`data::ChartDatum`],
+//!   [`data::ChartKind`]). `ChartConfig`/`ChartSeries` are NOT here --
+//!   see `super::config`'s own module doc for why the series model
+//!   specifically had to move out of this dioxus-free tree.
+//! - [`polar`]/[`radar`] -- reserved, currently-empty modules for the
+//!   Pie/RadialBar and Radar families' own math (owned by later stage-2
+//!   lanes `s2-polar`/`s2-radar`; see each module's own doc comment).
 //!
 //! Every public item here is also re-exported flatly from
 //! [`crate::chart`] (e.g. `dioxus_primitives::chart::LinearScale`), so this
@@ -59,11 +66,13 @@
 pub mod curve;
 pub mod data;
 pub mod geometry;
+pub mod polar;
+pub mod radar;
 pub mod scale;
 pub mod stack;
 pub mod table;
 
 pub use curve::{area_between_path, area_path, line_path, Curve};
-pub use data::{ChartConfig, ChartDatum, ChartKind, ChartSeries};
+pub use data::{ChartDatum, ChartKind};
 pub use scale::{nice_domain, BandScale, LinearScale};
-pub use stack::stack;
+pub use stack::{stack, stack_with_mode, StackMode};

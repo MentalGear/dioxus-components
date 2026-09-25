@@ -826,6 +826,15 @@ fn DropdownMenuContentRendered(
             class: "dx-anchor-dropdown-menu"
         }),
         labelledby,
+        // `role`/`popover`/`data-state` are owned by this component (menu
+        // semantics + top-layer wiring), so they must win over a caller's
+        // own attributes rather than sit as a literal beside `..attributes`
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+        }),
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -837,9 +846,6 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 // The user is starting a click inside the dropdown menu.
                 // Prevent the blur event from occurring during pointerdown,
@@ -877,7 +883,17 @@ fn DropdownMenuContentRendered(
     // alongside `..attributes`.
     let labelledby =
         crate::menu_root::content_labelledby_attributes(&attributes, &ctx.trigger_id.cloned());
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let open = ctx.open;
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
 
     // `docs/backlog.md` row 85 -- see the web arm's identical call above
     // for the full construction. This arm has no popover API to fall back
@@ -893,8 +909,6 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id,
-            role: crate::menu_semantics::MENU_ROLE,
-            "data-state": if (ctx.open)() { "open" } else { "closed" },
             onpointerdown: move |event| {
                 // The user is starting a click inside the dropdown menu.
                 // Prevent the blur event from occurring during pointerdown,
@@ -1010,8 +1024,14 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    rsx! {
-        div {
+    // Merged, not literal-beside-spread: `role`/`aria-disabled`/
+    // `data-disabled`/`tabindex` are all owned by this component (roving
+    // focus + disabled-state semantics), so they must win over a caller's
+    // `props.attributes` rather than risk the SSR duplicate-attribute
+    // hazard (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             // Found investigating an axe `color-contrast` finding on this
             // pattern class's disabled state (docs/backlog.md row 39): the
@@ -1027,7 +1047,11 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
             aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
+        }),
+    ]);
 
+    rsx! {
+        div {
             onclick: move |e: Event<MouseData>| {
                 e.stop_propagation();
                 if !disabled() {
@@ -1056,7 +1080,7 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
                 }
             },
 
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -1602,6 +1626,16 @@ fn DropdownMenuSubContentRendered(
             class: "dx-anchor-dropdown-menu"
         }),
         labelledby,
+        // Owned by this component -- menu semantics, top-layer wiring and
+        // direction state must win over a caller's own attributes
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            popover: crate::top_layer::PopoverKind::Auto.as_str(),
+            dir: ctx.direction.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
+        }),
     ]);
     let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
 
@@ -1672,11 +1706,6 @@ fn DropdownMenuSubContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: crate::menu_semantics::MENU_ROLE,
-            popover: crate::top_layer::PopoverKind::Auto.as_str(),
-            dir: ctx.direction.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-direction": ctx.direction.as_str(),
             onkeydown,
             // See `SubMenuState::hover_close`'s doc: mirrors
             // `DropdownMenuSubTrigger`'s identical pair on the same shared
@@ -1743,7 +1772,18 @@ fn DropdownMenuSubContentRendered(
             aria_labelledby: "{sub.trigger_id}"
         })
     };
-    let attributes = merge_attributes(vec![attributes, labelledby]);
+    let attributes = merge_attributes(vec![
+        attributes,
+        labelledby,
+        // Owned by this component -- see the web arm's identical
+        // construction above (`docs/backlog.md` row 93).
+        attributes!(div {
+            role: crate::menu_semantics::MENU_ROLE,
+            dir: ctx.direction.as_str(),
+            "data-state": if open() { "open" } else { "closed" },
+            "data-direction": ctx.direction.as_str(),
+        }),
+    ]);
 
     let trigger_id = sub.trigger_id;
     // See the web arm's identical construction (above) for why the close
@@ -1787,10 +1827,6 @@ fn DropdownMenuSubContentRendered(
     rsx! {
         div {
             id,
-            role: crate::menu_semantics::MENU_ROLE,
-            dir: ctx.direction.as_str(),
-            "data-state": if open() { "open" } else { "closed" },
-            "data-direction": ctx.direction.as_str(),
             onkeydown,
             onmouseenter: move |_| {
                 hover_open.cancel();
@@ -1884,13 +1920,20 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    rsx! {
-        div {
+    // Owned by this component -- see `DropdownMenuItem`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: crate::menu_semantics::MENU_ITEM_ROLE,
             aria_disabled: disabled(),
             "data-disabled": disabled(),
             tabindex: if focused() { "0" } else { "-1" },
+        }),
+    ]);
 
+    rsx! {
+        div {
             onclick: move |e: Event<MouseData>| {
                 e.stop_propagation();
                 if !disabled() {
@@ -1926,7 +1969,7 @@ pub fn DropdownMenuSubItem<T: Clone + PartialEq + 'static>(
                 }
             },
 
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }

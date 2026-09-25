@@ -1,6 +1,8 @@
 //! Defines the [`DragAndDropList`] component and its sub-components.
 use crate::collection::{collection_item, use_collection_provider, use_item, CollectionState};
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum DropPosition {
@@ -440,11 +442,18 @@ pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
         }
     });
 
+    // `aria_roledescription`/`aria_describedby` are owned: the latter is an
+    // id reference to `DragAndDropInstructions`'s own owned `id` below, so a
+    // caller override on either side would strand the reference.
+    let owned = attributes!(ul {
+        aria_roledescription: "sortable list",
+        aria_describedby: "dnd-instructions",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         ul {
             aria_label: "{props.aria_label}",
-            aria_roledescription: "sortable list",
-            aria_describedby: "dnd-instructions",
             ondragover: move |event: Event<DragData>| {
                 // Drops can happen in the visual gaps between items. The
                 // nearest item still owns target calculation, but the list
@@ -456,7 +465,7 @@ pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
                 event.prevent_default();
                 ctx.drop();
             },
-            ..props.attributes,
+            ..merged,
             {children}
         }
     }
@@ -465,11 +474,19 @@ pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
 /// Screen-reader instructions for keyboard sorting.
 #[component]
 pub fn DragAndDropInstructions(props: DragAndDropInstructionsProps) -> Element {
+    // `id` is owned: `DragAndDropListItems` above references it via
+    // `aria_describedby`, so a caller override would strand that reference
+    // (backlog row 93 names this site explicitly). `style` is this
+    // visually-hidden element's own structural CSS, also owned.
+    let owned = attributes!(div {
+        id: "dnd-instructions",
+        style: "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            id: "dnd-instructions",
-            style: "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);",
-            ..props.attributes,
+            ..merged,
             "Press Enter to start reordering. Use Arrow keys to change position. Press Enter to confirm or Escape to cancel."
         }
     }
@@ -481,13 +498,17 @@ pub fn DragAndDropLiveRegion(props: DragAndDropLiveRegionProps) -> Element {
     let ctx: DragAndDropContext = use_context();
     let announcement = (ctx.announcement)();
 
+    let owned = attributes!(div {
+        role: "status",
+        aria_live: "assertive",
+        aria_atomic: "true",
+        style: "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "status",
-            aria_live: "assertive",
-            aria_atomic: "true",
-            style: "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);",
-            ..props.attributes,
+            ..merged,
             "{announcement}"
         }
     }
@@ -641,19 +662,26 @@ pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
         };
     };
 
+    // All owned: role description/draggable/tabindex/aria-grabbed define
+    // this item's DnD widget semantics, the `data-*` attributes are its own
+    // managed drag/focus state.
+    let owned = attributes!(li {
+        aria_roledescription: "sortable item",
+        draggable: "true",
+        tabindex: item.tabindex,
+        aria_grabbed: if ctx.drag_from().is_some_and(|from| from == index) { "true" } else { "false" },
+        "data-is-grabbing": if ctx.drag_from().is_some_and(|from| from == index) { "true" },
+        // Set when the drop target has returned to this item's starting slot —
+        // i.e. dropping now would leave it in place. The primitive suppresses
+        // the drop indicator in that case (no gap to point to), so styling
+        // hooks off this attribute to surface the "stays here" state.
+        "data-drop-at-origin": if ctx.drag_from().is_some_and(|from| from == index) && ctx.drop_to() == Some(index) { "true" },
+        "data-focus-visible": if ctx.is_focused(index) { "true" },
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         li {
-            aria_roledescription: "sortable item",
-            draggable: "true",
-            tabindex: item.tabindex,
-            aria_grabbed: if ctx.drag_from().is_some_and(|from| from == index) { "true" } else { "false" },
-            "data-is-grabbing": if ctx.drag_from().is_some_and(|from| from == index) { "true" },
-            // Set when the drop target has returned to this item's starting slot —
-            // i.e. dropping now would leave it in place. The primitive suppresses
-            // the drop indicator in that case (no gap to point to), so styling
-            // hooks off this attribute to surface the "stays here" state.
-            "data-drop-at-origin": if ctx.drag_from().is_some_and(|from| from == index) && ctx.drop_to() == Some(index) { "true" },
-            "data-focus-visible": if ctx.is_focused(index) { "true" },
             onmounted: move |event| {
                 item_ref.set(Some(event.data()));
                 collection_onmounted(event);
@@ -734,7 +762,7 @@ pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
             },
             //ondragleave: move |_| ctx.drop_to.set(None),
             onkeydown,
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -754,10 +782,10 @@ pub fn DragAndDropDropIndicator(props: DragAndDropDropIndicatorProps) -> Element
         return rsx! {};
     }
 
+    let owned = attributes!(div { "data-position": "{props.position}" });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
-        div {
-            "data-position": "{props.position}",
-            ..props.attributes,
-        }
+        div { ..merged }
     }
 }

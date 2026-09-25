@@ -435,16 +435,19 @@ pub fn SidebarRail(#[props(extends = GlobalAttributes)] attributes: Vec<Attribut
         class: "dx-sidebar-rail",
         "data-sidebar": "rail",
         "data-slot": "sidebar-rail",
+        aria_label: "Toggle Sidebar",
+        title: "Toggle Sidebar",
     });
-    let merged = merge_attributes(vec![base, attributes]);
+    // `tabindex: -1` is required behavior -- the rail is a pointer-only
+    // affordance deliberately excluded from the tab order -- not a caller
+    // default, so it is owned-wins.
+    let owned = attributes!(button { tabindex: -1 });
+    let merged = merge_attributes(vec![base, attributes, owned]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
         button {
-            aria_label: "Toggle Sidebar",
-            tabindex: -1,
             onclick: move |_| ctx.toggle(),
-            title: "Toggle Sidebar",
             ..merged,
         }
     }

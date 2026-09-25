@@ -1,7 +1,8 @@
 //! SelectGroup and SelectGroupLabel component implementations.
 
-use crate::{listbox::ListboxContext, use_effect, use_id_or, use_unique_id};
+use crate::{listbox::ListboxContext, merge_attributes, use_effect, use_id_or, use_unique_id};
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::{SelectContext, SelectGroupContext};
 
@@ -79,16 +80,17 @@ pub fn SelectGroup(props: SelectGroupProps) -> Element {
     use_context_provider(|| SelectGroupContext { labeled_by });
     let render = use_context::<ListboxContext>().render;
 
+    let owned = attributes!(div {
+        role: "group",
+        aria_disabled: disabled,
+        aria_labelledby: labeled_by,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         if render() {
             div {
-                role: "group",
-
-                // ARIA attributes
-                aria_disabled: disabled,
-                aria_labelledby: labeled_by,
-
-                ..props.attributes,
+                ..merged,
                 {props.children}
             }
         } else {

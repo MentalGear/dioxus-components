@@ -352,42 +352,37 @@ pub(crate) fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
 
 #[component]
 pub(crate) fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
+    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        date_picker::DatePickerYearSegment {
-            class: "dx-date-picker-segment",
-            attributes: props.attributes,
-        }
+        date_picker::DatePickerYearSegment { attributes: merged }
     }
 }
 
 #[component]
 pub(crate) fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
+    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        date_picker::DatePickerMonthSegment {
-            class: "dx-date-picker-segment",
-            attributes: props.attributes,
-        }
+        date_picker::DatePickerMonthSegment { attributes: merged }
     }
 }
 
 #[component]
 pub(crate) fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
+    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        date_picker::DatePickerDaySegment {
-            class: "dx-date-picker-segment",
-            attributes: props.attributes,
-        }
+        date_picker::DatePickerDaySegment { attributes: merged }
     }
 }
 
 #[component]
 pub(crate) fn DatePickerSeparator(props: DatePickerSeparatorProps) -> Element {
+    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        date_picker::DatePickerSeparator {
-            class: "dx-date-picker-segment",
-            symbol: props.symbol,
-            attributes: props.attributes,
-        }
+        date_picker::DatePickerSeparator { symbol: props.symbol, attributes: merged }
     }
 }
 
@@ -411,11 +406,14 @@ pub(crate) fn DateRangePickerEndValue(props: DateRangePickerEndValueProps) -> El
 
 #[component]
 pub(crate) fn DatePickerPopoverTrigger(props: PopoverTriggerProps) -> Element {
+    let base = attributes!(button {
+        class: "dx-date-picker-popover-trigger",
+        aria_label: "Show Calendar",
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         PopoverTrigger {
-            class: "dx-date-picker-popover-trigger",
-            aria_label: "Show Calendar",
-            attributes: props.attributes,
+            attributes: merged,
             ChevronDown {
                 class: "dx-date-picker-trigger",
                 size: "20px",

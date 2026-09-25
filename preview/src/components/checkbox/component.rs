@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::Check;
 use dioxus_primitives::checkbox::{self, CheckboxProps};
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 // docs/backlog.md row 32: `#[css_module]` is gone -- this stylesheet is now
 // plain, unhashed `dx-`-prefixed CSS (collision safety comes from
@@ -21,10 +23,11 @@ use dioxus_primitives::checkbox::{self, CheckboxProps};
 // `#[css_module]`'s own `OnceLock`-guarded injection used to give.
 #[component]
 pub fn Checkbox(props: CheckboxProps) -> Element {
+    let base = attributes!(input { class: "dx-checkbox" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/checkbox/style.css") }
         checkbox::Checkbox {
-            class: "dx-checkbox",
             checked: props.checked,
             default_checked: props.default_checked,
             required: props.required,
@@ -32,7 +35,7 @@ pub fn Checkbox(props: CheckboxProps) -> Element {
             name: props.name,
             value: props.value,
             on_checked_change: props.on_checked_change,
-            attributes: props.attributes,
+            attributes: merged,
             checkbox::CheckboxIndicator { class: "dx-checkbox-indicator",
                 Check { size: "1rem" }
             }

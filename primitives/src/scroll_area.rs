@@ -1,7 +1,9 @@
 //! Defines the [`ScrollArea`] component for creating scrollable areas with customizable scrollbars.
 
 use crate::direction::{use_direction, Direction};
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 /// The props for the [`ScrollArea`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -129,20 +131,29 @@ pub fn ScrollArea(props: ScrollAreaProps) -> Element {
         }
     });
 
+    // `class` always concatenates regardless of merge order; the rest is
+    // this scroll area's own computed state (`scrollbar-width`/the
+    // `data-*` pair).
+    let defaults = attributes!(div {
+        class: "{visibility_class}"
+    });
+    let owned = attributes!(div {
+        "scrollbar-width": scrollbar_width,
+        "data-scroll-direction": match direction() {
+            ScrollDirection::Vertical => "vertical",
+            ScrollDirection::Horizontal => "horizontal",
+            ScrollDirection::Both => "both",
+        },
+        "data-direction": text_direction.as_str(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            class: "{visibility_class}",
             overflow_x,
             overflow_y,
-            "scrollbar-width": scrollbar_width,
             dir: text_direction.as_str(),
-            "data-scroll-direction": match direction() {
-                ScrollDirection::Vertical => "vertical",
-                ScrollDirection::Horizontal => "horizontal",
-                ScrollDirection::Both => "both",
-            },
-            "data-direction": text_direction.as_str(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }

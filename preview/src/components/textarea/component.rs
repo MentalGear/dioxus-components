@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 #[derive(Copy, Clone, PartialEq, Default)]
 #[non_exhaustive]
@@ -47,12 +49,15 @@ pub fn Textarea(
     #[props(extends=textarea)]
     attributes: Vec<Attribute>,
 ) -> Element {
+    let base = attributes!(textarea { class: "dx-textarea", "data-slot": "textarea" });
+    // `data-style` reflects this wrapper's own typed `variant` prop, not a
+    // caller default -- owned-wins.
+    let owned = attributes!(textarea { "data-style": variant.class() });
+    let merged = merge_attributes(vec![base, attributes, owned]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/textarea/style.css") }
         textarea {
-            class: "dx-textarea",
-            "data-slot": "textarea",
-            "data-style": variant.class(),
             oninput: move |e| _ = oninput.map(|callback| callback(e)),
             onchange: move |e| _ = onchange.map(|callback| callback(e)),
             oninvalid: move |e| _ = oninvalid.map(|callback| callback(e)),
@@ -72,7 +77,7 @@ pub fn Textarea(
             oncut: move |e| _ = oncut.map(|callback| callback(e)),
             onpaste: move |e| _ = onpaste.map(|callback| callback(e)),
             onmounted: move |e| _ = onmounted.map(|callback| callback(e)),
-            ..attributes,
+            ..merged,
         }
     }
 }

@@ -1,6 +1,23 @@
 # Chart stage 2 — per-chart-type gallery handoff (parked)
 
-Status: **parked**, 2026-09-20, pending the user's go-ahead to resume. Chart stage 2 was
+**RESOLVED 2026-09-25 (round 8):** the user gave the go-ahead (approved `dev-docs/backlog.md`
+row 90) and all seven parked lanes below were integrated from their pushed `worktree-agent-*`
+branches. Every gallery this document tracks as part-done now matches shadcn's own inventory
+exactly — Area 10/10, Bar 10/10, Line 10/10, Tooltip 9/9, Radar 14/14, Pie 11/11, Radial 6/6 (70
+demos) — and all five cross-lane constructions in §4 below landed. `RadialBar`'s primitive was
+built out from the stub §2/§3 describe as unstarted. The body of this document below is kept
+**as the historical record** of the parked state, the per-lane ledger discrepancies, and the
+construction designs that were then executed largely as proposed — it is not being rewritten to
+read as if stage 2 shipped in one pass. Full landing account, evidence, gate results and commit
+range: `dev-docs/backlog.md` row 90's own dated addendum; `component-backlog.md`'s Chart row.
+**Not re-verified by this docs pass:** browser + SSG validation of the fully integrated gallery
+tree (with row 93's attribute-merge fixes also applied) was reported in progress in a separate
+lane at hand-off time — that status is carried forward from that lane's own report, not
+independently confirmed here.
+
+---
+
+Status (as of 2026-09-20, superseded above): **parked**, pending the user's go-ahead to resume. Chart stage 2 was
 dispatched as seven parallel lanes on 2026-09-19, hit the weekly usage limit mid-flight, was
 resumed, then moved to a one-lane-at-a-time process (`s2-area` → `s2-bar` → `s2-line` →
 `s2-tooltip` → `s2-radar` → `s2-polar`) of which only `s2-area` got its dedicated turn before the

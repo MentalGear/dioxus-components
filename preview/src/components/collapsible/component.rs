@@ -48,14 +48,11 @@ pub fn CollapsibleTrigger(props: CollapsibleTriggerProps) -> Element {
 
 #[component]
 pub fn CollapsibleContent(props: CollapsibleContentProps) -> Element {
+    let base = attributes!(div { class: "dx-collapsible-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
-        collapsible::CollapsibleContent {
-            class: "dx-collapsible-content",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        collapsible::CollapsibleContent { id: props.id, attributes: merged, {props.children} }
     }
 }
 

@@ -2,7 +2,9 @@
 
 use crate::collection::{collection_item, use_collection_provider, use_item, CollectionState};
 use crate::direction::{use_direction, Direction, HorizontalNav};
+use crate::merge_attributes;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
 struct ToolbarCtx {
@@ -109,17 +111,21 @@ pub fn Toolbar(props: ToolbarProps) -> Element {
         direction,
     });
 
+    let owned = attributes!(div {
+        role: "toolbar",
+        "data-orientation": ctx.orientation(),
+        "data-disabled": (props.disabled)(),
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "toolbar",
             dir: direction.as_str(),
-            "data-orientation": ctx.orientation(),
-            "data-disabled": (props.disabled)(),
-            "data-direction": direction.as_str(),
             aria_label: props.aria_label,
 
             onfocusout: move |_| ctx.focus.clear_focus(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -191,12 +197,18 @@ pub fn ToolbarButton(props: ToolbarButtonProps) -> Element {
     let onmounted =
         use_item(collection_item(ctx.focus, props.index).disabled(disabled)).onmounted();
 
+    // `type` is an overridable default; `tabindex`/`data-disabled` are this
+    // button's own managed/state attributes.
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        tabindex: "0",
+        "data-disabled": disabled(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            type: "button",
-            tabindex: "0",
             disabled: disabled(),
-            "data-disabled": disabled(),
 
             onmounted,
             onfocus: move |_| ctx.set_focus(Some((props.index)())),
@@ -249,7 +261,7 @@ pub fn ToolbarButton(props: ToolbarButtonProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -319,12 +331,14 @@ pub fn ToolbarSeparator(props: ToolbarSeparatorProps) -> Element {
         false => "vertical",
     };
 
+    let owned = attributes!(div {
+        role: if !props.decorative { "separator" } else { "none" },
+        aria_orientation: if !props.decorative { orientation },
+        "data-orientation": orientation,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
-        div {
-            role: if !props.decorative { "separator" } else { "none" },
-            aria_orientation: if !props.decorative { orientation },
-            "data-orientation": orientation,
-            ..props.attributes,
-        }
+        div { ..merged }
     }
 }

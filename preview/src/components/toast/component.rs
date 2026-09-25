@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::toast::{
     self, Toast, ToastCloseButtonProps, ToastContentProps, ToastDescriptionProps, ToastProps,
     ToastTitleProps,
@@ -7,6 +9,8 @@ use std::time::Duration;
 
 #[component]
 fn StyledToast(props: ToastProps) -> Element {
+    let base = attributes!(div { class: "dx-toast" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         Toast {
             id: props.id,
@@ -17,8 +21,7 @@ fn StyledToast(props: ToastProps) -> Element {
             on_close: props.on_close,
             permanent: props.permanent,
             duration: props.duration,
-            class: "dx-toast",
-            attributes: props.attributes,
+            attributes: merged,
             ToastContent {
                 ToastTitle {}
                 ToastDescription {}
@@ -30,45 +33,37 @@ fn StyledToast(props: ToastProps) -> Element {
 
 #[component]
 fn ToastContent(props: ToastContentProps) -> Element {
+    let base = attributes!(div { class: "dx-toast-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        toast::ToastContent {
-            class: "dx-toast-content",
-            attributes: props.attributes,
-            {props.children}
-        }
+        toast::ToastContent { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 fn ToastTitle(props: ToastTitleProps) -> Element {
+    let base = attributes!(div { class: "dx-toast-title" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        toast::ToastTitle {
-            class: "dx-toast-title",
-            attributes: props.attributes,
-            children: props.children,
-        }
+        toast::ToastTitle { attributes: merged, children: props.children }
     }
 }
 
 #[component]
 fn ToastDescription(props: ToastDescriptionProps) -> Element {
+    let base = attributes!(div { class: "dx-toast-description" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        toast::ToastDescription {
-            class: "dx-toast-description",
-            attributes: props.attributes,
-            children: props.children,
-        }
+        toast::ToastDescription { attributes: merged, children: props.children }
     }
 }
 
 #[component]
 fn ToastCloseButton(props: ToastCloseButtonProps) -> Element {
+    let base = attributes!(button { class: "dx-toast-close" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
-        toast::ToastCloseButton {
-            class: "dx-toast-close",
-            attributes: props.attributes,
-            children: props.children,
-        }
+        toast::ToastCloseButton { attributes: merged, children: props.children }
     }
 }
 
@@ -84,6 +79,8 @@ pub fn ToastProvider(
     let render_toast = render_toast.unwrap_or_else(|| {
         Callback::new(|p: toast::ToastPropsWithOwner| rsx! { StyledToast { ..p } })
     });
+    let base = attributes!(div { class: "dx-toast-container" });
+    let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         // docs/backlog.md row 32: unlike `#[css_module]`'s bundling, this
@@ -101,11 +98,10 @@ pub fn ToastProvider(
         // themselves are untouched; only this delivery mechanism changed.
         document::Link { rel: "stylesheet", href: asset!("/src/components/toast/style.css") }
         toast::ToastProvider {
-            class: "dx-toast-container",
             default_duration,
             max_toasts,
             render_toast,
-            attributes,
+            attributes: merged,
             {children}
         }
     }

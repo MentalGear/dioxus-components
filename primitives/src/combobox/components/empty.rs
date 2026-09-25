@@ -1,9 +1,11 @@
 //! Combobox empty state component.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::ComboboxContext;
 use crate::listbox::ListboxContext;
+use crate::merge_attributes;
 
 /// Props for [`ComboboxEmpty`].
 #[derive(Props, Clone, PartialEq)]
@@ -28,10 +30,14 @@ pub fn ComboboxEmpty(props: ComboboxEmptyProps) -> Element {
         return rsx! {};
     }
 
+    let owned = attributes!(div {
+        role: "presentation"
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "presentation",
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }

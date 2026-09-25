@@ -67,8 +67,49 @@ Dragging past the first or last slide does not bounce back elastically -- a deli
 
 Pointer drag mirrors the same way the keyboard does: dragging is direct manipulation (the track tracks the pointer), so the physical direction that reveals the next slide flips under RTL -- swipe-left-for-next in LTR, swipe-right-for-next in RTL, the same split a right-to-left photo gallery or story viewer already has.
 
+## Looping
+
+`Carousel { r#loop: true }` makes Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`) wrap around at the ends -- **rewind-style**, not an embla-style seamless illusion: from the last slide, Next goes to the first (and vice versa for Previous), via the same `scrollIntoView` paging path every other transition already uses, so it visibly scrolls back across the intervening slides rather than teleporting. No cloned edge slides are ever added (they would show up in the "N of M" count and `:nth-child` styling). Dragging or wheeling past a physical edge still rubber-bands regardless of `loop` -- there is no wrap on a drag/wheel gesture, only on Previous/Next/the root keyboard. `CarouselPrevious`/`CarouselNext` are never `disabled` while `loop` is on. Defaults to `false`. See the `looping` variant.
+
+## Autoplay / rotation control
+
+The APG "auto-rotating" carousel style: add a `CarouselAutoplay` (no visible output -- it just drives the timer) alongside a `CarouselRotationControl` (a real, labeled `<button>`):
+
+```rust
+Carousel { aria_label: "Featured photos",
+    CarouselRotationControl { /* an icon */ }   // FIRST -- must precede everything else focusable
+    CarouselAutoplay { delay_ms: 4000u64 }
+    CarouselPrevious { /* ... */ }
+    CarouselNext { /* ... */ }
+    CarouselContent { /* CarouselItems */ }
+}
+```
+
+`CarouselRotationControl`'s accessible name toggles between `"Start automatic slide show"`/`"Stop automatic slide show"` -- deliberately no `aria-pressed`, matching APG's own contract that the changing label *is* the state. `CarouselContent` grows an `aria-live` attribute once a `CarouselAutoplay` is present: `"off"` while rotating, `"polite"` once stopped (absent entirely without autoplay, exactly like before this feature existed).
+
+Rotation pauses while keyboard focus is anywhere inside the carousel, or while hovering it. Un-hovering resumes it (unless focus is *also* currently holding it paused); losing focus does **not** auto-resume -- only clicking `CarouselRotationControl` again does (matching the vendored tabbed reference's own accessibility-features prose). `prefers-reduced-motion: reduce` always forces rotation off at mount, checked once client-side, regardless of any `default_playing` you pass.
+
+`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselTab`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
+
+Ticking pages through the same path `CarouselNext` uses, so `loop` applies: without `loop`, rotation simply stops once it reaches the last slide (rather than ticking forever against a no-op the way `embla-carousel-autoplay`'s own documented behavior does); with `loop`, it rewinds and keeps going. See the `autoplay` variant.
+
+## Tablist (dot-picker) variant
+
+The APG "tabbed" carousel style: a `CarouselTabList` of `CarouselTab` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
+
+```rust
+Carousel { aria_label: "Featured photos",
+    CarouselTabList {
+        for i in 0..count {
+            CarouselTab { key: "{i}", index: i }
+        }
+    }
+    CarouselContent { /* CarouselItems, same indices */ }
+}
+```
+
+`CarouselTabList` is `role="tablist"`; each `CarouselTab` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselTabList` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among tabs and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `tabs` variant.
+
 ## What v1 does not include yet
 
-- **Infinite looping.** `CarouselPrevious`/`CarouselNext` are genuinely `disabled` (native `disabled`, not just `aria-disabled`) at the first/last slide -- matching shadcn's own default carousel, which doesn't loop either.
-- **Autoplay / a rotation control.** The APG pattern's "basic" style has no rotation requirement at all, so a manually-paged carousel like this one is fully conformant on its own; a rotation control (plus the `aria-live` region and focus/hover-pause behavior that only matter once one exists) is a planned fast-follow.
-- **A tablist picker variant** (the APG pattern's "tabbed" style, slide picker = tabs). Planned as a fast-follow composed on `Tabs`' own roving-tabindex machinery.
+- **The APG "grouped" picker style** (plain buttons, one per slide, all in page Tab order, current one `aria-disabled`) -- the pattern page's own least keyboard-friendly of its three styles, and shadcn doesn't have it either.

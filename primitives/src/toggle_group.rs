@@ -3,10 +3,12 @@
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
+    merge_attributes,
     toggle::Toggle,
     use_controlled,
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use std::collections::HashSet;
 
 // Todo: docs, test controlled version
@@ -172,15 +174,19 @@ pub fn ToggleGroup(props: ToggleGroupProps) -> Element {
         direction,
     });
 
+    let owned = attributes!(div {
+        "data-orientation": ctx.orientation(),
+        "data-allow-multiple-pressed": ctx.allow_multiple_pressed,
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             dir: direction.as_str(),
             onfocusout: move |_| ctx.focus.clear_focus(),
 
-            "data-orientation": ctx.orientation(),
-            "data-allow-multiple-pressed": ctx.allow_multiple_pressed,
-            "data-direction": direction.as_str(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -250,6 +256,22 @@ pub fn ToggleItem(props: ToggleItemProps) -> Element {
     let tab_index = item.tabindex;
     let onmounted = item.onmounted();
 
+    // `tabindex`/`data-orientation` used to be forwarded as their own
+    // ad-hoc keyed props alongside a separately-threaded
+    // `attributes: props.attributes.clone()` -- `Toggle` has no typed field
+    // for either, so both landed as independent entries in the same
+    // forwarded `Vec<Attribute>`, the component-forward shape of backlog
+    // row 93's duplicate-attribute hazard (only `tabindex` is in the
+    // analyzer's debt register; `data-orientation` is the identical
+    // mechanism caught here by construction rather than left as a
+    // lookalike). Both are owned (roving-focus wiring / the group's real
+    // orientation state), so they win over the caller's attributes.
+    let owned = attributes!(button {
+        tabindex: tab_index,
+        "data-orientation": ctx.orientation(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         Toggle {
             onmounted,
@@ -279,16 +301,14 @@ pub fn ToggleItem(props: ToggleItemProps) -> Element {
                 }
             },
 
-            tabindex: tab_index,
             disabled: disabled(),
-            "data-orientation": ctx.orientation(),
 
             pressed: pressed(),
             on_pressed_change: move |pressed| {
                 ctx.set_pressed(props.index.cloned(), pressed);
             },
 
-            attributes: props.attributes.clone(),
+            attributes: merged,
 
             {props.children}
         }

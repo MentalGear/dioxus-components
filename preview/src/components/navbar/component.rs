@@ -1,18 +1,21 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::ChevronDown;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::navbar::{
     self, NavbarContentProps, NavbarItemProps, NavbarNavProps, NavbarProps, NavbarTriggerProps,
 };
 
 #[component]
 pub fn Navbar(props: NavbarProps) -> Element {
+    let base = attributes!(nav { class: "dx-navbar" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::Navbar {
-            class: "dx-navbar",
             disabled: props.disabled,
             roving_loop: props.roving_loop,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -20,13 +23,14 @@ pub fn Navbar(props: NavbarProps) -> Element {
 
 #[component]
 pub fn NavbarNav(props: NavbarNavProps) -> Element {
+    let base = attributes!(div { class: "dx-navbar-nav" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
         navbar::NavbarNav {
-            class: "dx-navbar-nav",
             index: props.index,
             disabled: props.disabled,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -34,9 +38,11 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 
 #[component]
 pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
+    let base = attributes!(button { class: "dx-navbar-trigger" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
-        navbar::NavbarTrigger { class: "dx-navbar-trigger", attributes: props.attributes,
+        navbar::NavbarTrigger { attributes: merged,
             {props.children}
             ChevronDown {
                 class: "dx-navbar-expand-icon",
@@ -49,14 +55,11 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
 
 #[component]
 pub fn NavbarContent(props: NavbarContentProps) -> Element {
+    let base = attributes!(div { class: "dx-navbar-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navbar/style.css") }
-        navbar::NavbarContent {
-            class: "dx-navbar-content",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        navbar::NavbarContent { id: props.id, attributes: merged, {props.children} }
     }
 }
 

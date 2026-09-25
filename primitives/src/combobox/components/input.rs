@@ -1,9 +1,10 @@
 //! Combobox input component.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::ComboboxContext;
-use crate::{use_id_or, use_unique_id};
+use crate::{merge_attributes, use_id_or, use_unique_id};
 
 /// Props for [`ComboboxInput`].
 #[derive(Props, Clone, PartialEq)]
@@ -109,33 +110,44 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
         _ => {}
     };
 
+    // `spellcheck` is an overridable default; the rest is this input's own
+    // functional state: `style` ties it to the anchor-positioned listbox,
+    // `type`/`value`/`autocomplete` define and drive the controlled text
+    // input, and role/aria-*/`data-state`/`disabled` mirror the combobox
+    // widget's real state.
+    let defaults = attributes!(input {
+        spellcheck: "false"
+    });
+    let owned = attributes!(input {
+        // See `crate::top_layer::anchor_name_style`: ties this input to
+        // the web-arm listbox's `position-anchor`
+        // (`ComboboxListRendered`, `list.rs`) so its anchor-positioned
+        // placement resolves relative to this input once promoted to
+        // the top layer. Keyed on `ctx.input_id` (kept in sync with
+        // this element's own id above), the same reason
+        // `DropdownMenuTrigger` keys off `ctx.content_id` -- see that
+        // doc. Inert (empty) off the web arm.
+        style: crate::top_layer::anchor_name_style(&ctx.input_id.cloned()),
+        r#type: "text",
+        value: display_value(),
+        autocomplete: "off",
+        disabled: (ctx.selectable.disabled)(),
+
+        role: "combobox",
+        aria_autocomplete: "list",
+        aria_haspopup: "listbox",
+        aria_expanded: open(),
+        aria_controls: ctx.selectable.list_id,
+        aria_activedescendant: active_descendant(),
+
+        "data-state": if open() { "open" } else { "closed" },
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         input {
             id,
-            // See `crate::top_layer::anchor_name_style`: ties this input to
-            // the web-arm listbox's `position-anchor`
-            // (`ComboboxListRendered`, `list.rs`) so its anchor-positioned
-            // placement resolves relative to this input once promoted to
-            // the top layer. Keyed on `ctx.input_id` (kept in sync with
-            // this element's own id above), the same reason
-            // `DropdownMenuTrigger` keys off `ctx.content_id` -- see that
-            // doc. Inert (empty) off the web arm.
-            style: crate::top_layer::anchor_name_style(&ctx.input_id.cloned()),
-            r#type: "text",
-            value: display_value(),
             placeholder: props.placeholder,
-            autocomplete: "off",
-            spellcheck: "false",
-            disabled: (ctx.selectable.disabled)(),
-
-            role: "combobox",
-            aria_autocomplete: "list",
-            aria_haspopup: "listbox",
-            aria_expanded: open(),
-            aria_controls: ctx.selectable.list_id,
-            aria_activedescendant: active_descendant(),
-
-            "data-state": if open() { "open" } else { "closed" },
 
             onclick: move |_| {
                 if !open() {
@@ -172,7 +184,7 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
         }
     }
 }

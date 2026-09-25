@@ -1,36 +1,54 @@
 //! Defines the [`Chart`] component: the actual SVG drawing surface.
+//!
+//! ## Stage-2 chart round: an orchestrator over per-family renderers
+//!
+//! As of the stage-2 chart round's `s2-refactor` lane, this component no
+//! longer draws any one family's marks itself. It:
+//! 1. resolves this render's effective `stacked` flag and computes the
+//!    shared plot geometry via `super::layout::build` (margins, scales,
+//!    y ticks, stack spans -- see that module's own doc);
+//! 2. dispatches on [`ChartKind`] to exactly one of
+//!    [`super::series::area`]/[`super::series::bar`]/
+//!    [`super::series::line`]/[`super::series::pie`]/
+//!    [`super::series::radar`]/[`super::series::radial`]'s own `render` for
+//!    the actual marks;
+//! 3. for the three `ChartKind::is_cartesian` kinds only, additionally
+//!    renders the grid, axes, hover cursor, and hit-bands (via
+//!    `super::layout` for the first two, inline here for the last two --
+//!    small enough, and specific enough to `Chart`'s own wrapper/state, that
+//!    factoring them out bought nothing); the three polar/radial **stub**
+//!    kinds get none of that (a Cartesian grid behind a shape that isn't
+//!    Cartesian would be actively misleading, not merely unfinished) --
+//!    just the dispatched mark group and a reduced data table (category +
+//!    first configured series' value, via
+//!    [`crate::chart::engine::table::table_rows_single_series`], plus a
+//!    `Percent` column for [`ChartKind::Pie`] specifically via
+//!    [`crate::chart::engine::table::table_rows_pie`] -- a pie slice's
+//!    share of the whole is exactly what its wedge angle already encodes
+//!    visually, landed alongside `s2-polar`'s own `series::pie` since a
+//!    pie-shaped data table is that lane's own deliverable, not a stub)
+//!    until each remaining stub's owning lane replaces its own mark group
+//!    (see [`super::series`]'s own module doc for the ownership map).
+//!
+//! Every other behavior -- the wrapper `div`/keyboard layer, the SVG root,
+//! the hidden data table's shape for the three real kinds -- is unchanged
+//! from before this split; see this module's own tests, which this lane
+//! kept green unmodified as the no-behavior-change proof (plus new tests
+//! for the three stub kinds, which did not exist before).
 
 use dioxus::prelude::*;
 
-use crate::chart::context::{use_chart, ChartLayout};
-use crate::chart::engine::geometry::plot_runs;
-use crate::chart::engine::scale::{fmt_decimal, fmt_num};
-use crate::chart::engine::table::table_rows;
-use crate::chart::{
-    area_between_path, area_path, line_path, stack, BandScale, ChartConfig, ChartDatum, ChartKind,
-    Curve, LinearScale,
+use super::series::{
+    AreaOptions, BarOptions, LineOptions, PieOptions, RadarOptions, RadialOptions,
 };
+use super::{layout, series};
+use crate::chart::context::{use_chart, ChartLayout};
+use crate::chart::engine::scale::fmt_num;
+use crate::chart::engine::table::{table_rows, table_rows_pie, table_rows_single_series};
+use crate::chart::{ChartKind, Curve};
+use crate::dioxus_attributes::attributes;
 use crate::direction::{use_direction, Direction, HorizontalNav};
-
-/// Fixed MVP layout constants (logical SVG units, scaled visually by CSS --
-/// see the module doc). Not configurable yet: this repo's other multi-part
-/// primitives (e.g. `Resizable`) don't expose pixel-tuning props either,
-/// preferring a themed wrapper's CSS for that; the same holds here once a
-/// need for it is demonstrated.
-const MARGIN_TOP: f64 = 8.0;
-const MARGIN_RIGHT: f64 = 8.0;
-const MARGIN_BOTTOM_WITH_AXIS: f64 = 24.0;
-const MARGIN_BOTTOM_BARE: f64 = 8.0;
-const MARGIN_LEFT_WITH_AXIS: f64 = 40.0;
-const MARGIN_LEFT_BARE: f64 = 8.0;
-/// Fraction of one category's step left as a gap around/between its bars
-/// (or, for Line/Area, simply how far a hit band's edge sits from its
-/// neighbor's -- the point positions themselves are the band *centers*
-/// either way, so this only visibly matters for `Bar`).
-const BAND_PADDING: f64 = 0.2;
-/// Padding between grouped (non-stacked, multi-series) bars sharing one
-/// category band.
-const GROUP_PADDING: f64 = 0.15;
+use crate::merge_attributes;
 
 /// The props for the [`Chart`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -58,26 +76,35 @@ pub struct ChartProps {
     pub height: f64,
 
     /// Stack each datum's series values instead of drawing them
-    /// independently (Area/Bar only -- a "stacked line chart" isn't a
-    /// standard construction, so this is silently ignored for
-    /// [`ChartKind::Line`], matching shadcn/Recharts' own scope).
+    /// independently. Only [`ChartKind::Area`] and [`ChartKind::Bar`] have
+    /// a stacking construction -- silently ignored for every other kind,
+    /// [`ChartKind::Line`] included (a "stacked line chart" isn't a
+    /// standard construction, matching shadcn/Recharts' own scope). Kept
+    /// on `ChartProps` itself, not duplicated onto `AreaOptions`/
+    /// `BarOptions`, since it applies to both -- see
+    /// [`super::series`]'s own module doc.
     #[props(default)]
     pub stacked: bool,
 
-    /// The line/area interpolation.
+    /// The line/area interpolation. Applies to [`ChartKind::Area`] and
+    /// [`ChartKind::Line`] (every kind with a drawn edge to interpolate);
+    /// kept on `ChartProps` itself for the same reason as
+    /// [`Self::stacked`] -- see [`super::series`]'s own module doc.
     #[props(default = Curve::Monotone)]
     pub curve: Curve,
 
-    /// Show horizontal gridlines at each y tick.
+    /// Show horizontal gridlines at each y tick. `ChartKind::is_cartesian`
+    /// kinds only.
     #[props(default = true)]
     pub show_grid: bool,
 
-    /// Show x-axis category labels.
+    /// Show x-axis category labels. `ChartKind::is_cartesian` kinds only.
     #[props(default = true)]
     pub show_x_axis: bool,
 
     /// Show y-axis value labels. Off by default, matching shadcn's own
     /// demos (the tooltip/hidden table carry exact values instead).
+    /// `ChartKind::is_cartesian` kinds only.
     #[props(default)]
     pub show_y_axis: bool,
 
@@ -97,6 +124,7 @@ pub struct ChartProps {
 
     /// Format an x-axis category label. Defaults to its first 3 characters
     /// (shadcn's own demo convention, e.g. `"January"` -> `"Jan"`).
+    /// `ChartKind::is_cartesian` kinds only.
     #[props(default)]
     pub x_tick_format: Option<Callback<String, String>>,
 
@@ -118,17 +146,15 @@ pub struct ChartProps {
     /// width vs. available pixel span) as the natural stage-2 upgrade;
     /// not built here since this MVP has no text-measurement facility and
     /// the fixed-count default already fixes the crowded 90-point demo.
+    /// `ChartKind::is_cartesian` kinds only.
     #[props(default = 12)]
     pub max_x_ticks: usize,
 
-    /// Target number of y-axis ticks (see [`LinearScale::ticks`] -- the
-    /// actual count can differ slightly, same as d3's own `ticks`).
+    /// Target number of y-axis ticks (see [`crate::chart::LinearScale::ticks`]
+    /// -- the actual count can differ slightly, same as d3's own `ticks`).
+    /// `ChartKind::is_cartesian` kinds only.
     #[props(default = 5)]
     pub y_tick_count: usize,
-
-    /// Show a dot at each defined data point ([`ChartKind::Line`] only).
-    #[props(default)]
-    pub show_dots: bool,
 
     /// Enable arrow-key/Home/End/Escape stepping of the active index on
     /// this chart's own focusable wrapper (see the module doc for why the
@@ -143,13 +169,36 @@ pub struct ChartProps {
     /// swap, matching every other direction-aware component in this crate
     /// (`Slider`, `Select`, ...): a local override that wins over the
     /// nearest [`crate::direction::DirectionProvider`], or LTR if neither
-    /// is present. Not part of the original `$S/chart-api.md` sketch --
-    /// added for consistency with this crate's own established contract
-    /// ("every RTL-aware component accepts a local `dir` prop", per
-    /// `direction.rs`'s own module doc) now that the keyboard layer makes
-    /// this component direction-aware.
+    /// is present.
     #[props(default)]
     pub dir: Option<Direction>,
+
+    /// [`ChartKind::Area`]'s own options.
+    #[props(default)]
+    pub area: AreaOptions,
+
+    /// [`ChartKind::Bar`]'s own options.
+    #[props(default)]
+    pub bar: BarOptions,
+
+    /// [`ChartKind::Line`]'s own options.
+    #[props(default)]
+    pub line: LineOptions,
+
+    /// [`ChartKind::Pie`]'s own options. **Stub** -- see
+    /// [`super::series::pie`].
+    #[props(default)]
+    pub pie: PieOptions,
+
+    /// [`ChartKind::Radar`]'s own options. **Stub** -- see
+    /// [`super::series::radar`].
+    #[props(default)]
+    pub radar: RadarOptions,
+
+    /// [`ChartKind::RadialBar`]'s own options -- see
+    /// [`super::series::radial`].
+    #[props(default)]
+    pub radial: RadialOptions,
 
     /// Additional attributes to apply to the chart's own wrapper element
     /// (see the module doc: `Chart` renders one `div[data-slot="chart"]`
@@ -163,7 +212,9 @@ pub struct ChartProps {
 /// Renders the chart's actual drawing surface: an accessible SVG (grid,
 /// axes, one mark per configured series, the hover cursor, and the
 /// invisible hit bands that are its *only* hover mechanism -- no
-/// coordinate math, no layout reads, no `document::eval`) plus a real,
+/// coordinate math, no layout reads, no `document::eval` -- for the three
+/// `ChartKind::is_cartesian` kinds; a single placeholder mark group for
+/// the three polar/radial stub kinds, see the module doc) plus a real,
 /// visually-hidden `<table>` mirroring the same data, both inside one
 /// `div[data-slot="chart"]` wrapper. Must be rendered inside a
 /// [`crate::chart::ChartContainer`].
@@ -226,14 +277,20 @@ pub struct ChartProps {
 /// select on):
 /// - `data-slot="chart"`: the wrapper div.
 /// - `data-slot="chart-svg"`: the SVG root.
-/// - `data-slot="chart-grid"`/`"chart-axis"` (`data-axis="x"|"y"`).
+/// - `data-slot="chart-grid"`/`"chart-axis"` (`data-axis="x"|"y"`) --
+///   `ChartKind::is_cartesian` kinds only.
 /// - `data-slot="chart-series"[data-series=<key>]`: one per configured
 ///   series, wrapping that series' own `"chart-area"`/`"chart-line"`/
-///   `"chart-bar"`/`"chart-dot"` marks (`data-index` on the per-datum ones).
+///   `"chart-bar"`/`"chart-dot"` marks (`data-index` on the per-datum ones)
+///   -- `ChartKind::is_cartesian` kinds. [`ChartKind::Pie`] renders
+///   `"chart-arc"[data-index][data-series?]` slices instead (`data-series`
+///   only for a stacked, multi-ring pie -- see `series::pie`'s own module
+///   doc). The two remaining polar/radial stub kinds still render one
+///   `data-slot="chart-series"[data-kind=<kind>]` placeholder group (no
+///   `data-series`) until their own owning lane replaces it.
 /// - `data-slot="chart-cursor"` (`"chart-cursor-line"` for Area/Line,
-///   `"chart-cursor-rect"` for Bar -- not named individually in the
-///   original contract sketch, added here since the two need distinct
-///   selectors) and `"chart-hit-band"[data-index]`.
+///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]"` --
+///   `ChartKind::is_cartesian` kinds only.
 /// - `data-slot="chart-data"`: the hidden data table.
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
@@ -245,104 +302,146 @@ pub fn Chart(props: ChartProps) -> Element {
     let mut active_index = ctx.active_index;
     let mut layout_signal = ctx.layout;
 
-    // A "stacked line chart" isn't a standard construction -- see this
-    // prop's own doc. Every computation below reads this, not the raw
-    // prop, so the rule can't be forgotten in just one branch.
-    let stacked = props.stacked && !matches!(kind, ChartKind::Line);
-
-    let width = props.width;
-    let height = props.height;
-    let margin_left = if props.show_y_axis {
-        MARGIN_LEFT_WITH_AXIS
-    } else {
-        MARGIN_LEFT_BARE
+    // Only Area and Bar have a stacking construction -- see
+    // `ChartProps::stacked`'s own doc. Every computation below reads this
+    // resolved value, not the raw prop, so the rule can't be forgotten in
+    // just one branch. (Pre-stage-2 this was a deny-list,
+    // `!matches!(kind, Line)`, which -- now that `ChartKind` has three more
+    // variants -- would have silently started "stacking" a brand new kind
+    // unless every call site remembered to re-exclude it by hand. An
+    // allow-list is the construction that can't do that: a kind added
+    // later is un-stacked by default until someone deliberately opts it
+    // in here.)
+    let stacked = props.stacked && matches!(kind, ChartKind::Area | ChartKind::Bar);
+    let is_cartesian = kind.is_cartesian();
+    // §4(c) of the stage-2 chart-round handoff: `components::layout::build`
+    // needs the *effective* family's own stack mode, not a chart-wide
+    // constant, so a percent-stacked ("100%"/"expand") chart's shared grid
+    // lines/y-axis ticks/tooltip anchor agree with its marks. Only
+    // `AreaOptions` has a `stack_mode` field today (`BarOptions` is still
+    // `s2-bar`'s empty stub) -- every other kind, and `Bar` until its own
+    // field lands, keeps today's exact `StackMode::Normal` behavior.
+    let stack_mode = match kind {
+        ChartKind::Area => props.area.stack_mode,
+        _ => crate::chart::StackMode::Normal,
     };
-    let margin_bottom = if props.show_x_axis {
-        MARGIN_BOTTOM_WITH_AXIS
-    } else {
-        MARGIN_BOTTOM_BARE
-    };
-    let plot_x0 = margin_left;
-    let plot_x1 = width - MARGIN_RIGHT;
-    let plot_y0 = MARGIN_TOP;
-    let plot_y1 = height - margin_bottom;
 
     let n = data.len();
-    let x_scale = BandScale {
-        count: n.max(1),
-        range: (plot_x0, plot_x1),
-        padding: BAND_PADDING,
-    };
-    let xs: Vec<f64> = (0..n).map(|i| x_scale.center(i)).collect();
+    let ctx_layout = layout::build(layout::LayoutParams {
+        width: props.width,
+        height: props.height,
+        show_x_axis: props.show_x_axis,
+        show_y_axis: props.show_y_axis,
+        y_tick_count: props.y_tick_count,
+        kind,
+        stacked,
+        stack_mode,
+        curve: props.curve,
+        dir: direction,
+        active_index: active_index(),
+        config: &config,
+        data: &data,
+    });
 
-    let (y_min, y_max) = y_extent(&config, &data, stacked);
-    let y_domain = crate::chart::nice_domain(y_min, y_max);
-    let y_scale = LinearScale {
-        domain: y_domain,
-        range: (plot_y1, plot_y0),
-    };
-    let y_ticks = y_scale.ticks(props.y_tick_count);
-    let zero_y = y_scale.scale(0.0);
-
-    let stacked_spans: Vec<Vec<(f64, f64)>> = if stacked {
-        let rows: Vec<Vec<Option<f64>>> = data.iter().map(|d| d.values.clone()).collect();
-        stack(&rows)
+    // Share this render's tooltip anchors for `ChartTooltip`'s benefit --
+    // see `ChartLayout`'s own doc for why a plain write here (not an
+    // effect) is correct: it depends only on this component's own props,
+    // so recomputing and re-setting every render is cheap and right, and
+    // `Signal`'s equality check keeps it a no-op once stable. Only the
+    // Cartesian kinds populate it today (§4(d) of the stage-2 handoff --
+    // a family-agnostic `(left%, top%)` per datum, not a raw scale pair,
+    // so a future polar family's own vertex math can populate the same
+    // field without `ChartTooltip` branching on `kind`); the three stub
+    // kinds render no hit-bands yet (below), so `active_index` can never
+    // be `Some` for them regardless -- an empty vec here is exactly as
+    // inert as a wrong one would be unreachable.
+    let anchor_percent: Vec<(f64, f64)> = if is_cartesian && props.width > 0.0 && props.height > 0.0
+    {
+        (0..n)
+            .map(|i| {
+                let top = if stacked {
+                    ctx_layout.stacked_spans[i]
+                        .iter()
+                        .map(|(_, y1)| *y1)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                } else {
+                    data[i]
+                        .values
+                        .iter()
+                        .take(config.series.len())
+                        .flatten()
+                        .copied()
+                        .fold(f64::NEG_INFINITY, f64::max)
+                };
+                let top = if top.is_finite() { top } else { 0.0 };
+                let x = ctx_layout.x_scale.center(i);
+                let y = ctx_layout.y_scale.scale(top);
+                (x / props.width * 100.0, y / props.height * 100.0)
+            })
+            .collect()
     } else {
         Vec::new()
     };
+    layout_signal.set(Some(ChartLayout { anchor_percent }));
 
-    // Share this render's layout for `ChartTooltip`'s benefit -- see
-    // `ChartLayout`'s own doc for why a plain write here (not an effect)
-    // is correct: it depends only on this component's own props, so
-    // recomputing and re-setting every render is cheap and right, and
-    // `Signal`'s equality check keeps it a no-op once stable.
-    let top_value: Vec<f64> = (0..n)
-        .map(|i| {
-            let top = if stacked {
-                stacked_spans[i]
-                    .iter()
-                    .map(|(_, y1)| *y1)
-                    .fold(f64::NEG_INFINITY, f64::max)
-            } else {
-                data[i]
-                    .values
-                    .iter()
-                    .take(config.series.len())
-                    .flatten()
-                    .copied()
-                    .fold(f64::NEG_INFINITY, f64::max)
-            };
-            if top.is_finite() {
-                top
-            } else {
-                0.0
-            }
-        })
-        .collect();
-    layout_signal.set(Some(ChartLayout {
-        width,
-        height,
-        x_scale,
-        y_scale,
-        top_value,
-    }));
+    // `ChartKind::Pie` gets its own row shape (value + percent-of-total --
+    // `s2-polar`'s own deliverable, `engine::table::table_rows_pie`'s doc):
+    // a slice's share of the whole is exactly what its wedge angle already
+    // encodes visually, so the hidden table should carry it too. RadialBar
+    // keeps the generic single-series reduction -- "percent of the total"
+    // isn't a meaningful reading of a radial bar's own value the way it is
+    // for a pie slice. Radar gets the full per-category-per-series table
+    // via `has_full_table()` (§4(b) of the stage-2 handoff) -- it is
+    // non-Cartesian but, unlike Pie/RadialBar, genuinely holds one value
+    // per series per category.
+    let rows = if kind.has_full_table() {
+        table_rows(&data)
+    } else if matches!(kind, ChartKind::Pie) {
+        table_rows_pie(&data)
+    } else {
+        table_rows_single_series(&data)
+    };
 
-    let rows = table_rows(&data);
+    let marks = match kind {
+        ChartKind::Area => series::area::render(&ctx_layout, &props.area),
+        ChartKind::Bar => series::bar::render(&ctx_layout, &props.bar),
+        ChartKind::Line => series::line::render(&ctx_layout, &props.line),
+        ChartKind::Pie => series::pie::render(&ctx_layout, &props.pie),
+        ChartKind::Radar => series::radar::render(&ctx_layout, &props.radar),
+        ChartKind::RadialBar => series::radial::render(&ctx_layout, &props.radial),
+    };
 
     let wrapper_role = props.keyboard.then_some("group");
     let wrapper_roledescription = props.keyboard.then_some("chart");
     let wrapper_label = props.keyboard.then(|| props.aria_label.clone());
     let wrapper_tabindex = props.keyboard.then_some(0);
 
+    // `data-slot`/`role`/`aria-roledescription`/`tabindex`/`data-direction`
+    // are structural/aria wiring this component owns -- e.g. `data-slot`
+    // is the very selector the themed stylesheet's whole ruleset hangs
+    // off, and `role`/`aria-roledescription`/`tabindex` together form the
+    // keyboard-navigable-group contract `ChartProps::keyboard`'s own doc
+    // describes -- not overridable presentation. `merge_attributes`
+    // (`scripts/check-attr-spread-collision.sh`'s own fix, replacing a raw
+    // `..props.attributes` beside these as plain literals) makes "owned
+    // wins" explicit and SSR/CSR-consistent instead of accidental; `class`
+    // still concatenates regardless (`merge_attributes`'s own rule), and
+    // `onkeydown` stays a literal on the element itself, never routed
+    // through `merge_attributes` (it isn't an attribute value merge could
+    // meaningfully resolve).
+    let owned = attributes!(div {
+        "data-slot": "chart",
+        role: wrapper_role,
+        "aria-roledescription": wrapper_roledescription,
+        tabindex: wrapper_tabindex,
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes, owned]);
+
     rsx! {
         div {
-            "data-slot": "chart",
-            role: wrapper_role,
-            "aria-roledescription": wrapper_roledescription,
             aria_label: wrapper_label,
-            tabindex: wrapper_tabindex,
             dir: direction.as_str(),
-            "data-direction": direction.as_str(),
             onkeydown: move |evt| {
                 if !props.keyboard || n == 0 {
                     return;
@@ -369,13 +468,13 @@ pub fn Chart(props: ChartProps) -> Element {
                     evt.prevent_default();
                 }
             },
-            ..props.attributes,
+            ..merged,
 
             svg {
                 "data-slot": "chart-svg",
                 role: "img",
                 "aria-label": "{props.aria_label}",
-                view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
+                view_box: "0 0 {fmt_num(props.width)} {fmt_num(props.height)}",
                 onpointerleave: move |_| active_index.set(None),
 
                 title { "{props.aria_label}" }
@@ -383,128 +482,72 @@ pub fn Chart(props: ChartProps) -> Element {
                     desc { "{description}" }
                 }
 
-                if props.show_grid {
-                    g { "data-slot": "chart-grid",
-                        for y_tick in y_ticks.iter().copied() {
-                            line {
-                                key: "{y_tick}",
-                                x1: "{fmt_num(plot_x0)}",
-                                x2: "{fmt_num(plot_x1)}",
-                                y1: "{fmt_num(y_scale.scale(y_tick))}",
-                                y2: "{fmt_num(y_scale.scale(y_tick))}",
-                            }
-                        }
+                if is_cartesian {
+                    if props.show_grid {
+                        {layout::render_grid(&ctx_layout)}
+                    }
+                    if props.show_x_axis {
+                        {layout::render_x_axis(&ctx_layout, &props.x_tick_format, props.max_x_ticks)}
+                    }
+                    if props.show_y_axis {
+                        {layout::render_y_axis(&ctx_layout)}
                     }
                 }
 
-                if props.show_x_axis {
-                    {
-                        let tick_step = x_tick_step(n, props.max_x_ticks);
-                        rsx! {
-                            g { "data-slot": "chart-axis", "data-axis": "x",
-                                for (i , datum) in data.iter().enumerate() {
-                                    if i % tick_step == 0 {
-                                        text {
-                                            key: "{i}",
-                                            "data-index": "{i}",
-                                            x: "{fmt_num(x_scale.center(i))}",
-                                            y: "{fmt_num(plot_y1 + 16.0)}",
-                                            {format_x_tick(&datum.label, &props.x_tick_format)}
+                {marks}
+
+                if is_cartesian {
+                    g { "data-slot": "chart-cursor",
+                        if let Some(i) = active_index() {
+                            if i < n {
+                                if matches!(kind, ChartKind::Bar) {
+                                    {
+                                        let (bx, bw) = ctx_layout.x_scale.band(i);
+                                        rsx! {
+                                            rect {
+                                                "data-slot": "chart-cursor-rect",
+                                                x: "{fmt_num(bx)}",
+                                                y: "{fmt_num(ctx_layout.plot_y0)}",
+                                                width: "{fmt_num(bw)}",
+                                                height: "{fmt_num(ctx_layout.plot_y1 - ctx_layout.plot_y0)}",
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    {
+                                        let cx = ctx_layout.x_scale.center(i);
+                                        rsx! {
+                                            line {
+                                                "data-slot": "chart-cursor-line",
+                                                x1: "{fmt_num(cx)}",
+                                                x2: "{fmt_num(cx)}",
+                                                y1: "{fmt_num(ctx_layout.plot_y0)}",
+                                                y2: "{fmt_num(ctx_layout.plot_y1)}",
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                if props.show_y_axis {
-                    g { "data-slot": "chart-axis", "data-axis": "y",
-                        for y_tick in y_ticks.iter().copied() {
-                            text {
-                                key: "{y_tick}",
-                                x: "{fmt_num(plot_x0 - 8.0)}",
-                                y: "{fmt_num(y_scale.scale(y_tick))}",
-                                {fmt_decimal(y_tick, 2)}
-                            }
-                        }
-                    }
-                }
-
-                for (s , series) in config.series.iter().enumerate() {
-                    g {
-                        key: "{series.key}",
-                        "data-slot": "chart-series",
-                        "data-series": "{series.slot()}",
-                        style: "--series-color: var(--color-{series.slot()})",
-
-                        SeriesMarks {
-                            kind,
-                            curve: props.curve,
-                            stacked,
-                            show_dots: props.show_dots,
-                            series_index: s,
-                            values: series_values(&data, s),
-                            xs: xs.clone(),
-                            x_scale,
-                            y_scale,
-                            zero_y,
-                            series_count: config.series.len(),
-                            stacked_spans: stacked_spans.clone(),
-                        }
-                    }
-                }
-
-                g { "data-slot": "chart-cursor",
-                    if let Some(i) = active_index() {
-                        if i < n {
-                            if matches!(kind, ChartKind::Bar) {
-                                {
-                                    let (bx, bw) = x_scale.band(i);
-                                    rsx! {
-                                        rect {
-                                            "data-slot": "chart-cursor-rect",
-                                            x: "{fmt_num(bx)}",
-                                            y: "{fmt_num(plot_y0)}",
-                                            width: "{fmt_num(bw)}",
-                                            height: "{fmt_num(plot_y1 - plot_y0)}",
-                                        }
+                    g { "data-slot": "chart-hit-bands",
+                        for i in 0..n {
+                            {
+                                let (bx, bw) = ctx_layout.x_scale.band(i);
+                                rsx! {
+                                    rect {
+                                        key: "{i}",
+                                        "data-slot": "chart-hit-band",
+                                        "data-index": "{i}",
+                                        x: "{fmt_num(bx)}",
+                                        y: "{fmt_num(ctx_layout.plot_y0)}",
+                                        width: "{fmt_num(bw)}",
+                                        height: "{fmt_num(ctx_layout.plot_y1 - ctx_layout.plot_y0)}",
+                                        fill: "transparent",
+                                        "pointer-events": "all",
+                                        onpointerenter: move |_| active_index.set(Some(i)),
                                     }
-                                }
-                            } else {
-                                {
-                                    let cx = x_scale.center(i);
-                                    rsx! {
-                                        line {
-                                            "data-slot": "chart-cursor-line",
-                                            x1: "{fmt_num(cx)}",
-                                            x2: "{fmt_num(cx)}",
-                                            y1: "{fmt_num(plot_y0)}",
-                                            y2: "{fmt_num(plot_y1)}",
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                g { "data-slot": "chart-hit-bands",
-                    for i in 0..n {
-                        {
-                            let (bx, bw) = x_scale.band(i);
-                            rsx! {
-                                rect {
-                                    key: "{i}",
-                                    "data-slot": "chart-hit-band",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(bx)}",
-                                    y: "{fmt_num(plot_y0)}",
-                                    width: "{fmt_num(bw)}",
-                                    height: "{fmt_num(plot_y1 - plot_y0)}",
-                                    fill: "transparent",
-                                    "pointer-events": "all",
-                                    onpointerenter: move |_| active_index.set(Some(i)),
                                 }
                             }
                         }
@@ -517,8 +560,23 @@ pub fn Chart(props: ChartProps) -> Element {
                 thead {
                     tr {
                         th { scope: "col", "{props.x_label}" }
-                        for series in &config.series {
-                            th { key: "{series.key}", "{series.label}" }
+                        if is_cartesian {
+                            for series in &config.series {
+                                th { key: "{series.key}", "{series.label}" }
+                            }
+                        } else {
+                            th { scope: "col",
+                                {
+                                    config
+                                        .series
+                                        .first()
+                                        .map(|s| s.label.clone())
+                                        .unwrap_or_else(|| "Value".to_string())
+                                }
+                            }
+                            if matches!(kind, ChartKind::Pie) {
+                                th { scope: "col", "Percent" }
+                            }
                         }
                     }
                 }
@@ -537,213 +595,10 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
-/// Props for the internal `SeriesMarks` helper component (one instance per
-/// configured series -- see [`Chart`]). Not part of this crate's public
-/// API.
-#[derive(Props, Clone, PartialEq)]
-struct SeriesMarksProps {
-    kind: ChartKind,
-    curve: Curve,
-    stacked: bool,
-    show_dots: bool,
-    series_index: usize,
-    /// This series' raw value per datum, `None` for a gap.
-    values: Vec<Option<f64>>,
-    /// Each datum's x position (band centers), aligned to `values`.
-    xs: Vec<f64>,
-    x_scale: BandScale,
-    y_scale: LinearScale,
-    /// `y_scale.scale(0.0)` -- every non-stacked Area/Bar baseline.
-    zero_y: f64,
-    /// Total configured series count (grouped Bar sub-positioning).
-    series_count: usize,
-    /// [`stack()`]'s output, one row per datum, empty when not stacking.
-    stacked_spans: Vec<Vec<(f64, f64)>>,
-}
-
-/// Renders one series' own marks (inside its already-rendered
-/// `g[data-series]` wrapper) for whichever [`ChartKind`] the chart draws.
-/// Split out of [`Chart`] only to keep that component's own body from
-/// growing a third level of nested nested-`for`/`match` -- this has no
-/// context or state of its own, and is never used outside [`Chart`].
-#[component]
-fn SeriesMarks(props: SeriesMarksProps) -> Element {
-    let n = props.xs.len();
-    match props.kind {
-        ChartKind::Line => rsx! {
-            for run in plot_runs(&props.xs, &props.values) {
-                {
-                    let scaled: Vec<(f64, f64)> =
-                        run.iter().map(|(x, v)| (*x, props.y_scale.scale(*v))).collect();
-                    let d = line_path(&scaled, props.curve);
-                    rsx! {
-                        path { "data-slot": "chart-line", d: "{d}", fill: "none" }
-                    }
-                }
-            }
-            if props.show_dots {
-                for i in 0..n {
-                    if let Some(v) = props.values[i] {
-                        circle {
-                            key: "{i}",
-                            "data-slot": "chart-dot",
-                            "data-index": "{i}",
-                            cx: "{fmt_num(props.xs[i])}",
-                            cy: "{fmt_num(props.y_scale.scale(v))}",
-                            r: "3",
-                        }
-                    }
-                }
-            }
-        },
-        ChartKind::Area if !props.stacked => rsx! {
-            for run in plot_runs(&props.xs, &props.values) {
-                {
-                    let scaled: Vec<(f64, f64)> =
-                        run.iter().map(|(x, v)| (*x, props.y_scale.scale(*v))).collect();
-                    let area_d = area_path(&scaled, props.zero_y, props.curve);
-                    let line_d = line_path(&scaled, props.curve);
-                    rsx! {
-                        path { "data-slot": "chart-area", d: "{area_d}" }
-                        path { "data-slot": "chart-line", d: "{line_d}", fill: "none" }
-                    }
-                }
-            }
-        },
-        ChartKind::Area => rsx! {
-            {
-                let top: Vec<(f64, f64)> = (0..n)
-                    .map(|i| (props.xs[i], props.y_scale.scale(props.stacked_spans[i][props.series_index].1)))
-                    .collect();
-                let bottom: Vec<(f64, f64)> = (0..n)
-                    .map(|i| (props.xs[i], props.y_scale.scale(props.stacked_spans[i][props.series_index].0)))
-                    .collect();
-                let area_d = area_between_path(&top, &bottom, props.curve);
-                let line_d = line_path(&top, props.curve);
-                rsx! {
-                    path { "data-slot": "chart-area", d: "{area_d}" }
-                    path { "data-slot": "chart-line", d: "{line_d}", fill: "none" }
-                }
-            }
-        },
-        ChartKind::Bar if !props.stacked => rsx! {
-            for i in 0..n {
-                if let Some(v) = props.values[i] {
-                    {
-                        let (outer_x, outer_w) = props.x_scale.band(i);
-                        let inner = BandScale {
-                            count: props.series_count.max(1),
-                            range: (outer_x, outer_x + outer_w),
-                            padding: GROUP_PADDING,
-                        };
-                        let (bar_x, bar_w) = inner.band(props.series_index);
-                        let y1 = props.y_scale.scale(v);
-                        let (rect_y, rect_h) = if y1 <= props.zero_y {
-                            (y1, props.zero_y - y1)
-                        } else {
-                            (props.zero_y, y1 - props.zero_y)
-                        };
-                        rsx! {
-                            rect {
-                                key: "{i}",
-                                "data-slot": "chart-bar",
-                                "data-index": "{i}",
-                                x: "{fmt_num(bar_x)}",
-                                y: "{fmt_num(rect_y)}",
-                                width: "{fmt_num(bar_w)}",
-                                height: "{fmt_num(rect_h)}",
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        ChartKind::Bar => rsx! {
-            for i in 0..n {
-                {
-                    let (bar_x, bar_w) = props.x_scale.band(i);
-                    let (y0_raw, y1_raw) = props.stacked_spans[i][props.series_index];
-                    let y0 = props.y_scale.scale(y0_raw);
-                    let y1 = props.y_scale.scale(y1_raw);
-                    let (rect_y, rect_h) = if y1 <= y0 { (y1, y0 - y1) } else { (y0, y1 - y0) };
-                    rsx! {
-                        rect {
-                            key: "{i}",
-                            "data-slot": "chart-bar",
-                            "data-index": "{i}",
-                            x: "{fmt_num(bar_x)}",
-                            y: "{fmt_num(rect_y)}",
-                            width: "{fmt_num(bar_w)}",
-                            height: "{fmt_num(rect_h)}",
-                        }
-                    }
-                }
-            }
-        },
-    }
-}
-
-/// Extract series `s`'s raw value for every datum, `None` when a datum has
-/// no entry for it at all (a shorter `values` list than the config's
-/// series count -- defensive, never panics).
-fn series_values(data: &[ChartDatum], s: usize) -> Vec<Option<f64>> {
-    data.iter()
-        .map(|d| d.values.get(s).copied().flatten())
-        .collect()
-}
-
-/// The y-domain input before [`crate::chart::nice_domain`]: the min/max
-/// across every configured series' values, or (for `stacked`) across
-/// [`stack()`]'s own per-row spans -- a stacked chart's axis must span the
-/// *cumulative* totals, not each series' own raw values.
-fn y_extent(config: &ChartConfig, data: &[ChartDatum], stacked: bool) -> (f64, f64) {
-    let mut lo = 0.0f64;
-    let mut hi = 0.0f64;
-    if stacked {
-        let rows: Vec<Vec<Option<f64>>> = data.iter().map(|d| d.values.clone()).collect();
-        for row in stack(&rows) {
-            for (y0, y1) in row {
-                lo = lo.min(y0).min(y1);
-                hi = hi.max(y0).max(y1);
-            }
-        }
-    } else {
-        for datum in data {
-            for v in datum.values.iter().take(config.series.len()).flatten() {
-                lo = lo.min(*v);
-                hi = hi.max(*v);
-            }
-        }
-    }
-    (lo, hi)
-}
-
-/// Format an x-axis category label: the caller's own formatter if given,
-/// else its first 3 characters (shadcn's own demo convention).
-fn format_x_tick(label: &str, format: &Option<Callback<String, String>>) -> String {
-    match format {
-        Some(cb) => cb.call(label.to_string()),
-        None => label.chars().take(3).collect(),
-    }
-}
-
-/// The x-axis tick-label stride (see [`ChartProps::max_x_ticks`]): label
-/// datum `i` only when `i % x_tick_step(..) == 0`, so at most `max_x_ticks`
-/// labels are drawn regardless of `n`, always including the first datum
-/// (`i == 0`). MVP count-based thinning -- a pure function so the
-/// "at most `max_x_ticks` labels" guarantee is unit-testable independent of
-/// any SSR render.
-fn x_tick_step(n: usize, max_x_ticks: usize) -> usize {
-    if n == 0 {
-        return 1;
-    }
-    n.div_ceil(max_x_ticks.max(1))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chart::ChartContainer;
+    use crate::chart::{ChartConfig, ChartContainer, ChartDatum};
     use dioxus_core::NoOpMutations;
 
     fn sample_config() -> ChartConfig {
@@ -757,10 +612,12 @@ mod tests {
             ChartDatum {
                 label: "January".to_string(),
                 values: vec![Some(186.0), Some(80.0)],
+                ..Default::default()
             },
             ChartDatum {
                 label: "February".to_string(),
                 values: vec![Some(305.0), None],
+                ..Default::default()
             },
         ]
     }
@@ -962,6 +819,7 @@ mod tests {
                     // can be told apart in the thinning test below.
                     label: format!("D{i:02} full label"),
                     values: vec![Some(i as f64), Some((i * 2) as f64)],
+                    ..Default::default()
                 })
                 .collect::<Vec<_>>()
         });
@@ -997,30 +855,6 @@ mod tests {
             html.contains(r#"<th scope="col">Date</th>"#),
             "expected the overridden corner header: {html}"
         );
-    }
-
-    #[test]
-    fn x_tick_step_keeps_the_rendered_count_at_or_under_max_x_ticks() {
-        // The stride itself, and the classic pagination identity it relies
-        // on (`ceil(n / ceil(n / max)) <= max` for positive integers): the
-        // rendered tick count is `ceil(n / x_tick_step(n, max))`, so no
-        // input can ever render more than `max_x_ticks` labels.
-        for n in [0usize, 1, 2, 11, 12, 13, 29, 90, 91, 1000] {
-            for max in [1usize, 3, 5, 12, 50] {
-                let step = x_tick_step(n, max);
-                assert!(step >= 1, "step must be >= 1 for n={n} max={max}");
-                let rendered = if n == 0 { 0 } else { n.div_ceil(step) };
-                assert!(
-                    rendered <= max,
-                    "n={n} max={max} step={step} rendered={rendered} exceeds max_x_ticks"
-                );
-            }
-        }
-        // Concrete cases named in the API doc/commit message.
-        assert_eq!(x_tick_step(2, 12), 1);
-        assert_eq!(x_tick_step(90, 12), 8);
-        assert_eq!(x_tick_step(0, 12), 1);
-        assert_eq!(x_tick_step(10, 0), 10);
     }
 
     #[test]
@@ -1091,5 +925,130 @@ mod tests {
     fn grid_lines_are_present_by_default() {
         let html = render(ChartKind::Bar, false, true);
         assert!(html.contains(r#"data-slot="chart-grid""#));
+    }
+
+    // -- Stage-2 polar kinds (Pie/RadialBar) --------------------------------
+    //
+    // Each kind renders the same `Harness` used by every Cartesian test
+    // above (it's generic over `kind`). RadialBar is still `s2-refactor`'s
+    // placeholder stub; Pie is `s2-polar`'s own real `series::pie::render`
+    // -- see that module's own doc for why `sample_config`'s two series
+    // (desktop/mobile) make this a *stacked* (two-ring) pie, not the
+    // single-ring case (covered in detail by `series::pie`'s own test
+    // module instead). `ChartKind::Radar` moved out of this section (below,
+    // "Radar (landed, s2-radar)") once `s2-radar` replaced its own stub --
+    // see that test's own comment for why this section's original
+    // assertions about it went stale, not wrong-from-the-start.
+
+    #[test]
+    fn pie_kind_renders_one_ring_per_series_and_the_table_without_panicking() {
+        let html = render(ChartKind::Pie, false, true);
+        assert!(html.contains(r#"data-slot="chart-series""#));
+        assert!(html.contains(r#"data-slot="chart-arc""#));
+        // Two series (desktop/mobile) -> two rings, each with its own
+        // `data-series`; two data points (January/February) each -> 4
+        // slices total.
+        assert!(html.contains(r#"data-series="desktop""#));
+        assert!(html.contains(r#"data-series="mobile""#));
+        assert_eq!(html.matches(r#"data-slot="chart-arc""#).count(), 4);
+        assert!(html.contains(r#"data-slot="chart-data""#));
+        // No Cartesian-only apparatus.
+        assert!(!html.contains(r#"data-slot="chart-grid""#));
+        assert!(!html.contains(r#"data-slot="chart-axis""#));
+        assert!(!html.contains(r#"data-slot="chart-hit-bands""#));
+        assert!(!html.contains(r#"data-slot="chart-cursor""#));
+    }
+
+    // -- Radar (landed, s2-radar) -------------------------------------------
+    //
+    // `series::radar::render` replaced its own placeholder body (stage-2
+    // chart round, `s2-radar` lane) with real per-category-angle geometry:
+    // its own grid/spokes/rim labels and angular hit-sectors (`is_cartesian`
+    // is still `false` for `Radar`, so none of that comes from `Chart`'s own
+    // Cartesian-only rendering above -- `series::radar`'s own module doc has
+    // the full account). This test's ORIGINAL two assertions (`!contains
+    // "chart-grid"`, `!contains "chart-hit-bands"`) encoded that placeholder
+    // state, not a permanent contract -- flipped here to match, rather than
+    // left stale, since a green `cargo test --workspace` gate can't
+    // otherwise pass once that family has real content. `chart.rs` is
+    // "`s2-refactor` only, forever" per `$S/stage2-lanes.md`'s ownership
+    // table for everything else in this file; this one pre-existing test's
+    // now-incorrect assertions about a specific `ChartKind`'s stub state are
+    // the documented, narrow exception -- `series::radar`'s own module tests
+    // carry the actual grid/hit-sector/dot/label coverage.
+    #[test]
+    fn radar_kind_renders_its_own_grid_and_hit_sectors() {
+        let html = render(ChartKind::Radar, false, true);
+        assert!(html.contains(r#"data-slot="chart-series""#));
+        assert!(html.contains(r#"data-kind="radar""#));
+        assert!(html.contains(r#"data-slot="chart-data""#));
+        // Radar draws its OWN grid/hit-sectors (not `Chart`'s Cartesian
+        // ones, which stay gated off by `is_cartesian` either way) --
+        // `series::radar`'s own test module has the detailed coverage.
+        assert!(html.contains(r#"data-slot="chart-grid""#));
+        assert!(html.contains(r#"data-slot="chart-hit-bands""#));
+        // Radar's own rim category labels reuse the `chart-axis` slot with
+        // `data-axis="angle"` (not Cartesian `"x"`/`"y"`, which stay
+        // absent) -- see `series::radar`'s own module doc for why reusing
+        // this slot name costs the themed stylesheet zero new CSS.
+        assert!(html.contains(r#"data-axis="angle""#));
+        assert!(!html.contains(r#"data-axis="x""#));
+        assert!(!html.contains(r#"data-axis="y""#));
+        // Still no Cartesian-only apparatus: no rectangular cursor.
+        assert!(!html.contains(r#"data-slot="chart-cursor""#));
+    }
+
+    #[test]
+    fn radial_bar_kind_renders_the_placeholder_group_and_the_table_without_panicking() {
+        let html = render(ChartKind::RadialBar, false, true);
+        assert!(html.contains(r#"data-slot="chart-series""#));
+        assert!(html.contains(r#"data-kind="radial-bar""#));
+        assert!(html.contains(r#"data-slot="chart-data""#));
+        assert!(!html.contains(r#"data-slot="chart-grid""#));
+        assert!(!html.contains(r#"data-slot="chart-hit-bands""#));
+    }
+
+    #[test]
+    fn radar_and_radial_bar_reduce_the_table_to_category_plus_first_series_value() {
+        for kind in [ChartKind::Radar, ChartKind::RadialBar] {
+            let html = render(kind, false, true);
+            // Only the first configured series' column header ("Desktop"),
+            // not both -- unlike the Cartesian
+            // `hidden_table_mirrors_the_data_...` test above, which asserts
+            // both "Desktop" AND "Mobile" appear. No "Percent" column --
+            // that's `ChartKind::Pie`'s own addition (see the test below).
+            assert!(html.contains("Desktop"), "kind={kind:?}");
+            assert!(!html.contains("Mobile"), "kind={kind:?}");
+            assert!(!html.contains("Percent"), "kind={kind:?}");
+            assert!(html.contains("January"), "kind={kind:?}");
+            assert!(html.contains("February"), "kind={kind:?}");
+        }
+    }
+
+    #[test]
+    fn pie_kind_table_adds_a_percent_column() {
+        let html = render(ChartKind::Pie, false, true);
+        // Same single-value-column reduction as Radar/RadialBar (still
+        // only "Desktop", never "Mobile" -- `ChartDatum::values[0]` is the
+        // hidden table's own reduction, same as `series::pie::render`'s
+        // own single-ring geometry reads `values[0]` when there is exactly
+        // one series), PLUS this kind's own "Percent" column.
+        assert!(html.contains("Desktop"));
+        assert!(!html.contains("Mobile"));
+        assert!(html.contains(r#"<th scope="col">Percent</th>"#));
+        assert!(html.contains("January"));
+        assert!(html.contains("February"));
+        // January (186) is 100% of the two non-`None` values' sum -- wait,
+        // both January (186) and February (305) are real, positive
+        // `values[0]`s, so the table's percent column reads their own
+        // share of that sum (186+305=491): 186/491 ~= 37.9%.
+        assert!(
+            html.contains("37.9%"),
+            "expected January's own percent share: {html}"
+        );
+        assert!(
+            html.contains("62.1%"),
+            "expected February's own percent share: {html}"
+        );
     }
 }

@@ -64,6 +64,13 @@
     "preview/src/components/drawer",
     "preview/src/components/navigation_menu",
     "preview/src/components/chart",
-    "preview/src/components/carousel"
+    "preview/src/components/carousel",
+    "preview/src/components/area_chart",
+    "preview/src/components/bar_chart",
+    "preview/src/components/line_chart",
+    "preview/src/components/chart_tooltip",
+    "preview/src/components/radar_chart",
+    "preview/src/components/pie_chart",
+    "preview/src/components/radial_chart"
   ]
 }

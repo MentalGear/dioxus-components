@@ -1,12 +1,10 @@
 //! Defines the [`HoverCard`] component and its subcomponents.
 
-#[cfg(feature = "web")]
-use crate::merge_attributes;
 use crate::{
-    use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign, ContentSide,
+    merge_attributes, use_animated_open, use_controlled, use_id_or, use_unique_id, ContentAlign,
+    ContentSide,
 };
 use dioxus::prelude::*;
-#[cfg(feature = "web")]
 use dioxus_attributes::attributes;
 
 #[derive(Clone, Copy)]
@@ -107,11 +105,20 @@ pub fn HoverCard(props: HoverCardProps) -> Element {
         content_id,
     });
 
-    rsx! {
-        div {
+    // Owned by this component -- open/disabled state must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             "data-state": if open() { "open" } else { "closed" },
             "data-disabled": (props.disabled)(),
-            ..props.attributes,
+        }),
+    ]);
+
+    rsx! {
+        div {
+            ..attributes,
 
             {props.children}
         }
@@ -217,12 +224,21 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
     // binding even when the caller's `style` is present.
     let attributes =
         crate::top_layer::anchored_trigger_attributes(&ctx.content_id.cloned(), props.attributes);
+    // Owned by this component -- role/focusability/aria wiring must win
+    // over a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
+            tabindex: "0", // Make the trigger focusable
+            role: "button",
+            aria_describedby: (ctx.open)().then(|| ctx.content_id.cloned()),
+        }),
+    ]);
 
     rsx! {
         div {
             id,
-            tabindex: "0", // Make the trigger focusable
-
             // Mouse events
             onmouseenter: move |_| open_event(),
             onmouseleave: move |_| close_event(),
@@ -231,10 +247,6 @@ pub fn HoverCardTrigger(props: HoverCardTriggerProps) -> Element {
             onfocus: move |_| open_event(),
             onblur: move |_| close_event(),
             onkeydown: handle_keydown,
-
-            // ARIA attributes
-            role: "button",
-            aria_describedby: (ctx.open)().then(|| ctx.content_id.cloned()),
 
             ..attributes,
             {props.children}
@@ -412,6 +424,16 @@ fn HoverCardContentRendered(
         attributes!(div {
             class: "dx-anchor-hover-card"
         }),
+        // Owned by this component -- role/top-layer wiring/positioning
+        // state must win over a caller's own attributes
+        // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+        attributes!(div {
+            role: "tooltip",
+            popover: crate::top_layer::PopoverKind::Manual.as_str(),
+            "data-state": if is_open { "open" } else { "closed" },
+            "data-side": side.as_str(),
+            "data-align": align.as_str(),
+        }),
     ]);
     // Folds the caller's own `style` together with the anchor binding into
     // one `style` attribute -- see `top_layer::anchored_content_attributes`'s
@@ -423,11 +445,6 @@ fn HoverCardContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            role: "tooltip",
-            popover: crate::top_layer::PopoverKind::Manual.as_str(),
-            "data-state": if is_open { "open" } else { "closed" },
-            "data-side": side.as_str(),
-            "data-align": align.as_str(),
             onmouseenter: handle_mouse_enter,
             onmouseleave: handle_mouse_leave,
             // Escape dismisses from inside the card too, in case it holds
@@ -475,13 +492,21 @@ fn HoverCardContentRendered(
         }
     };
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- see the web arm's identical construction
+    // above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        attributes,
+        attributes!(div {
             role: "tooltip",
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             onmouseenter: handle_mouse_enter,
             onmouseleave: handle_mouse_leave,
             onkeydown: move |event: Event<KeyboardData>| {

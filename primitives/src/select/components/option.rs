@@ -3,12 +3,14 @@
 use crate::{
     collection::{collection_item, use_item},
     listbox::{ListboxContext, ListboxItemIndicator},
+    merge_attributes,
     selectable::{
         pointer_select_cancel, pointer_select_commit, pointer_select_start, use_selectable_option,
         RcPartialEqValue, SelectableOptionConfig,
     },
 };
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use super::super::context::SelectContext;
 
@@ -127,19 +129,26 @@ pub fn SelectOption<T: PartialEq + Clone + 'static>(props: SelectOptionProps<T>)
 
     let render = use_context::<ListboxContext>().render;
 
+    // All owned: role/tabindex define this option's widget semantics and
+    // roving-focus wiring, aria-selected/aria-disabled/data-disabled mirror
+    // its real state.
+    let owned = attributes!(div {
+        role: "option",
+        tabindex: if (option.focused)() { "0" } else { "-1" },
+        aria_selected: (option.selected)(),
+        aria_disabled: (option.disabled)(),
+        "data-disabled": (option.disabled)(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         if render() {
             div {
-                role: "option",
                 id: option.id,
-                tabindex: if (option.focused)() { "0" } else { "-1" },
                 onmounted,
 
-                aria_selected: (option.selected)(),
-                aria_disabled: (option.disabled)(),
                 aria_label: props.aria_label.clone(),
                 aria_roledescription: props.aria_roledescription.clone(),
-                "data-disabled": (option.disabled)(),
 
                 onpointerdown: move |event| {
                     pointer_select_start(&event, (option.disabled)(), option.down_pos);
@@ -159,7 +168,7 @@ pub fn SelectOption<T: PartialEq + Clone + 'static>(props: SelectOptionProps<T>)
                     }
                 },
 
-                ..props.attributes,
+                ..merged,
                 {props.children}
             }
         }

@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 /// The visual style of an [`Alert`]. shadcn/ui ships exactly these two
 /// (`default`/`destructive`) -- there is no APG contract here (`role="alert"`
@@ -32,15 +34,15 @@ pub fn Alert(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-alert" });
+    // `role="alert"` and `data-style` reflect this wrapper's own required
+    // live-region semantics and typed `variant` prop, not a caller default --
+    // owned-wins, merged after the caller's own attributes.
+    let owned = attributes!(div { role: "alert", "data-style": variant.class() });
+    let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/alert/style.css") }
-        div {
-            class: "dx-alert",
-            role: "alert",
-            "data-style": variant.class(),
-            ..attributes,
-            {children}
-        }
+        div { ..merged, {children} }
     }
 }
 
@@ -51,9 +53,11 @@ pub fn AlertTitle(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-alert-title" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/alert/style.css") }
-        div { class: "dx-alert-title", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -63,8 +67,10 @@ pub fn AlertDescription(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-alert-description" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/alert/style.css") }
-        div { class: "dx-alert-description", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }

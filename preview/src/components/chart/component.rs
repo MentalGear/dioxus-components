@@ -9,8 +9,32 @@ use dioxus_primitives::merge_attributes;
 // attach"). Re-exported here -- rather than left for demo code to import
 // raw from `dioxus_primitives::chart` -- so every demo composes exclusively
 // through `crate::components::chart::*`, never a raw `dioxus_primitives::`
-// path outside this file (`scripts/check-preview-composition.sh`).
-pub use dioxus_primitives::chart::{ChartConfig, ChartDatum, ChartKind, LegendAlign};
+// path outside this file (`scripts/check-preview-composition.sh`). `Curve`
+// joins this list for the stage-2 per-family gallery packages (`area_chart`,
+// `line_chart`, ...): their own `component.rs` is a thin `pub use
+// crate::components::chart::*;` (the installable package stays `chart`
+// alone), so anything a variant demo names -- `Curve::Linear`/`Curve::Step`
+// for e.g. `area_chart`'s `linear`/`step` demos -- has to be reachable from
+// here, transitively, rather than each gallery reaching past this module
+// into `dioxus_primitives::chart::Curve` directly (which
+// `check-preview-composition.sh` would then have to special-case per
+// gallery instead of once, here, at the seam this file already is).
+//
+// `BarOptions`/`PieOptions`/`RadarOptions`/`RadialOptions` have no demo
+// using them yet (only `variants/line/mod.rs` sets `line: LineOptions { .. }`
+// today, plus `area_chart`'s own `AreaOptions`-using variants) -- reserved
+// stage-2 extension points, same as `ChartProps`' own
+// `bar`/`pie`/`radar`/`radial` fields, so each family's own gallery lane
+// (`s2-bar`/`s2-polar`/`s2-radar`) can write `<Family>Options { .. }` in its
+// demo the moment it lands, with no edit to this shared file needed first.
+// `ChartSeries`/`ChartIcon`/`StackMode` join this list for `area_chart`'s
+// own `icons`/`stacked_expand` variants (setting a series' `icon` field
+// directly, and `AreaOptions.stack_mode`, respectively).
+#[allow(unused_imports)]
+pub use dioxus_primitives::chart::{
+    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartIcon, ChartKind, ChartSeries, Curve,
+    LegendAlign, LineOptions, PieLabels, PieOptions, RadarOptions, RadialOptions, StackMode,
+};
 
 /// The themed chart container: scopes the `--color-<key>` CSS variables
 /// generated from `config` to this instance via `data-chart="<id>"`. Always
@@ -21,23 +45,26 @@ pub use dioxus_primitives::chart::{ChartConfig, ChartDatum, ChartKind, LegendAli
 /// "API changes" #4: an `Element`-typed child has no way to attach
 /// attributes to its already-rendered parent without a post-mount effect,
 /// which would make them absent from the first SSR render).
+///
+/// Forwards via `..props` (§4(a)'s stage-2 chart-round construction, the
+/// same shape as `Chart` below) rather than a hand-listed field-by-field
+/// call, so a newly added `ChartContainerProps` field forwards for free
+/// instead of silently compiling away.
 #[component]
 pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let base = attributes!(div {
         class: "dx-chart",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()`, not a move: `..props` below needs `props` intact --
+    // moving `props.attributes` out first (as the non-spread `Chart`/
+    // `ChartTooltip`/`ChartLegend` bodies safely could not, either, if they
+    // needed to override `attributes` the same way) would make `props` a
+    // partially-moved value, which struct-update syntax rejects (E0382).
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartContainer {
-            id: props.id,
-            config: props.config,
-            data: props.data,
-            kind: props.kind,
-            attributes: merged,
-            {props.children}
-        }
+        chart::ChartContainer { attributes: merged, ..props }
     }
 }
 
@@ -54,29 +81,25 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
 /// primitive and selected off `[data-slot="..."]` inside the container's
 /// own `.dx-chart` scope (see `style.css`), so there is nothing new to
 /// attach here beyond forwarding attributes through untouched.
+///
+/// Forwards via `..props` (a plain struct-update spread -- precedented in
+/// this repo, e.g. `primitives/src/toast.rs`'s own `Toast { ..props }`),
+/// not a hand-listed field-by-field call: `props` here IS `chart::Chart`'s
+/// own `ChartProps` (imported directly, not a separate preview-defined
+/// props type), so every field forwards with no mapping needed. This is a
+/// stage-2 chart round fix-by-construction, not merely this round's own
+/// six new option fields: a hand-listed forward silently drops any field
+/// the list doesn't (yet) name, with no compile error -- which is exactly
+/// how this file's own pre-stage-2 list had already gone stale (API change
+/// #8's `x_label`/`max_x_ticks` were never added to it, so a demo setting
+/// either was silently ignored; fixed for free by this same spread, not
+/// tracked as its own change). `ChartTooltip`/`ChartLegend`/`ChartContainer`
+/// now use the identical shape (§4(a) of the stage-2 handoff).
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::Chart {
-            aria_label: props.aria_label,
-            description: props.description,
-            width: props.width,
-            height: props.height,
-            stacked: props.stacked,
-            curve: props.curve,
-            show_grid: props.show_grid,
-            show_x_axis: props.show_x_axis,
-            show_y_axis: props.show_y_axis,
-            x_label: props.x_label,
-            x_tick_format: props.x_tick_format,
-            max_x_ticks: props.max_x_ticks,
-            y_tick_count: props.y_tick_count,
-            show_dots: props.show_dots,
-            keyboard: props.keyboard,
-            dir: props.dir,
-            attributes: props.attributes,
-        }
+        chart::Chart { ..props }
     }
 }
 
@@ -84,51 +107,48 @@ pub fn Chart(props: ChartProps) -> Element {
 /// `role="graphics-symbol"` swatch per row. Rendered even when closed
 /// (`data-state="closed"`, hidden by CSS) so there is nothing to attach
 /// post-hydration. Optional -- omit it for a chart that doesn't need one.
+///
+/// Forwards via `..props` (§4(a)): a plain struct-update spread rather than
+/// a hand-listed field-by-field call, so a newly added `ChartTooltipProps`
+/// field (e.g. `indicator`/`label_key`/`name_key`/`formatter`) reaches the
+/// real primitive without an edit here. This also folds `children` back
+/// into the spread instead of a separately named field -- `..props` moves
+/// the whole struct (`Option<Element>` included) in one shot, so there is
+/// no separate "trailing brace sugar always populates `Some`" pitfall to
+/// avoid: nothing here is written as trailing braces.
 #[component]
 pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
     let base = attributes!(div {
         class: "dx-chart-tooltip",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()` -- see `ChartContainer`'s identical comment above: `..props`
+    // below needs `props` intact, not partially moved.
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartTooltip {
-            label_format: props.label_format,
-            value_format: props.value_format,
-            hide_label: props.hide_label,
-            hide_indicator: props.hide_indicator,
-            attributes: merged,
-            // A named field, not the trailing `{props.children}` brace
-            // sugar: that sugar always populates the inner component's
-            // `children` with `Some(..)` (something was syntactically
-            // written in the child-node position, even if the expression
-            // itself evaluates to `None`), so every demo's plain
-            // `ChartTooltip {}` -- providing no custom content -- was
-            // tripping the primitive's "custom children replace the
-            // default" branch and rendering nothing at all. Assigning the
-            // `Option<Element>` value directly to the named field forwards
-            // it unchanged, so `None` reaches the primitive as `None`.
-            children: props.children,
-        }
+        chart::ChartTooltip { attributes: merged, ..props }
     }
 }
 
 /// The legend: one `role="graphics-symbol"` swatch + label per configured
 /// series, in `config` order. Optional -- a single/dual-series chart
 /// usually doesn't need one.
+///
+/// Forwards via `..props` (§4(a)), the same shape as `ChartTooltip` above --
+/// this is the fix that lets a newly added `ChartLegendProps` field (e.g.
+/// `hide_icon`) actually reach `chart::ChartLegend`.
 #[component]
 pub fn ChartLegend(props: ChartLegendProps) -> Element {
     let base = attributes!(ul {
         class: "dx-chart-legend",
     });
-    let merged = merge_attributes(vec![base, props.attributes]);
+    // `.clone()` -- see `ChartContainer`'s identical comment above: `..props`
+    // below needs `props` intact, not partially moved.
+    let merged = merge_attributes(vec![base, props.attributes.clone()]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/chart/style.css") }
-        chart::ChartLegend {
-            vertical_align: props.vertical_align,
-            attributes: merged,
-        }
+        chart::ChartLegend { attributes: merged, ..props }
     }
 }

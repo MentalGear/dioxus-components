@@ -1,9 +1,11 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{GripVertical, X};
+use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::drag_and_drop_list::{
     self, DragAndDropContext, DragAndDropDropIndicatorProps, DragAndDropItemContext,
     DragAndDropListItemProps, DragAndDropListItemsProps,
 };
+use dioxus_primitives::merge_attributes;
 
 // docs/backlog.md row 32: `#[css_module]` is gone -- see checkbox/component.rs's
 // header comment for the full delivery-mechanism rationale (asset!() +
@@ -72,13 +74,15 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
         })
         .collect();
 
+    let base = attributes!(ul { class: "dx-drag-and-drop-list" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropList {
-            class: "dx-drag-and-drop-list",
             items,
             aria_label: props.aria_label,
-            attributes: props.attributes,
+            attributes: merged,
             drag_and_drop_list::DragAndDropInstructions {}
             DragAndDropListItems {
                 aria_label,
@@ -91,15 +95,17 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
 
 #[component]
 pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
+    let base = attributes!(li { class: "dx-drag-and-drop-list-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropListItem {
-            class: "dx-drag-and-drop-list-item",
             index: props.index,
             // Forward the stable item key so the primitive tracks focus by
             // identity across reorders and removals instead of losing it.
             item_key: props.item_key.clone(),
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -107,12 +113,14 @@ pub fn DragAndDropListItem(props: DragAndDropListItemProps) -> Element {
 
 #[component]
 pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
+    let base = attributes!(ul { class: "dx-drag-and-drop-list-ul" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropListItems {
-            class: "dx-drag-and-drop-list-ul",
             aria_label: props.aria_label,
-            attributes: props.attributes,
+            attributes: merged,
             for item in drag_and_drop_list::use_drag_and_drop_list_items() {
                 Fragment {
                     key: "{item.key}",
@@ -137,13 +145,15 @@ pub fn DragAndDropListItems(props: DragAndDropListItemsProps) -> Element {
 
 #[component]
 pub fn DragAndDropDropIndicator(props: DragAndDropDropIndicatorProps) -> Element {
+    let base = attributes!(div { class: "dx-drag-and-drop-list-drop-indicator" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         drag_and_drop_list::DragAndDropDropIndicator {
-            class: "dx-drag-and-drop-list-drop-indicator",
             index: props.index,
             position: props.position,
-            attributes: props.attributes,
+            attributes: merged,
         }
     }
 }
@@ -168,13 +178,20 @@ pub fn RemoveButton(
     let item_ctx: DragAndDropItemContext = use_context();
     let index = item_ctx.index();
     let label = format!("Remove item {}", index + 1);
+    let base = attributes!(button {
+        class: "dx-drag-and-drop-list-remove-button",
+        r#type: "button",
+        aria_label: "{label}",
+    });
+    // `draggable: "false"` is required behavior -- this button must not
+    // itself start a native drag inside a draggable list item -- not a
+    // caller default, so it is owned-wins.
+    let owned = attributes!(button { draggable: "false" });
+    let merged = merge_attributes(vec![base, attributes, owned]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drag_and_drop_list/style.css") }
         button {
-            class: "dx-drag-and-drop-list-remove-button",
-            r#type: "button",
-            aria_label: "{label}",
-            draggable: "false",
             onpointerdown: move |event| event.stop_propagation(),
             onmousedown: move |event| event.stop_propagation(),
             onmouseup: move |event| event.stop_propagation(),
@@ -187,7 +204,7 @@ pub fn RemoveButton(
                 event.stop_propagation();
                 ctx.remove(index);
             },
-            ..attributes,
+            ..merged,
             {children}
             X { size: "14px" }
         }

@@ -3,8 +3,10 @@
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 use serde::Deserialize;
 
+use crate::merge_attributes;
 use crate::r#virtual::{
     compute_measurements, get_total_size, get_virtual_items, resize_item, set_scroll_offset,
     set_viewport_size, VirtualizerState, VirtualizerStateStoreExt,
@@ -224,12 +226,20 @@ pub fn VirtualList(props: VirtualListProps) -> Element {
     let canvas_height = total_height.max(*state.viewport_size().peek());
     let set_size = count.to_string();
 
+    // `id` is owned: `sync_container_scroll` above looks this element up by
+    // id (a JS eval), so a caller override would silently break scroll sync
+    // (backlog row 93 names this site explicitly). `role`/`tabindex` are
+    // this container's own widget semantics, also owned.
+    let owned = attributes!(div {
+        id: container_id,
+        role: "list",
+        tabindex: "0",
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         div {
-            id: container_id,
-            role: "list",
-            tabindex: "0",
-            ..attributes,
+            ..merged,
 
             div {
                 style: "position: relative; height:{canvas_height}px; width: 100%;",

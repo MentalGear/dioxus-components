@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::ChevronDown;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::navigation_menu::{
     self, NavigationMenuContentProps, NavigationMenuItemProps, NavigationMenuLinkProps,
     NavigationMenuListProps, NavigationMenuProps, NavigationMenuTriggerProps,
@@ -7,12 +9,13 @@ use dioxus_primitives::navigation_menu::{
 
 #[component]
 pub fn NavigationMenu(props: NavigationMenuProps) -> Element {
+    let base = attributes!(nav { class: "dx-navigation-menu" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
         navigation_menu::NavigationMenu {
-            class: "dx-navigation-menu",
             disabled: props.disabled,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -20,25 +23,24 @@ pub fn NavigationMenu(props: NavigationMenuProps) -> Element {
 
 #[component]
 pub fn NavigationMenuList(props: NavigationMenuListProps) -> Element {
+    let base = attributes!(ul { class: "dx-navigation-menu-list" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
-        navigation_menu::NavigationMenuList {
-            class: "dx-navigation-menu-list",
-            attributes: props.attributes,
-            {props.children}
-        }
+        navigation_menu::NavigationMenuList { attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn NavigationMenuItem(props: NavigationMenuItemProps) -> Element {
+    let base = attributes!(li { class: "dx-navigation-menu-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
         navigation_menu::NavigationMenuItem {
-            class: "dx-navigation-menu-item",
             index: props.index,
             disabled: props.disabled,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -46,12 +48,13 @@ pub fn NavigationMenuItem(props: NavigationMenuItemProps) -> Element {
 
 #[component]
 pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
+    let base = attributes!(button { class: "dx-navigation-menu-trigger" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
         navigation_menu::NavigationMenuTrigger {
-            class: "dx-navigation-menu-trigger",
             id: props.id,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
             ChevronDown {
                 class: "dx-navigation-menu-expand-icon",
@@ -64,28 +67,26 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
 
 #[component]
 pub fn NavigationMenuContent(props: NavigationMenuContentProps) -> Element {
+    let base = attributes!(div { class: "dx-navigation-menu-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
-        navigation_menu::NavigationMenuContent {
-            class: "dx-navigation-menu-content",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        navigation_menu::NavigationMenuContent { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn NavigationMenuLink(props: NavigationMenuLinkProps) -> Element {
+    let base = attributes!(a { class: "dx-navigation-menu-link" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
         navigation_menu::NavigationMenuLink {
-            class: "dx-navigation-menu-link",
             active: props.active,
             disabled: props.disabled,
             content_index: props.content_index,
             onclick: props.onclick,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }

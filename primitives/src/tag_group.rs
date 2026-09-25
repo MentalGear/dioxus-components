@@ -1,9 +1,11 @@
 //! Defines the [`TagGroup`] and [`TagGroupMulti`] components and their sub-components.
 
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
+    merge_attributes,
     selectable::SelectionMode,
     selection::{option_text_value, RcPartialEqValue},
     use_controlled, use_effect_cleanup, use_effect_with_cleanup, use_id_or, use_unique_id,
@@ -737,23 +739,31 @@ pub fn TagList(props: TagListProps) -> Element {
         !state.focus.any_focused() && state.focus.first_available_index().is_some()
     });
 
+    // All owned: role/aria-colcount define this grid's semantics,
+    // `aria_labelledby` is a functional reference to `TagGroup`'s labeling
+    // element, `tabindex`/`aria_multiselectable` are managed roving-focus
+    // and selection-mode state.
+    let owned = attributes!(div {
+        role: "grid",
+        aria_labelledby: ctx.labeled_by,
+        tabindex: if list_tabbable() { "0" } else { "-1" },
+        aria_multiselectable: if state.selection_mode == SelectionMode::Multiple
+            && (state.selectable)()
+        {
+            "true"
+        },
+        aria_colcount: "1",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "grid",
-            aria_labelledby: ctx.labeled_by,
-            tabindex: if list_tabbable() { "0" } else { "-1" },
-            aria_multiselectable: if state.selection_mode == SelectionMode::Multiple
-                && (state.selectable)()
-            {
-                "true"
-            },
-            aria_colcount: "1",
             onfocus: move |_| {
                 if !state.focus.any_focused() {
                     state.focus.focus_first();
                 }
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -800,10 +810,12 @@ pub fn TagGroupEmpty(props: TagGroupEmptyProps) -> Element {
         return rsx! {};
     }
 
+    let owned = attributes!(div { role: "row" });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "row",
-            ..props.attributes,
+            ..merged,
             div {
                 role: "gridcell",
                 aria_colindex: "1",
@@ -964,16 +976,23 @@ pub fn TagOption<T: Clone + PartialEq + 'static>(props: TagOptionProps<T>) -> El
         return rsx! {};
     }
 
+    // All owned: role/aria-rowindex define this row's grid semantics,
+    // `tabindex` is the roving-focus wiring, and the aria/`data-*` pairs are
+    // this option's own selected/disabled state.
+    let owned = attributes!(div {
+        role: "row",
+        tabindex,
+        aria_rowindex: (index.cloned() as i32) + 1,
+        aria_selected: (state.selectable)().then_some(selected()),
+        aria_disabled: disabled(),
+        "data-selected": selected(),
+        "data-disabled": disabled(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "row",
             id: id(),
-            tabindex,
-            aria_rowindex: (index.cloned() as i32) + 1,
-            aria_selected: (state.selectable)().then_some(selected()),
-            aria_disabled: disabled(),
-            "data-selected": selected(),
-            "data-disabled": disabled(),
             onmounted,
             onfocus: move |_| state.focus_item(&item_id()),
             onclick: move |_| {
@@ -992,7 +1011,7 @@ pub fn TagOption<T: Clone + PartialEq + 'static>(props: TagOptionProps<T>) -> El
                     is_removable(),
                 );
             },
-            ..props.attributes,
+            ..merged,
             div {
                 role: "gridcell",
                 aria_colindex: "1",
@@ -1031,17 +1050,28 @@ pub fn TagRemoveButton(
     });
     let can_remove = use_memo(move || state.can_remove_item(&(option.id)()));
 
+    // `aria_label` is an overridable default (a descriptive name a caller
+    // may want to localize/customize); `type`/`tabindex`/`disabled` are this
+    // button's own functional state -- `tabindex` in particular keeps it
+    // permanently out of tab order (the enclosing `TagOption` row is the
+    // single roving tab stop) -- and are owned.
+    let defaults = attributes!(button {
+        aria_label: "{label}"
+    });
+    let owned = attributes!(button {
+        r#type: "button",
+        tabindex: "-1",
+        disabled: !can_remove(),
+    });
+    let merged = merge_attributes(vec![defaults, attributes, owned]);
+
     rsx! {
         button {
-            r#type: "button",
-            tabindex: "-1",
-            disabled: !can_remove(),
-            aria_label: "{label}",
             onclick: move |e| {
                 e.stop_propagation();
                 state.remove_item_from_button(&(option.id)());
             },
-            ..attributes,
+            ..merged,
             {children}
         }
     }

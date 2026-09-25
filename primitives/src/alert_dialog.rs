@@ -20,10 +20,11 @@
 
 #[cfg(not(feature = "web"))]
 use crate::use_global_escape_listener;
-use crate::{use_animated_open, use_id_or, use_unique_id};
+use crate::{merge_attributes, use_animated_open, use_id_or, use_unique_id};
 #[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
+use dioxus_attributes::attributes;
 
 #[derive(Clone)]
 struct AlertDialogCtx {
@@ -128,13 +129,21 @@ pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
     let id = use_id_or(id, props.id);
     let render_element = use_animated_open(id, open);
 
+    // Owned by this component -- open state must win over a caller's own
+    // attributes (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
+            "data-state": if open() { "open" } else { "closed" },
+        }),
+    ]);
+
     rsx! {
         {crate::focus_trap_script()}
         if render_element() {
             div {
                 id,
-                "data-state": if open() { "open" } else { "closed" },
-                ..props.attributes,
+                ..attributes,
                 {props.children}
             }
         }
@@ -238,15 +247,24 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
         let _ = eval.send(open.cloned());
     });
 
-    rsx! {
-        div {
-            id,
+    // Owned by this component -- dialog role/aria wiring must win over a
+    // caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(div {
             role: "alertdialog",
             aria_modal: "true",
             aria_labelledby: ctx.labelledby.clone(),
             aria_describedby: ctx.describedby.clone(),
+        }),
+    ]);
+
+    rsx! {
+        div {
+            id,
             class: props.class.clone().unwrap_or_else(|| "dx-alert-dialog".to_string()),
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -283,15 +301,23 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
     crate::use_dialog_close_sync(id, set_open);
     crate::use_dialog_open_driver(id, open);
 
-    rsx! {
-        dialog {
-            id,
+    // Owned by this component -- see the native arm's identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(dialog {
             role: "alertdialog",
             aria_modal: "true",
             aria_labelledby: ctx.labelledby.clone(),
             aria_describedby: ctx.describedby.clone(),
+        }),
+    ]);
+
+    rsx! {
+        dialog {
+            id,
             class: props.class.clone().unwrap_or_else(|| "dx-alert-dialog".to_string()),
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -349,8 +375,18 @@ pub struct AlertDialogTitleProps {
 #[component]
 pub fn AlertDialogTitle(props: AlertDialogTitleProps) -> Element {
     let ctx: AlertDialogCtx = use_context();
+    // Owned by this component -- `id` is the labelledby target read back by
+    // `AlertDialogContent`'s `aria-labelledby`, so it must win over a
+    // caller's own `id` rather than risk the SSR duplicate-attribute hazard
+    // (`docs/backlog.md` row 93 names this exact site).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(h2 {
+            id: ctx.labelledby.clone()
+        }),
+    ]);
     rsx! {
-        h2 { id: ctx.labelledby.clone(), ..props.attributes, {props.children} }
+        h2 { ..attributes, {props.children} }
     }
 }
 
@@ -406,8 +442,16 @@ pub struct AlertDialogDescriptionProps {
 #[component]
 pub fn AlertDialogDescription(props: AlertDialogDescriptionProps) -> Element {
     let ctx: AlertDialogCtx = use_context();
+    // Owned by this component -- see `AlertDialogTitle`'s identical
+    // construction above (`docs/backlog.md` row 93 names this exact site).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(p {
+            id: ctx.describedby.clone()
+        }),
+    ]);
     rsx! {
-        p { id: ctx.describedby.clone(), ..props.attributes, {props.children} }
+        p { ..attributes, {props.children} }
     }
 }
 
@@ -531,12 +575,20 @@ pub fn AlertDialogAction(props: AlertDialogActionProps) -> Element {
             cb.call(evt.clone());
         }
     });
-    rsx! {
-        button {
+    // Owned by this component -- roving-focus tabindex/type must win over
+    // a caller's own attributes (`docs/backlog.md` row 93's
+    // duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(button {
             tabindex: if open() { "0" } else { "-1" },
             type: "button",
+        }),
+    ]);
+    rsx! {
+        button {
             onclick: on_click,
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }
@@ -607,12 +659,20 @@ pub fn AlertDialogCancel(props: AlertDialogCancelProps) -> Element {
         }
     });
 
-    rsx! {
-        button {
+    // Owned by this component -- see `AlertDialogAction`'s identical
+    // construction above (`docs/backlog.md` row 93).
+    let attributes = merge_attributes(vec![
+        props.attributes,
+        attributes!(button {
             tabindex: if open() { "0" } else { "-1" },
             type: "button",
+        }),
+    ]);
+
+    rsx! {
+        button {
             onclick: on_click,
-            ..props.attributes,
+            ..attributes,
             {props.children}
         }
     }

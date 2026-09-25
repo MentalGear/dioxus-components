@@ -1,7 +1,7 @@
 # Carousel overscroll — root cause, platform measurements, and the rule that comes out of it
 
 **Date:** 2026-09-23
-**Status:** investigation closed; the port into `primitives/` is open work (backlog rows 102–104)
+**Status:** investigation closed; the port into `primitives/` **landed 2026-09-25 (round 8)** as mode B3, per this document's own §8 invariants — `dev-docs/backlog.md` row 102's own dated addendum has the construction and test account. Rows 103–104 (the composited-rubber-band measurement limit and the instrumentation-lies-where-the-bug-is finding) remain records of what was learned, not open work items. Still genuinely open, carried into the port's own row: a real-hardware feel-test (mouse and trackpad, both axes, both edges), the cross-browser rubber-band constant (this port uses WebKit's own curve, per §5 below, unverified against Chromium's/Gecko's), and arrow-paging during an in-flight bounce.
 **Bench:** [`carousel-overscroll-bench.html`](./carousel-overscroll-bench.html), revision 28 — open it directly in a browser, no build step
 **Provenance:** the stored file is byte-identical to the published bench
 the owner drove during the session (<https://claude.ai/artifact/Pn3txmSwfhc5fLV2rRtLgw>);

@@ -45,13 +45,13 @@ pub fn Table(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(table { class: "dx-table" });
+    let base = attributes!(table { class: "dx-table", "data-slot": "table" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
         div { class: "dx-table-container", "data-slot": "table-container",
-            table { "data-slot": "table", ..merged, {children} }
+            table { ..merged, {children} }
         }
     }
 }
@@ -62,12 +62,12 @@ pub fn TableHeader(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(thead { class: "dx-table-header" });
+    let base = attributes!(thead { class: "dx-table-header", "data-slot": "table-header" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        thead { "data-slot": "table-header", ..merged, {children} }
+        thead { ..merged, {children} }
     }
 }
 
@@ -77,12 +77,12 @@ pub fn TableBody(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(tbody { class: "dx-table-body" });
+    let base = attributes!(tbody { class: "dx-table-body", "data-slot": "table-body" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        tbody { "data-slot": "table-body", ..merged, {children} }
+        tbody { ..merged, {children} }
     }
 }
 
@@ -92,12 +92,12 @@ pub fn TableFooter(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(tfoot { class: "dx-table-footer" });
+    let base = attributes!(tfoot { class: "dx-table-footer", "data-slot": "table-footer" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        tfoot { "data-slot": "table-footer", ..merged, {children} }
+        tfoot { ..merged, {children} }
     }
 }
 
@@ -122,18 +122,18 @@ pub struct TableRowProps {
 /// `<tr>`.
 #[component]
 pub fn TableRow(props: TableRowProps) -> Element {
-    let base = attributes!(tr { class: "dx-table-row" });
-    let merged = merge_attributes(vec![base, props.attributes]);
     let data_state: Option<&'static str> = if (props.selected)() { Some("selected") } else { None };
+    let base = attributes!(tr { class: "dx-table-row", "data-slot": "table-row" });
+    // `data-state` is state the wrapper computes from `props.selected`, not a
+    // caller-overridable default, so it is merged in LAST (owned wins) rather
+    // than folded into `base` -- see the merge-precedence policy in
+    // dev-docs/issues/duplicate-attribute-findings.md.
+    let owned = attributes!(tr { "data-state": data_state });
+    let merged = merge_attributes(vec![base, props.attributes, owned]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        tr {
-            "data-slot": "table-row",
-            "data-state": data_state,
-            ..merged,
-            {props.children}
-        }
+        tr { ..merged, {props.children} }
     }
 }
 
@@ -149,17 +149,12 @@ pub fn TableHead(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(th { class: "dx-table-head" });
+    let base = attributes!(th { class: "dx-table-head", "data-slot": "table-head", scope: "col" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        th {
-            "data-slot": "table-head",
-            scope: "col",
-            ..merged,
-            {children}
-        }
+        th { ..merged, {children} }
     }
 }
 
@@ -171,12 +166,12 @@ pub fn TableCell(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(td { class: "dx-table-cell" });
+    let base = attributes!(td { class: "dx-table-cell", "data-slot": "table-cell" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        td { "data-slot": "table-cell", ..merged, {children} }
+        td { ..merged, {children} }
     }
 }
 
@@ -186,11 +181,11 @@ pub fn TableCaption(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let base = attributes!(caption { class: "dx-table-caption" });
+    let base = attributes!(caption { class: "dx-table-caption", "data-slot": "table-caption" });
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/table/style.css") }
-        caption { "data-slot": "table-caption", ..merged, {children} }
+        caption { ..merged, {children} }
     }
 }

@@ -2,6 +2,8 @@ use dioxus::prelude::*;
 use dioxus_primitives::color_picker::{
     self, Color, ColorAreaProps, ColorPickerContext,
 };
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::popover;
 use dioxus_primitives::use_controlled;
 use dioxus_primitives::label::Label;
@@ -81,14 +83,16 @@ pub fn ColorPickerRoot(props: ColorPickerRootProps) -> Element {
         color: props.color,
     });
 
+    let base = attributes!(div { class: "dx-color-picker" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         color_picker::ColorPicker {
-            class: "dx-color-picker",
             color: props.color,
             on_color_change: props.on_color_change,
             disabled: props.disabled,
-            attributes: props.attributes,
+            attributes: merged,
             popover::PopoverRoot {
                 is_modal: false,
                 open: Some(open()),
@@ -182,15 +186,20 @@ pub fn ColorPickerTrigger(props: ColorPickerTriggerProps) -> Element {
         let rgb: Color = Srgb::<f64>::from_color((ctx.color)()).into_format();
         format_color_hex(rgb)
     });
+    let base = attributes!(button {
+        class: "dx-color-picker-button",
+        aria_label: format!("Color picker {aria_hex}"),
+    });
+    // `aria-expanded` mirrors the popover's real open state, not a caller
+    // default -- owned-wins, merged after the caller's own attributes.
+    let owned = attributes!(button { aria_expanded: (ctx.open)() });
+    let merged = merge_attributes(vec![base, props.attributes, owned]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         popover::PopoverTrigger {
-            class: "dx-color-picker-button",
             disabled: if (ctx.disabled)() { true },
-            aria_label: format!("Color picker {aria_hex}"),
-            aria_expanded: (ctx.open)(),
-            attributes: props.attributes,
+            attributes: merged,
             ColorSwatch { color: ctx.color }
             if let Some(label) = props.label { span { {label} } }
             {props.children}
@@ -283,10 +292,12 @@ fn ColorField(props: ColorFieldProps) -> Element {
         }
     });
 
+    let base = attributes!(div { class: "dx-color-picker-field-container" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         div {
-            class: "dx-color-picker-field-container",
-            ..props.attributes,
+            ..merged,
             if let Some(label) = props.label {
                 Label {
                     html_for: "color_field",
@@ -362,13 +373,19 @@ fn ColorSwatch(props: ColorSwatchProps) -> Element {
         format_color_hex(rgb)
     });
 
+    let base = attributes!(div {
+        class: "dx-color-picker-swatch",
+        aria_label: format!("Selected color {hex_color}"),
+    });
+    // `role="img"` and the `--swatch-color` custom property are the
+    // wrapper's own required semantics/visual state, not a caller default --
+    // owned-wins, merged after the caller's own attributes.
+    let owned = attributes!(div { role: "img", style: "--swatch-color: {hex_color}" });
+    let merged = merge_attributes(vec![base, props.attributes, owned]);
+
     rsx! {
         div {
-            role: "img",
-            aria_label: format!("Selected color {hex_color}"),
-            class: "dx-color-picker-swatch",
-            style: "--swatch-color: {hex_color}",
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -435,11 +452,13 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
             + "°"
     };
 
+    let base = attributes!(div { class: "dx-color-picker-slider-container" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
 
         div {
-            class: "dx-color-picker-slider-container",
-            ..props.attributes,
+            ..merged,
             label { class: "dx-color-picker-slider-title", {props.title} }
             output { class: "dx-color-picker-slider-output", "{display_value}" }
             Slider {
@@ -471,11 +490,13 @@ fn ColorSlider(props: ColorSliderProps) -> Element {
 
 #[component]
 fn ColorArea(props: ColorAreaProps) -> Element {
+    let base = attributes!(div { class: "dx-color-picker-area-container" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         color_picker::ColorArea {
-            class: "dx-color-picker-area-container",
             step: props.step,
-            attributes: props.attributes,
+            attributes: merged,
             color_picker::AreaTrack {
                 class: "dx-color-picker-area-track",
                 color_picker::AreaThumb {
@@ -508,11 +529,13 @@ pub struct ColorPickerSelectProps {
 pub fn ColorPickerSelect(props: ColorPickerSelectProps) -> Element {
     let ctx = use_context::<ColorPickerContext>();
 
+    let base = attributes!(div { class: "dx-color-picker-dialog" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
         div {
-            class: "dx-color-picker-dialog",
-            ..props.attributes,
+            ..merged,
             ColorArea {}
             ColorSlider { title: "Hue" }
             div {

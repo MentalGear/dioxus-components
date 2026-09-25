@@ -65,9 +65,11 @@ pub fn DrawerHeader(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-drawer-header", "data-slot": "drawer-header" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
-        div { class: "dx-drawer-header", "data-slot": "drawer-header", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
@@ -76,37 +78,31 @@ pub fn DrawerFooter(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let base = attributes!(div { class: "dx-drawer-footer", "data-slot": "drawer-footer" });
+    let merged = merge_attributes(vec![base, attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
-        div { class: "dx-drawer-footer", "data-slot": "drawer-footer", ..attributes, {children} }
+        div { ..merged, {children} }
     }
 }
 
 #[component]
 pub fn DrawerTitle(props: DialogTitleProps) -> Element {
+    let base = attributes!(div { class: "dx-drawer-title", "data-slot": "drawer-title" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
-        drawer::DrawerTitle {
-            id: props.id,
-            class: "dx-drawer-title",
-            "data-slot": "drawer-title",
-            attributes: props.attributes,
-            {props.children}
-        }
+        drawer::DrawerTitle { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn DrawerDescription(props: DialogDescriptionProps) -> Element {
+    let base = attributes!(div { class: "dx-drawer-description", "data-slot": "drawer-description" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
-        drawer::DrawerDescription {
-            id: props.id,
-            class: "dx-drawer-description",
-            "data-slot": "drawer-description",
-            attributes: props.attributes,
-            {props.children}
-        }
+        drawer::DrawerDescription { id: props.id, attributes: merged, {props.children} }
     }
 }
 

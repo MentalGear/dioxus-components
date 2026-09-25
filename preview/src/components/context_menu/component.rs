@@ -5,6 +5,8 @@ use dioxus_primitives::context_menu::{
     ContextMenuSubContentProps, ContextMenuSubItemProps, ContextMenuSubProps,
     ContextMenuSubTriggerProps, ContextMenuTriggerProps,
 };
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 #[component]
 pub fn ContextMenu(props: ContextMenuProps) -> Element {
@@ -42,29 +44,27 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
 
 #[component]
 pub fn ContextMenuContent(props: ContextMenuContentProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
-        context_menu::ContextMenuContent {
-            class: "dx-context-menu-content",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        context_menu::ContextMenuContent { id: props.id, attributes: merged, {props.children} }
     }
 }
 
 #[component]
 pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuItem {
-            class: "dx-context-menu-item",
             disabled: props.disabled,
             value: props.value,
             index: props.index,
             text_value: props.text_value,
             on_select: props.on_select,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }
@@ -96,15 +96,16 @@ pub fn ContextMenuSub(props: ContextMenuSubProps) -> Element {
 /// real icon element, not CSS-generated `content:` text, matters here.
 #[component]
 pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-item dx-context-menu-sub-trigger" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuSubTrigger {
-            class: "dx-context-menu-item dx-context-menu-sub-trigger",
             index: props.index,
             id: props.id,
             disabled: props.disabled,
             text_value: props.text_value,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
             ChevronRight { class: "dx-context-menu-sub-trigger-icon", size: "16px" }
         }
@@ -117,14 +118,11 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
 /// static fallback position) -- see `style.css`.
 #[component]
 pub fn ContextMenuSubContent(props: ContextMenuSubContentProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-content dx-context-menu-sub-content" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
-        context_menu::ContextMenuSubContent {
-            class: "dx-context-menu-content dx-context-menu-sub-content",
-            id: props.id,
-            attributes: props.attributes,
-            {props.children}
-        }
+        context_menu::ContextMenuSubContent { id: props.id, attributes: merged, {props.children} }
     }
 }
 
@@ -132,16 +130,17 @@ pub fn ContextMenuSubContent(props: ContextMenuSubContentProps) -> Element {
 /// plain `dx-context-menu-item` chrome.
 #[component]
 pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuSubItem {
-            class: "dx-context-menu-item",
             disabled: props.disabled,
             value: props.value,
             index: props.index,
             text_value: props.text_value,
             on_select: props.on_select,
-            attributes: props.attributes,
+            attributes: merged,
             {props.children}
         }
     }

@@ -175,6 +175,21 @@ pub fn App() -> Element {
             .with_locale((langid!("de-DE"), include_str!("i18n/de-DE.ftl")))
     });
 
+    // Hydration-ready signal, by construction (dev-docs/backlog.md: SSG
+    // interaction tests race hydration). `document::eval` only ever runs
+    // client-side (a no-op string during SSR, per `dioxus-document`), and
+    // `use_effect` only fires after a render has actually committed to the
+    // DOM -- under the SSG lane that means after wasm has booted and
+    // hydration has walked the tree and attached event listeners, not
+    // merely after the prerendered HTML has loaded. `<html>` (`document
+    // .documentElement`) is never vdom-owned by this app, so writing to its
+    // `dataset` here cannot desync hydration or touch the SSR'd markup.
+    // This effect reads no signal, so it runs exactly once, right after
+    // that first commit, and never again.
+    use_effect(|| {
+        document::eval("document.documentElement.dataset.hydrated = 'true'");
+    });
+
     rsx! {
         Router::<Route> {}
     }

@@ -10,13 +10,14 @@ use std::{
     rc::Rc,
 };
 
+use dioxus_attributes::attributes;
 use dioxus_core::AttributeValue::{Bool, Text};
 use time::{ext::NumericalDuration, macros::date, Date, Month, OffsetDateTime, Weekday};
 
 use crate::{
     date_picker::DefaultCalendarProps,
     direction::{use_direction, Direction, HorizontalNav},
-    use_effect_cleanup, LocalDateExt as _,
+    merge_attributes, use_effect_cleanup, LocalDateExt as _,
 };
 
 // A collection of [`Weekday`]s stored as a single byte
@@ -643,13 +644,24 @@ pub fn Calendar(props: CalendarProps) -> Element {
         set_selected_date: props.on_date_change,
     });
 
+    // `role`/the `data-*` state are owned by the component (roving-focus and
+    // disabled-state wiring below reads them back); `aria_label` is an
+    // overridable default. Merge with the caller's `attributes` so a caller
+    // override survives hydration instead of colliding with these literals
+    // on the same element (backlog row 93).
+    let defaults = attributes!(div {
+        aria_label: "Calendar"
+    });
+    let owned = attributes!(div {
+        role: "application",
+        "data-disabled": (props.disabled)(),
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "application",
-            aria_label: "Calendar",
             dir: direction.as_str(),
-            "data-disabled": (props.disabled)(),
-            "data-direction": direction.as_str(),
             onkeydown: move |e| {
                 let Some(focused_date) = (base_ctx.focused_date)() else {
                     return;
@@ -713,7 +725,7 @@ pub fn Calendar(props: CalendarProps) -> Element {
                     _ => {}
                 }
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -916,13 +928,21 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
         set_selected_range: props.on_range_change,
     });
 
+    // Same reasoning as `Calendar` above: owned `role`/`data-*` state merged
+    // with the caller's attributes so an override survives hydration.
+    let defaults = attributes!(div {
+        aria_label: "Calendar"
+    });
+    let owned = attributes!(div {
+        role: "application",
+        "data-disabled": (props.disabled)(),
+        "data-direction": direction.as_str(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "application",
-            aria_label: "Calendar",
             dir: direction.as_str(),
-            "data-disabled": (props.disabled)(),
-            "data-direction": direction.as_str(),
             onkeydown: move |e| {
                 let Some(mut focused_date) = (base_ctx.focused_date)() else {
                     return;
@@ -1004,7 +1024,7 @@ pub fn RangeCalendar(props: RangeCalendarProps) -> Element {
                     _ => {}
                 }
             },
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -1140,12 +1160,19 @@ pub struct CalendarHeaderProps {
 /// ```
 #[component]
 pub fn CalendarHeader(props: CalendarHeaderProps) -> Element {
+    // `role`/`aria-level` are owned (semantics this element must keep);
+    // merge with the caller's attributes instead of leaving both a literal
+    // and a caller override on the same element (backlog row 93).
+    let owned = attributes!(div {
+        role: "heading",
+        "aria-level": "2",
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
-            role: "heading",
-            "aria-level": "2",
             id: props.id,
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -1304,13 +1331,23 @@ pub fn CalendarPreviousMonthButton(props: CalendarPreviousMonthButtonProps) -> E
         }
     };
 
+    // `aria_label`/`type` are overridable defaults; `disabled` reflects this
+    // component's own limit/range logic and is owned. Merge with the
+    // caller's attributes instead of leaving both a literal and a caller
+    // override on the same element (backlog row 93).
+    let defaults = attributes!(button {
+        aria_label: "Previous month",
+        r#type: "button",
+    });
+    let owned = attributes!(button {
+        disabled: (ctx.disabled)() || button_disabled() || navigate_disabled(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            aria_label: "Previous month",
-            type: "button",
             onclick: handle_prev_month,
-            disabled: (ctx.disabled)() || button_disabled() || navigate_disabled(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -1408,13 +1445,20 @@ pub fn CalendarNextMonthButton(props: CalendarNextMonthButtonProps) -> Element {
         }
     };
 
+    // Same reasoning as `CalendarPreviousMonthButton` above.
+    let defaults = attributes!(button {
+        aria_label: "Next month",
+        r#type: "button",
+    });
+    let owned = attributes!(button {
+        disabled: (ctx.disabled)() || button_disabled() || navigate_disabled(),
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            aria_label: "Next month",
-            type: "button",
             onclick: handle_next_month,
-            disabled: (ctx.disabled)() || button_disabled() || navigate_disabled(),
-            ..props.attributes,
+            ..merged,
 
             {props.children}
         }
@@ -1791,13 +1835,20 @@ pub fn CalendarGrid(props: CalendarGridProps) -> Element {
 pub fn CalendarGridRoot(props: CalendarGridRootProps) -> Element {
     let base_ctx: BaseCalendarContext = use_context();
 
+    // `role`/`dir`/`data-direction` are all owned semantics/state; merge with
+    // the caller's attributes instead of leaving both a literal and a caller
+    // override on the same element (backlog row 93).
+    let owned = attributes!(table {
+        role: "grid",
+        dir: base_ctx.direction.as_str(),
+        "data-direction": base_ctx.direction.as_str(),
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         table {
-            role: "grid",
             id: props.id,
-            dir: base_ctx.direction.as_str(),
-            "data-direction": base_ctx.direction.as_str(),
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -1806,10 +1857,14 @@ pub fn CalendarGridRoot(props: CalendarGridRootProps) -> Element {
 /// The header section of a calendar grid.
 #[component]
 pub fn CalendarGridHead(props: CalendarGridHeadProps) -> Element {
+    let owned = attributes!(thead {
+        aria_hidden: "true"
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         thead {
-            aria_hidden: "true",
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -1857,10 +1912,12 @@ pub fn CalendarGridBody(props: CalendarGridBodyProps) -> Element {
 /// A week row in a calendar grid.
 #[component]
 pub fn CalendarGridWeek(props: CalendarGridWeekProps) -> Element {
+    let owned = attributes!(tr { role: "row" });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         tr {
-            role: "row",
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
     }
@@ -2015,9 +2072,13 @@ pub fn CalendarSelectMonthSelect(props: CalendarSelectMonthSelectProps) -> Eleme
         }
     });
 
+    let defaults = attributes!(select {
+        aria_label: "Month"
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone()]);
+
     rsx! {
         select {
-            aria_label: "Month",
             onchange: move |e| {
                 let mut view_date = view_ctx.offset_view_date();
                 let number = e.value().parse().unwrap_or(view_date.month() as u8);
@@ -2025,7 +2086,7 @@ pub fn CalendarSelectMonthSelect(props: CalendarSelectMonthSelectProps) -> Eleme
                 view_date = view_date.replace_month(cur_month).unwrap();
                 view_ctx.set_offset_view_date(view_date);
             },
-            ..props.attributes,
+            ..merged,
             for month in months() {
                 CalendarSelectMonthOption { key: "{month:?}", month }
             }
@@ -2042,11 +2103,16 @@ pub fn CalendarSelectMonthOption(props: CalendarSelectMonthOptionProps) -> Eleme
         .children
         .unwrap_or_else(|| rsx! { {base_ctx.format_month.call(props.month)} });
 
+    // `value`/`selected` are this option's own functional state, owned.
+    let owned = attributes!(option {
+        value: props.month as u8,
+        selected: view_ctx.offset_view_date().month() == props.month,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         option {
-            value: props.month as u8,
-            selected: view_ctx.offset_view_date().month() == props.month,
-            ..props.attributes,
+            ..merged,
             {children}
         }
     }
@@ -2198,16 +2264,18 @@ pub fn CalendarSelectYearSelect(props: CalendarSelectYearSelectProps) -> Element
         min_year..=max_year
     });
 
+    let defaults = attributes!(select { aria_label: "Year" });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone()]);
+
     rsx! {
         select {
-            aria_label: "Year",
             onchange: move |e| {
                 let mut view_date = view_ctx.offset_view_date();
                 let year = e.value().parse().unwrap_or(view_date.year());
                 view_date = view_date.replace_year(year).unwrap_or(view_date);
                 view_ctx.set_offset_view_date(view_date);
             },
-            ..props.attributes,
+            ..merged,
             for year in years() {
                 CalendarSelectYearOption { key: "{year}", year }
             }
@@ -2224,11 +2292,16 @@ pub fn CalendarSelectYearOption(props: CalendarSelectYearOptionProps) -> Element
         rsx! { "{year}" }
     });
 
+    // `value`/`selected` are this option's own functional state, owned.
+    let owned = attributes!(option {
+        value: props.year,
+        selected: view_ctx.offset_view_date().year() == props.year,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         option {
-            value: props.year,
-            selected: view_ctx.offset_view_date().year() == props.year,
-            ..props.attributes,
+            ..merged,
             {children}
         }
     }
@@ -2710,14 +2783,23 @@ fn SingleCalendarDay(props: CalendarDayProps) -> Element {
         })
         .unwrap_or(view_date);
 
+    // `type` is an overridable default; the roving-focus `tabindex` and
+    // `calendar_day_attributes`'s aria/data state are owned, so they merge
+    // in last -- same precedence (owned wins) production already had via
+    // the old first-literal-wins SSR/last-wins CSR split (backlog row 93),
+    // just without the duplicate attribute a caller override used to
+    // silently collide with after hydration.
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = merge_attributes(vec![
+        calendar_day_attributes(&state),
+        attributes!(button {
+            tabindex: if date == focusable_date { "0" } else { "-1" },
+        }),
+    ]);
+    let merged = merge_attributes(vec![defaults, attributes, owned]);
+
     rsx! {
         button {
-            type: "button",
-            tabindex: if date == focusable_date {
-                "0"
-            } else {
-                "-1"
-            },
             onclick: move |e| {
                 e.prevent_default();
                 if in_current_month {
@@ -2730,8 +2812,7 @@ fn SingleCalendarDay(props: CalendarDayProps) -> Element {
                 }
             },
             onmounted,
-            ..calendar_day_attributes(&state),
-            ..attributes,
+            ..merged,
             {content}
         }
     }
@@ -2813,14 +2894,18 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
         })
         .unwrap_or(view_date);
 
+    // Same reasoning as `SingleCalendarDay` above.
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = merge_attributes(vec![
+        calendar_day_attributes(&state),
+        attributes!(button {
+            tabindex: if date == focusable_date { "0" } else { "-1" },
+        }),
+    ]);
+    let merged = merge_attributes(vec![defaults, attributes, owned]);
+
     rsx! {
         button {
-            type: "button",
-            tabindex: if date == focusable_date {
-                "0"
-            } else {
-                "-1"
-            },
             onclick: move |e| {
                 e.prevent_default();
                 if in_current_month {
@@ -2838,8 +2923,7 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
                 }
             },
             onmounted,
-            ..calendar_day_attributes(&state),
-            ..attributes,
+            ..merged,
             {content}
         }
     }
@@ -3392,15 +3476,28 @@ mod tests {
 
         let unavailable_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 15)));
         let available_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 16)));
-        let unavailable_pos = html
+        let unavailable_label_pos = html
             .find(&unavailable_label)
             .expect("unavailable day must render");
-        let available_pos = html
+        let available_label_pos = html
             .find(&available_label)
             .expect("available day must render");
 
-        // Slice each day's own attribute run (up to the next day's
-        // aria-label, or the end of the string for the last one) so
+        // Anchor each slice on the enclosing `<button`'s start, not the
+        // `aria-label` attribute's own position: `merge_attributes` (backlog
+        // row 93) renders attributes sorted by name rather than in literal
+        // source order, so `aria-disabled` (`d` < `l`) now precedes
+        // `aria-label` in the output -- slicing from `aria-label` itself
+        // would cut it off into the *previous* cell's slice.
+        let unavailable_pos = html[..unavailable_label_pos]
+            .rfind("<button")
+            .expect("unavailable day's enclosing <button> must be found");
+        let available_pos = html[..available_label_pos]
+            .rfind("<button")
+            .expect("available day's enclosing <button> must be found");
+
+        // Slice each day's own attribute run (up to the next day's button,
+        // or the end of the string for the last one) so
         // `aria-disabled=false`/`aria-disabled=true` are each checked
         // against the correct cell, not just "somewhere in the whole grid".
         let unavailable_html = &html[unavailable_pos..available_pos.max(unavailable_pos)];

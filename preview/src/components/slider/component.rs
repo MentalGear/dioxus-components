@@ -1,12 +1,15 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 use dioxus_primitives::slider::{self, RangeSliderProps, SliderProps};
 
 #[component]
 pub fn Slider(props: SliderProps) -> Element {
+    let base = attributes!(div { class: "dx-slider" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/slider/style.css") }
         slider::Slider {
-            class: "dx-slider",
             value: props.value,
             default_value: props.default_value,
             min: props.min,
@@ -17,7 +20,7 @@ pub fn Slider(props: SliderProps) -> Element {
             inverted: props.inverted,
             on_value_change: props.on_value_change,
             label: props.label,
-            attributes: props.attributes,
+            attributes: merged,
             slider::SliderTrack { class: "dx-slider-track",
                 slider::SliderRange { class: "dx-slider-range" }
                 slider::SliderThumb { class: "dx-slider-thumb" }
@@ -28,10 +31,11 @@ pub fn Slider(props: SliderProps) -> Element {
 
 #[component]
 pub fn RangeSlider(props: RangeSliderProps) -> Element {
+    let base = attributes!(div { class: "dx-slider" });
+    let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/slider/style.css") }
         slider::RangeSlider {
-            class: "dx-slider",
             value: props.value,
             default_value: props.default_value,
             min: props.min,
@@ -42,7 +46,7 @@ pub fn RangeSlider(props: RangeSliderProps) -> Element {
             inverted: props.inverted,
             on_value_change: props.on_value_change,
             label: props.label,
-            attributes: props.attributes,
+            attributes: merged,
             slider::SliderTrack { class: "dx-slider-track",
                 slider::SliderRange { class: "dx-slider-range" }
                 slider::SliderThumb { class: "dx-slider-thumb", index: 0usize }

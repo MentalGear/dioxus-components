@@ -175,12 +175,16 @@ pub fn CollapsibleContent(props: CollapsibleContentProps) -> Element {
 
     let open = ctx.open;
 
+    let owned = attributes!(div {
+        "data-open": open,
+        "data-disabled": ctx.disabled,
+    });
+    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+
     rsx! {
         div {
             id: id,
-            "data-open": open,
-            "data-disabled": ctx.disabled,
-            ..props.attributes,
+            ..merged,
 
             if open() || (ctx.keep_mounted)() {
                 {props.children}

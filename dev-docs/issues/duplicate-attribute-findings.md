@@ -8,6 +8,21 @@
 
 # Duplicate-attribute guard: findings
 
+**STATUS UPDATE, 2026-09-25 (round 8): the debt this document catalogs is now almost entirely
+paid down, not just prevented from growing.** This document's own body below was written when
+the gate was detection-only (787 sites: 687 primary + 100 component-forward, or 788 by the round-8
+recount — see `dev-docs/backlog.md` row 93's own dated addendum for the exact split); as of this
+round the two baseline files together carry **1** entry, a verified false positive
+(`PopoverTrigger`'s `id`). The fix used everywhere was `attributes!()` +
+`merge_attributes(vec![defaults, caller, owned])`, exactly the "typed field or `merge_attributes`"
+split this document's own "What to do with this" section (below) already recommended — nothing in
+that recommendation turned out to be wrong, it was simply not yet executed when this document was
+written. The rest of this document is kept as the historical record of the detection work and its
+own findings, not rewritten to describe the fix. Full landing account: `dev-docs/backlog.md` row
+93's dated addendum, and this repo's own row-93-closing commits.
+
+---
+
 `scripts/check-attr-spread-collision.sh` now runs as a pre-commit gate (joining the
 seven guards `CLAUDE.md` lists). It does not fix anything -- this lane's brief was
 detection only -- so everything below is debt the gate now prevents from *growing*, not

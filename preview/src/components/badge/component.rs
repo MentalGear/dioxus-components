@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::BadgeCheck;
+use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::merge_attributes;
 
 #[derive(Copy, Clone, PartialEq, Default)]
 #[non_exhaustive]
@@ -51,13 +53,13 @@ pub fn Badge(props: BadgeProps) -> Element {
 
 #[component]
 fn BadgeElement(props: BadgeProps) -> Element {
+    let base = attributes!(span { class: "dx-badge" });
+    // `data-style` reflects this wrapper's own typed `variant` prop, not a
+    // caller default -- owned-wins.
+    let owned = attributes!(span { "data-style": props.variant.class() });
+    let merged = merge_attributes(vec![base, props.attributes, owned]);
     rsx! {
-        span {
-            class: "dx-badge",
-            "data-style": props.variant.class(),
-            ..props.attributes,
-            {props.children}
-        }
+        span { ..merged, {props.children} }
     }
 }
 

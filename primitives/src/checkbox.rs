@@ -1,7 +1,8 @@
 //! Defines the [`Checkbox`] component and its subcomponents, which manage checkbox inputs with controlled state.
 
-use crate::{use_controlled, use_form_reset_listener, use_unique_id};
+use crate::{merge_attributes, use_controlled, use_form_reset_listener, use_unique_id};
 use dioxus::{document::eval, prelude::*};
+use dioxus_attributes::attributes;
 use std::ops::Not;
 use std::rc::Rc;
 
@@ -142,16 +143,23 @@ pub fn Checkbox(props: CheckboxProps) -> Element {
     // Radix UI / Headless UI / Material UI do for the same reason.
     let mut button_ref: Signal<Option<Rc<MountedData>>> = use_signal(|| None);
 
+    // `type` is an overridable default; the rest is this checkbox's own
+    // functional state (role/aria-checked/aria-required define the widget,
+    // the `data-*` pair mirrors its real state).
+    let defaults = attributes!(button { r#type: "button" });
+    let owned = attributes!(button {
+        role: "checkbox",
+        aria_checked: checked().to_aria_checked(),
+        aria_required: props.required,
+        "data-state": checked().to_data_state(),
+        "data-disabled": props.disabled,
+    });
+    let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
+
     rsx! {
         button {
-            type: "button",
             value: props.value,
-            role: "checkbox",
-            aria_checked: checked().to_aria_checked(),
-            aria_required: props.required,
             disabled: props.disabled,
-            "data-state": checked().to_data_state(),
-            "data-disabled": props.disabled,
 
             onmounted: move |evt| button_ref.set(Some(evt.data())),
             onclick: move |_| {
@@ -171,7 +179,7 @@ pub fn Checkbox(props: CheckboxProps) -> Element {
                 }
             },
 
-            ..props.attributes,
+            ..merged,
             {props.children}
         }
         BubbleInput {
@@ -226,11 +234,15 @@ pub fn CheckboxIndicator(
     let ctx: CheckboxCtx = use_context();
     let checked = (ctx.checked)();
 
+    let owned = attributes!(span {
+        "data-state": checked.to_data_state(),
+        "data-disabled": ctx.disabled,
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         span {
-            "data-state": checked.to_data_state(),
-            "data-disabled": ctx.disabled,
-            ..attributes,
+            ..merged,
 
             if checked.into() {
                 {children}
@@ -286,28 +298,35 @@ fn BubbleInput(
         let _ = js.send(checked.to_data_state());
     });
 
+    // All owned: `id` is looked up by the `use_effect` eval above and by
+    // `use_form_reset_listener`, so a caller override would break both;
+    // `type`/`aria_hidden`/`tabindex`/`initial_checked` are this hidden
+    // mirror input's own structural/functional state.
+    let owned = attributes!(input {
+        id,
+        r#type: "checkbox",
+        aria_hidden: "true",
+        tabindex: "-1",
+        // Default checked -- `initial_checked` (-> `.defaultChecked`, the
+        // `checked` *content attribute*), not `checked` (-> the live
+        // `.checked` IDL property; see dioxus-interpreter-js's
+        // `set_attribute.ts`). The HTML reset algorithm restores
+        // checkedness from the content attribute, so this is the one that
+        // must carry the default for `<form reset>` to work; the live
+        // property is kept in sync separately by the `use_effect` above.
+        initial_checked: default_checked != CheckboxState::Unchecked,
+    });
+    let merged = merge_attributes(vec![attributes, owned]);
+
     rsx! {
         input {
-            id,
-            type: "checkbox",
-            aria_hidden: "true",
-            tabindex: "-1",
             position: "absolute",
             pointer_events: "none",
             opacity: "0",
             margin: "0",
             transform: "translateX(-100%)",
 
-            // Default checked -- `initial_checked` (-> `.defaultChecked`, the
-            // `checked` *content attribute*), not `checked` (-> the live
-            // `.checked` IDL property; see dioxus-interpreter-js's
-            // `set_attribute.ts`). The HTML reset algorithm restores
-            // checkedness from the content attribute, so this is the one that
-            // must carry the default for `<form reset>` to work; the live
-            // property is kept in sync separately by the `use_effect` above.
-            initial_checked: default_checked != CheckboxState::Unchecked,
-
-            ..attributes,
+            ..merged,
         }
     }
 }
