@@ -107,7 +107,7 @@ bench captured.
 | Rest after the last wheel event | **64–78 ms** typical | outliers 210 / 526 / 609 ms on deliberately gentle gestures |
 | Device delta quantum | **1 px** | the smallest non-zero `deltaY` this trackpad emits |
 | Momentum decay | **≈ 0.96× per event** | geometric, across the tail of a fling |
-| WebKit/macOS rubber-band curve | `b(x) = (1 − 1/(x·c/d + 1))·d`, `c ≈ 0.55` | algebraically identical to `L·x/(x+L)` with `L = d/c` |
+| WebKit/macOS rubber-band curve | `b(x) = (1 − 1/(x·c/d + 1))·d`, `c ≈ 0.55` | **correction, §9 item 5:** this is NOT algebraically identical to `L·x/(x+L)` with `L = d/c` — they differ by a factor of `c` throughout (slope `c` vs slope `1` at `x=0`; asymptote `d` vs `d/c`). The port shipped the second (wrong) form; see §9. |
 | That curve's asymptote on a 320 px track | **582 px** | `L = 320 / 0.55` |
 
 **The correction on native bounce, because I got it wrong twice and the owner
@@ -315,3 +315,40 @@ owner's evidence, and the pattern is instructive:
    pointed at it — *"I thought we wouldn't use scrollLeft because of RTL, and
    you proposed scrollBy"*. Fair: the bench's convention is not the component's,
    and invariant 1 exists so the distinction is not lost in the port.
+5. **2026-09-25, filed against real-hardware feedback (owner: trackpad overdrag
+   pushed the whole slide track ~750px, unclipped, past the carousel and over
+   the rest of the page).** Two claims in this document and in the port itself
+   were wrong, both caught by that report rather than by any test:
+   - **§4's own row above is wrong.** `b(x) = (1 − 1/(x·c/d + 1))·d`
+     algebraically reduces to `x·c·d / (c·x + d)` — slope `c` at `x = 0`,
+     asymptote `d`. That is **not** the same function as `L·x / (x + L)` with
+     `L = d/c`, which reduces to `d·x / (c·x + d)` — slope **1** at `x = 0`
+     (not `c`), asymptote **`d/c`** (~1.8·`d`, not `d`). The two differ by
+     exactly a factor of `c` throughout, not just at the asymptote this
+     document already flagged as "~1.8×". This mistranscription is what the
+     port (`CAROUSEL_WHEEL_BOUNCE_JS`) actually shipped, so the ported
+     wheel/trackpad curve was never Apple's own curve at all — it started at
+     1:1 sensitivity instead of 0.55:1, and let a hard overdrag travel to
+     roughly twice the depth native does. Fixed in `primitives/src/carousel.rs`
+     (`CAROUSEL_WHEEL_BOUNCE_JS`'s `rubber(x)`) to the correct
+     `x·c·d / (d + c·x)` directly, with the corrected algebra recorded beside
+     it; `CAROUSEL_DRAG_JS`'s pointer-drag curve is left as originally shipped
+     — the owner's report was specifically about trackpad feel, and mouse
+     drag "feels natural" as-is, so that curve is out of scope for this fix.
+   - **§5/§8's "[`CarouselContent`] already clips its own children" claim
+     (repeated in the port's own doc comment) is wrong for a translated
+     element.** An element's `overflow` clips relative to *its own* box, and
+     a CSS `transform` moves that box — clip region included — as one rigid
+     unit; it does not clip the box against where it would have painted
+     absent the transform. So the bench's own separate `.viewport` ancestor
+     (mode C, noted here as "for a different, no-longer-relevant reason") was
+     never actually mode-C-specific — mode B3's element-level transform needs
+     it too, for exactly the same reason, and omitting it is what let the
+     translated track escape the carousel's own box on real hardware. Fixed
+     by giving `CarouselContent` a stationary, presentational
+     `div[data-slot="carousel-viewport"]` wrapper (`overflow: clip`, not
+     `hidden` — `hidden` is still a scroll container, which would make the
+     paging path's `scrollIntoView` scroll the wrapper itself and
+     permanently offset the content) around the element both bridges
+     translate, restoring the bench's own construction rather than
+     reinventing it.
