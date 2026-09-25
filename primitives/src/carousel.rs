@@ -919,12 +919,20 @@ const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
     function axisSize() {
         return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
     }
-    function rubberLimit() {
-        return axisSize() / RUBBER_C;
-    }
-    function rubber(depth) {
-        const L = rubberLimit();
-        return (L * depth) / (depth + L);
+    // Apple's own published rubber-band curve, `f(x) = x*c*d / (d + c*x)`
+    // (research doc §4: `b(x) = (1 - 1/(x*c/d + 1))*d`, algebraically the
+    // same function) -- slope `c` (0.55) at `x = 0`, asymptote `d`
+    // (`axisSize()`) as `x` grows. **Correction, 2026-09-25**: this used to
+    // be `L*x/(x+L)` with `L = d/c`, which is a DIFFERENT curve, not an
+    // algebraic rewrite of the same one -- it has slope 1 (not `c`) at
+    // `x = 0` and asymptotes at `d/c` (~1.8*d), not `d`. That mistranscription
+    // is why a fast trackpad flick could push the track roughly twice as
+    // far as native's own feel calls for; see the dated correction in
+    // `dev-docs/research/carousel-overscroll-2026-09-23.md` §9 and
+    // `dev-docs/backlog.md` row 102's own addendum for the full algebra.
+    function rubber(x) {
+        const d = axisSize();
+        return (x * RUBBER_C * d) / (d + RUBBER_C * x);
     }
     function rubberSigned(x) {
         return x < 0 ? -rubber(-x) : rubber(x);

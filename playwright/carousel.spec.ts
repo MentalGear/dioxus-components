@@ -1316,6 +1316,68 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     await expect(slide(5)).toHaveAttribute("data-selected", "true");
   });
 
+  /**
+   * The wheel path's rubber-band curve, `x*c*d/(d+c*x)` (Apple's own
+   * formula, `c = 0.55`, `d = axisSize()` -- `primitives/src/carousel.rs`'s
+   * `CAROUSEL_WHEEL_BOUNCE_JS`'s own `rubber(x)`, corrected 2026-09-25; see
+   * that constant's own doc and `dev-docs/research/carousel-overscroll-2026-09-23.md`
+   * §9's dated entry for the earlier, mis-transcribed curve this replaces).
+   * Two properties fall directly out of that formula's own shape and hold
+   * for ANY sustained (non-decaying) push, independent of the exact axis
+   * size measured live below: the depth never exceeds the asymptote `d`,
+   * and the curve is strictly concave, so doubling the total raw input
+   * strictly less than doubles the visible depth. This test only exercises
+   * a sustained, constant-magnitude stream -- no momentum/decay behavior is
+   * asserted here (that is deliberately out of scope for this lane; see
+   * this lane's own report).
+   */
+  test("a sustained constant wheel stream at the start boundary stays within the axis size and grows sub-linearly", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const viewport = viewportLocator(frame);
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    await content.hover();
+    const box = await viewport.boundingBox();
+    if (!box) {
+      throw new Error("viewport has no bounding box");
+    }
+    const axisSize = box.width;
+
+    // `deltaX` -- see the start-boundary test's own comment above.
+    // Negative at slide 1 (the start) asks for more "previous" than
+    // exists, same direction as the earlier wheel tests in this block.
+    const sendBurst = async (n: number) => {
+      for (let i = 0; i < n; i++) {
+        await page.mouse.wheel(-80, 0);
+      }
+    };
+
+    await sendBurst(10);
+    const depth1 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    expect(depth1, "expected a nonzero bounce after the first burst").toBeGreaterThan(0);
+    expect(depth1).toBeLessThanOrEqual(axisSize + 1);
+
+    // Doubling the total raw input (20 events total, same magnitude each,
+    // so this is still one sustained push, never decaying).
+    await sendBurst(10);
+    const depth2 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    expect(depth2).toBeLessThanOrEqual(axisSize + 1);
+    expect(depth2, "still pushing should still grow the depth").toBeGreaterThan(depth1);
+    expect(depth2, "doubling the input should not double the depth (sub-linear curve)").toBeLessThan(depth1 * 2);
+
+    // Settles back on its own once the burst goes idle.
+    await expect(async () => {
+      expect(await readContentTransform(content)).toBe("");
+    }).toPass({ timeout: 3000 });
+
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
   test("a mid-range wheel scroll produces no lingering transform and still pages correctly (regression guard)", async ({
     page,
   }) => {
