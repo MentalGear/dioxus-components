@@ -253,6 +253,7 @@ examples!(
     pagination,
     popover[non_modal],
     progress,
+    radar_chart[dots, lines_only, multiple, grid_circle, grid_circle_fill, grid_circle_no_lines, grid_custom, grid_fill, grid_none, icons, label_custom, legend, radius],
     radio_group[rtl],
     resizable[rtl],
     scroll_area[rtl],
