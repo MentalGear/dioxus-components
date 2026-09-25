@@ -9,6 +9,6 @@
       "git": "https://github.com/DioxusLabs/components"
     }
   ],
-  "componentDependencies": ["chart"],
+  "componentDependencies": ["chart", "card"],
   "globalAssets": ["../../../assets/dx-components-theme.css"]
 }

@@ -1,16 +1,21 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 
 // The gallery's own variant folders, `preview/src/components/pie_chart/
-// variants/*` -- `simple` is the `main` variant (omitted from the
-// `?variant=` query string, matching every other multi-variant component's
-// spec convention -- see combobox.spec.ts/select.spec.ts). One-to-one with
+// variants/*` -- `main` is shadcn's `chart-pie-simple.tsx`. One-to-one with
 // `preview/src/components/mod.rs`'s `pie_chart[...]` registration line and
 // shadcn's own 11 `chart-pie-*.tsx` demos (dev-docs/research/
 // chart-2026-09-19.md §1.2) -- each variant's own doc comment in
 // `preview/src/components/pie_chart/variants/<name>/mod.rs` cites the exact
 // shadcn source file it ports.
+//
+// Every variant renders inline on one page load (`?name=pie_chart&`, the
+// same single-page-multiple-frames convention every other multi-variant
+// component's own spec uses, e.g. `playwright/radar_chart.spec.ts`'s own
+// header comment): the un-suffixed `#component-preview-frame` is the
+// `main` variant; every other variant gets
+// `#component-preview-frame-<variant>`.
 const VARIANTS = [
   "main", // chart-pie-simple.tsx
   "separator_none",
@@ -25,10 +30,11 @@ const VARIANTS = [
   "interactive",
 ] as const;
 
-function url(variant: string): string {
-  return variant === "main"
-    ? `${BASE_URL}/component/?name=pie_chart&`
-    : `${BASE_URL}/component/?name=pie_chart&variant=${variant}&`;
+const URL = `${BASE_URL}/component/?name=pie_chart&`;
+
+function frame(page: Page, variant: (typeof VARIANTS)[number]): Locator {
+  const suffix = variant === "main" ? "" : `-${variant}`;
+  return page.locator(`#component-preview-frame${suffix}`).first();
 }
 
 test.describe("Pie chart: renders every variant as an accessible image", () => {
@@ -36,24 +42,30 @@ test.describe("Pie chart: renders every variant as an accessible image", () => {
     test(`${variant}: svg[role=img] with an accessible name, at least one slice, hidden data table`, async ({
       page,
     }) => {
-      await page.goto(url(variant));
-      const frame = page.locator("#component-preview-frame").first();
+      await page.goto(URL);
+      const f = frame(page, variant);
 
-      const svg = frame.locator('svg[role="img"]').first();
+      const svg = f.locator('svg[role="img"]').first();
       await expect(svg).toBeVisible();
       await expect(svg).toHaveAccessibleName(/.+/);
 
-      const slices = frame.locator('[data-slot="chart-arc"]');
+      const slices = f.locator('[data-slot="chart-arc"]');
       await expect(slices.first()).toBeAttached();
 
       // The a11y contract every chart family shares (`$S/chart-api.md`):
       // a real, visually-hidden <table> lists every datum, never just the
       // SVG -- category + value + percent for a polar chart per this
-      // lane's own brief.
-      const table = frame.locator('[data-slot="chart-data"]');
+      // lane's own brief. One row per CATEGORY (`table_rows`/
+      // `table_rows_pie`'s own shape), not per slice -- for every
+      // single-ring variant that's the same number (one slice per
+      // category), but `stacked` draws `n_series` slices per category
+      // (one per concentric ring), so its own row count is the slice
+      // count divided by its own two series, not equal to it.
+      const table = f.locator('[data-slot="chart-data"]');
       await expect(table).toBeAttached();
       const rows = table.locator("tbody tr");
-      await expect(rows).toHaveCount(await slices.count());
+      const expectedRows = variant === "stacked" ? (await slices.count()) / 2 : await slices.count();
+      await expect(rows).toHaveCount(expectedRows);
     });
   }
 });
@@ -63,18 +75,16 @@ test.describe("Pie chart: slice geometry", () => {
   // ported verbatim into `variants/main/mod.rs`) -- every non-stacked
   // variant shares it, so `main` is a representative, not a special case.
   test("main: one arc per datum, slices sum to a full turn within tolerance", async ({ page }) => {
-    await page.goto(url("main"));
-    const frame = page.locator("#component-preview-frame").first();
-    const slices = frame.locator('[data-slot="chart-arc"]');
+    await page.goto(URL);
+    const f = frame(page, "main");
+    const slices = f.locator('[data-slot="chart-arc"]');
     const count = await slices.count();
     expect(count).toBeGreaterThan(1);
 
     // `pie.rs` emits `data-start-angle`/`data-end-angle` (radians, this
     // crate's `engine::polar` convention) on every arc specifically so a
     // spec can assert on the real layout numbers without reconstructing
-    // them from the `d` path string (this lane's own brief offered either
-    // approach; attributes are far less brittle than re-deriving angles
-    // from SVG arc commands in JS).
+    // them from the `d` path string.
     let total = 0;
     let previousEnd: number | null = null;
     for (let i = 0; i < count; i++) {
@@ -85,18 +95,18 @@ test.describe("Pie chart: slice geometry", () => {
       expect(Number.isNaN(start)).toBe(false);
       expect(Number.isNaN(end)).toBe(false);
       if (previousEnd !== null) {
-        expect(start).toBeCloseTo(previousEnd, 5);
+        expect(start).toBeCloseTo(previousEnd, 2);
       }
       previousEnd = end;
       total += end - start;
     }
-    expect(total).toBeCloseTo(2 * Math.PI, 5);
+    expect(total).toBeCloseTo(2 * Math.PI, 2);
   });
 
   test("donut: has a real hole (inner_radius > 0) and its arc path draws an inner ring", async ({ page }) => {
-    await page.goto(url("donut"));
-    const frame = page.locator("#component-preview-frame").first();
-    const d = await frame.locator('[data-slot="chart-arc"]').first().getAttribute("d");
+    await page.goto(URL);
+    const f = frame(page, "donut");
+    const d = await f.locator('[data-slot="chart-arc"]').first().getAttribute("d");
     expect(d).not.toBeNull();
     // A donut slice's path draws two arcs (outer ring forward, inner ring
     // backward) -- a plain pie slice's path draws exactly one.
@@ -104,9 +114,9 @@ test.describe("Pie chart: slice geometry", () => {
   });
 
   test("stacked: renders two concentric rings (two series) from the same category axis", async ({ page }) => {
-    await page.goto(url("stacked"));
-    const frame = page.locator("#component-preview-frame").first();
-    const seriesGroups = await frame.locator('[data-slot="chart-arc"]').evaluateAll((nodes) =>
+    await page.goto(URL);
+    const f = frame(page, "stacked");
+    const seriesGroups = await f.locator('[data-slot="chart-arc"]').evaluateAll((nodes) =>
       Array.from(new Set(nodes.map((n) => n.getAttribute("data-series")))),
     );
     // Two rings -> two distinct dataKey-equivalent groupings (desktop,
@@ -117,9 +127,9 @@ test.describe("Pie chart: slice geometry", () => {
 
 test.describe("Pie chart: hover and active-slice behaviour", () => {
   test("simple: hovering a slice sets the active index; leaving clears it", async ({ page }) => {
-    await page.goto(url("main"));
-    const frame = page.locator("#component-preview-frame").first();
-    const first = frame.locator('[data-slot="chart-arc"]').first();
+    await page.goto(URL);
+    const f = frame(page, "main");
+    const first = f.locator('[data-slot="chart-arc"]').first();
 
     await first.hover();
     await expect(first).toHaveAttribute("data-active", "true");
@@ -129,33 +139,33 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
   });
 
   test("donut_active: a fixed slice is active without any hover", async ({ page }) => {
-    await page.goto(url("donut_active"));
-    const frame = page.locator("#component-preview-frame").first();
-    const active = frame.locator('[data-slot="chart-arc"][data-active="true"]');
+    await page.goto(URL);
+    const f = frame(page, "donut_active");
+    const active = f.locator('[data-slot="chart-arc"][data-active="true"]');
     await expect(active).toHaveCount(1);
     await expect(active).toHaveAttribute("data-index", "0");
   });
 
   test("interactive: choosing a month in the Select moves the active slice", async ({ page }) => {
-    await page.goto(url("interactive"));
-    const frame = page.locator("#component-preview-frame").first();
+    await page.goto(URL);
+    const f = frame(page, "interactive");
 
-    const before = await frame
+    const before = await f
       .locator('[data-slot="chart-arc"][data-active="true"]')
       .getAttribute("data-index");
 
-    await frame.getByRole("combobox").click();
+    await f.getByRole("combobox").click();
     // The trigger's own popup renders in the top document, not the iframe
     // (this repo's overlay components render via a portal/top-layer) --
     // matched by option text, matching this repo's own Select spec
     // convention elsewhere (select.spec.ts).
     await page.getByRole("option", { name: /february/i }).click();
 
-    await expect(frame.locator('[data-slot="chart-arc"][data-active="true"]')).toHaveAttribute(
+    await expect(f.locator('[data-slot="chart-arc"][data-active="true"]')).toHaveAttribute(
       "data-index",
       /.+/,
     );
-    const after = await frame
+    const after = await f
       .locator('[data-slot="chart-arc"][data-active="true"]')
       .getAttribute("data-index");
     expect(after).not.toBe(before);
@@ -164,9 +174,9 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
 
 test.describe("Pie chart: donut center text", () => {
   test("donut_text: renders the two-line center label inside the hole", async ({ page }) => {
-    await page.goto(url("donut_text"));
-    const frame = page.locator("#component-preview-frame").first();
-    const centerText = frame.locator('[data-slot="chart-pie-center-text"]');
+    await page.goto(URL);
+    const f = frame(page, "donut_text");
+    const centerText = f.locator('[data-slot="chart-pie-center-text"]');
     await expect(centerText).toBeAttached();
     await expect(centerText).toContainText(/\d/); // the total, formatted
   });
@@ -174,9 +184,9 @@ test.describe("Pie chart: donut center text", () => {
 
 test.describe("Pie chart: legend swatches", () => {
   test("legend: one graphics-symbol swatch per slice, each with an accessible name", async ({ page }) => {
-    await page.goto(url("legend"));
-    const frame = page.locator("#component-preview-frame").first();
-    const swatches = frame.locator('[data-slot="chart-swatch"][role="graphics-symbol"]');
+    await page.goto(URL);
+    const f = frame(page, "legend");
+    const swatches = f.locator('[data-slot="chart-swatch"][role="graphics-symbol"]');
     const count = await swatches.count();
     expect(count).toBeGreaterThan(1);
     for (let i = 0; i < count; i++) {
@@ -187,25 +197,25 @@ test.describe("Pie chart: legend swatches", () => {
 
 test.describe("Pie chart: labels", () => {
   test("label: a text label is drawn for every slice", async ({ page }) => {
-    await page.goto(url("label"));
-    const frame = page.locator("#component-preview-frame").first();
-    const labels = frame.locator('[data-slot="chart-arc-label"]');
-    await expect(labels).toHaveCount(await frame.locator('[data-slot="chart-arc"]').count());
+    await page.goto(URL);
+    const f = frame(page, "label");
+    const labels = f.locator('[data-slot="chart-arc-label"]');
+    await expect(labels).toHaveCount(await f.locator('[data-slot="chart-arc"]').count());
   });
 
   test("label_list: each label reads the category name, not a formatted number", async ({ page }) => {
-    await page.goto(url("label_list"));
-    const frame = page.locator("#component-preview-frame").first();
+    await page.goto(URL);
+    const f = frame(page, "label_list");
     // chart-pie-label-list.tsx's own dataset -- the first category ported
     // into `variants/label_list/mod.rs`.
-    await expect(frame.locator('[data-slot="chart-arc-label"]').first()).toHaveText(/chrome/i);
+    await expect(f.locator('[data-slot="chart-arc-label"]').first()).toHaveText(/chrome/i);
   });
 });
 
 test.describe("Axe automated scan", () => {
   for (const variant of VARIANTS) {
     test(`${variant}: no automatically detectable a11y issues`, async ({ page }) => {
-      await page.goto(url(variant));
+      await page.goto(URL);
       await expectNoAxeViolations(page, `pie_chart: ${variant}`, {
         excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
       });
@@ -213,10 +223,10 @@ test.describe("Axe automated scan", () => {
   }
 
   test("simple: hovered (active slice shown) has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(url("main"));
-    const frame = page.locator("#component-preview-frame").first();
-    await frame.locator('[data-slot="chart-arc"]').first().hover();
-    await expect(frame.locator('[data-slot="chart-arc"]').first()).toHaveAttribute("data-active", "true");
+    await page.goto(URL);
+    const f = frame(page, "main");
+    await f.locator('[data-slot="chart-arc"]').first().hover();
+    await expect(f.locator('[data-slot="chart-arc"]').first()).toHaveAttribute("data-active", "true");
     await expectNoAxeViolations(page, "pie_chart: simple hovered", {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });

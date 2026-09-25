@@ -9,9 +9,9 @@ needs.
 let config = ChartConfig::new()
     .series("visitors", "Visitors", "var(--dx-chart-1)");
 
-// Unlike Pie, each ChartDatum here is its own concentric RING (outermost =
-// index 0), matching Recharts' own RadialBarChart -- not an angular slice
-// of one ring.
+// Unlike Pie, each ChartDatum here is its own concentric RING (innermost =
+// index 0, the same "series 0 innermost" convention Pie's own stacked-ring
+// mode uses) -- not an angular slice of one ring.
 let data = vec![
     ChartDatum { label: "Chrome".into(), values: vec![Some(275.0)], color: Some("var(--dx-chart-1)".into()) },
     ChartDatum { label: "Safari".into(), values: vec![Some(200.0)], color: Some("var(--dx-chart-2)".into()) },

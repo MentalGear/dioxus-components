@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 use crate::chart::config::ChartIcon;
 use crate::chart::context::use_chart;
+use crate::chart::engine::data::ChartKind;
 use crate::dioxus_attributes::attributes;
 use crate::merge_attributes;
 
@@ -82,6 +83,7 @@ pub struct ChartLegendProps {
 pub fn ChartLegend(props: ChartLegendProps) -> Element {
     let ctx = use_chart();
     let config = (ctx.config)();
+    let kind = (ctx.kind)();
 
     // `data-slot`/`data-align` are structural wiring, not overridable
     // presentation -- `data-slot` is the selector the themed stylesheet's
@@ -97,49 +99,96 @@ pub fn ChartLegend(props: ChartLegendProps) -> Element {
     });
     let merged = merge_attributes(vec![props.attributes, owned]);
 
+    // A single-ring polar chart (Pie/RadialBar with exactly one configured
+    // series) draws one MARK per DATUM, each independently colored via
+    // `ChartDatum::color` (`pie.rs`'s/`radial.rs`'s own `render_slice`
+    // fallback: a slice/ring's own color, or the position-based
+    // `--dx-chart-N`) -- unlike every Cartesian family (and a multi-series/
+    // stacked polar chart), where one mark belongs to one whole SERIES.
+    // A legend keyed by `config.series` would show exactly one item for
+    // such a chart (matching this crate's one configured series, e.g.
+    // "Visitors") when shadcn's own real `chart-pie-legend.tsx` shows one
+    // item per SLICE. Branching here on datum instead of series is what
+    // makes a single-ring Pie/RadialBar's legend actually mirror its own
+    // chart, without complicating any other kind's own by-series legend
+    // (Cartesian charts, and a multi-series/stacked polar chart, keep the
+    // series-keyed loop unchanged below).
+    let per_datum =
+        matches!(kind, ChartKind::Pie | ChartKind::RadialBar) && config.series.len() <= 1;
+
     rsx! {
         ul {
             ..merged,
 
-            for series in config.series.iter() {
-                li {
-                    key: "{series.key}",
-                    "data-slot": "chart-legend-item",
-                    "data-series": "{series.slot()}",
-                    style: "--series-color: var(--color-{series.slot()})",
+            if per_datum {
+                {
+                    let data = (ctx.data)();
+                    rsx! {
+                        for (i , datum) in data.iter().enumerate() {
+                            {
+                                let color = datum
+                                    .color
+                                    .clone()
+                                    .unwrap_or_else(|| format!("var(--dx-chart-{})", (i % 8) + 1));
+                                rsx! {
+                                    li {
+                                        key: "{datum.label}",
+                                        "data-slot": "chart-legend-item",
+                                        "data-index": "{i}",
+                                        style: "--series-color: {color}",
+                                        span {
+                                            "data-slot": "chart-swatch",
+                                            role: "graphics-symbol",
+                                            "aria-label": "{datum.label}",
+                                        }
+                                        "{datum.label}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                for series in config.series.iter() {
+                    li {
+                        key: "{series.key}",
+                        "data-slot": "chart-legend-item",
+                        "data-series": "{series.slot()}",
+                        style: "--series-color: var(--color-{series.slot()})",
 
-                    // A series' own icon wins over the plain swatch unless
-                    // `hide_icon` opts back out -- shadcn's own
-                    // `itemConfig?.icon && !hideIcon ? <itemConfig.icon /> :
-                    // <div class="swatch" />` (`chart.tsx`'s
-                    // `ChartLegendContent`): unlike the tooltip's own
-                    // `hide_indicator` (which can hide the marker entirely),
-                    // a legend item always shows SOME color marker, so
-                    // `hide_icon` alone only ever falls back to the swatch,
-                    // never removes both.
-                    if let Some(ChartIcon(icon)) = series.icon {
-                        if props.hide_icon {
+                        // A series' own icon wins over the plain swatch unless
+                        // `hide_icon` opts back out -- shadcn's own
+                        // `itemConfig?.icon && !hideIcon ? <itemConfig.icon /> :
+                        // <div class="swatch" />` (`chart.tsx`'s
+                        // `ChartLegendContent`): unlike the tooltip's own
+                        // `hide_indicator` (which can hide the marker entirely),
+                        // a legend item always shows SOME color marker, so
+                        // `hide_icon` alone only ever falls back to the swatch,
+                        // never removes both.
+                        if let Some(ChartIcon(icon)) = series.icon {
+                            if props.hide_icon {
+                                span {
+                                    "data-slot": "chart-swatch",
+                                    role: "graphics-symbol",
+                                    "aria-label": "{series.label}",
+                                }
+                            } else {
+                                span {
+                                    "data-slot": "chart-icon",
+                                    role: "graphics-symbol",
+                                    "aria-label": "{series.label}",
+                                    {icon.call(())}
+                                }
+                            }
+                        } else {
                             span {
                                 "data-slot": "chart-swatch",
                                 role: "graphics-symbol",
                                 "aria-label": "{series.label}",
                             }
-                        } else {
-                            span {
-                                "data-slot": "chart-icon",
-                                role: "graphics-symbol",
-                                "aria-label": "{series.label}",
-                                {icon.call(())}
-                            }
                         }
-                    } else {
-                        span {
-                            "data-slot": "chart-swatch",
-                            role: "graphics-symbol",
-                            "aria-label": "{series.label}",
-                        }
+                        "{series.label}"
                     }
-                    "{series.label}"
                 }
             }
         }
@@ -296,5 +345,109 @@ mod tests {
             2,
             "{hidden}"
         );
+    }
+
+    /// A single-ring polar chart (`ChartKind::Pie`/`RadialBar` with exactly
+    /// one configured series) legend-keys by DATUM, not by series -- see
+    /// this component's own doc for why a series-keyed legend would show
+    /// exactly one item ("Visitors") for such a chart when shadcn's own
+    /// real `chart-pie-legend.tsx` shows one item per slice.
+    #[test]
+    fn a_single_series_polar_chart_legend_keys_by_datum_not_by_series() {
+        #[component]
+        fn Harness() -> Element {
+            let config = use_signal(|| {
+                ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
+            });
+            let data = use_signal(|| {
+                vec![
+                    ChartDatum {
+                        label: "Chrome".to_string(),
+                        values: vec![Some(275.0)],
+                        color: Some("var(--dx-chart-1)".to_string()),
+                    },
+                    ChartDatum {
+                        label: "Safari".to_string(),
+                        values: vec![Some(200.0)],
+                        color: Some("var(--dx-chart-2)".to_string()),
+                    },
+                    ChartDatum {
+                        label: "Firefox".to_string(),
+                        values: vec![Some(100.0)],
+                        color: None,
+                    },
+                ]
+            });
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Pie,
+                    ChartLegend {}
+                }
+            }
+        }
+        let mut dom = VirtualDom::new(Harness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
+
+        // Three slices -> three legend items, not one (the one configured
+        // series' own count).
+        assert_eq!(
+            html.matches(r#"data-slot="chart-legend-item""#).count(),
+            3,
+            "{html}"
+        );
+        assert_eq!(
+            html.matches(r#"role="graphics-symbol""#).count(),
+            3,
+            "{html}"
+        );
+        assert!(html.contains("Chrome"));
+        assert!(html.contains("Safari"));
+        assert!(html.contains("Firefox"));
+        // Each datum's own `color` (or the position-based fallback for the
+        // one with none) becomes that item's own `--series-color`.
+        assert!(html.contains("--series-color: var(--dx-chart-1)"));
+        assert!(html.contains("--series-color: var(--dx-chart-2)"));
+        assert!(html.contains("--series-color: var(--dx-chart-3)"));
+    }
+
+    /// A multi-series (stacked) Pie -- unlike the single-series case above
+    /// -- keeps the ordinary series-keyed legend: one item per ring, not
+    /// per slice-within-a-ring (there is no one meaningful "slice" to key
+    /// by across multiple rings).
+    #[test]
+    fn a_multi_series_stacked_pie_still_legend_keys_by_series() {
+        #[component]
+        fn Harness() -> Element {
+            let config = use_signal(|| {
+                ChartConfig::new()
+                    .series("desktop", "Desktop", "var(--dx-chart-1)")
+                    .series("mobile", "Mobile", "var(--dx-chart-2)")
+            });
+            let data = use_signal(|| {
+                vec![ChartDatum {
+                    label: "January".to_string(),
+                    values: vec![Some(186.0), Some(80.0)],
+                    ..Default::default()
+                }]
+            });
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Pie,
+                    ChartLegend {}
+                }
+            }
+        }
+        let mut dom = VirtualDom::new(Harness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
+
+        assert_eq!(
+            html.matches(r#"data-slot="chart-legend-item""#).count(),
+            2,
+            "{html}"
+        );
+        assert!(html.contains(r#"data-series="desktop""#));
+        assert!(html.contains(r#"data-series="mobile""#));
     }
 }
