@@ -327,8 +327,8 @@
     border-radius: var(--dx-radius-full);
     background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
     cursor: pointer;
-    touch-action: manipulation;
     opacity: 0.5;
+    touch-action: manipulation;
 
     /* The active dot fades in (opacity) and widens into a pill (width) --
        both plain token-based transitions; no per-component
@@ -344,9 +344,9 @@
 }
 
 .dx-carousel-indicator[aria-selected="true"] {
+    width: var(--dx-space-4);
     background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
     opacity: 1;
-    width: var(--dx-space-4);
 }
 
 .dx-carousel-indicator:focus-visible {
