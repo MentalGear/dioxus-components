@@ -123,6 +123,199 @@ impl CarouselOrientation {
     }
 }
 
+/// Where each [`CarouselItem`] snaps to rest against
+/// [`CarouselContent`]'s own scrollport -- matches Embla's (and shadcn's
+/// own `opts={{ align }}`) three-way `start`/`center`/`end`, and maps
+/// directly onto the CSS Scroll Snap spec's own `scroll-snap-align`
+/// keywords of the same names (this crate's own [`CarouselItem`] sets
+/// `scroll-snap-align` to whichever one is in force -- see
+/// [`Self::as_str`]).
+///
+/// Every place this module computes "where a slide rests" -- the explicit
+/// `scrollBy`-by-delta paging call ([`CAROUSEL_SCROLL_TO_JS`]), the
+/// "which slide is nearest" search a native scroll/drag release settles
+/// to ([`CAROUSEL_SCROLL_TRACKING_JS`]/[`CAROUSEL_DRAG_JS`]) -- reads this
+/// value and anchors on the matching point (an item/the scrollport's own
+/// leading edge, midpoint, or trailing edge) rather than always the
+/// leading edge, so a caller who sets `align: CarouselAlign::Center` (for
+/// example) gets a *consistent* rest position regardless of whether the
+/// user paged there with a button, the keyboard, a drag, or native
+/// wheel/trackpad/touch scrolling (the last of which the browser itself
+/// already snaps correctly from `scroll-snap-align` alone -- this value
+/// only needs to reach this module's own JS so its explicit paging/nearest-
+/// slide logic agrees with what the browser will have already done
+/// natively).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CarouselAlign {
+    /// The item's leading edge rests against the scrollport's leading
+    /// edge -- shadcn's own default (`opts={{ align: "start" }}` in every
+    /// one of its demos that sets `align` explicitly, and Embla's
+    /// documented default even where a demo omits the option entirely).
+    #[default]
+    Start,
+    /// The item's midpoint rests against the scrollport's midpoint.
+    Center,
+    /// The item's trailing edge rests against the scrollport's trailing
+    /// edge.
+    End,
+}
+
+impl CarouselAlign {
+    /// Returns `"start"`, `"center"`, or `"end"` -- both this module's own
+    /// JS anchor-point argument and the exact keyword [`CarouselItem`]'s
+    /// `scroll-snap-align` uses, so a single value serves both without a
+    /// second mapping to keep in sync.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Center => "center",
+            Self::End => "end",
+        }
+    }
+}
+
+/// How [`CarouselProps::r#loop`] wraps at the ends, for content this
+/// module cannot seamlessly loop on its own.
+///
+/// [`CarouselVirtualContent`] with virtualisation genuinely active is
+/// unaffected by this enum entirely -- `loop` there is *already* the
+/// seamless illusion (see that component's own "Seamless loop" doc): one
+/// already-mounted window slide slides physically forward/backward, never
+/// a visible rewind across every intervening slide. That path has no
+/// equivalent construction available to it at all -- there is no cloned-
+/// node illusion here (the overscroll port's own invariant 5) and no
+/// windowed-anchor bookkeeping for a fixed `CarouselItem` sequence to
+/// piggyback on.
+///
+/// For everything else -- the plain children API
+/// ([`CarouselContent`]/[`CarouselItem`]), and [`CarouselVirtualContent`]
+/// with `virtualize: Some(false)` (or a data set too small to auto-window)
+/// -- this is what decides whether `r#loop: true` does anything at all:
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoopMode {
+    /// `r#loop: true` alone has NO effect for the content types above --
+    /// [`CarouselPrevious`]/[`CarouselNext`] stay genuinely `disabled` at
+    /// the real ends, exactly as if `r#loop` were `false`. Default,
+    /// because it is the least surprising choice for the one content type
+    /// this crate CAN loop seamlessly ([`CarouselVirtualContent`],
+    /// windowed): a single `loop_mode` prop that defaults to "the good
+    /// version, where one exists" reads correctly regardless of which
+    /// content a caller ends up using, without secretly picking a
+    /// visibly-worse fallback (a long rewind scroll) they never asked for.
+    #[default]
+    Seamless,
+    /// The explicit opt-in for a visible **rewind**: from the last slide,
+    /// Next goes to the first (and vice versa for Previous) via an
+    /// INSTANT jump (not the smooth, scroll-across-every-intervening-slide
+    /// transition every other single-step paging call uses) -- matching
+    /// the APG reference implementation's own basic-style example, and
+    /// avoiding what would otherwise be a multi-second scroll through an
+    /// entire large data set just to wrap once. No cloned edge slides are
+    /// ever added (same reasoning as [`Self::Seamless`]'s own doc).
+    Rewind,
+}
+
+/// Whether stepping from data index `old` to `new` (out of `count` total)
+/// is a wraparound -- the last slide to the first, or the first to the
+/// last -- rather than an ordinary adjacent step. This is what
+/// [`Carousel`]'s own mount-time settle effect uses to decide whether a
+/// [`LoopMode::Rewind`] transition should jump instantly rather than
+/// animate smoothly (see that effect's own doc).
+///
+/// Ambiguous by construction for `count == 2`: with only two slides,
+/// "step to the other one" and "wrap to the other one" are the identical
+/// transition (`old = 0, new = 1` is simultaneously an ordinary Next step
+/// and what a Previous-wrap would also produce), so this reports `true`
+/// for every step at `count == 2` -- accepted rather than resolved, since
+/// an instant vs. animated single-slide hop is not a meaningfully
+/// different experience, and no caller-observable index pair exists that
+/// could distinguish the two cases anyway.
+fn is_rewind_wrap(old: usize, new: usize, count: usize) -> bool {
+    if count == 0 || old == new {
+        return false;
+    }
+    let last = count - 1;
+    (old == last && new == 0) || (old == 0 && new == last)
+}
+
+/// # Gap model
+///
+/// shadcn's own carousel puts the inter-slide gap INSIDE each slide's own
+/// border-box (a leading-edge `padding-inline`/`padding-block`), with
+/// `CarouselContent`'s own scroller carrying the exactly-compensating
+/// negative margin on that same edge/axis -- the standard Tailwind
+/// `-ml-4`/`pl-4` idiom -- rather than a real flex `gap` between items.
+/// This crate ports that construction (backlog row 91's shadcn-parity
+/// addendum) via [`item_gap_padding`]/[`content_gap_margin`] below, exposed
+/// as one custom property, `--dx-carousel-gap` (raw-primitive default
+/// `0px` -- a themed stylesheet is what gives it an actual token-based
+/// value, e.g. `--dx-space-4`, matching this module's own
+/// "structural-only, zero-theme-CSS" posture for every other layout-critical
+/// declaration in this file).
+///
+/// Why this matters, not just "matches shadcn": a real flex `gap` is
+/// ADDITIVE to a percentage `flex-basis` -- `N` items at `flex-basis:
+/// calc(100%/N)` plus `(N-1)` real gaps demand more main-axis size than the
+/// container has, by exactly `(N-1) * gap`, so the track overflows and the
+/// visible slide count is no longer a whole number (see
+/// `dev-docs/backlog.md` row 91's shadcn-carousel-parity research for the
+/// measured "~2.3 slides visible" incident this construction closes with no
+/// compensating arithmetic needed at the call site). With the gap living
+/// INSIDE each item's own border-box instead, `N` items' basis fractions
+/// still sum to exactly 100% of the (`-ml`-widened) content box regardless
+/// of `N`, so [`CarouselItem`]/[`CarouselVirtualContent`]'s own
+/// `--dx-carousel-per-view`/`--dx-carousel-peek` basis `calc()` (see their
+/// own "Sizes" doc) never needs to subtract a gap term at all.
+fn item_gap_padding(orientation: CarouselOrientation) -> &'static str {
+    match orientation {
+        CarouselOrientation::Horizontal => "padding-inline-start:var(--dx-carousel-gap, 0px);",
+        CarouselOrientation::Vertical => "padding-block-start:var(--dx-carousel-gap, 0px);",
+    }
+}
+
+/// # Sizes (whole slides by default, opt-in peek)
+///
+/// [`CarouselItem`]/[`CarouselVirtualContent`]'s own default `flex-basis`
+/// is `calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1))`
+/// -- `--dx-carousel-per-view` (an integer, default `1`) is how many WHOLE
+/// slides show at once, and `--dx-carousel-peek` (a percentage of one
+/// slide's own share of the track, default `0%`) is how much of the
+/// *next* slide additionally peeks into view, opt-in only. With both left
+/// at their defaults this is exactly `100%` -- byte-identical to the
+/// pre-this-feature hardcoded value, so every existing caller (anything
+/// that overrides `flex-basis` directly via an inline `style`, e.g. this
+/// package's own pre-shadcn-parity `multiple` variant) is unaffected: an
+/// inline `style`-supplied `flex-basis` still simply appears later in the
+/// same `style` attribute and wins, exactly as it always has (this
+/// module's own established "caller style always wins" construction,
+/// [`fold_style_attributes`]'s own call sites throughout this file).
+///
+/// Because the gap (see the "Gap model" doc above) already lives inside
+/// each item's own border-box as padding, this `calc()` never needs to
+/// subtract a gap term itself -- `N` whole slides' basis fractions already
+/// sum to exactly `100%` of the (gap-widened) content box regardless of
+/// `N`.
+fn item_basis_style() -> &'static str {
+    "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+}
+
+/// The mirror of [`item_gap_padding`], applied to [`CarouselContent`]'s own
+/// scroller element (see that function's own doc for the full construction):
+/// a negative margin on the identical edge/axis, so the FIRST item's own
+/// leading-edge padding lands flush with the viewport's own clip boundary
+/// (`CarouselContent`'s own `carousel-viewport` wrapper) rather than shifting
+/// every slide's visible content rightward/downward by one gap's worth.
+fn content_gap_margin(orientation: CarouselOrientation) -> &'static str {
+    match orientation {
+        CarouselOrientation::Horizontal => {
+            "margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1);"
+        }
+        CarouselOrientation::Vertical => {
+            "margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1);"
+        }
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -353,7 +546,7 @@ fn carousel_key_intent(
 /// overwhelmingly common case) happens to truncate at the only snap point
 /// in its path anyway, which is also the correct destination, so it read
 /// as correct in isolation; a multi-slide jump (`loop`'s rewind
-/// wraparound, a `CarouselTab` activation more than one tab away,
+/// wraparound, a `CarouselIndicator` activation more than one tab away,
 /// [`CarouselApi::scroll_to`] to a distant index) is what exposed it, via
 /// a pre-existing, previously-green `carousel.spec.ts` test
 /// (`clicking a tab activates its slide and moves the roving tab stop`,
@@ -372,11 +565,28 @@ fn carousel_key_intent(
 /// same non-`scrollend`-browser fallback [`CAROUSEL_DRAG_JS`] already
 /// needs it for.
 const CAROUSEL_SCROLL_TO_JS: &str = "\
-    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs] = await dioxus.recv();
+    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs, align] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
     const scroller = document.getElementById(scrollerId);
     const target = document.getElementById(targetId);
+    // The point on `rect`, along this carousel's own axis, that
+    // `align` (CarouselAlign::as_str()'s own 'start'/'center'/'end')
+    // rests against -- applied identically to the target slide and the
+    // scroller's own viewport rect below, so e.g. `align: 'center'`
+    // aligns the slide's midpoint with the viewport's midpoint rather
+    // than always the leading edge. Mirrors the native `scroll-snap-align`
+    // keyword `CarouselItem` already sets to the same value -- this is
+    // what keeps an explicit `scrollBy`-by-delta paging call consistent
+    // with wherever the browser's own native snapping would have already
+    // landed.
+    const anchorOf = (rect) => {
+        const start = orientation === 'horizontal' ? rect.left : rect.top;
+        const end = orientation === 'horizontal' ? rect.right : rect.bottom;
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     // A real drag (CAROUSEL_DRAG_JS) already owns the scroll position and
     // `scroll-snap-type` for as long as `data-dragging` is set -- found
     // live in this session: `use_carousel_scroll_tracking` reports a
@@ -401,7 +611,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     if (scroller && target && !scroller.hasAttribute('data-dragging')) {
         const s = scroller.getBoundingClientRect();
         const t = target.getBoundingClientRect();
-        const delta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+        const delta = anchorOf(t) - anchorOf(s);
         // A genuine no-op (already aligned -- the mount settle when
         // `default_value` needs no jump, or `use_carousel_scroll_tracking`
         // reporting the position a native scroll already reached) must
@@ -472,12 +682,21 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// (`dev-docs/recommended-implementations.md` §11 Rule 1) to begin with.
 /// Both listeners are `passive: true` (§11 Rule 2).
 const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
-    const [id, orientation] = await dioxus.recv();
+    const [id, orientation, align] = await dioxus.recv();
     const container = document.getElementById(id);
     if (!container) {
         await dioxus.recv();
         return;
     }
+    // See `CAROUSEL_SCROLL_TO_JS`'s own identical helper's doc: which
+    // slide counts as 'nearest' (and therefore `selected`) must anchor on
+    // the same point `align` snaps to, so this agrees with wherever the
+    // browser's own native scroll-snap settling already landed.
+    const anchorOf = (start, end) => {
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     let lastNearest = null;
     let lastNearestPos = null;
     let lastVisStart = null;
@@ -544,7 +763,9 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             const rect = child.getBoundingClientRect();
             const childStart = orientation === 'horizontal' ? rect.left : rect.top;
             const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
-            const dist = Math.abs(childStart - containerStart);
+            const dist = Math.abs(
+                anchorOf(childStart, childEnd) - anchorOf(containerStart, containerEnd)
+            );
             if (dist < nearestDist) {
                 nearestDist = dist;
                 nearest = dataIndex;
@@ -648,6 +869,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
 fn use_carousel_scroll_tracking(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
+    align: ReadSignal<CarouselAlign>,
     set_selected: Callback<usize>,
     count: Memo<usize>,
     mut visible_range: Signal<(usize, usize)>,
@@ -656,8 +878,9 @@ fn use_carousel_scroll_tracking(
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
-        let _ = eval.send((id, orientation_str));
+        let _ = eval.send((id, orientation_str, align_str));
         spawn(async move {
             while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
                 if kind == "selected" {
@@ -741,12 +964,21 @@ const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 /// defers restoring this property until that explicit settle has
 /// actually finished.
 const CAROUSEL_DRAG_JS: &str = "\
-    const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs] = await dioxus.recv();
+    const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs, align] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
         await dioxus.recv();
         return;
     }
+    // See `CAROUSEL_SCROLL_TO_JS`'s own identical helper's doc -- release
+    // settle below finds the 'nearest' slide (and the delta to it) by the
+    // same align-aware anchor point, so a drag lands consistently with
+    // wherever a button/keyboard/native scroll would have.
+    const anchorOf = (start, end) => {
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     const thresholdSq = thresholdPx * thresholdPx;
     let pointerId = null;
     let originX = 0;
@@ -775,7 +1007,24 @@ const CAROUSEL_DRAG_JS: &str = "\
     const RUBBER_C = 0.55; // WebKit's own published rubber-band constant (research doc §4)
 
     function axisSize() {
-        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+        // The clipping viewport wrapper's own size (`el`'s direct parent,
+        // `CarouselContent`'s own \"data-slot=carousel-viewport\" div --
+        // see that component's own doc), NOT `el.clientWidth`/`clientHeight`
+        // directly: the gap model's own negative `margin-inline-start`/
+        // `-block-start` compensation (`content_gap_margin`'s own doc)
+        // deliberately widens the scroller's own layout box by the gap's
+        // width, clipped by this wrapper -- so `el`'s own clientWidth is
+        // no longer the track's true VISUAL size once a non-zero
+        // `--dx-carousel-gap` is in effect, and using it here would subtly
+        // recalibrate the rubber-band feel by the gap's width for no
+        // reason connected to this feature at all (found live: a 16px gap
+        // widened a 320px track's `clientWidth` to 336px, a ~5% rubber
+        // limit drift that broke this exact test's own tight threshold).
+        const track = el.parentElement;
+        const size = orientation === 'horizontal'
+            ? (track ? track.clientWidth : el.clientWidth)
+            : (track ? track.clientHeight : el.clientHeight);
+        return size || 320;
     }
     function rubberLimit() {
         // Asymptote at trackWidth/0.55 (research doc §4/§5) -- no fixed
@@ -1036,10 +1285,14 @@ const CAROUSEL_DRAG_JS: &str = "\
             if (children.length > 0) {
                 const containerRect = el.getBoundingClientRect();
                 const containerStart = orientation === 'horizontal' ? containerRect.left : containerRect.top;
+                const containerEnd = orientation === 'horizontal' ? containerRect.right : containerRect.bottom;
                 children.forEach((child) => {
                     const rect = child.getBoundingClientRect();
                     const childStart = orientation === 'horizontal' ? rect.left : rect.top;
-                    const dist = Math.abs(childStart - containerStart);
+                    const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
+                    const dist = Math.abs(
+                        anchorOf(childStart, childEnd) - anchorOf(containerStart, containerEnd)
+                    );
                     if (dist < nearestDist) {
                         nearestDist = dist;
                         nearest = child;
@@ -1056,7 +1309,11 @@ const CAROUSEL_DRAG_JS: &str = "\
                 const settleBehavior = reduced ? 'auto' : 'smooth';
                 const s = el.getBoundingClientRect();
                 const t = nearest.getBoundingClientRect();
-                const settleDelta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+                const sStart = orientation === 'horizontal' ? s.left : s.top;
+                const sEnd = orientation === 'horizontal' ? s.right : s.bottom;
+                const tStart = orientation === 'horizontal' ? t.left : t.top;
+                const tEnd = orientation === 'horizontal' ? t.right : t.bottom;
+                const settleDelta = anchorOf(tStart, tEnd) - anchorOf(sStart, sEnd);
                 // `nearest` is already exactly where it should be (the
                 // drag released right on a boundary) -- `scrollBy({left:
                 // 0})` never fires `scrollend` (CAROUSEL_SCROLL_TO_JS's
@@ -1161,11 +1418,13 @@ const CAROUSEL_DRAG_JS: &str = "\
 fn use_carousel_drag(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
+    align: ReadSignal<CarouselAlign>,
     enabled: ReadSignal<bool>,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let eval = document::eval(CAROUSEL_DRAG_JS);
         // No spawned receive loop here, unlike `use_carousel_scroll_tracking`
         // just above -- this script never `dioxus.send`s anything back (see
@@ -1178,6 +1437,7 @@ fn use_carousel_drag(
             CAROUSEL_DRAG_THRESHOLD_PX,
             enabled(),
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
         move || {
             let _ = eval.send(true);
@@ -1245,7 +1505,16 @@ const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
     let deviceMinDelta = Infinity; // learned: the smallest step this hardware sends
 
     function axisSize() {
-        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+        // See `CAROUSEL_DRAG_JS`'s own identical helper's doc: the
+        // clipping viewport wrapper's own size, not `el`'s (the gap
+        // model's negative-margin compensation widens `el`'s own
+        // clientWidth/clientHeight by the gap, which is not the track's
+        // true visual size).
+        const track = el.parentElement;
+        const size = orientation === 'horizontal'
+            ? (track ? track.clientWidth : el.clientWidth)
+            : (track ? track.clientHeight : el.clientHeight);
+        return size || 320;
     }
     // Apple's own published rubber-band curve, `f(x) = x*c*d / (d + c*x)`
     // (research doc §4: `b(x) = (1 - 1/(x*c/d + 1))*d`, algebraically the
@@ -1490,6 +1759,13 @@ fn use_carousel_wheel_bounce(
 #[derive(Clone, Copy)]
 struct CarouselContext {
     orientation: ReadSignal<CarouselOrientation>,
+    /// Where each slide rests against the scrollport -- see
+    /// [`CarouselAlign`]'s own doc. Read by [`CarouselItem`]/
+    /// [`CarouselVirtualContent`] for `scroll-snap-align`, and by every
+    /// JS bridge that computes a paging delta or a "nearest slide" search
+    /// ([`CAROUSEL_SCROLL_TO_JS`], [`CAROUSEL_SCROLL_TRACKING_JS`],
+    /// [`CAROUSEL_DRAG_JS`]).
+    align: ReadSignal<CarouselAlign>,
     /// Always in `[0, count)` (or `0` if `count == 0`) -- see
     /// [`clamp_selected`]. The single source of truth every sub-component
     /// reads instead of re-deriving its own notion of "which slide is
@@ -1512,11 +1788,21 @@ struct CarouselContext {
     /// `dev-docs/conformance-harness.md`'s tier-2 Rule 14 describes for
     /// `SelectTrigger`/`DropdownMenuTrigger`/etc.).
     content_id: Signal<String>,
-    /// Whether `loop`ing is enabled -- see [`CarouselProps::r#loop`].
+    /// Whether `loop`ing is enabled -- see [`CarouselProps::r#loop`]. This
+    /// is the raw prop value; [`Self::loop_wraps`] is what every consumer
+    /// that decides "does the boundary actually wrap" should read instead.
     loop_enabled: ReadSignal<bool>,
+    /// See [`CarouselProps::loop_mode`].
+    loop_mode: ReadSignal<LoopMode>,
+    /// Published (`true`) by [`CarouselVirtualContent`] exactly when its
+    /// own seamless-loop path (windowed AND `r#loop` on) is genuinely
+    /// active -- see that component's own "Seamless loop" doc. Always
+    /// `false` for the plain children API, which has no such path.
+    /// [`Self::loop_wraps`] is what actually reads this.
+    virtualized_loop_active: Signal<bool>,
     /// The resolved text direction -- the exact same value [`Carousel`]'s
     /// own root already computed via `use_direction(props.dir)`, republished
-    /// here so [`CarouselTabList`]/[`CarouselTab`] reuse it verbatim rather
+    /// here so [`CarouselIndicators`]/[`CarouselIndicator`] reuse it verbatim rather
     /// than calling `use_direction(None)` a second time, which would
     /// silently disagree with the root's own resolution whenever a caller
     /// passes an explicit `dir` prop on [`Carousel`] itself rather than
@@ -1529,7 +1815,7 @@ struct CarouselContext {
     /// actually exists. The same "publish into a shared, always-initialized
     /// slot" idiom `content_id` above already uses.
     autoplay: AutoplayContext,
-    /// Published (`true`) by [`CarouselTabList`] on mount so
+    /// Published (`true`) by [`CarouselIndicators`] on mount so
     /// [`CarouselItem`] can switch its own role from `group` to
     /// `tabpanel` -- see that component's own "Tablist variant" doc.
     tablist_present: Signal<bool>,
@@ -1560,6 +1846,21 @@ struct CarouselContext {
     /// slide that just lost "current" status (and is about to -- or just
     /// did -- become `inert`) held focus at the moment of the transition.
     focused_item: Signal<Option<usize>>,
+}
+
+impl CarouselContext {
+    /// Whether a boundary genuinely wraps -- what every consumer that
+    /// decides "is Previous/Next `disabled`" or "does `step_prev`/
+    /// `step_next` wrap" should read, instead of the raw [`Self::loop_enabled`].
+    ///
+    /// `false` unless `r#loop` is on AND (this is [`CarouselVirtualContent`]'s
+    /// own already-seamless windowed path, OR the caller explicitly opted
+    /// into [`LoopMode::Rewind`]) -- see [`LoopMode`]'s own doc for why
+    /// [`LoopMode::Seamless`] (the default) is a no-op everywhere else.
+    fn loop_wraps(&self) -> bool {
+        (self.loop_enabled)()
+            && ((self.loop_mode)() == LoopMode::Rewind || (self.virtualized_loop_active)())
+    }
 }
 
 /// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
@@ -1606,7 +1907,7 @@ struct AutoplayContext {
     /// Mirrors [`CarouselAutoplayProps::stop_on_interaction`]; published
     /// here (not read directly off the props) so [`AutoplayContext::note_interaction`]
     /// can be called from components (`CarouselPrevious`/`CarouselNext`/
-    /// `CarouselTab`/[`use_carousel`]) that have no direct access to
+    /// `CarouselIndicator`/[`use_carousel`]) that have no direct access to
     /// [`CarouselAutoplay`]'s own props.
     stop_on_interaction: Signal<bool>,
     /// Mirrors [`CarouselAutoplayProps::stop_on_mouse_enter`]; see
@@ -1623,7 +1924,7 @@ impl AutoplayContext {
     /// `stop_on_interaction` enabled (its own default `true`) -- called
     /// from every *manual, discrete* paging entry point:
     /// [`CarouselPrevious`]/[`CarouselNext`], [`Carousel`]'s own root
-    /// keyboard handler, [`CarouselTab`], and [`CarouselApi::scroll_to`].
+    /// keyboard handler, [`CarouselIndicator`], and [`CarouselApi::scroll_to`].
     /// Mirrors embla-carousel's own `embla-carousel-autoplay` plugin
     /// option of the same name.
     ///
@@ -1648,29 +1949,38 @@ pub struct CarouselProps {
     #[props(default)]
     pub orientation: ReadSignal<CarouselOrientation>,
 
+    /// Where each slide rests against the scrollport. Defaults to
+    /// [`CarouselAlign::Start`] -- matches shadcn's own default and every
+    /// one of its demos (`opts={{ align: "start" }}`, `dev-docs/research/shadcn-carousel-parity.md`).
+    /// See [`CarouselAlign`]'s own doc for what changes with `Center`/`End`.
+    #[props(default)]
+    pub align: ReadSignal<CarouselAlign>,
+
     /// The controlled selected slide index (0-based). `None` for
     /// uncontrolled use (see [`Self::default_value`]).
     pub value: ReadSignal<Option<usize>>,
 
     /// Whether Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`)
-    /// wrap around at the ends -- **rewind-style**, not an
-    /// embla-style seamless illusion: from the last slide, Next goes to
-    /// the first (and vice versa for Previous), via the same
-    /// scroller-only `scrollBy`-by-delta paging path every other
-    /// transition already uses, which visibly scrolls back across the
-    /// intervening slides rather
-    /// than teleporting. No cloned edge slides are ever added -- they
-    /// would violate the overscroll port's own invariant 5 (they'd enter
-    /// the snap engine's candidate list, the "N of M" slide count, and
-    /// `:nth-child` styling). Dragging or wheeling past a physical edge
-    /// still rubber-bands (mode B3) regardless of this flag -- there is no
-    /// wrap on a drag/wheel gesture, only on Previous/Next/the root
-    /// keyboard. When `true`, [`CarouselPrevious`]/[`CarouselNext`] are
-    /// never `disabled`. Defaults to `false` (matches shadcn's own
+    /// wrap around at the ends at all. Whether that wrap is the seamless
+    /// [`CarouselVirtualContent`] illusion or a visible instant rewind --
+    /// or, for content [`LoopMode`] has no seamless path for, whether it
+    /// happens at all -- is [`Self::loop_mode`]'s decision; see that
+    /// prop's own doc. No cloned edge slides are ever added under either
+    /// mode -- they would violate the overscroll port's own invariant 5
+    /// (they'd enter the snap engine's candidate list, the "N of M" slide
+    /// count, and `:nth-child` styling). Dragging or wheeling past a
+    /// physical edge still rubber-bands (mode B3) regardless of this flag
+    /// -- there is no wrap on a drag/wheel gesture, only on Previous/Next/
+    /// the root keyboard. Defaults to `false` (matches shadcn's own
     /// `opts={{ loop: false }}` default). Approved fast-follow decision,
     /// backlog row 91 / `dev-docs/research/carousel-2026-09-19.md` §8.2.
     #[props(default)]
     pub r#loop: ReadSignal<bool>,
+
+    /// How `r#loop` wraps at the ends -- see [`LoopMode`]'s own doc.
+    /// Defaults to [`LoopMode::Seamless`].
+    #[props(default)]
+    pub loop_mode: ReadSignal<LoopMode>,
 
     /// The initial selected slide index when uncontrolled.
     #[props(default)]
@@ -1773,6 +2083,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
         use_controlled(props.value, props.default_value, props.on_value_change);
     let direction = use_direction(props.dir);
     let orientation = props.orientation;
+    let align = props.align;
 
     let item_ids: Signal<Vec<String>> = use_signal(Vec::new);
     let count = use_memo(move || item_ids.len());
@@ -1817,15 +2128,24 @@ pub fn Carousel(props: CarouselProps) -> Element {
     let tablist_present = use_signal(|| false);
     let visible_range: Signal<(usize, usize)> = use_signal(|| (0, 0));
     let focused_item: Signal<Option<usize>> = use_signal(|| None);
+    let loop_mode = props.loop_mode;
+    // Published (`true`) only by `CarouselVirtualContent`'s own seamless
+    // path -- see `CarouselContext::loop_wraps`'s own doc. Stays `false`
+    // for the plain children API for the whole lifetime of this
+    // component, since nothing else ever writes it.
+    let virtualized_loop_active: Signal<bool> = use_signal(|| false);
 
     use_context_provider(|| CarouselContext {
         orientation,
+        align,
         selected,
         set_selected,
         count,
         item_ids,
         content_id,
         loop_enabled,
+        loop_mode,
+        virtualized_loop_active,
         direction,
         autoplay,
         tablist_present,
@@ -1888,6 +2208,12 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // conceptual point, just via a value change rather than a `count()`
     // retry).
     let mut is_first = use_signal(|| true);
+    // Also consumed below (the wrap-instant check) -- declared here,
+    // ahead of the focus-safety effect's own identical-shaped
+    // `use_previous(selected.into())` further down, so both effects can
+    // read the same "what was `selected` a moment ago" snapshot without
+    // provisioning two independent trackers of the same signal.
+    let prev_selected_for_scroll = use_previous(selected.into());
     use_effect(move || {
         let index = selected();
         let has_items = count() > 0;
@@ -1915,13 +2241,29 @@ pub fn Carousel(props: CarouselProps) -> Element {
             return;
         }
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
+        // Instant on mount (`first`), OR this specific step is a
+        // `LoopMode::Rewind` wraparound -- see `is_rewind_wrap`'s own doc
+        // for the APG-reference-matching reasoning ("Make Rewind an
+        // instant jump... instead of... a smooth scroll back across every
+        // slide"). `virtualized_loop_active` never applies here: this
+        // effect only ever fires at all when `item_ids` has a real entry
+        // for `index`, which is either the plain children API or
+        // `CarouselVirtualContent`'s own non-windowed fallback -- exactly
+        // the two content shapes `loop_wraps` gates on `LoopMode::Rewind`
+        // for, never the windowed/seamless one (see that method's own
+        // doc).
+        let wraps_now = loop_enabled() && loop_mode() == LoopMode::Rewind;
+        let is_wrap = wraps_now && is_rewind_wrap(prev_selected_for_scroll(), index, count());
+        let instant = first || is_wrap;
         let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
         let _ = eval.send((
             scroller_id,
             id,
             orientation_str,
-            first,
+            instant,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
     });
 
@@ -1954,7 +2296,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // the move"). A single, source-agnostic target rather than
     // special-casing which button (if any) caused the move keeps this one
     // effect correct for every transition source (buttons, the root
-    // keyboard handler, `CarouselTab`, `CarouselApi::scroll_to`, and a
+    // keyboard handler, `CarouselIndicator`, `CarouselApi::scroll_to`, and a
     // drag/wheel/trackpad settle that changes `selected` with no button
     // involved at all) without threading "who caused this" through every
     // one of them.
@@ -1971,10 +2313,9 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // scroller (still inside the carousel, still a sensible place for
     // focus to be) is a far smaller cost than the alternative -- focus
     // silently dropping to `<body>`.
-    let prev_selected = use_previous(selected.into());
     use_effect(move || {
         let new_selected = selected();
-        let old_selected = prev_selected();
+        let old_selected = prev_selected_for_scroll();
         if old_selected == new_selected {
             return;
         }
@@ -2015,10 +2356,14 @@ pub fn Carousel(props: CarouselProps) -> Element {
         let Some(intent) = carousel_key_intent(&key, orientation(), direction) else {
             return;
         };
-        let loop_now = loop_enabled();
+        // See `CarouselContext::loop_wraps`'s own doc -- the identical
+        // formula, inlined here since the root itself is the context's
+        // provider rather than one of its consumers.
+        let wraps_now =
+            loop_enabled() && (loop_mode() == LoopMode::Rewind || virtualized_loop_active());
         match intent {
-            HorizontalNav::Prev => set_selected.call(step_prev(selected(), count(), loop_now)),
-            HorizontalNav::Next => set_selected.call(step_next(selected(), count(), loop_now)),
+            HorizontalNav::Prev => set_selected.call(step_prev(selected(), count(), wraps_now)),
+            HorizontalNav::Next => set_selected.call(step_next(selected(), count(), wraps_now)),
         }
         autoplay.note_interaction();
         event.prevent_default();
@@ -2307,6 +2652,34 @@ pub struct CarouselContentProps {
 /// stray selector to latch onto. See that wrapper's own doc comment,
 /// right above this component's `rsx!` body, for the full construction.
 ///
+/// **`display: flow-root`, alongside `overflow: clip`, on this same
+/// wrapper.** Found live (this lane, vertical-orientation "shadcn-parity
+/// geometry" test): `overflow: clip` alone did not stop this wrapper's
+/// own vertical (block-axis) margin from collapsing through to its child
+/// -- `CarouselContent`'s own scroller, under [`CarouselOrientation::Vertical`],
+/// carries a NEGATIVE `margin-block-start` (the gap model's own
+/// `content_gap_margin`, physically `margin-top` in this crate's only
+/// writing mode), and margin collapsing is a block-axis-only phenomenon
+/// (horizontal/inline margins never collapse at all, in any writing mode
+/// -- which is exactly why the identical construction needed no such fix
+/// for [`CarouselOrientation::Horizontal`]'s own width-absorption: no
+/// collapsing was ever involved there to begin with). Measured live: with
+/// only `overflow: clip`, this wrapper's own rendered box SHIFTED upward
+/// by the gap's own size and its height silently absorbed the negative
+/// margin (270px stayed 270px instead of becoming 254px) -- i.e., this
+/// wrapper's margin computed as if it had adopted its child's `-16px`
+/// itself, encroaching 16px into `style.css`'s own `padding-block`
+/// button-clearance reservation. `display: flow-root` is the explicit,
+/// purpose-built CSS property for "this box establishes its own new block
+/// formatting context" (unlike relying on `overflow` for the same effect,
+/// which is really a side effect of a value meant for something else) --
+/// added alongside `overflow: clip` (kept for the scrollport-avoidance
+/// reasoning above, which `flow-root` alone says nothing about), it
+/// measured correctly: this wrapper's own box neither shifts nor absorbs
+/// its child's negative margin, and the child pokes out (clipped) by
+/// exactly the margin's own size instead, matching the CSS2.1 auto-height
+/// formula for a genuine new-BFC container.
+///
 /// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
 /// attribute: both mutate `element.style.transform` as a plain DOM write,
 /// the same escape hatch `CAROUSEL_DRAG_JS`'s own `scroll-snap-type`
@@ -2483,12 +2856,13 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     use_carousel_scroll_tracking(
         id,
         ctx.orientation,
+        ctx.align,
         ctx.set_selected,
         ctx.count,
         ctx.visible_range,
         None,
     );
-    use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
     let orientation = (ctx.orientation)();
@@ -2514,6 +2888,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     });
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let gap_margin = content_gap_margin(orientation);
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -2525,7 +2900,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         }
     };
     let style = format!(
-        "{axis_style}{}",
+        "{axis_style}{gap_margin}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -2577,7 +2952,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         // tree both times.
         div {
             "data-slot": "carousel-viewport",
-            style: "overflow: clip;",
+            style: "overflow: clip; display: flow-root;",
 
             div {
                 id,
@@ -2753,7 +3128,7 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
         }
     };
 
-    // `role="tabpanel"` (in lieu of `group`) once a `CarouselTabList` has
+    // `role="tabpanel"` (in lieu of `group`) once a `CarouselIndicators` has
     // registered -- the APG tabbed style, `carousel-2-tablist.html`'s own
     // markup. `aria-roledescription="slide"` stays regardless: the
     // vendored tabbed example's own markup keeps it alongside `tabpanel`
@@ -2772,9 +3147,12 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     // scroll-snap-stop" section, for what this is, its known limitations,
     // and why this is a plain inline declaration rather than a stylesheet
     // gated by `@supports`.
+    let gap_padding = item_gap_padding((ctx.orientation)());
+    let basis = item_basis_style();
+    let align_str = (ctx.align)().as_str();
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let style = format!(
-        "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+        "{basis}scroll-snap-align:{align_str};scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -2872,7 +3250,7 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 ///
 /// Publishes its own count into [`CarouselContext`] the same way
 /// [`CarouselItem`]'s own registration effect does, so
-/// [`CarouselPrevious`]/[`CarouselNext`]/[`CarouselTabList`]/[`CarouselTab`]/
+/// [`CarouselPrevious`]/[`CarouselNext`]/[`CarouselIndicators`]/[`CarouselIndicator`]/
 /// [`CarouselAutoplay`]/[`CarouselRotationControl`]/the root's own arrow
 /// keys/[`use_carousel`] all keep working completely unchanged -- none of
 /// them know this component exists; every one of them only ever reads or
@@ -2906,18 +3284,34 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 /// own component state along with it).
 ///
 /// With virtualisation inactive (a small data set, or
-/// `virtualize: Some(false)`), [`CarouselProps::r#loop`] is the existing
-/// APG **rewind** style, completely unchanged -- `position == data index`
-/// throughout, and this component publishes a real per-data-index DOM id
-/// into [`CarouselContext::item_ids`] exactly like [`CarouselItem`] does,
-/// so [`Carousel`]'s own built-in mount/selected `scrollBy`-by-id paging
-/// effect (and drag, wheel bounce, scroll tracking) drive it without any
-/// bespoke code in this component at all.
+/// `virtualize: Some(false)`), [`CarouselProps::r#loop`] has no seamless
+/// path available to it at all -- exactly like the plain children API, it
+/// is gated by [`CarouselProps::loop_mode`] (see that enum's own doc):
+/// [`LoopMode::Rewind`] is the existing APG **rewind** style, unchanged --
+/// `position == data index` throughout, and this component publishes a
+/// real per-data-index DOM id into [`CarouselContext::item_ids`] exactly
+/// like [`CarouselItem`] does, so [`Carousel`]'s own built-in mount/
+/// selected `scrollBy`-by-id paging effect (and drag, wheel bounce, scroll
+/// tracking) drive it without any bespoke code in this component at all,
+/// INCLUDING that effect's own instant-jump-on-wrap fix. The default,
+/// [`LoopMode::Seamless`], is a no-op here (`CarouselContext::loop_wraps`
+/// returns `false`): [`CarouselPrevious`]/[`CarouselNext`] stay genuinely
+/// `disabled` at the real ends, matching what a caller who never
+/// specifically opted into `Rewind` should expect from a non-windowed
+/// data set with no seamless illusion available to it.
 ///
 /// ## Seamless loop
 ///
 /// Only reached once virtualisation is active AND [`CarouselProps::r#loop`]
-/// is on: `position` is allowed to run arbitrarily far past `[0, N)`
+/// is on -- **unaffected by [`CarouselProps::loop_mode`] entirely**: this
+/// path publishes `true` into [`CarouselContext::virtualized_loop_active`]
+/// (a small effect just above, keyed off the identical condition this
+/// window-building code already computes), which is the OTHER thing (besides
+/// `LoopMode::Rewind`) [`CarouselContext::loop_wraps`] treats as "wraps" --
+/// so `loop_mode`'s default staying at [`LoopMode::Seamless`] never
+/// disables this path; it only ever matters for the two content shapes
+/// that have no seamless illusion to offer, above. `position` is allowed
+/// to run arbitrarily far past `[0, N)`
 /// (mapped down to a data index only via `.rem_euclid(N)` for rendering),
 /// so paging forward past the last data index does not rewind visibly
 /// across every intervening slide the way the non-virtualised loop above
@@ -2936,7 +3330,7 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 ///   paging path in this module already uses. The target position is
 ///   already a rendered window slide (`radius >= 1`), so this alone never
 ///   touches the window.
-/// - A change to any other data index (a distant [`CarouselTab`] click, a
+/// - A change to any other data index (a distant [`CarouselIndicator`] click, a
 ///   controlled `value` jump) resolves to whichever POSITION nearest the
 ///   current anchor carries that data index, sets `anchor` to it directly
 ///   -- an instant re-render around the new centre, so it is simply the
@@ -3066,12 +3460,13 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     use_carousel_scroll_tracking(
         id,
         ctx.orientation,
+        ctx.align,
         ctx.set_selected,
         ctx.count,
         ctx.visible_range,
         Some(on_settle_position),
     );
-    use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
     // Translate a `selected` (data index) change into a physical move --
@@ -3117,6 +3512,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     //    themselves) reaches the jump logic below.
     let prev_selected = use_previous(ctx.selected.into());
     let orientation = ctx.orientation;
+    let align = ctx.align;
     let content_id = ctx.content_id;
     use_effect(move || {
         let new_sel = (ctx.selected)();
@@ -3180,6 +3576,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
             // actually finished.
             intended.set(target_position);
             let target_id = format!("{scroller_id}-p{target_position}");
+            let align_str = align().as_str().to_string();
             let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
             let _ = eval.send((
                 scroller_id,
@@ -3187,6 +3584,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
                 orientation_str,
                 false,
                 CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+                align_str,
             ));
         } else {
             // Outside the current window (a distant jump, OR `intended`
@@ -3230,6 +3628,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
         let target_id = format!("{scroller_id}-p{a}");
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
         let _ = eval.send((
             scroller_id,
@@ -3237,12 +3636,28 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
             orientation_str,
             true,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
     });
 
     let n = count();
     let virtualize_active = virtualize_active_now();
     let loop_now = (ctx.loop_enabled)() && n >= 2;
+
+    // Publish "the seamless windowed loop is genuinely active right now"
+    // into the shared context -- see `CarouselContext::loop_wraps`'s own
+    // doc for why every other loop-aware consumer (Previous/Next's
+    // `disabled`, the root keyboard handler, `CarouselAutoplay`'s ticker)
+    // needs this, not just `loop_enabled` alone: without it, those would
+    // treat a non-windowed (small data set, or `virtualize: Some(false)`)
+    // `CarouselVirtualContent` under `LoopMode::Seamless` (the default) as
+    // wrapping, when this component's own "Virtualisation" doc says that
+    // case is `LoopMode::Rewind`-or-nothing like the plain children API.
+    let mut virtualized_loop_active = ctx.virtualized_loop_active;
+    use_effect(move || {
+        let active = virtualize_active_now() && (ctx.loop_enabled)() && count() >= 2;
+        virtualized_loop_active.set(active);
+    });
 
     let win: Vec<crate::r#virtual::WindowItem> = if n == 0 {
         Vec::new()
@@ -3260,6 +3675,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let scroller_id_now = id();
 
     let orientation_now = (ctx.orientation)();
+    let align_now = (ctx.align)();
     let draggable = (props.draggable)();
     let aria_live = (ctx.autoplay.present)().then(|| {
         if (ctx.autoplay.rotating)() {
@@ -3270,6 +3686,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     });
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let gap_margin = content_gap_margin(orientation_now);
     let axis_style = match orientation_now {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -3281,7 +3698,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     };
     let style = format!(
-        "{axis_style}{}",
+        "{axis_style}{gap_margin}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3308,6 +3725,12 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         let slide_id = format!("{scroller_id_now}-p{position}");
         let value = items_now[data_index].clone();
         let content = render_item.call((data_index, value));
+        let item_style = format!(
+            "{}scroll-snap-align:{};scroll-snap-stop:always;min-width:0;min-height:0;{}",
+            item_basis_style(),
+            align_now.as_str(),
+            item_gap_padding(orientation_now)
+        );
         rsx! {
             div {
                 key: "{position}",
@@ -3315,7 +3738,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
                 role,
                 aria_roledescription: "slide",
                 aria_label: label,
-                style: "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;",
+                style: item_style,
                 "data-selected": is_selected,
                 "data-index": data_index,
                 "data-position": position,
@@ -3337,7 +3760,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         // identical to that one's.
         div {
             "data-slot": "carousel-viewport",
-            style: "overflow: clip;",
+            style: "overflow: clip; display: flow-root;",
 
             div {
                 id,
@@ -3379,8 +3802,7 @@ pub struct CarouselPreviousProps {
 pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
-    let loop_enabled = (ctx.loop_enabled)();
-    let disabled = !loop_enabled && !can_scroll_prev(selected);
+    let disabled = !ctx.loop_wraps() && !can_scroll_prev(selected);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Previous slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -3410,8 +3832,8 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     rsx! {
         button {
             onclick: move |_| {
-                let loop_now = (ctx.loop_enabled)();
-                ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), loop_now));
+                let wraps_now = ctx.loop_wraps();
+                ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
             ..attributes,
@@ -3434,8 +3856,7 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
-    let loop_enabled = (ctx.loop_enabled)();
-    let disabled = !loop_enabled && !can_scroll_next(selected, count);
+    let disabled = !ctx.loop_wraps() && !can_scroll_next(selected, count);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Next slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -3457,8 +3878,8 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     rsx! {
         button {
             onclick: move |_| {
-                let loop_now = (ctx.loop_enabled)();
-                ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), loop_now));
+                let wraps_now = ctx.loop_wraps();
+                ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
             ..attributes,
@@ -3530,12 +3951,12 @@ pub fn use_carousel() -> CarouselApi {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
-    let loop_enabled = (ctx.loop_enabled)();
+    let wraps = ctx.loop_wraps();
     CarouselApi {
         selected,
         count,
-        can_scroll_prev: (loop_enabled && count > 0) || can_scroll_prev(selected),
-        can_scroll_next: (loop_enabled && count > 0) || can_scroll_next(selected, count),
+        can_scroll_prev: (wraps && count > 0) || can_scroll_prev(selected),
+        can_scroll_next: (wraps && count > 0) || can_scroll_next(selected, count),
         scroll_to: ctx.set_selected,
         autoplay: ctx.autoplay,
     }
@@ -3564,7 +3985,7 @@ pub struct CarouselAutoplayProps {
 
     /// Whether rotation stops for good (until [`CarouselRotationControl`]
     /// is explicitly clicked again) after a manual paging action --
-    /// Previous/Next, the root keyboard handler, a [`CarouselTab`], or a
+    /// Previous/Next, the root keyboard handler, a [`CarouselIndicator`], or a
     /// custom picker's own [`CarouselApi::scroll_to`]. Mirrors
     /// `embla-carousel-autoplay`'s own `stopOnInteraction` option and its
     /// default (`true`).
@@ -3681,6 +4102,8 @@ pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
     let count = ctx.count;
     let selected = ctx.selected;
     let loop_enabled = ctx.loop_enabled;
+    let loop_mode = ctx.loop_mode;
+    let virtualized_loop_active = ctx.virtualized_loop_active;
     let set_selected = ctx.set_selected;
     use_effect(move || {
         let active = (autoplay.rotating)();
@@ -3698,7 +4121,14 @@ pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
                 if count_now == 0 {
                     continue;
                 }
-                let loop_now = *loop_enabled.peek();
+                // `.peek()` on each field individually, matching
+                // `count`/`selected` just above -- this is inside a spawned
+                // async loop, not a reactive scope, so nothing here should
+                // subscribe to anything (`CarouselContext::loop_wraps`
+                // itself calls each field via tracked syntax, the wrong
+                // read for this position).
+                let loop_now = *loop_enabled.peek()
+                    && (*loop_mode.peek() == LoopMode::Rewind || *virtualized_loop_active.peek());
                 let current = *selected.peek();
                 // Stops rather than ticking forever against a no-op once a
                 // non-looping carousel reaches its last slide -- see this
@@ -3753,7 +4183,7 @@ pub struct CarouselRotationControlProps {
 /// their place.
 ///
 /// **Composition:** place this **first** among [`Carousel`]'s children --
-/// before [`CarouselPrevious`]/[`CarouselTabList`]/[`CarouselContent`] --
+/// before [`CarouselPrevious`]/[`CarouselIndicators`]/[`CarouselContent`] --
 /// so it is the first focusable element in the carousel, matching APG's
 /// own explicit requirement ("Rotation control ... precede\[s\] the slide
 /// content in the Tab sequence"). This component cannot enforce that
@@ -3819,7 +4249,7 @@ pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
             // (`playwright/carousel.spec.ts`'s own "autoplay" describe
             // block was red without this). Keyboard/pointer focus on every
             // OTHER focusable piece of the carousel (Previous/Next, the
-            // content track, a `CarouselTab`) still pauses normally.
+            // content track, a `CarouselIndicator`) still pauses normally.
             onfocusin: move |event: Event<FocusData>| event.stop_propagation(),
             onfocusout: move |event: Event<FocusData>| event.stop_propagation(),
             ..attributes,
@@ -3829,15 +4259,15 @@ pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
     }
 }
 
-/// Shared roving-focus state for one [`CarouselTabList`], consumed by its
-/// [`CarouselTab`] children -- the tablist's *own* [`CollectionState`],
+/// Shared roving-focus state for one [`CarouselIndicators`], consumed by its
+/// [`CarouselIndicator`] children -- the tablist's *own* [`CollectionState`],
 /// entirely separate from [`CarouselContext`]'s own `selected`/`count`
 /// (which stay the single source of truth for which slide is current;
 /// this collection only tracks *focus* among the tab buttons themselves,
 /// the same separation `tabs.rs`'s own `TabsContext`/`CollectionState`
 /// pair keeps).
 #[derive(Clone, Copy)]
-struct CarouselTabListContext {
+struct CarouselIndicatorsContext {
     focus: CollectionState,
     /// Reused verbatim from [`CarouselContext::direction`] -- see that
     /// field's own doc for why a fresh `use_direction(None)` call here
@@ -3845,21 +4275,21 @@ struct CarouselTabListContext {
     direction: Direction,
 }
 
-/// The props for the [`CarouselTabList`] component.
+/// The props for the [`CarouselIndicators`] component.
 #[derive(Props, Clone, PartialEq)]
-pub struct CarouselTabListProps {
+pub struct CarouselIndicatorsProps {
     /// Additional attributes to apply to the tablist element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
 
-    /// The [`CarouselTab`] children.
+    /// The [`CarouselIndicator`] children.
     pub children: Element,
 }
 
-/// # CarouselTabList
+/// # CarouselIndicators
 ///
 /// The slide-picker row for the APG **tabbed** carousel style:
-/// `role="tablist"` containing one [`CarouselTab`] per slide. Composing
+/// `role="tablist"` containing one [`CarouselIndicator`] per slide. Composing
 /// this on this crate's own `crate::collection` roving-focus machinery
 /// (the same module [`crate::tabs::Tabs`] itself is built on) rather than
 /// [`crate::tabs::Tabs`]/`TabTrigger`/`TabContent` directly was a
@@ -3881,7 +4311,7 @@ pub struct CarouselTabListProps {
 ///    "Right Arrow: Moves focus to the next tab ... Shows the slide
 ///    associated with the newly focused tab" (no `Enter` needed,
 ///    `examples/carousel-2-tablist.html`'s own keyboard table). Building
-///    [`CarouselTab`] directly on `crate::collection` (below) makes this
+///    [`CarouselIndicator`] directly on `crate::collection` (below) makes this
 ///    one line (`onfocus` calling [`CarouselContext::set_selected`]
 ///    directly) instead of a manual-activation component fighting its own
 ///    contract.
@@ -3905,7 +4335,7 @@ pub struct CarouselTabListProps {
 ///
 /// This must be used inside a [`Carousel`] component.
 #[component]
-pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
+pub fn CarouselIndicators(props: CarouselIndicatorsProps) -> Element {
     let ctx: CarouselContext = use_context();
     let mut tablist_present = ctx.tablist_present;
 
@@ -3916,7 +4346,7 @@ pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
     // Always wraps (`ReadSignal::new(Signal::new(true))`) -- see this
     // component's own doc, "Arrow-key wrap."
     let focus = use_collection_provider(ReadSignal::new(Signal::new(true)));
-    use_context_provider(|| CarouselTabListContext {
+    use_context_provider(|| CarouselIndicatorsContext {
         focus,
         direction: ctx.direction,
     });
@@ -3946,9 +4376,9 @@ pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
     }
 }
 
-/// The props for the [`CarouselTab`] component.
+/// The props for the [`CarouselIndicator`] component.
 #[derive(Props, Clone, PartialEq)]
-pub struct CarouselTabProps {
+pub struct CarouselIndicatorProps {
     /// The index of the slide this tab controls (0-based) -- the same
     /// convention [`CarouselItem::index`] and `tabs.rs`'s own
     /// `TabTrigger`/`TabContent` `index` props use.
@@ -3966,7 +4396,7 @@ pub struct CarouselTabProps {
     pub children: Element,
 }
 
-/// # CarouselTab
+/// # CarouselIndicator
 ///
 /// One slide-picker button: `role="tab"`, roving `tabindex`, `aria-selected`,
 /// `aria-controls` pointing at the matching [`CarouselItem`]'s own id.
@@ -3974,17 +4404,17 @@ pub struct CarouselTabProps {
 /// selected one, roving tabindex) or by `ArrowLeft`/`ArrowRight`/`Home`/`End`
 /// moving focus onto it -- **automatically** selects and scrolls to its
 /// slide (no `Enter`/click needed), matching APG's own tabbed-style
-/// automatic-activation contract. See [`CarouselTabList`]'s own doc for
+/// automatic-activation contract. See [`CarouselIndicators`]'s own doc for
 /// why this is a purpose-built component on `crate::collection` rather
 /// than [`crate::tabs::TabTrigger`] directly (manual activation there is
 /// the wrong contract for this pattern).
 ///
-/// This must be used inside a [`CarouselTabList`] component, with indices
+/// This must be used inside a [`CarouselIndicators`] component, with indices
 /// matching the sibling [`CarouselItem`]s one-to-one.
 #[component]
-pub fn CarouselTab(props: CarouselTabProps) -> Element {
+pub fn CarouselIndicator(props: CarouselIndicatorProps) -> Element {
     let carousel_ctx: CarouselContext = use_context();
-    let tablist_ctx: CarouselTabListContext = use_context();
+    let tablist_ctx: CarouselIndicatorsContext = use_context();
     let index = props.index;
 
     let is_selected = use_memo(move || (carousel_ctx.selected)() == index());
@@ -4402,6 +4832,45 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn is_rewind_wrap_true_for_last_to_first() {
+        assert!(is_rewind_wrap(4, 0, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_true_for_first_to_last() {
+        assert!(is_rewind_wrap(0, 4, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_for_an_ordinary_adjacent_step() {
+        assert!(!is_rewind_wrap(1, 2, 5));
+        assert!(!is_rewind_wrap(2, 1, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_for_a_same_index_no_op() {
+        assert!(!is_rewind_wrap(2, 2, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_with_zero_slides() {
+        assert!(!is_rewind_wrap(0, 0, 0));
+    }
+
+    #[test]
+    fn is_rewind_wrap_ambiguous_case_at_count_two_reports_true() {
+        // See this function's own doc: at `count == 2` a wrap and an
+        // ordinary step are the identical transition either direction.
+        assert!(is_rewind_wrap(0, 1, 2));
+        assert!(is_rewind_wrap(1, 0, 2));
+    }
+
+    #[test]
+    fn loop_mode_default_is_seamless() {
+        assert_eq!(LoopMode::default(), LoopMode::Seamless);
+    }
 }
 
 #[cfg(test)]
@@ -4707,12 +5176,202 @@ mod ssr_tests {
         assert!(!html.contains("<style>"));
     }
 
-    // -- `loop` -------------------------------------------------------
+    // -- Gap model (backlog row 91's shadcn-parity addendum) -----------
 
     #[component]
-    fn LoopCarousel() -> Element {
+    fn VerticalThreeSlideCarousel() -> Element {
         rsx! {
-            Carousel { aria_label: "Featured photos", r#loop: true,
+            Carousel { aria_label: "Featured photos", orientation: CarouselOrientation::Vertical,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                    CarouselItem { index: 2usize, "Three" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn horizontal_item_reserves_gap_as_leading_inline_padding() {
+        // The gap lives INSIDE each item's own border-box (a leading-edge
+        // padding), never a real flex `gap` between items -- see
+        // `item_gap_padding`'s own doc for why a real `gap` would overflow
+        // a fractional `flex-basis` track. `var(..., 0px)` is the
+        // raw-primitive default (a themed stylesheet supplies the actual
+        // token, e.g. `--dx-space-4`) -- so zero theme CSS still renders a
+        // valid, harmless (zero-width) declaration rather than an
+        // invalid/dropped one.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px)"));
+        assert!(!html.contains("padding-block-start:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn vertical_item_reserves_gap_as_leading_block_padding() {
+        let html = render(VerticalThreeSlideCarousel);
+        assert!(html.contains("padding-block-start:var(--dx-carousel-gap, 0px)"));
+        assert!(!html.contains("padding-inline-start:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn horizontal_content_compensates_with_a_negative_inline_margin() {
+        // The exact mirror of the item's own leading padding -- see
+        // `content_gap_margin`'s own doc for why this keeps the first
+        // item's visible content flush with the viewport's own clip
+        // boundary instead of shifting every slide by one gap's worth.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
+        assert!(!html.contains("margin-block-start:calc(var(--dx-carousel-gap"));
+        // Never a real flex `gap` any more -- that would be additive to a
+        // fractional `flex-basis` and overflow the track (the "~2.3
+        // slides visible" incident this construction closes).
+        assert!(!html.contains("gap:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn vertical_content_compensates_with_a_negative_block_margin() {
+        let html = render(VerticalThreeSlideCarousel);
+        assert!(html.contains("margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
+        assert!(!html.contains("margin-inline-start:calc(var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn carousel_viewport_wrapper_establishes_its_own_block_formatting_context() {
+        // `display: flow-root`, alongside `overflow: clip` -- see the
+        // viewport wrapper's own doc for the live-measured vertical-
+        // orientation margin-collapse bug this closes (`overflow: clip`
+        // alone did not stop this wrapper's own block-axis margin from
+        // collapsing through to `CarouselContent`'s negative
+        // `margin-block-start`, under `CarouselOrientation::Vertical`).
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains(r#"style="overflow: clip; display: flow-root;""#));
+    }
+
+    #[test]
+    fn virtual_content_viewport_wrapper_establishes_its_own_block_formatting_context() {
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains(r#"style="overflow: clip; display: flow-root;""#));
+    }
+
+    // -- Sizes: whole slides by default, opt-in peek --------------------
+
+    #[test]
+    fn item_basis_defaults_to_the_per_view_peek_calc() {
+        // `--dx-carousel-per-view`/`--dx-carousel-peek` default to `1`/`0%`
+        // in the calc's own fallback, which is byte-identical to the old
+        // hardcoded `flex:0 0 100%` -- see `item_basis_style`'s own doc.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains(
+            "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+        ));
+        assert!(!html.contains("flex:0 0 100%;"));
+    }
+
+    #[test]
+    fn virtual_content_item_basis_uses_the_same_calc() {
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains(
+            "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+        ));
+    }
+
+    // -- `align` ---------------------------------------------------------
+
+    #[test]
+    fn item_scroll_snap_align_defaults_to_start() {
+        // Matches shadcn's own default (`opts={{ align: "start" }}` in
+        // every demo that sets it explicitly) -- unchanged from before
+        // `align` existed as a prop at all.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("scroll-snap-align:start;"));
+    }
+
+    #[component]
+    fn CenterAlignedCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::Center,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn EndAlignedCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::End,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn align_center_sets_scroll_snap_align_center_on_every_item() {
+        let html = render(CenterAlignedCarousel);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert_eq!(html.matches("scroll-snap-align:center;").count(), 2);
+    }
+
+    #[test]
+    fn align_end_sets_scroll_snap_align_end_on_every_item() {
+        let html = render(EndAlignedCarousel);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert_eq!(html.matches("scroll-snap-align:end;").count(), 2);
+    }
+
+    #[test]
+    fn align_as_str_matches_the_scroll_snap_align_keywords() {
+        assert_eq!(CarouselAlign::Start.as_str(), "start");
+        assert_eq!(CarouselAlign::Center.as_str(), "center");
+        assert_eq!(CarouselAlign::End.as_str(), "end");
+    }
+
+    #[test]
+    fn align_default_is_start() {
+        assert_eq!(CarouselAlign::default(), CarouselAlign::Start);
+    }
+
+    #[component]
+    fn CarouselWithBasisOverride() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselContent {
+                    CarouselItem { index: 0usize, style: "flex-basis: 40%;", "One" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_inline_flex_basis_override_still_wins_over_the_new_default_calc() {
+        // The pre-existing "override flex-basis per item via inline style"
+        // escape hatch (docs.md's own "Sizing slides" section, predating
+        // this feature) must keep working unchanged: a caller-supplied
+        // `flex-basis` still simply appears later in the same `style`
+        // attribute and wins, the same as it always has.
+        let html = render(CarouselWithBasisOverride);
+        assert!(html.contains("flex-basis: 40%;"));
+    }
+
+    // -- `loop` / `loop_mode` -------------------------------------------
+
+    // Renamed from `LoopCarousel` and given an explicit `loop_mode:
+    // LoopMode::Rewind` -- see `LoopMode`'s own doc: for the plain children
+    // API, `r#loop: true` alone (the default `LoopMode::Seamless`) is now a
+    // no-op, and `SeamlessLoopCarousel`/its own tests just below pin
+    // exactly that. Only the explicit opt-in wraps, which is what this
+    // fixture (and every test that already existed against it) needs.
+    #[component]
+    fn RewindLoopCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true, loop_mode: LoopMode::Rewind,
                 CarouselPrevious { "Previous" }
                 CarouselNext { "Next" }
                 CarouselContent {
@@ -4729,10 +5388,10 @@ mod ssr_tests {
         // Even on the very first, pre-effect render (`count == 0`, the
         // same moment `next_button_is_disabled_before_registration_effects_run`
         // asserts the NON-loop `CarouselNext` conservatively disables) --
-        // `loop` makes both buttons unconditionally not-disabled, per the
-        // approved decision (backlog row 91): they wrap instead of ever
-        // reaching a real boundary.
-        let html = render(LoopCarousel);
+        // explicit `LoopMode::Rewind` makes both buttons unconditionally
+        // not-disabled, per the approved decision (backlog row 91): they
+        // wrap instead of ever reaching a real boundary.
+        let html = render(RewindLoopCarousel);
         let previous_tag = button_tag(&html, 0);
         let next_tag = button_tag(&html, 1);
         assert!(!previous_tag.contains("disabled"));
@@ -4741,7 +5400,7 @@ mod ssr_tests {
 
     #[test]
     fn loop_enabled_previous_stays_enabled_once_items_have_registered() {
-        let mut dom = VirtualDom::new(LoopCarousel);
+        let mut dom = VirtualDom::new(RewindLoopCarousel);
         dom.rebuild_in_place();
         for _ in 0..4 {
             dom.render_immediate(&mut dioxus::core::NoOpMutations);
@@ -4751,6 +5410,38 @@ mod ssr_tests {
         let next_tag = button_tag(&html, 1);
         assert!(!previous_tag.contains("disabled"));
         assert!(!next_tag.contains("disabled"));
+    }
+
+    // Red-first for the new behaviour: `r#loop: true` with NO explicit
+    // `loop_mode` (so the default, `LoopMode::Seamless`) on the plain
+    // children API -- which has no seamless path available to it at all
+    // (see `LoopMode`'s own doc) -- must degrade to a real no-op, not
+    // silently inherit the old always-rewind behavior.
+    #[component]
+    fn SeamlessDefaultLoopCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                    CarouselItem { index: 2usize, "Three" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn seamless_default_loop_mode_does_not_wrap_the_plain_children_api() {
+        let mut dom = VirtualDom::new(SeamlessDefaultLoopCarousel);
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.render_immediate(&mut dioxus::core::NoOpMutations);
+        }
+        let html = dioxus_ssr::render(&dom);
+        let previous_tag = button_tag(&html, 0);
+        assert!(previous_tag.contains("disabled"));
     }
 
     // -- Autoplay + rotation control -----------------------------------
@@ -4842,9 +5533,9 @@ mod ssr_tests {
     fn TablistCarousel() -> Element {
         rsx! {
             Carousel { aria_label: "Featured photos",
-                CarouselTabList {
-                    CarouselTab { index: 0usize, "1" }
-                    CarouselTab { index: 1usize, "2" }
+                CarouselIndicators {
+                    CarouselIndicator { index: 0usize, "1" }
+                    CarouselIndicator { index: 1usize, "2" }
                 }
                 CarouselContent {
                     CarouselItem { index: 0usize, "One" }
@@ -4857,7 +5548,7 @@ mod ssr_tests {
     #[test]
     fn item_is_group_role_before_a_carousel_tab_list_has_mounted() {
         // Same hydration-parity shape as autoplay's own "before mount"
-        // test above: `CarouselTabList`'s presence publish is effect-driven,
+        // test above: `CarouselIndicators`'s presence publish is effect-driven,
         // so a bare `rebuild_in_place` (SSR, and the client's own
         // pre-hydration first render) still sees the ordinary `group` role.
         let html = render(ThreeSlideCarousel);
@@ -5039,5 +5730,36 @@ mod ssr_tests {
         assert_eq!(positions.len(), items.len());
         let data_indices: Vec<usize> = items.iter().map(|i| i.data_index).collect();
         assert_eq!(data_indices, vec![1, 2, 0, 1, 2]);
+    }
+
+    #[component]
+    fn VirtualCarouselCenterAligned() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::Center,
+                CarouselVirtualContent::<String> {
+                    items: string_items(12),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn virtual_content_item_scroll_snap_align_follows_the_align_prop() {
+        let html = render(VirtualCarouselCenterAligned);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert!(html.contains("scroll-snap-align:center;"));
+    }
+
+    #[test]
+    fn virtual_content_slides_reserve_gap_the_same_way_plain_items_do() {
+        // `CarouselVirtualContent`'s own rendered slide markup duplicates
+        // (rather than shares) `CarouselItem`'s inline style construction --
+        // see that component's own doc for why a fresh string is built here
+        // instead of calling into `CarouselItem` -- so the gap model must be
+        // pinned on this path too, not just the plain children API.
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px)"));
+        assert!(html.contains("margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
     }
 }

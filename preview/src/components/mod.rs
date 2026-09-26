@@ -220,7 +220,7 @@ examples!(
     button_group,
     calendar[simple, internationalized, range, multi_month, unavailable_dates, rtl],
     card,
-    carousel[multiple, indicators, vertical, rtl, looping, looping_rtl, autoplay, tabs, virtual_loop, virtual_many],
+    carousel[sizes, spacing, peek, align, api, indicators, vertical, rtl, rewind, autoplay, virtual_loop, virtual_loop_rtl, virtual_many],
     chart[bar, line, stacked],
     chart_tooltip[indicator_line, indicator_none, label_none, label_custom, label_formatter, formatter, icons, advanced],
     checkbox,

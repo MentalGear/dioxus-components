@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_primitives::carousel::{
-    self, CarouselAutoplayProps, CarouselContentProps, CarouselItemProps, CarouselPreviousProps,
-    CarouselRotationControlProps, CarouselTabListProps, CarouselTabProps,
+    self, CarouselAutoplayProps, CarouselContentProps, CarouselIndicatorProps,
+    CarouselIndicatorsProps, CarouselItemProps, CarouselPreviousProps, CarouselRotationControlProps,
     CarouselVirtualContentProps,
 };
 use dioxus_primitives::direction::Direction;
@@ -10,13 +10,16 @@ use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 // Re-exported so a demo (or a consumer's own page) can write
 // `use crate::components::carousel::*;` and reach the orientation enum
 // and the `use_carousel()`/`CarouselApi` escape hatch (for a custom
-// indicator row, see the `indicators` variant) without a second import
-// from `dioxus_primitives` directly -- the same convention `resizable`'s
-// themed wrapper already follows for `ResizableDirection`.
+// picker built directly on it, see the `api` variant, or docs.md's own "A
+// custom picker" section) without a second import from `dioxus_primitives`
+// directly -- the same convention `resizable`'s themed wrapper already
+// follows for `ResizableDirection`.
 #[allow(unused_imports)] // `CarouselApi` is only ever named as `use_carousel()`'s inferred
-// return type in this file's own `CarouselIndicators` -- re-exported anyway so a
+// return type within this crate's own demos (the `api` variant) -- re-exported anyway so a
 // consumer building their own custom picker can name the type explicitly.
-pub use dioxus_primitives::carousel::{CarouselApi, CarouselOrientation, use_carousel};
+pub use dioxus_primitives::carousel::{
+    CarouselAlign, CarouselApi, CarouselOrientation, LoopMode, use_carousel,
+};
 
 /// The props for the [`Carousel`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -29,6 +32,12 @@ pub struct CarouselProps {
     #[props(default)]
     pub orientation: ReadSignal<CarouselOrientation>,
 
+    /// Where each slide rests against the scrollport. Defaults to
+    /// `start`, matching shadcn. See [`carousel::Carousel`]'s own doc for
+    /// what changes with `Center`/`End`.
+    #[props(default)]
+    pub align: ReadSignal<CarouselAlign>,
+
     /// The controlled selected slide index.
     pub value: ReadSignal<Option<usize>>,
 
@@ -37,10 +46,15 @@ pub struct CarouselProps {
     pub default_value: usize,
 
     /// Whether Previous/Next (and the root's own arrow keys) wrap around
-    /// at the ends. See [`carousel::Carousel`]'s own doc for the
-    /// rewind-style semantics.
+    /// at the ends at all. See [`LoopMode`]'s own doc for what actually
+    /// decides whether that wrap is seamless, an instant rewind, or a
+    /// no-op.
     #[props(default)]
     pub r#loop: ReadSignal<bool>,
+
+    /// How `r#loop` wraps at the ends. Defaults to [`LoopMode::Seamless`].
+    #[props(default)]
+    pub loop_mode: ReadSignal<LoopMode>,
 
     /// Called whenever the selected slide changes.
     #[props(default)]
@@ -68,9 +82,11 @@ pub fn Carousel(props: CarouselProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
         carousel::Carousel {
             orientation: props.orientation,
+            align: props.align,
             value: props.value,
             default_value: props.default_value,
             r#loop: props.r#loop,
+            loop_mode: props.loop_mode,
             on_value_change: props.on_value_change,
             dir: props.dir,
             attributes: merged,
@@ -164,33 +180,6 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     }
 }
 
-/// A row of dot indicators, one per slide, for jumping directly to any
-/// slide -- composed entirely from [`use_carousel`]'s public
-/// [`CarouselApi`], not a new primitive. Used by the `indicators` demo
-/// variant; exported so any consumer can drop it in verbatim the way
-/// `dx components add` copies the rest of this file.
-#[component]
-pub fn CarouselIndicators() -> Element {
-    let api = use_carousel();
-
-    rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
-        div { class: "dx-carousel-indicators", role: "group", "aria-label": "Slide indicators",
-            for i in 0..api.count {
-                button {
-                    key: "{i}",
-                    r#type: "button",
-                    class: "dx-carousel-indicator",
-                    "data-active": i == api.selected,
-                    "aria-label": "Go to slide {i + 1}",
-                    "aria-current": if i == api.selected { "true" } else { "false" },
-                    onclick: move |_| api.scroll_to(i),
-                }
-            }
-        }
-    }
-}
-
 #[component]
 pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
     rsx! {
@@ -216,28 +205,34 @@ pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
     }
 }
 
+/// The APG tablist (dot-picker) style: `role="tablist"` of `role="tab"`
+/// dots, automatic activation on arrow/Home/End. Renamed from
+/// `CarouselTabList` (pre-1.0 fork rename, owner-approved -- no
+/// deprecated alias). See docs.md's own "Indicators" section for when to
+/// reach for `Tabs` instead.
 #[component]
-pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
+pub fn CarouselIndicators(props: CarouselIndicatorsProps) -> Element {
     let base = attributes!(div {
-        class: "dx-carousel-tab-list"
+        class: "dx-carousel-indicators"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
-        carousel::CarouselTabList { attributes: merged, {props.children} }
+        carousel::CarouselIndicators { attributes: merged, {props.children} }
     }
 }
 
+/// One dot inside a [`CarouselIndicators`]. Renamed from `CarouselTab`.
 #[component]
-pub fn CarouselTab(props: CarouselTabProps) -> Element {
+pub fn CarouselIndicator(props: CarouselIndicatorProps) -> Element {
     let base = attributes!(button {
-        class: "dx-carousel-tab"
+        class: "dx-carousel-indicator"
     });
     let merged = merge_attributes(vec![base, props.attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
-        carousel::CarouselTab { index: props.index, attributes: merged, {props.children} }
+        carousel::CarouselIndicator { index: props.index, attributes: merged, {props.children} }
     }
 }

@@ -1,4 +1,5 @@
 use super::super::component::*;
+use crate::components::card::{Card, CardContent};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 
@@ -32,6 +33,16 @@ use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 /// own comment on the vertical `padding-block` rule already called this
 /// redundant, and removing it and re-measuring confirms it: no button
 /// escapes the frame at any swept viewport/theme without it.
+///
+/// Sizing follows shadcn's own `carousel-orientation.tsx` (not this file's
+/// pre-shadcn-parity single-slide layout): `--dx-carousel-per-view: 2`
+/// (`basis-1/2`) against a `16.875rem` (270px) `CarouselContent` height --
+/// so each of the 2 visible slides gets half that height, split across the
+/// block axis, rather than one slide filling the whole box. Deliberately
+/// no `aspect-ratio` on the slide's own `CardContent` here, unlike every
+/// other demo: shadcn's own orientation example has none either (height
+/// comes from `CarouselContent`'s explicit height, not from the slide's
+/// own aspect ratio).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -41,12 +52,14 @@ pub fn Demo() -> Element {
                 orientation: CarouselOrientation::Vertical,
                 CarouselPrevious { ChevronUp {} }
                 CarouselNext { ChevronDown {} }
-                CarouselContent { style: "height: 12rem;",
+                CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2;",
                     for i in 0..4usize {
                         CarouselItem { key: "{i}", index: i,
-                            div {
-                                style: "display: flex; align-items: center; justify-content: center; height: 100%; border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); font-size: 2rem;",
-                                "{i + 1}"
+                            Card { style: "height: 100%;",
+                                CardContent {
+                                    style: "display: flex; align-items: center; justify-content: center; height: 100%; font-size: var(--dx-text-3xl); font-weight: 600;",
+                                    "{i + 1}"
+                                }
                             }
                         }
                     }
