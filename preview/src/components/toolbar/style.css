@@ -12,6 +12,11 @@
 
 .dx-toolbar-demo {
     display: flex;
+
+    /* width: 100% -- dev-docs/backlog.md row 94: direct child of
+       `.dx-component-preview-frame` (flex column) -- max-width alone
+       shrink-wraps instead of reaching the cap. */
+    width: 100%;
     max-width: 30rem;
     flex-direction: column;
     align-items: flex-start;

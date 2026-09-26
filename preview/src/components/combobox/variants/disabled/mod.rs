@@ -11,7 +11,7 @@ pub fn Demo() -> Element {
     ];
 
     rsx! {
-        div { style: "display: grid; gap: 1rem; max-width: 20rem;",
+        div { class: "dx-combobox-demo", style: "display: grid; gap: 1rem;",
             Combobox::<String> {
                 placeholder: "Select framework...",
                 aria_label: "Framework with disabled option",

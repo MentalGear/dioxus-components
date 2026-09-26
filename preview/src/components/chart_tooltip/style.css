@@ -30,6 +30,12 @@
 .dx-chart-tooltip-gallery {
   display: block;
 
+  /* width: 100% -- dev-docs/backlog.md row 94: this is the direct child
+     of `.dx-component-preview-frame`, a column-direction flexbox, so
+     without an explicit `width` it shrink-wraps to its content instead of
+     reaching the `max-width` cap below. */
+  width: 100%;
+
   /* shadcn's own nine demos: `containerClassName`'s `[&>div]:max-w-md`. */
   max-width: 28rem;
 }
