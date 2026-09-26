@@ -102,22 +102,83 @@ async function scrollIntoViewInstant(locator: Locator): Promise<void> {
  * `primitives/src/carousel.rs`'s own `CAROUSEL_SCROLL_TRACKING_JS` uses
  * (`getBoundingClientRect`, never `scrollLeft`, so this works identically
  * under `dir="rtl"` with no sign-convention special-casing).
+ *
+ * The poll loop runs INSIDE the page (one `evaluate` call, a `requestAnimationFrame`
+ * loop), not as repeated Node-side `expect().toPass()` round trips
+ * (dev-docs/backlog.md row 112's construction: "sample in-page ... never
+ * via separate round trips"). Root-caused for the vertical variant's
+ * "ArrowDown/ArrowUp page the vertical carousel" test (row 112 instance 2,
+ * ~1/5 red under `--workers=2`, 5/5 green under `--workers=1`, never
+ * reproduced in an isolated repro of that one test): the *previous*
+ * version's `toPass({ timeout: 3000 })` re-issued a fresh CDP round trip
+ * (`content.boundingBox()` + `item.boundingBox()`) on every poll attempt,
+ * so the 3000ms budget had to cover both the scroll-snap settle itself AND
+ * however long each Node<->browser round trip took that attempt -- under
+ * two workers' worth of concurrent Chromium/CPU contention specifically
+ * (never under one), a slower round trip eats into the same fixed budget
+ * as a slower settle, coupling a real UI wait to Node-process/IPC
+ * scheduling latency that has nothing to do with whether the carousel
+ * actually settled in time. Driving the whole wait from a single
+ * `requestAnimationFrame` loop already running in the page removes that
+ * coupling entirely: the 3000ms deadline is measured against
+ * `performance.now()` in the SAME realm as the animation, with zero
+ * per-attempt IPC cost, so it reflects only genuine settle time.
  */
 async function expectSnappedToBoundary(content: Locator, item: Locator, orientation: "horizontal" | "vertical" = "horizontal") {
-  await expect(async () => {
-    const [containerBox, itemBox] = await Promise.all([content.boundingBox(), item.boundingBox()]);
-    expect(containerBox).not.toBeNull();
-    expect(itemBox).not.toBeNull();
-    const delta =
-      orientation === "horizontal"
-        ? Math.abs(containerBox!.x - itemBox!.x)
-        : Math.abs(containerBox!.y - itemBox!.y);
-    // A couple of CSS pixels of tolerance for sub-pixel rounding during a
-    // smooth-scroll settle -- not a loose bound: an unsettled scroll (still
-    // mid-animation, or landed on the wrong slide) misses by tens/hundreds
-    // of pixels, not 1-2.
-    expect(delta).toBeLessThanOrEqual(2);
-  }).toPass({ timeout: 3000 });
+  const contentHandle = await content.elementHandle();
+  const itemHandle = await item.elementHandle();
+  if (!contentHandle || !itemHandle) {
+    throw new Error("expectSnappedToBoundary: content or item resolved to no element");
+  }
+  const result = await content.page().evaluate(
+    ([contentEl, itemEl, orientation]) => {
+      return new Promise<{
+        ok: boolean;
+        delta: number;
+        containerBox: { x: number; y: number };
+        itemBox: { x: number; y: number };
+      }>((resolve) => {
+        const deadline = performance.now() + 3000;
+        const check = () => {
+          const containerRect = (contentEl as Element).getBoundingClientRect();
+          const itemRect = (itemEl as Element).getBoundingClientRect();
+          const delta =
+            orientation === "horizontal"
+              ? Math.abs(containerRect.x - itemRect.x)
+              : Math.abs(containerRect.y - itemRect.y);
+          // A couple of CSS pixels of tolerance for sub-pixel rounding
+          // during a smooth-scroll settle -- not a loose bound: an
+          // unsettled scroll (still mid-animation, or landed on the wrong
+          // slide) misses by tens/hundreds of pixels, not 1-2.
+          if (delta <= 2) {
+            resolve({
+              ok: true,
+              delta,
+              containerBox: { x: containerRect.x, y: containerRect.y },
+              itemBox: { x: itemRect.x, y: itemRect.y },
+            });
+            return;
+          }
+          if (performance.now() >= deadline) {
+            resolve({
+              ok: false,
+              delta,
+              containerBox: { x: containerRect.x, y: containerRect.y },
+              itemBox: { x: itemRect.x, y: itemRect.y },
+            });
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      });
+    },
+    [contentHandle, itemHandle, orientation] as const,
+  );
+  expect(
+    result.ok,
+    `expected ${orientation} delta <= 2, got ${result.delta} -- ${JSON.stringify(result)}`,
+  ).toBe(true);
 }
 
 /**
