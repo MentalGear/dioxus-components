@@ -192,6 +192,49 @@ function parseTranslatePx(transform: string): number | null {
 }
 
 /**
+ * The *real* accessible names of every `role="group"`/`"tabpanel"` node the
+ * browser's own platform accessibility tree currently exposes (Chrome's
+ * CDP `Accessibility` domain, populated from the same computation real
+ * assistive tech consumes) -- deliberately not `page.getByRole`/
+ * `locator.ariaSnapshot()`. Measured live (this lane): this installed
+ * Playwright build's own ARIA-role engine does not treat `inert` as
+ * excluding a node at all -- a minimal `<div role="group" inert>` still
+ * matched `getByRole("group")` and appeared in `ariaSnapshot()`, while the
+ * *same* CDP call this helper uses omitted it entirely from the very first
+ * query (not merely "present but ignored"). `inert`'s actual, spec-defined
+ * effect (removal from the accessibility tree) is a platform-level
+ * property, so the platform's own tree -- not Playwright's separate,
+ * DOM-based ARIA approximation -- is the correct oracle for this
+ * component's own "only visible slides are exposed" contract. A resolved
+ * discrepancy, not a shortcut: `getByRole`/`ariaSnapshot` remain the right
+ * tool everywhere else in this file (they already correctly reflect
+ * `aria-*`/native semantics for everything that isn't `inert`), and this
+ * helper is reached for *only* the a11y-tree-exposure assertions below.
+ *
+ * Scoped to `rootSelector` via `DOM.querySelector` + `Accessibility.queryAXTree`
+ * (a *subtree* query), not `getFullAXTree` for the whole page -- this file's
+ * own "SCOPING" header note applies here too: every demo variant's own
+ * carousel is mounted on the same page at once, and several share the exact
+ * same "k of N" label shape (an `autoplay`/`indicators`/`tabs` variant sitting
+ * at its own untouched slide 1 is a perfectly legitimate, *different*
+ * `"1 of 5"`/`"1 of 4"` node) -- an unscoped whole-page query cannot tell
+ * those apart from a stale/leftover node in the variant actually under test.
+ */
+async function axTreeGroupNames(page: Page, rootSelector: string): Promise<string[]> {
+  const client = await page.context().newCDPSession(page);
+  await client.send("DOM.enable");
+  await client.send("Accessibility.enable");
+  const { root } = await client.send("DOM.getDocument", { depth: -1, pierce: true });
+  const { nodeId } = await client.send("DOM.querySelector", { nodeId: root.nodeId, selector: rootSelector });
+  const { nodes } = await client.send("Accessibility.queryAXTree", { nodeId });
+  const names = (nodes as Array<{ role?: { value?: string }; name?: { value?: string }; ignored?: boolean }>)
+    .filter((n) => !n.ignored && (n.role?.value === "group" || n.role?.value === "tabpanel"))
+    .map((n) => n.name?.value ?? "");
+  await client.detach();
+  return names;
+}
+
+/**
  * The carousel track's own per-slide pitch (px, along the given axis),
  * measured live from a rendered slide's own box rather than assumed --
  * every distance-based drag test below derives its drag length from this,
@@ -2234,5 +2277,294 @@ test.describe("Carousel: paging never scrolls the page (ancestor-scroll regressi
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
     expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
     expect(await page.evaluate(() => window.scrollX)).toBe(scrollXBefore);
+  });
+});
+
+/**
+ * The seamless-loop research's own a11y contract
+ * (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md` §7,
+ * cross-checked against every a11y-layer-having carousel library's own
+ * converged construction in that same round's `loop-libraries.md`): only
+ * the current (or, for a multi-per-view layout, every slide actually
+ * inside the viewport at rest) slide is reachable by Tab or exposed to the
+ * accessibility tree -- everything else is `inert`
+ * (`primitives/src/carousel.rs`'s own "Visible slides / `inert`" doc on
+ * [`CarouselItem`]). `getByRole`/`ariaSnapshot` cannot verify the
+ * accessibility-tree half of this (see `axTreeGroupNames`'s own doc,
+ * above, for the live discrepancy this session found and worked around).
+ */
+test.describe("Carousel: only visible slides are reachable (inert)", () => {
+  test("non-current slides are inert on the main variant; the accessibility tree exposes only the current one", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const items = frame.locator(".dx-carousel-item");
+    await expect(items).toHaveCount(5);
+
+    await expect(items.nth(0)).not.toHaveAttribute("inert");
+    for (let i = 1; i < 5; i++) {
+      await expect(items.nth(i)).toHaveAttribute("inert");
+    }
+
+    const namesBefore = await axTreeGroupNames(page, "#component-preview-frame [role=region]");
+    expect(namesBefore).toContain("1 of 5");
+    for (let n = 2; n <= 5; n++) {
+      expect(namesBefore).not.toContain(`${n} of 5`);
+    }
+
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expect(items.nth(0)).toHaveAttribute("inert");
+    await expect(items.nth(1)).not.toHaveAttribute("inert");
+
+    // Chrome's own accessibility tree recomputes asynchronously (a plain
+    // CDP re-query right after the DOM mutation can still observe the
+    // pre-mutation tree) -- `expect.poll` retries the whole scoped query
+    // until it reflects the settled DOM, the same "poll rather than assume
+    // instantaneous" discipline this file already applies to geometry
+    // settling (`expectSnappedToBoundary`).
+    await expect
+      .poll(() => axTreeGroupNames(page, "#component-preview-frame [role=region]"))
+      .toContain("2 of 5");
+    const namesAfter = await axTreeGroupNames(page, "#component-preview-frame [role=region]");
+    expect(namesAfter).not.toContain("1 of 5");
+  });
+
+  for (const variant of ["tabs", "autoplay", "looping"] as const) {
+    test(`non-current slides are inert on the ${variant} variant too`, async ({ page }) => {
+      await goto(page, variant);
+      const frame = demoFrame(page, variant);
+      const items = frame.locator(".dx-carousel-item");
+      const count = await items.count();
+      expect(count).toBeGreaterThan(1);
+
+      await expect(items.nth(0)).not.toHaveAttribute("inert");
+      for (let i = 1; i < count; i++) {
+        await expect(items.nth(i)).toHaveAttribute("inert");
+      }
+    });
+  }
+
+  test("a multi-per-view layout widens the visible set to every slide actually in the viewport (multiple variant)", async ({ page }) => {
+    await goto(page, "multiple");
+    const frame = demoFrame(page, "multiple");
+    const items = frame.locator(".dx-carousel-item");
+    const count = await items.count();
+
+    // Measured live, not assumed -- exactly how many slides are fully (or
+    // "at least half") visible at once depends on this demo's own rendered
+    // `flex-basis: 40%` against however wide its wrapper renders (this
+    // file's own established "measure, don't hardcode" convention,
+    // `slidePitch`'s own doc). The only structural invariant asserted is
+    // that the non-inert set is a contiguous prefix starting at slide 0
+    // (this demo never scrolls on its own before this point) and is more
+    // than just the one selected slide -- proving the widening actually
+    // happened, not merely that the single-slide case still works.
+    const inertFlags: boolean[] = [];
+    for (let i = 0; i < count; i++) {
+      inertFlags.push(await items.nth(i).evaluate((el) => el.hasAttribute("inert")));
+    }
+    const firstInert = inertFlags.indexOf(true);
+    expect(firstInert).toBeGreaterThan(1); // more than just slide 0 is visible
+    expect(inertFlags.slice(0, firstInert).every((v) => v === false)).toBe(true);
+    expect(inertFlags.slice(firstInert).every((v) => v === true)).toBe(true);
+
+    const names = await axTreeGroupNames(page, "#component-preview-frame-multiple [role=region]");
+    for (let i = 0; i < firstInert; i++) {
+      expect(names).toContain(`${i + 1} of ${count}`);
+    }
+    for (let i = firstInert; i < count; i++) {
+      expect(names).not.toContain(`${i + 1} of ${count}`);
+    }
+  });
+
+  test("inert state is frozen while a drag is in progress -- it only updates on release/settle", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const items = frame.locator(".dx-carousel-item");
+    const count = await items.count();
+
+    const inertSnapshot = async () => {
+      const flags: boolean[] = [];
+      for (let i = 0; i < count; i++) {
+        flags.push(await items.nth(i).evaluate((el) => el.hasAttribute("inert")));
+      }
+      return flags;
+    };
+
+    const before = await inertSnapshot();
+    const pitch = await slidePitch(items.first());
+    await dragHold(page, content, -pitch * 0.7, 0);
+
+    // Sample several times while still holding -- none of these may differ
+    // from the pre-drag baseline (freeze rule: `loop-a11y-guidance.md` §7 /
+    // `carousel-overscroll-2026-09-23.md` §3/§6, the same "never write mid-
+    // gesture" discipline every other scroll-position write in this module
+    // already follows).
+    for (let i = 0; i < 4; i++) {
+      expect(await inertSnapshot()).toEqual(before);
+      await page.waitForTimeout(60);
+    }
+
+    await page.mouse.up();
+    // Now it may (and, since the drag crossed a slide boundary, should)
+    // update.
+    await expect(async () => {
+      const after = await inertSnapshot();
+      expect(after).not.toEqual(before);
+    }).toPass({ timeout: 3000 });
+  });
+
+  test("focus is redirected to the carousel's own content region -- never lost to <body> -- when the focused slide leaves via the root keyboard handler", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slideButton = frame.getByTestId("carousel-slide-button");
+
+    await slideButton.focus();
+    await expect(slideButton).toBeFocused();
+
+    await page.keyboard.press("ArrowRight");
+    await expect(frame.getByRole("group", { name: "2 of 5" })).toHaveAttribute("data-selected", "true");
+
+    const contentId = await content.getAttribute("id");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => ({
+          isBody: document.activeElement === document.body,
+          id: document.activeElement?.id ?? null,
+        })),
+      )
+      .toEqual({ isBody: false, id: contentId });
+  });
+
+  test("focus is redirected -- not lost to <body> -- when the focused slide leaves via clicking Next", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slideButton = frame.getByTestId("carousel-slide-button");
+
+    await slideButton.focus();
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expect(frame.getByRole("group", { name: "2 of 5" })).toHaveAttribute("data-selected", "true");
+
+    const isBody = await page.evaluate(() => document.activeElement === document.body);
+    expect(isBody).toBe(false);
+  });
+
+  test("Tab from the last focusable in the current slide leaves the carousel -- no keyboard trap", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const region = frame.locator('[role="region"]');
+    const slideButton = frame.getByTestId("carousel-slide-button");
+
+    await slideButton.focus();
+    await expect(slideButton).toBeFocused();
+    await page.keyboard.press("Tab");
+
+    const regionId = await region.getAttribute("id");
+    const stillInside = await page.evaluate(
+      ({ regionId }) => {
+        const active = document.activeElement;
+        const region = regionId
+          ? document.getElementById(regionId)
+          : document.querySelector('[role="region"][aria-label="Featured photos"]');
+        return !!(region && active && region.contains(active));
+      },
+      { regionId },
+    );
+    expect(stillInside).toBe(false);
+  });
+
+  test("autoplay does not advance while focus is inside a slide (pause-on-focus invariant, still holds with inert)", async ({ page }) => {
+    // None of the shipped demo variants happen to put a focusable element
+    // inside an autoplay carousel's own slide content, so a plain
+    // `tabindex` is added to the CURRENT slide's own element for this test
+    // only -- the point under test is the Rust-side `focus_within` gate
+    // (`AutoplayContext`'s own doc), not any particular demo markup. It
+    // must be the current slide: a non-current one is already `inert` at
+    // page load (this describe block's own contract), and an inert
+    // element refuses programmatic `.focus()` too, not just pointer/Tab --
+    // so focusing anything else here would silently no-op and the test
+    // would pass for the wrong reason.
+    await goto(page, "autoplay");
+    const frame = demoFrame(page, "autoplay");
+    const slide1 = frame.getByRole("group", { name: "1 of 5" });
+    await slide1.evaluate((el) => el.setAttribute("tabindex", "-1"));
+    await slide1.evaluate((el) => (el as HTMLElement).focus());
+    await expect(async () => {
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      expect(focused).toBe("1 of 5");
+    }).toPass({ timeout: 1000 });
+
+    const selectedAt = async () =>
+      frame.locator('[data-selected="true"]').getAttribute("aria-label");
+    const before = await selectedAt();
+    expect(before).toBe("1 of 5");
+    await page.waitForTimeout(2600); // past two full 1200ms ticks
+    expect(await selectedAt()).toBe(before);
+  });
+
+  test("a drag starting on a partially-visible neighbour slide still pages the carousel (inert content is not a hit-test target)", async ({ page }) => {
+    await goto(page, "multiple");
+    const frame = demoFrame(page, "multiple");
+    const content = frame.locator(".dx-carousel-content");
+    const viewport = frame.locator('[data-slot="carousel-viewport"]');
+    const items = frame.locator(".dx-carousel-item");
+    const count = await items.count();
+
+    let neighbourIndex = -1;
+    for (let i = 0; i < count; i++) {
+      if (await items.nth(i).evaluate((el) => el.hasAttribute("inert"))) {
+        neighbourIndex = i;
+        break;
+      }
+    }
+    expect(neighbourIndex, "expected at least one inert (partially visible) neighbour").toBeGreaterThan(-1);
+
+    const neighbour = items.nth(neighbourIndex);
+    // Bring the demo into the *page's* own viewport first -- `page.mouse`
+    // targets real screen coordinates, and this component sits far down
+    // the long component-catalog page (`dragBy`'s own doc, above, hits the
+    // identical problem). Scrolling the PAGE is a different scroll
+    // container from the carousel's own internal `.dx-carousel-content`
+    // track, so this cannot itself reveal the neighbour slide the way
+    // `scrollIntoViewIfNeeded` on the *track* would -- it only moves which
+    // part of the page is on screen, not which slide is scrolled into the
+    // track's own viewport.
+    await scrollIntoViewInstant(viewport);
+    // A point inside BOTH the neighbour's own layout box and the clipping
+    // viewport's -- guaranteed actually painted on screen (not clipped)
+    // without ever calling `scrollIntoViewIfNeeded` on the neighbour itself
+    // (which would scroll this very slide fully into the *track's* view,
+    // defeating "partially visible").
+    const [viewportBox, neighbourBox] = await Promise.all([viewport.boundingBox(), neighbour.boundingBox()]);
+    expect(viewportBox).not.toBeNull();
+    expect(neighbourBox).not.toBeNull();
+    const x = Math.max(viewportBox!.x, neighbourBox!.x) + 2;
+    const y = neighbourBox!.y + neighbourBox!.height / 2;
+    expect(x).toBeLessThan(viewportBox!.x + viewportBox!.width);
+
+    const selectedBefore = await frame.locator('[data-selected="true"]').getAttribute("aria-label");
+    const pitch = await slidePitch(items.first());
+
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i++) {
+      await page.mouse.move(x - (pitch * 0.7 * i) / 12, y);
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+
+    await expect(async () => {
+      const selectedAfter = await frame.locator('[data-selected="true"]').getAttribute("aria-label");
+      expect(selectedAfter).not.toBe(selectedBefore);
+    }).toPass({ timeout: 3000 });
+  });
+
+  test("axe: still clean with non-visible slides inert (main variant)", async ({ page }) => {
+    await goto(page, "main");
+    await expectNoAxeViolations(page, "carousel: main variant with inert slides", {
+      include: "#component-preview-frame",
+    });
   });
 });

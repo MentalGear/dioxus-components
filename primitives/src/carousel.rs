@@ -82,7 +82,7 @@ use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
     fold_style_attributes, has_own_accessible_name, merge_attributes, use_controlled,
-    use_effect_cleanup, use_id_or, use_unique_id,
+    use_effect_cleanup, use_id_or, use_previous, use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
@@ -137,6 +137,21 @@ fn clamp_selected(index: usize, count: usize) -> usize {
     } else {
         index.min(count - 1)
     }
+}
+
+/// Defensive clamp for a `(start, end)` visible-range reported by a JS
+/// settle bridge -- guards against a reply that raced a shrinking `count`
+/// (an item unregistering between the geometry read and this signal
+/// write). Never lets either end point past the last valid index, and
+/// never lets `start` exceed `end` once clamped.
+fn clamp_visible_range(range: (usize, usize), count: usize) -> (usize, usize) {
+    if count == 0 {
+        return (0, 0);
+    }
+    let last = count - 1;
+    let start = range.0.min(last);
+    let end = range.1.min(last).max(start);
+    (start, end)
 }
 
 /// Whether a "previous" action is currently meaningful. v1 has no `loop`
@@ -441,28 +456,81 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         await dioxus.recv();
         return;
     }
-    let lastSent = null;
+    let lastNearest = null;
+    let lastVisStart = null;
+    let lastVisEnd = null;
     const settle = () => {
+        // Freeze rule (loop-a11y-guidance.md §7 / carousel-overscroll-2026-09-23.md
+        // §6): a live mouse/pen drag (`CAROUSEL_DRAG_JS`) fires its own
+        // 'scroll'/'scrollend' on every single incremental `scrollBy` it
+        // issues -- confirmed live (`CAROUSEL_SCROLL_TO_JS`'s own doc,
+        // 'A real drag already owns the scroll position' paragraph) -- so
+        // without this guard `selected` (and, now, the visible range this
+        // drives `inert` from) would change continuously mid-drag rather
+        // than only at rest. `data-dragging` is removed at the very start
+        // of `endDrag`, before its own release-settle `scrollBy` runs, so
+        // this never suppresses the genuine post-release settle -- only
+        // the mid-gesture noise. `CAROUSEL_DRAG_JS`'s own release settle
+        // reuses this exact geometry search for the identical reason (see
+        // that constant's own 'Release settle' doc) and is what a drag
+        // defers to instead.
+        if (container.hasAttribute('data-dragging')) {
+            return;
+        }
         const children = Array.from(container.children);
         if (children.length === 0) {
             return;
         }
         const containerRect = container.getBoundingClientRect();
         const containerStart = orientation === 'horizontal' ? containerRect.left : containerRect.top;
+        const containerEnd = orientation === 'horizontal' ? containerRect.right : containerRect.bottom;
         let nearest = 0;
         let nearestDist = Infinity;
+        // Which item indices are actually inside the viewport right now --
+        // an item counts as visible if its own midpoint falls within the
+        // container's rect (\"at least half the slide is in view\", not a
+        // stricter full-containment test, which would flicker a slide out
+        // right at a scroll-snap boundary's own sub-pixel settle, nor a
+        // looser any-overlap test, which would count a 1px sliver of a
+        // fully-clipped neighbour as \"visible\" for a multi-per-view
+        // layout with no peeking at all). Contiguous by construction (flex
+        // row/column, no reordering), so only the first/last matching
+        // index need to be kept.
+        let visStart = null;
+        let visEnd = null;
         children.forEach((child, i) => {
             const rect = child.getBoundingClientRect();
             const childStart = orientation === 'horizontal' ? rect.left : rect.top;
+            const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
             const dist = Math.abs(childStart - containerStart);
             if (dist < nearestDist) {
                 nearestDist = dist;
                 nearest = i;
             }
+            const center = (childStart + childEnd) / 2;
+            if (center >= containerStart && center <= containerEnd) {
+                if (visStart === null) {
+                    visStart = i;
+                }
+                visEnd = i;
+            }
         });
-        if (nearest !== lastSent) {
-            lastSent = nearest;
-            dioxus.send(nearest);
+        if (visStart === null) {
+            visStart = nearest;
+            visEnd = nearest;
+        }
+        // One wire shape for both message kinds (`[tag, a, b]`) -- `recv`
+        // deserializes into a single fixed Rust tuple type regardless of
+        // which fired, so `b` is simply unused (repeats `a`) for the
+        // 'selected' kind.
+        if (nearest !== lastNearest) {
+            lastNearest = nearest;
+            dioxus.send(['selected', nearest, nearest]);
+        }
+        if (visStart !== lastVisStart || visEnd !== lastVisEnd) {
+            lastVisStart = visStart;
+            lastVisEnd = visEnd;
+            dioxus.send(['visible', visStart, visEnd]);
         }
     };
     const supportsScrollEnd = 'onscrollend' in window;
@@ -478,19 +546,45 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     if (supportsScrollEnd) {
         container.addEventListener('scrollend', settle, { passive: true });
     }
+    // A resize of the scroller's own box re-settles too -- not just a
+    // scroll -- closing a real, measured mount-time race (this session):
+    // `CarouselContent`'s own layout depends on the themed wrapper's
+    // *external* stylesheet (`document::Link`, loaded asynchronously),
+    // which can still be in flight the instant this bridge attaches, so
+    // the very first geometry read can measure a temporarily wider box
+    // (found live: 544px before `.dx-carousel`'s own `padding-inline`
+    // reservation applied, 448px after) -- and for a `default_value == 0`
+    // carousel that never scrolls again on its own, that first, too-early
+    // read would otherwise never be corrected, permanently over-widening
+    // the visible range one slide's worth. `ResizeObserver`'s own first
+    // callback fires once for the box's *current* size the moment
+    // `observe()` is called (so this alone establishes the initial visible
+    // range even if the carousel never scrolls at all -- the mount case
+    // `CAROUSEL_SCROLL_TO_JS`'s own zero-delta settle used to special-case,
+    // now redundant and removed), and fires again on every subsequent
+    // genuine size change (that stylesheet finishing, a responsive
+    // breakpoint, a caller resizing the wrapper) -- a self-correcting
+    // construction for the whole class of 'the box was momentarily the
+    // wrong size when this measured it', not a fix for this one instance.
+    const resizeObserver = new ResizeObserver(() => settle());
+    resizeObserver.observe(container);
     await dioxus.recv();
     container.removeEventListener('scroll', onScroll);
     if (supportsScrollEnd) {
         container.removeEventListener('scrollend', settle);
     }
+    resizeObserver.disconnect();
     clearTimeout(debounceTimer);";
 
 /// Attach [`CAROUSEL_SCROLL_TRACKING_JS`] to the element with the given
 /// `id` for as long as the calling component stays mounted, forwarding
-/// every reported index to `set_selected`. Mirrors `crate::lib`'s
-/// `use_outside_dismiss`/`use_form_reset_listener` shape exactly: an
-/// initial `eval.send(..)` of the (id, orientation) the script's own
-/// `await dioxus.recv()` unpacks, a spawned task looping on
+/// every reported `('selected', index, _)` message to `set_selected` and
+/// every `('visible', start, end)` message to `visible_range` -- the a11y
+/// contract's own "visible" set (module doc, "Accessibility"; see
+/// [`CarouselItem`]'s own "Visible slides / `inert`" doc). Mirrors
+/// `crate::lib`'s `use_outside_dismiss`/`use_form_reset_listener` shape
+/// exactly: an initial `eval.send(..)` of the (id, orientation) the
+/// script's own `await dioxus.recv()` unpacks, a spawned task looping on
 /// `eval.recv()` for as long as the script keeps sending, and a cleanup
 /// closure that sends a teardown value so the script's own trailing
 /// `await dioxus.recv()` can resolve and remove its listeners before the
@@ -499,6 +593,8 @@ fn use_carousel_scroll_tracking(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
     set_selected: Callback<usize>,
+    count: Memo<usize>,
+    mut visible_range: Signal<(usize, usize)>,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
@@ -506,8 +602,13 @@ fn use_carousel_scroll_tracking(
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
         let _ = eval.send((id, orientation_str));
         spawn(async move {
-            while let Ok(index) = eval.recv::<usize>().await {
-                set_selected.call(index);
+            while let Ok((kind, a, b)) = eval.recv::<(String, usize, usize)>().await {
+                if kind == "selected" {
+                    set_selected.call(a);
+                } else {
+                    let count_now = *count.peek();
+                    visible_range.set(clamp_visible_range((a, b), count_now));
+                }
             }
         });
         move || {
@@ -982,8 +1083,11 @@ const CAROUSEL_DRAG_JS: &str = "\
 /// initial `eval.send(..)`, teardown via a second send read by the
 /// script's own trailing `await dioxus.recv()`), one layer simpler since
 /// this bridge reports nothing back to Rust at all (see [`CAROUSEL_DRAG_JS`]'s
-/// own doc for why: every `scrollBy` it issues is picked up by
-/// [`use_carousel_scroll_tracking`]'s own listener on the same element).
+/// own doc for why: every `scrollBy` it issues -- including `endDrag`'s
+/// own release settle -- is picked up by [`use_carousel_scroll_tracking`]'s
+/// own listener on the same element, which is what recomputes both
+/// `selected` and the a11y contract's "visible" set once a real,
+/// `data-dragging`-free scroll/scrollend event follows the release).
 ///
 /// `enabled` is read with tracked syntax so toggling
 /// [`CarouselContentProps::draggable`] at runtime actually attaches/tears
@@ -1367,6 +1471,33 @@ struct CarouselContext {
     /// [`CarouselItem`] can switch its own role from `group` to
     /// `tabpanel` -- see that component's own "Tablist variant" doc.
     tablist_present: Signal<bool>,
+    /// `[start, end]` (inclusive) item indices actually inside
+    /// [`CarouselContent`]'s own viewport *at rest* -- the a11y contract's
+    /// own "visible" set (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+    /// §7, `loop-libraries.md`'s cross-library convergence table).
+    /// Defaults to `(0, 0)` -- deterministic across SSR and a client's own
+    /// pre-hydration first render, matching [`Self::selected`]'s own
+    /// forced-`0`-until-registration value (see [`CarouselItem`]'s own
+    /// "Visible slides / `inert`" doc for why this makes the two agree at
+    /// first render without either needing a special case). Updated only
+    /// by [`use_carousel_scroll_tracking`]'s own settle (on `scrollend`/the
+    /// debounced-`scroll` fallback, and on a `ResizeObserver` firing for
+    /// the scroller's own box -- see that constant's own doc for why a
+    /// resize matters here too) -- never mid-drag, mid-momentum, or
+    /// mid-smooth-page (the same "freeze" rule already applies to
+    /// [`Self::selected`]; a drag's own release settle reaches this
+    /// signal only indirectly, through the ordinary native
+    /// scroll/scrollend event its release `scrollBy` produces once
+    /// `data-dragging` is gone).
+    visible_range: Signal<(usize, usize)>,
+    /// The index of the [`CarouselItem`] that currently contains DOM
+    /// focus, if any -- maintained purely by each item's own
+    /// `onfocusin`/`onfocusout` (native, synchronous; no `document::eval`
+    /// involved). Read once, synchronously, by the focus-redirect effect
+    /// below whenever [`Self::selected`] changes, to decide whether the
+    /// slide that just lost "current" status (and is about to -- or just
+    /// did -- become `inert`) held focus at the moment of the transition.
+    focused_item: Signal<Option<usize>>,
 }
 
 /// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
@@ -1622,6 +1753,8 @@ pub fn Carousel(props: CarouselProps) -> Element {
         rotating: autoplay_rotating,
     };
     let tablist_present = use_signal(|| false);
+    let visible_range: Signal<(usize, usize)> = use_signal(|| (0, 0));
+    let focused_item: Signal<Option<usize>> = use_signal(|| None);
 
     use_context_provider(|| CarouselContext {
         orientation,
@@ -1634,6 +1767,8 @@ pub fn Carousel(props: CarouselProps) -> Element {
         direction,
         autoplay,
         tablist_present,
+        visible_range,
+        focused_item,
     });
 
     // Page the scroller to the selected slide whenever it changes,
@@ -1725,6 +1860,91 @@ pub fn Carousel(props: CarouselProps) -> Element {
             orientation_str,
             first,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+        ));
+    });
+
+    // Focus safety (module doc §3 / `loop-a11y-guidance.md` §7's "Focus
+    // handling on rotation"): whenever `selected` changes, the slide that
+    // was current a moment ago is about to (or, since the DOM patch that
+    // sets its `inert` attribute is already applied by the time this
+    // effect runs, may already) drop out of the visible/interactive set.
+    // Per the HTML spec, an element becoming `inert` while it contains the
+    // focused element unfocuses it and falls back to the document itself
+    // (`<body>`) -- exactly the fallback this must never be seen to do.
+    //
+    // `focused_item` (each `CarouselItem`'s own plain, synchronous
+    // `onfocusin`/`onfocusout`, no `document::eval` involved) is read here
+    // as a snapshot of "was a slide focused right before this transition,
+    // and if so which one" -- captured independently of whichever DOM
+    // mutation already ran, so it still answers correctly even though a
+    // `.peek()` of `document.activeElement` at this point could not (the
+    // browser's own auto-blur has already fired by the time any effect,
+    // this one included, gets to run -- effects only ever see the DOM
+    // *after* the patch that triggered them, the same ordering every other
+    // post-render `document::eval` in this module already relies on for
+    // reading fresh geometry).
+    //
+    // The redirect target is [`CarouselContent`]'s own scroller element
+    // (`content_id`) -- already unconditionally focusable
+    // (`tabindex="0"`), never `inert`, and explicitly sanctioned as a
+    // "stable control" by the contract ("the carousel's own focusable
+    // region/content element, *or* the Next/Previous button that caused
+    // the move"). A single, source-agnostic target rather than
+    // special-casing which button (if any) caused the move keeps this one
+    // effect correct for every transition source (buttons, the root
+    // keyboard handler, `CarouselTab`, `CarouselApi::scroll_to`, and a
+    // drag/wheel/trackpad settle that changes `selected` with no button
+    // involved at all) without threading "who caused this" through every
+    // one of them.
+    //
+    // Deliberately not gated more finely than "the previously-focused
+    // slide is not the new `selected`": knowing whether that slide
+    // *remains* inside the new multi-per-view visible window without
+    // actually performing the redirect would need the post-scroll geometry
+    // this effect cannot see yet (the visible-range settle above is still
+    // in flight at this exact point) -- so a focused slide other than the
+    // new current one is always treated as "about to need a fixup" even in
+    // the rare multi-per-view case where it happens to still be visible
+    // afterward. Safety over precision: an unnecessary refocus onto the
+    // scroller (still inside the carousel, still a sensible place for
+    // focus to be) is a far smaller cost than the alternative -- focus
+    // silently dropping to `<body>`.
+    let prev_selected = use_previous(selected.into());
+    use_effect(move || {
+        let new_selected = selected();
+        let old_selected = prev_selected();
+        if old_selected == new_selected {
+            return;
+        }
+        let Some(focused_idx) = *focused_item.peek() else {
+            return;
+        };
+        if focused_idx == new_selected {
+            return;
+        }
+        let target = content_id.peek().clone();
+        if target.is_empty() {
+            return;
+        }
+        // Unconditional, not gated on re-reading `document.activeElement`
+        // first: measured live (this session) that this effect's own
+        // `document::eval` dispatch can run *before* Dioxus's own DOM patch
+        // has applied the new `inert` attribute -- `document.activeElement`
+        // at that moment still reports the slide's own descendant, still
+        // genuinely focused, so a "only redirect if focus already looks
+        // lost" check silently no-ops here and then never gets a second
+        // chance once the patch (and the browser's own auto-blur-to-`body`
+        // it triggers) actually lands a moment later. `focused_item` is
+        // this component's own Rust-side judgment call, captured
+        // synchronously and independently of DOM-patch timing (each
+        // `CarouselItem`'s own `onfocusin`/`onfocusout`), so it is trusted
+        // outright: whichever slide held focus right before this
+        // transition is not the new current one, so a redirect is due
+        // regardless of whether the browser has already carried out its
+        // own fallback-to-`body` by the time this runs.
+        document::eval(&format!(
+            "var root = document.getElementById('{target}'); \
+             if (root) {{ root.focus(); }}"
         ));
     });
 
@@ -2198,7 +2418,13 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         ctx.content_id.set(id());
     });
 
-    use_carousel_scroll_tracking(id, ctx.orientation, ctx.set_selected);
+    use_carousel_scroll_tracking(
+        id,
+        ctx.orientation,
+        ctx.set_selected,
+        ctx.count,
+        ctx.visible_range,
+    );
     use_carousel_drag(id, ctx.orientation, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
@@ -2342,6 +2568,52 @@ pub struct CarouselItemProps {
 /// hydration; the label simply arrives, correctly, a moment later, the
 /// same already-shipped tradeoff `tabs.rs`'s `aria-controls` makes.
 ///
+/// ## Visible slides / `inert`
+///
+/// Every [`CarouselItem`] the a11y contract's own "visible" set does not
+/// include (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+/// §7, cross-checked against every a11y-layer-having carousel library's
+/// own converged construction in `loop-libraries.md`) renders `inert` --
+/// removed from both the Tab order and the accessibility tree in one
+/// attribute, the Chrome "make accessible carousels" recipe's own
+/// mechanism. "Visible" is the current slide (always, regardless of the
+/// bridges below -- a safety net, not the primary signal: never leaves
+/// the slide the rest of this component's own state calls "selected"
+/// stranded `inert` by a stale/lagging geometry read) unioned with
+/// [`CarouselContext::visible_range`], the `[start, end]` item indices
+/// [`use_carousel_scroll_tracking`]/[`use_carousel_drag`] last measured
+/// actually inside [`CarouselContent`]'s own viewport at rest -- which for
+/// a single-slide-per-view layout is always just the current slide again,
+/// and for a multi-per-view one (e.g. `flex-basis: 33%`) additionally
+/// covers however many full neighbours are genuinely on screen.
+///
+/// **First render / SSR is deterministic.** [`CarouselContext::selected`]
+/// is forced to `0` until every sibling has registered (this component's
+/// own "SSR stability" doc above), and [`CarouselContext::visible_range`]
+/// starts at its own matching default, `(0, 0)` -- so server and a
+/// client's own pre-hydration first render both render only index `0` as
+/// non-`inert`, agreeing without either needing a special case for the
+/// other. A multi-per-view layout's true visible count is not knowable
+/// from Rust-only state at all (it depends on `flex-basis`/gap CSS this
+/// component never reads) -- widening past that single slide is real, but
+/// always happens through a later effect's own signal write
+/// ([`use_carousel_scroll_tracking`]'s own `ResizeObserver`, whose first
+/// callback fires for the scroller's *current* box the moment it attaches
+/// -- reached even for an already-aligned `default_value == 0` mount that
+/// never scrolls on its own at all -- see that constant's own doc), never
+/// inside this component's own first render.
+///
+/// **Frozen while moving.** [`use_carousel_scroll_tracking`]'s own settle
+/// only ever writes `visible_range` at a genuine rest point -- on
+/// `scrollend` (or the debounced-`scroll` fallback) or a `ResizeObserver`
+/// firing, explicitly skipped for as long as `data-dragging` is set -- never
+/// mid-drag, mid-momentum, or mid-smooth-page (the same rule
+/// `dev-docs/research/carousel-overscroll-2026-09-23.md` §3/§6 already
+/// binds every other scroll-position write in this module to). A drag's own
+/// release settle reaches this only indirectly: `data-dragging` is removed
+/// before `endDrag`'s own settle `scrollBy` runs, so the resulting native
+/// scroll/scrollend event is what this bridge actually observes.
+///
 /// ## Styling
 ///
 /// The [`CarouselItem`] component defines the following data attribute
@@ -2372,6 +2644,51 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     let is_selected = selected == index();
     let has_name = has_own_accessible_name(&props.attributes);
     let default_label = (!has_name && count > 0).then(|| slide_label(index(), count));
+
+    // See this component's own "Visible slides / `inert`" doc above.
+    //
+    // `Option<&'static str>` (`None` when visible, never a bare `false`
+    // `bool`) is load-bearing, not a style preference: `dioxus-interpreter-js`
+    // 0.7.9's `set_attribute.ts` special-cases which HTML attributes are
+    // "boolean" (present/absent) via its own hardcoded `isBoolAttr`
+    // allowlist -- `disabled`/`hidden`/`checked`/etc. are on it, `inert` is
+    // not (confirmed live: a raw `inert: bool` here rendered
+    // `inert="false"` as a PRESENT attribute on the web target, which HTML
+    // boolean-attribute semantics read as inert regardless of the string
+    // value -- every slide came back inert, including the selected one).
+    // A `bool`-typed dynamic attribute always carries a value (true or
+    // false) as far as the vdom is concerned, so Dioxus can only ever emit
+    // a `set_attribute` mutation for it -- through exactly that buggy
+    // allowlist. An `Option`-typed one one that is genuinely absent when
+    // `None`, so Dioxus instead emits a `remove_attribute` mutation
+    // (`unified_bindings.rs`'s own `remove_attribute`, a plain
+    // `node.removeAttribute(field)` for any field with no special case),
+    // which never touches `isBoolAttr` at all -- and `Some("true")` still
+    // reaches `setAttributeDefault`, but `truthy("true")` is `true`, so the
+    // (buggy, allowlist-gated) removal branch is simply never reached
+    // either way. This sidesteps the whole allowlist rather than trying to
+    // special-case around it, and is the same `Option<&str>`-for-omission
+    // construction this component's own `default_label`/`CarouselPrevious`'s
+    // `aria_controls` already use for the identical "must be entirely
+    // absent, not merely falsy" reason -- see `dev-docs/backlog.md` row 91's
+    // dated addendum for the live repro this was found from.
+    let (visible_start, visible_end) = (ctx.visible_range)();
+    let in_visible_range = index() >= visible_start && index() <= visible_end;
+    let is_visible = is_selected || in_visible_range;
+    let inert: Option<&'static str> = (!is_visible).then_some("true");
+
+    // Plain, synchronous native focus tracking -- no `document::eval`
+    // involved (unlike almost everything else in this module): this is
+    // read back, synchronously, by `Carousel`'s own focus-redirect effect
+    // (see that effect's own doc for why a JS-side `document.activeElement`
+    // read cannot answer the same question after the fact).
+    let mut focused_item = ctx.focused_item;
+    let onfocusin = move |_| focused_item.set(Some(index()));
+    let onfocusout = move |_| {
+        if (focused_item)() == Some(index()) {
+            focused_item.set(None);
+        }
+    };
 
     // `role="tabpanel"` (in lieu of `group`) once a `CarouselTabList` has
     // registered -- the APG tabbed style, `carousel-2-tablist.html`'s own
@@ -2415,12 +2732,15 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
             aria_roledescription: "slide",
             style: style.clone(),
             "data-selected": is_selected,
+            inert,
         }),
     ]);
 
     rsx! {
         div {
             id,
+            onfocusin,
+            onfocusout,
             ..attributes,
 
             {props.children}
@@ -3154,6 +3474,27 @@ mod tests {
     }
 
     #[test]
+    fn clamp_visible_range_within_bounds_is_unchanged() {
+        assert_eq!(clamp_visible_range((0, 2), 5), (0, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_clamps_end_past_last_index() {
+        assert_eq!(clamp_visible_range((1, 99), 3), (1, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_clamps_start_past_last_index_too() {
+        assert_eq!(clamp_visible_range((50, 60), 3), (2, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_with_zero_count_is_zero() {
+        assert_eq!(clamp_visible_range((0, 0), 0), (0, 0));
+        assert_eq!(clamp_visible_range((4, 9), 0), (0, 0));
+    }
+
+    #[test]
     fn can_scroll_prev_false_at_first_slide() {
         assert!(!can_scroll_prev(0));
     }
@@ -3508,6 +3849,50 @@ mod ssr_tests {
         let html = render(ThreeSlideCarousel);
         assert!(!html.contains("of 0"));
         assert!(!html.contains("1 of 3"));
+    }
+
+    #[test]
+    fn item_zero_is_not_inert_on_first_render_before_registration_effects_run() {
+        // Hydration parity (`CarouselItem`'s own "Visible slides / `inert`"
+        // doc): `selected`/`visible_range` are both forced to their
+        // deterministic default (`0`/`(0, 0)`) until every sibling's own
+        // registration effect has run, and (like the label test above)
+        // `rebuild_in_place` alone never runs effects at all -- so this is
+        // also exactly what a real SSR render (and a client's own
+        // pre-hydration first paint) produces regardless of how many
+        // slides actually exist. Slide 0's own opening `<div ... role="group"`
+        // tag (the first one in this fixture's DOM order) must never carry
+        // `inert` -- it is always the deterministic first-render "visible"
+        // slide.
+        let html = render(ThreeSlideCarousel);
+        let tag_start = html.find(r#"role="group""#).unwrap();
+        let open_start = html[..tag_start].rfind("<div").unwrap();
+        let open_end = html[open_start..].find('>').unwrap() + open_start;
+        assert!(!html[open_start..=open_end].contains("inert"));
+    }
+
+    #[test]
+    fn items_after_zero_are_inert_on_first_render_before_registration_effects_run() {
+        // The mirror of the test above: slides 1 and 2 are neither
+        // `selected` (forced to `0`) nor inside `visible_range` (forced to
+        // `(0, 0)`) on this same first render, so both must be `inert`
+        // -- the a11y contract's "only visible slides are reachable"
+        // (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+        // §7) already holding before a single effect has run, not
+        // merely once the client catches up.
+        let html = render(ThreeSlideCarousel);
+        let group_tags: Vec<&str> = html
+            .match_indices(r#"role="group""#)
+            .map(|(tag_start, _)| {
+                let open_start = html[..tag_start].rfind("<div").unwrap();
+                let open_end = html[open_start..].find('>').unwrap() + open_start;
+                &html[open_start..=open_end]
+            })
+            .collect();
+        assert_eq!(group_tags.len(), 3);
+        assert!(!group_tags[0].contains("inert"));
+        assert!(group_tags[1].contains("inert"));
+        assert!(group_tags[2].contains("inert"));
     }
 
     #[test]
