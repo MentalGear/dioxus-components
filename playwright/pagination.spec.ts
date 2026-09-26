@@ -1,6 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 // Every `PaginationLink`/`PaginationPrevious`/`PaginationNext` renders a real
 // `<a href="#">` (`preview/src/components/pagination/component.rs`) --
@@ -41,7 +42,10 @@ test("current page is marked aria-current=\"page\"; Previous/Next have accessibl
 // the one property no other link's hover ever sets -- never changes.
 for (const dark of [false, true]) {
   test(`hovering the current page keeps its border (the actual "you are here" signal) unchanged (${dark ? "dark" : "light"} mode)`, async ({ page }) => {
-    await page.goto(`${BASE_URL}/component/?name=pagination&${dark ? "dark_mode=true" : ""}`, { waitUntil: "networkidle" });
+    // dev-docs/backlog.md row 109: this test hovers right after navigating,
+    // on the SSG lane -- `gotoHydrated` so that hover can't land before
+    // hydration attaches listeners.
+    await gotoHydrated(page, `${BASE_URL}/component/?name=pagination&${dark ? "dark_mode=true" : ""}`);
     const preview = page.locator("#component-preview-frame").first();
     const current = preview.locator('a[aria-current="page"]');
     const other = preview.getByRole("link", { name: "1", exact: true });

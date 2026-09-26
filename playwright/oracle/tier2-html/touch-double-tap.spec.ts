@@ -100,8 +100,10 @@
  * tree.
  */
 
-import { test, expect, devices, type Page } from "@playwright/test";
+import { test, expect, devices } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 // Same reasoning as touch-focus-zoom.spec.ts: run the iPhone 13 device
 // descriptor on Chromium (this repo's local lanes ship no WebKit project).
@@ -180,7 +182,7 @@ function assertAllManipulation(rows: Row[], route: string) {
 }
 
 test("CALIBRATION: iPhone 13 emulation yields coarse pointer / no hover", async ({ page }) => {
-  await page.goto(`${BASE}/`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/`, { timeout: 60000 });
   const media = await page.evaluate(() => ({
     coarse: matchMedia("(pointer: coarse)").matches,
     noHover: matchMedia("(hover: none)").matches,
@@ -192,22 +194,22 @@ test("CALIBRATION: iPhone 13 emulation yields coarse pointer / no hover", async 
 });
 
 test("home page: every interactive element suppresses double-tap zoom", async ({ page }) => {
-  await page.goto(`${BASE}/`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/`, { timeout: 60000 });
   assertAllManipulation(await scan(page), "/");
 });
 
 test("docs page: every interactive element suppresses double-tap zoom", async ({ page }) => {
-  await page.goto(`${BASE}/docs?`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/docs?`, { timeout: 60000 });
   assertAllManipulation(await scan(page), "/docs");
 });
 
 test("demos page: every interactive element suppresses double-tap zoom", async ({ page }) => {
-  await page.goto(`${BASE}/demos?`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/demos?`, { timeout: 60000 });
   assertAllManipulation(await scan(page), "/demos");
 });
 
 test("dashboard email client: every interactive element suppresses double-tap zoom", async ({ page }) => {
-  await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+  await gotoHydrated(page, `${BASE}/dashboard/email-client?`, { timeout: 60000 });
   await page.waitForTimeout(3000);
   assertAllManipulation(await scan(page), "/dashboard/email-client");
 });
@@ -219,7 +221,7 @@ test("dashboard email client: every interactive element suppresses double-tap zo
 test.describe("overlay-gated elements", () => {
   test('overlay: combobox listbox open ("Switch workspace" options suppress double-tap zoom)', async ({ page }) => {
     const route = `${BASE}/component/?name=combobox&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     await page.waitForTimeout(3000);
     const trigger = page.getByRole("combobox", { name: "Select framework" });
     await trigger.focus();
@@ -230,7 +232,7 @@ test.describe("overlay-gated elements", () => {
 
   test("overlay: color_picker popover open (hue/area thumbs suppress double-tap zoom)", async ({ page }) => {
     const route = `${BASE}/component/?name=color_picker&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
     await trigger.click({ timeout: 10000 });
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -239,7 +241,7 @@ test.describe("overlay-gated elements", () => {
 
   test("overlay: date_picker calendar popover open (day cells suppress double-tap zoom)", async ({ page }) => {
     const route = `${BASE}/component/?name=date_picker&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     const trigger = page.getByRole("button", { name: "Show Calendar" }).first();
     await trigger.click({ timeout: 10000 });
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -248,7 +250,7 @@ test.describe("overlay-gated elements", () => {
 
   test("overlay: sheet open (its controls suppress double-tap zoom)", async ({ page }) => {
     const route = `${BASE}/component/?name=sheet&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     await page.getByRole("button", { name: "Right" }).first().click({ timeout: 10000 });
     await page.waitForTimeout(300);
     assertAllManipulation(await scan(page), `${route} (sheet open)`);
@@ -256,7 +258,7 @@ test.describe("overlay-gated elements", () => {
 
   test("overlay: dropdown menu open (menu items suppress double-tap zoom)", async ({ page }) => {
     const route = `${BASE}/component/?name=dropdown_menu&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     const trigger = page.getByRole("button", { name: /Open Menu/i }).first();
     await trigger.click({ timeout: 10000 });
     await expect(page.locator('[role="menu"][data-state="open"]')).toBeVisible();
@@ -268,7 +270,7 @@ test.describe("overlay-gated elements", () => {
   // opens every one of, reused here rather than re-deriving open steps.
   test("top_layer fixture: clipping-escape popovers open (content suppresses double-tap zoom)", async ({ page }) => {
     const route = `${BASE}/component/?name=top_layer&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     await page.locator("#clip-popover-trigger").click();
     await expect(page.locator("#clip-popover-content")).toBeVisible();
     assertAllManipulation(await scan(page), `${route} (popover open)`);
@@ -293,7 +295,7 @@ const COMPONENTS = [
 for (const name of COMPONENTS) {
   test(`component "${name}": every interactive element suppresses double-tap zoom`, async ({ page }) => {
     const route = `${BASE}/component/?name=${name}&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     assertAllManipulation(await scan(page), route);
   });
 }

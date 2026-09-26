@@ -114,9 +114,11 @@
  * inventory of text-entry surfaces.
  */
 
-import { test, expect, devices, type Page } from "@playwright/test";
+import { test, expect, devices } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 // Playwright's iPhone descriptors default to WebKit (`defaultBrowserType:
 // "webkit"`), which this repo's local lanes do not ship; the rule under test
@@ -179,7 +181,7 @@ function assertAllAtLeast16(rows: Row[], route: string) {
 }
 
 test("CALIBRATION: iPhone 13 emulation yields coarse pointer / no hover", async ({ page }) => {
-  await page.goto(`${BASE}/`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/`, { timeout: 60000 });
   const media = await page.evaluate(() => ({
     coarse: matchMedia("(pointer: coarse)").matches,
     noHover: matchMedia("(hover: none)").matches,
@@ -191,17 +193,17 @@ test("CALIBRATION: iPhone 13 emulation yields coarse pointer / no hover", async 
 });
 
 test("home page: every text-entry element is >= 16px", async ({ page }) => {
-  await page.goto(`${BASE}/`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/`, { timeout: 60000 });
   assertAllAtLeast16(await scan(page), "/");
 });
 
 test("docs page: every text-entry element is >= 16px", async ({ page }) => {
-  await page.goto(`${BASE}/docs?`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/docs?`, { timeout: 60000 });
   assertAllAtLeast16(await scan(page), "/docs");
 });
 
 test("demos page: every text-entry element is >= 16px (blocks closed)", async ({ page }) => {
-  await page.goto(`${BASE}/demos?`, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, `${BASE}/demos?`, { timeout: 60000 });
   assertAllAtLeast16(await scan(page), "/demos");
 });
 
@@ -215,7 +217,7 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   test.use({ viewport: { width: 1024, height: 768 } });
 
   test("demos page: BlockColorPalette's hex field is >= 16px once its popover opens", async ({ page }) => {
-    await page.goto(`${BASE}/demos?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, `${BASE}/demos?`, { timeout: 60000 });
     await page.waitForTimeout(3000);
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
     test.skip((await trigger.count()) === 0, "no BlockColorPalette trigger rendered on /demos in this build");
@@ -227,7 +229,7 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   });
 
   test("dashboard email client: search input and compose form are >= 16px", async ({ page }) => {
-    await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, `${BASE}/dashboard/email-client?`, { timeout: 60000 });
     await page.waitForTimeout(3000);
     assertAllAtLeast16(await scan(page), "/dashboard/email-client");
 
@@ -270,7 +272,7 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   // direct siblings of that button rather than descendants. Both scans
   // below now expect a fully clean axe run.
   test("dashboard email client: default state has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, `${BASE}/dashboard/email-client?`, { timeout: 60000 });
     // Wait for the inbox list to actually render before scanning, rather
     // than a fixed timeout -- see input.spec.ts's identical convention.
     await expect(page.getByRole("button", { name: /Compose/ }).first()).toBeVisible();
@@ -278,7 +280,7 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
   });
 
   test("dashboard email client: compose open has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(`${BASE}/dashboard/email-client?`, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, `${BASE}/dashboard/email-client?`, { timeout: 60000 });
     const compose = page.getByRole("button", { name: /Compose/ }).first();
     await expect(compose).toBeVisible();
     await compose.focus();
@@ -289,7 +291,7 @@ test.describe("overlay-gated elements (coarse pointer, desktop-width viewport)",
 
   test('overlay: combobox listbox open ("Switch workspace" input stays >= 16px)', async ({ page }) => {
     const route = `${BASE}/component/?name=combobox&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "domcontentloaded" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     await page.waitForTimeout(3000);
     // Open from the keyboard, as combobox.spec.ts's keyboard test does.
     // By accessible name: the navbar's language <select> also has the
@@ -321,7 +323,7 @@ const COMPONENTS = [
 for (const name of COMPONENTS) {
   test(`component "${name}": every text-entry element is >= 16px`, async ({ page }) => {
     const route = `${BASE}/component/?name=${name}&`;
-    await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+    await gotoHydrated(page, route, { timeout: 60000 });
     assertAllAtLeast16(await scan(page), route);
   });
 }
@@ -331,7 +333,7 @@ for (const name of COMPONENTS) {
 // its own "Right" trigger button in its preview demo).
 test("overlay: color_picker popover open (hex field stays >= 16px)", async ({ page }) => {
   const route = `${BASE}/component/?name=color_picker&`;
-  await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, route, { timeout: 60000 });
   const trigger = page.getByRole("button", { name: /Color picker/i }).first();
   await trigger.click({ timeout: 10000 });
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -340,7 +342,7 @@ test("overlay: color_picker popover open (hex field stays >= 16px)", async ({ pa
 
 test("overlay: date_picker calendar popover open (segments stay >= 16px)", async ({ page }) => {
   const route = `${BASE}/component/?name=date_picker&`;
-  await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, route, { timeout: 60000 });
   const trigger = page.getByRole("button", { name: "Show Calendar" }).first();
   await trigger.click({ timeout: 10000 });
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -349,7 +351,7 @@ test("overlay: date_picker calendar popover open (segments stay >= 16px)", async
 
 test("overlay: sheet open (its Input fields stay >= 16px)", async ({ page }) => {
   const route = `${BASE}/component/?name=sheet&`;
-  await page.goto(route, { timeout: 60000, waitUntil: "networkidle" });
+  await gotoHydrated(page, route, { timeout: 60000 });
   await page.getByRole("button", { name: "Right" }).first().click({ timeout: 10000 });
   await page.waitForTimeout(300);
   assertAllAtLeast16(await scan(page), `${route} (sheet open)`);

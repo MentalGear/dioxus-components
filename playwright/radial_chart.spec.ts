@@ -1,6 +1,12 @@
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+// dev-docs/backlog.md row 109: this suite interacts (hover/click) right
+// after navigating, on the SSG lane -- `gotoHydrated` so that can't land
+// before hydration attaches listeners. Row 90's `networkidle` fix for this
+// file is the same class under a weaker remedy; this supersedes it.
+import { gotoHydrated } from "./hydration";
 
 // Every variant renders inline on one page load (`?name=radial_chart&`,
 // same convention every other multi-variant component's own spec uses,
@@ -26,7 +32,7 @@ test.describe("Radial chart: renders every variant as an accessible image", () =
     test(`${variant}: svg[role=img] with an accessible name, at least one ring, hidden data table`, async ({
       page,
     }) => {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       const f = frame(page, variant);
 
       const svg = f.locator('svg[role="img"]').first();
@@ -45,7 +51,7 @@ test.describe("Radial chart: renders every variant as an accessible image", () =
 
 test.describe("Radial chart: ring geometry", () => {
   test("main: one ring per datum, each a wide (not tall) arc", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "main");
     // chart-radial-simple.tsx's own 5-category dataset, ported verbatim.
     const arcs = f.locator('[data-slot="chart-arc"]');
@@ -57,13 +63,13 @@ test.describe("Radial chart: ring geometry", () => {
   });
 
   test("grid: a background track renders behind the value arcs", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "grid");
     await expect(f.locator('[data-slot="chart-polar-grid"]').first()).toBeAttached();
   });
 
   test("stacked: two series stack cumulatively into one ring, not two concentric rings", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "stacked");
     const arcs = f.locator('[data-slot="chart-arc"]');
     // One datum row (chart-radial-stacked.tsx: `[{ month: "january", ... }]`)
@@ -85,7 +91,7 @@ test.describe("Radial chart: ring geometry", () => {
 
 test.describe("Radial chart: center text and labels", () => {
   test("text: renders the two-line center label", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "text");
     const centerText = f.locator('[data-slot="chart-pie-center-text"]');
     await expect(centerText).toBeAttached();
@@ -93,7 +99,7 @@ test.describe("Radial chart: center text and labels", () => {
   });
 
   test("shape: a single ring renders with a rounded corner radius", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "shape");
     const d = await f.locator('[data-slot="chart-arc"]').first().getAttribute("d");
     expect(d).not.toBeNull();
@@ -104,7 +110,7 @@ test.describe("Radial chart: center text and labels", () => {
   });
 
   test("label: each ring's own category label is drawn", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "label");
     await expect(f.locator('[data-slot="chart-arc-label"]').first()).toBeAttached();
   });
@@ -113,7 +119,7 @@ test.describe("Radial chart: center text and labels", () => {
 test.describe("Axe automated scan", () => {
   for (const variant of VARIANTS) {
     test(`${variant}: no automatically detectable a11y issues`, async ({ page }) => {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       await expectNoAxeViolations(page, `radial_chart: ${variant}`, {
         excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
       });

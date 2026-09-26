@@ -83,11 +83,13 @@
  * APG-sourced, dual-subject-calibrated rule.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const REFERENCE_ROOT = path.resolve(__dirname, "../reference/7e4034b/content/patterns");
 const comboboxSelectOnlyUrl = pathToFileURL(
@@ -95,8 +97,14 @@ const comboboxSelectOnlyUrl = pathToFileURL(
 ).href;
 
 const BASE = `${BASE_URL}/component/?name=`;
+// dev-docs/backlog.md row 109: this suite clicks/types into the combobox
+// right after navigating, on the SSG lane -- `gotoHydrated` so those
+// interactions can't land before hydration attaches listeners.
+// `comboboxSelectOnlyUrl` below is a vendored static W3C reference page,
+// not this app, so its own `page.goto` stays plain -- no hydration signal
+// exists there.
 const goto = (page: Page, name: string) =>
-  page.goto(`${BASE}${name}&`, { waitUntil: "networkidle", timeout: 20 * 60 * 1000 });
+  gotoHydrated(page, `${BASE}${name}&`, { timeout: 20 * 60 * 1000 });
 
 // Same role/locator convention as select.spec.ts's `singleSelectTrigger` --
 // docs/backlog.md row 8 gave the trigger role="combobox".

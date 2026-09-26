@@ -103,14 +103,21 @@
  * asserts the same popup/item role contract only, not a trigger contract.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const BASE = `${BASE_URL}/component/?name=`;
+// dev-docs/backlog.md row 109: this suite clicks triggers right after
+// navigating, on the SSG lane -- `gotoHydrated` so those clicks can't land
+// before hydration attaches listeners. (`menuButtonActionsUrl` below is a
+// vendored static W3C reference page, not this app, so it keeps a plain
+// `page.goto` -- there is no hydration signal to wait for there.)
 const goto = (page: Page, name: string) =>
-  page.goto(`${BASE}${name}&`, { waitUntil: "networkidle", timeout: 20 * 60 * 1000 });
+  gotoHydrated(page, `${BASE}${name}&`, { timeout: 20 * 60 * 1000 });
 
 const menuButtonActionsUrl = pathToFileURL(
   path.resolve(

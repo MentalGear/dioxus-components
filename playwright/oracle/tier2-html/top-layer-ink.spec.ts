@@ -119,15 +119,20 @@
  * confirmed by execution against this repo's dev server pre-fix).
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
 const url = (name: string) => `${BASE_URL}/component/?name=${name}&`;
 
+// dev-docs/backlog.md row 109: this suite clicks/hovers triggers right
+// after navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 async function goto(page: Page, name: string) {
-  await page.goto(url(name), { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+  await gotoHydrated(page, url(name), { timeout: NAV_TIMEOUT });
 }
 
 /**

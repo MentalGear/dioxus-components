@@ -30,15 +30,20 @@
  * `style.css` -- see each fix's own comment for the full account.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 const PAGE_URL = `${BASE_URL}/component/?name=date_picker&`;
 
+// dev-docs/backlog.md row 109: this suite clicks the trigger and types into
+// segments right after navigating, on the SSG lane -- `gotoHydrated` so
+// those interactions can't land before hydration attaches listeners.
 async function gotoDatePicker(page: Page) {
-  await page.goto(PAGE_URL, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+  await gotoHydrated(page, PAGE_URL, { timeout: NAV_TIMEOUT });
 }
 
 function trigger(page: Page) {

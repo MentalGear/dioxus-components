@@ -104,16 +104,20 @@
  *     file's own rule-4 comment from before Phase 1.3.
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/types into form fields
+// right after navigating, on the SSG lane -- `gotoHydrated` so those
+// interactions can't land before hydration attaches listeners.
 const gotoForm = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=form&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=form&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /** Splits a `<pre>` entry-list dump into non-empty `name=value` lines. */

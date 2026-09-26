@@ -173,13 +173,16 @@ import { test, expect } from "../../fixtures";
 import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/hovers triggers right
+// after navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 const gotoFixture = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /**
@@ -936,9 +939,10 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
   });
 
   test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
-    await page.goto(`${BASE_URL}/component/?name=color_picker&`, {
+    // dev-docs/backlog.md row 109: SSG lane -- `gotoHydrated`, see this
+    // file's own `gotoFixture` doc.
+    await gotoHydrated(page, `${BASE_URL}/component/?name=color_picker&`, {
       timeout: NAV_TIMEOUT,
-      waitUntil: "networkidle",
     });
 
     // Opened at scrollY=0 with a raw DOM click (bypassing Playwright's own
@@ -1778,7 +1782,9 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
 test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider than the room its trigger has on one side stays within the viewport horizontally (no CSS Anchor Positioning engine)", () => {
   test("ColorPicker popover (home page widget masonry) stays within the viewport horizontally", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    // dev-docs/backlog.md row 109: SSG lane -- `gotoHydrated`, see this
+    // file's own `gotoFixture` doc.
+    await gotoHydrated(page, `${BASE_URL}/?`, { timeout: NAV_TIMEOUT });
     await stripAnchorSupportsBlock(page);
 
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
