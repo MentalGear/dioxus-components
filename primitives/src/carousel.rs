@@ -174,6 +174,70 @@ impl CarouselAlign {
     }
 }
 
+/// How [`CarouselProps::r#loop`] wraps at the ends, for content this
+/// module cannot seamlessly loop on its own.
+///
+/// [`CarouselVirtualContent`] with virtualisation genuinely active is
+/// unaffected by this enum entirely -- `loop` there is *already* the
+/// seamless illusion (see that component's own "Seamless loop" doc): one
+/// already-mounted window slide slides physically forward/backward, never
+/// a visible rewind across every intervening slide. That path has no
+/// equivalent construction available to it at all -- there is no cloned-
+/// node illusion here (the overscroll port's own invariant 5) and no
+/// windowed-anchor bookkeeping for a fixed `CarouselItem` sequence to
+/// piggyback on.
+///
+/// For everything else -- the plain children API
+/// ([`CarouselContent`]/[`CarouselItem`]), and [`CarouselVirtualContent`]
+/// with `virtualize: Some(false)` (or a data set too small to auto-window)
+/// -- this is what decides whether `r#loop: true` does anything at all:
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoopMode {
+    /// `r#loop: true` alone has NO effect for the content types above --
+    /// [`CarouselPrevious`]/[`CarouselNext`] stay genuinely `disabled` at
+    /// the real ends, exactly as if `r#loop` were `false`. Default,
+    /// because it is the least surprising choice for the one content type
+    /// this crate CAN loop seamlessly ([`CarouselVirtualContent`],
+    /// windowed): a single `loop_mode` prop that defaults to "the good
+    /// version, where one exists" reads correctly regardless of which
+    /// content a caller ends up using, without secretly picking a
+    /// visibly-worse fallback (a long rewind scroll) they never asked for.
+    #[default]
+    Seamless,
+    /// The explicit opt-in for a visible **rewind**: from the last slide,
+    /// Next goes to the first (and vice versa for Previous) via an
+    /// INSTANT jump (not the smooth, scroll-across-every-intervening-slide
+    /// transition every other single-step paging call uses) -- matching
+    /// the APG reference implementation's own basic-style example, and
+    /// avoiding what would otherwise be a multi-second scroll through an
+    /// entire large data set just to wrap once. No cloned edge slides are
+    /// ever added (same reasoning as [`Self::Seamless`]'s own doc).
+    Rewind,
+}
+
+/// Whether stepping from data index `old` to `new` (out of `count` total)
+/// is a wraparound -- the last slide to the first, or the first to the
+/// last -- rather than an ordinary adjacent step. This is what
+/// [`Carousel`]'s own mount-time settle effect uses to decide whether a
+/// [`LoopMode::Rewind`] transition should jump instantly rather than
+/// animate smoothly (see that effect's own doc).
+///
+/// Ambiguous by construction for `count == 2`: with only two slides,
+/// "step to the other one" and "wrap to the other one" are the identical
+/// transition (`old = 0, new = 1` is simultaneously an ordinary Next step
+/// and what a Previous-wrap would also produce), so this reports `true`
+/// for every step at `count == 2` -- accepted rather than resolved, since
+/// an instant vs. animated single-slide hop is not a meaningfully
+/// different experience, and no caller-observable index pair exists that
+/// could distinguish the two cases anyway.
+fn is_rewind_wrap(old: usize, new: usize, count: usize) -> bool {
+    if count == 0 || old == new {
+        return false;
+    }
+    let last = count - 1;
+    (old == last && new == 0) || (old == 0 && new == last)
+}
+
 /// # Gap model
 ///
 /// shadcn's own carousel puts the inter-slide gap INSIDE each slide's own
@@ -1698,8 +1762,18 @@ struct CarouselContext {
     /// `dev-docs/conformance-harness.md`'s tier-2 Rule 14 describes for
     /// `SelectTrigger`/`DropdownMenuTrigger`/etc.).
     content_id: Signal<String>,
-    /// Whether `loop`ing is enabled -- see [`CarouselProps::r#loop`].
+    /// Whether `loop`ing is enabled -- see [`CarouselProps::r#loop`]. This
+    /// is the raw prop value; [`Self::loop_wraps`] is what every consumer
+    /// that decides "does the boundary actually wrap" should read instead.
     loop_enabled: ReadSignal<bool>,
+    /// See [`CarouselProps::loop_mode`].
+    loop_mode: ReadSignal<LoopMode>,
+    /// Published (`true`) by [`CarouselVirtualContent`] exactly when its
+    /// own seamless-loop path (windowed AND `r#loop` on) is genuinely
+    /// active -- see that component's own "Seamless loop" doc. Always
+    /// `false` for the plain children API, which has no such path.
+    /// [`Self::loop_wraps`] is what actually reads this.
+    virtualized_loop_active: Signal<bool>,
     /// The resolved text direction -- the exact same value [`Carousel`]'s
     /// own root already computed via `use_direction(props.dir)`, republished
     /// here so [`CarouselIndicators`]/[`CarouselIndicator`] reuse it verbatim rather
@@ -1746,6 +1820,21 @@ struct CarouselContext {
     /// slide that just lost "current" status (and is about to -- or just
     /// did -- become `inert`) held focus at the moment of the transition.
     focused_item: Signal<Option<usize>>,
+}
+
+impl CarouselContext {
+    /// Whether a boundary genuinely wraps -- what every consumer that
+    /// decides "is Previous/Next `disabled`" or "does `step_prev`/
+    /// `step_next` wrap" should read, instead of the raw [`Self::loop_enabled`].
+    ///
+    /// `false` unless `r#loop` is on AND (this is [`CarouselVirtualContent`]'s
+    /// own already-seamless windowed path, OR the caller explicitly opted
+    /// into [`LoopMode::Rewind`]) -- see [`LoopMode`]'s own doc for why
+    /// [`LoopMode::Seamless`] (the default) is a no-op everywhere else.
+    fn loop_wraps(&self) -> bool {
+        (self.loop_enabled)()
+            && ((self.loop_mode)() == LoopMode::Rewind || (self.virtualized_loop_active)())
+    }
 }
 
 /// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
@@ -1846,24 +1935,26 @@ pub struct CarouselProps {
     pub value: ReadSignal<Option<usize>>,
 
     /// Whether Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`)
-    /// wrap around at the ends -- **rewind-style**, not an
-    /// embla-style seamless illusion: from the last slide, Next goes to
-    /// the first (and vice versa for Previous), via the same
-    /// scroller-only `scrollBy`-by-delta paging path every other
-    /// transition already uses, which visibly scrolls back across the
-    /// intervening slides rather
-    /// than teleporting. No cloned edge slides are ever added -- they
-    /// would violate the overscroll port's own invariant 5 (they'd enter
-    /// the snap engine's candidate list, the "N of M" slide count, and
-    /// `:nth-child` styling). Dragging or wheeling past a physical edge
-    /// still rubber-bands (mode B3) regardless of this flag -- there is no
-    /// wrap on a drag/wheel gesture, only on Previous/Next/the root
-    /// keyboard. When `true`, [`CarouselPrevious`]/[`CarouselNext`] are
-    /// never `disabled`. Defaults to `false` (matches shadcn's own
+    /// wrap around at the ends at all. Whether that wrap is the seamless
+    /// [`CarouselVirtualContent`] illusion or a visible instant rewind --
+    /// or, for content [`LoopMode`] has no seamless path for, whether it
+    /// happens at all -- is [`Self::loop_mode`]'s decision; see that
+    /// prop's own doc. No cloned edge slides are ever added under either
+    /// mode -- they would violate the overscroll port's own invariant 5
+    /// (they'd enter the snap engine's candidate list, the "N of M" slide
+    /// count, and `:nth-child` styling). Dragging or wheeling past a
+    /// physical edge still rubber-bands (mode B3) regardless of this flag
+    /// -- there is no wrap on a drag/wheel gesture, only on Previous/Next/
+    /// the root keyboard. Defaults to `false` (matches shadcn's own
     /// `opts={{ loop: false }}` default). Approved fast-follow decision,
     /// backlog row 91 / `dev-docs/research/carousel-2026-09-19.md` §8.2.
     #[props(default)]
     pub r#loop: ReadSignal<bool>,
+
+    /// How `r#loop` wraps at the ends -- see [`LoopMode`]'s own doc.
+    /// Defaults to [`LoopMode::Seamless`].
+    #[props(default)]
+    pub loop_mode: ReadSignal<LoopMode>,
 
     /// The initial selected slide index when uncontrolled.
     #[props(default)]
@@ -2011,6 +2102,12 @@ pub fn Carousel(props: CarouselProps) -> Element {
     let tablist_present = use_signal(|| false);
     let visible_range: Signal<(usize, usize)> = use_signal(|| (0, 0));
     let focused_item: Signal<Option<usize>> = use_signal(|| None);
+    let loop_mode = props.loop_mode;
+    // Published (`true`) only by `CarouselVirtualContent`'s own seamless
+    // path -- see `CarouselContext::loop_wraps`'s own doc. Stays `false`
+    // for the plain children API for the whole lifetime of this
+    // component, since nothing else ever writes it.
+    let virtualized_loop_active: Signal<bool> = use_signal(|| false);
 
     use_context_provider(|| CarouselContext {
         orientation,
@@ -2021,6 +2118,8 @@ pub fn Carousel(props: CarouselProps) -> Element {
         item_ids,
         content_id,
         loop_enabled,
+        loop_mode,
+        virtualized_loop_active,
         direction,
         autoplay,
         tablist_present,
@@ -2083,6 +2182,12 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // conceptual point, just via a value change rather than a `count()`
     // retry).
     let mut is_first = use_signal(|| true);
+    // Also consumed below (the wrap-instant check) -- declared here,
+    // ahead of the focus-safety effect's own identical-shaped
+    // `use_previous(selected.into())` further down, so both effects can
+    // read the same "what was `selected` a moment ago" snapshot without
+    // provisioning two independent trackers of the same signal.
+    let prev_selected_for_scroll = use_previous(selected.into());
     use_effect(move || {
         let index = selected();
         let has_items = count() > 0;
@@ -2111,12 +2216,26 @@ pub fn Carousel(props: CarouselProps) -> Element {
         }
         let orientation_str = orientation().as_str().to_string();
         let align_str = align().as_str().to_string();
+        // Instant on mount (`first`), OR this specific step is a
+        // `LoopMode::Rewind` wraparound -- see `is_rewind_wrap`'s own doc
+        // for the APG-reference-matching reasoning ("Make Rewind an
+        // instant jump... instead of... a smooth scroll back across every
+        // slide"). `virtualized_loop_active` never applies here: this
+        // effect only ever fires at all when `item_ids` has a real entry
+        // for `index`, which is either the plain children API or
+        // `CarouselVirtualContent`'s own non-windowed fallback -- exactly
+        // the two content shapes `loop_wraps` gates on `LoopMode::Rewind`
+        // for, never the windowed/seamless one (see that method's own
+        // doc).
+        let wraps_now = loop_enabled() && loop_mode() == LoopMode::Rewind;
+        let is_wrap = wraps_now && is_rewind_wrap(prev_selected_for_scroll(), index, count());
+        let instant = first || is_wrap;
         let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
         let _ = eval.send((
             scroller_id,
             id,
             orientation_str,
-            first,
+            instant,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
             align_str,
         ));
@@ -2168,10 +2287,9 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // scroller (still inside the carousel, still a sensible place for
     // focus to be) is a far smaller cost than the alternative -- focus
     // silently dropping to `<body>`.
-    let prev_selected = use_previous(selected.into());
     use_effect(move || {
         let new_selected = selected();
-        let old_selected = prev_selected();
+        let old_selected = prev_selected_for_scroll();
         if old_selected == new_selected {
             return;
         }
@@ -2212,10 +2330,14 @@ pub fn Carousel(props: CarouselProps) -> Element {
         let Some(intent) = carousel_key_intent(&key, orientation(), direction) else {
             return;
         };
-        let loop_now = loop_enabled();
+        // See `CarouselContext::loop_wraps`'s own doc -- the identical
+        // formula, inlined here since the root itself is the context's
+        // provider rather than one of its consumers.
+        let wraps_now =
+            loop_enabled() && (loop_mode() == LoopMode::Rewind || virtualized_loop_active());
         match intent {
-            HorizontalNav::Prev => set_selected.call(step_prev(selected(), count(), loop_now)),
-            HorizontalNav::Next => set_selected.call(step_next(selected(), count(), loop_now)),
+            HorizontalNav::Prev => set_selected.call(step_prev(selected(), count(), wraps_now)),
+            HorizontalNav::Next => set_selected.call(step_next(selected(), count(), wraps_now)),
         }
         autoplay.note_interaction();
         event.prevent_default();
@@ -3108,18 +3230,34 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 /// own component state along with it).
 ///
 /// With virtualisation inactive (a small data set, or
-/// `virtualize: Some(false)`), [`CarouselProps::r#loop`] is the existing
-/// APG **rewind** style, completely unchanged -- `position == data index`
-/// throughout, and this component publishes a real per-data-index DOM id
-/// into [`CarouselContext::item_ids`] exactly like [`CarouselItem`] does,
-/// so [`Carousel`]'s own built-in mount/selected `scrollBy`-by-id paging
-/// effect (and drag, wheel bounce, scroll tracking) drive it without any
-/// bespoke code in this component at all.
+/// `virtualize: Some(false)`), [`CarouselProps::r#loop`] has no seamless
+/// path available to it at all -- exactly like the plain children API, it
+/// is gated by [`CarouselProps::loop_mode`] (see that enum's own doc):
+/// [`LoopMode::Rewind`] is the existing APG **rewind** style, unchanged --
+/// `position == data index` throughout, and this component publishes a
+/// real per-data-index DOM id into [`CarouselContext::item_ids`] exactly
+/// like [`CarouselItem`] does, so [`Carousel`]'s own built-in mount/
+/// selected `scrollBy`-by-id paging effect (and drag, wheel bounce, scroll
+/// tracking) drive it without any bespoke code in this component at all,
+/// INCLUDING that effect's own instant-jump-on-wrap fix. The default,
+/// [`LoopMode::Seamless`], is a no-op here (`CarouselContext::loop_wraps`
+/// returns `false`): [`CarouselPrevious`]/[`CarouselNext`] stay genuinely
+/// `disabled` at the real ends, matching what a caller who never
+/// specifically opted into `Rewind` should expect from a non-windowed
+/// data set with no seamless illusion available to it.
 ///
 /// ## Seamless loop
 ///
 /// Only reached once virtualisation is active AND [`CarouselProps::r#loop`]
-/// is on: `position` is allowed to run arbitrarily far past `[0, N)`
+/// is on -- **unaffected by [`CarouselProps::loop_mode`] entirely**: this
+/// path publishes `true` into [`CarouselContext::virtualized_loop_active`]
+/// (a small effect just above, keyed off the identical condition this
+/// window-building code already computes), which is the OTHER thing (besides
+/// `LoopMode::Rewind`) [`CarouselContext::loop_wraps`] treats as "wraps" --
+/// so `loop_mode`'s default staying at [`LoopMode::Seamless`] never
+/// disables this path; it only ever matters for the two content shapes
+/// that have no seamless illusion to offer, above. `position` is allowed
+/// to run arbitrarily far past `[0, N)`
 /// (mapped down to a data index only via `.rem_euclid(N)` for rendering),
 /// so paging forward past the last data index does not rewind visibly
 /// across every intervening slide the way the non-virtualised loop above
@@ -3452,6 +3590,21 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let virtualize_active = virtualize_active_now();
     let loop_now = (ctx.loop_enabled)() && n >= 2;
 
+    // Publish "the seamless windowed loop is genuinely active right now"
+    // into the shared context -- see `CarouselContext::loop_wraps`'s own
+    // doc for why every other loop-aware consumer (Previous/Next's
+    // `disabled`, the root keyboard handler, `CarouselAutoplay`'s ticker)
+    // needs this, not just `loop_enabled` alone: without it, those would
+    // treat a non-windowed (small data set, or `virtualize: Some(false)`)
+    // `CarouselVirtualContent` under `LoopMode::Seamless` (the default) as
+    // wrapping, when this component's own "Virtualisation" doc says that
+    // case is `LoopMode::Rewind`-or-nothing like the plain children API.
+    let mut virtualized_loop_active = ctx.virtualized_loop_active;
+    use_effect(move || {
+        let active = virtualize_active_now() && (ctx.loop_enabled)() && count() >= 2;
+        virtualized_loop_active.set(active);
+    });
+
     let win: Vec<crate::r#virtual::WindowItem> = if n == 0 {
         Vec::new()
     } else if virtualize_active {
@@ -3595,8 +3748,7 @@ pub struct CarouselPreviousProps {
 pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
-    let loop_enabled = (ctx.loop_enabled)();
-    let disabled = !loop_enabled && !can_scroll_prev(selected);
+    let disabled = !ctx.loop_wraps() && !can_scroll_prev(selected);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Previous slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -3626,8 +3778,8 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     rsx! {
         button {
             onclick: move |_| {
-                let loop_now = (ctx.loop_enabled)();
-                ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), loop_now));
+                let wraps_now = ctx.loop_wraps();
+                ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
             ..attributes,
@@ -3650,8 +3802,7 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
-    let loop_enabled = (ctx.loop_enabled)();
-    let disabled = !loop_enabled && !can_scroll_next(selected, count);
+    let disabled = !ctx.loop_wraps() && !can_scroll_next(selected, count);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Next slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -3673,8 +3824,8 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     rsx! {
         button {
             onclick: move |_| {
-                let loop_now = (ctx.loop_enabled)();
-                ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), loop_now));
+                let wraps_now = ctx.loop_wraps();
+                ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
             ..attributes,
@@ -3746,12 +3897,12 @@ pub fn use_carousel() -> CarouselApi {
     let ctx: CarouselContext = use_context();
     let selected = (ctx.selected)();
     let count = (ctx.count)();
-    let loop_enabled = (ctx.loop_enabled)();
+    let wraps = ctx.loop_wraps();
     CarouselApi {
         selected,
         count,
-        can_scroll_prev: (loop_enabled && count > 0) || can_scroll_prev(selected),
-        can_scroll_next: (loop_enabled && count > 0) || can_scroll_next(selected, count),
+        can_scroll_prev: (wraps && count > 0) || can_scroll_prev(selected),
+        can_scroll_next: (wraps && count > 0) || can_scroll_next(selected, count),
         scroll_to: ctx.set_selected,
         autoplay: ctx.autoplay,
     }
@@ -3897,6 +4048,8 @@ pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
     let count = ctx.count;
     let selected = ctx.selected;
     let loop_enabled = ctx.loop_enabled;
+    let loop_mode = ctx.loop_mode;
+    let virtualized_loop_active = ctx.virtualized_loop_active;
     let set_selected = ctx.set_selected;
     use_effect(move || {
         let active = (autoplay.rotating)();
@@ -3914,7 +4067,14 @@ pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
                 if count_now == 0 {
                     continue;
                 }
-                let loop_now = *loop_enabled.peek();
+                // `.peek()` on each field individually, matching
+                // `count`/`selected` just above -- this is inside a spawned
+                // async loop, not a reactive scope, so nothing here should
+                // subscribe to anything (`CarouselContext::loop_wraps`
+                // itself calls each field via tracked syntax, the wrong
+                // read for this position).
+                let loop_now = *loop_enabled.peek()
+                    && (*loop_mode.peek() == LoopMode::Rewind || *virtualized_loop_active.peek());
                 let current = *selected.peek();
                 // Stops rather than ticking forever against a no-op once a
                 // non-looping carousel reaches its last slide -- see this
@@ -4618,6 +4778,45 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn is_rewind_wrap_true_for_last_to_first() {
+        assert!(is_rewind_wrap(4, 0, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_true_for_first_to_last() {
+        assert!(is_rewind_wrap(0, 4, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_for_an_ordinary_adjacent_step() {
+        assert!(!is_rewind_wrap(1, 2, 5));
+        assert!(!is_rewind_wrap(2, 1, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_for_a_same_index_no_op() {
+        assert!(!is_rewind_wrap(2, 2, 5));
+    }
+
+    #[test]
+    fn is_rewind_wrap_false_with_zero_slides() {
+        assert!(!is_rewind_wrap(0, 0, 0));
+    }
+
+    #[test]
+    fn is_rewind_wrap_ambiguous_case_at_count_two_reports_true() {
+        // See this function's own doc: at `count == 2` a wrap and an
+        // ordinary step are the identical transition either direction.
+        assert!(is_rewind_wrap(0, 1, 2));
+        assert!(is_rewind_wrap(1, 0, 2));
+    }
+
+    #[test]
+    fn loop_mode_default_is_seamless() {
+        assert_eq!(LoopMode::default(), LoopMode::Seamless);
+    }
 }
 
 #[cfg(test)]
@@ -5089,12 +5288,18 @@ mod ssr_tests {
         assert!(html.contains("flex-basis: 40%;"));
     }
 
-    // -- `loop` -------------------------------------------------------
+    // -- `loop` / `loop_mode` -------------------------------------------
 
+    // Renamed from `LoopCarousel` and given an explicit `loop_mode:
+    // LoopMode::Rewind` -- see `LoopMode`'s own doc: for the plain children
+    // API, `r#loop: true` alone (the default `LoopMode::Seamless`) is now a
+    // no-op, and `SeamlessLoopCarousel`/its own tests just below pin
+    // exactly that. Only the explicit opt-in wraps, which is what this
+    // fixture (and every test that already existed against it) needs.
     #[component]
-    fn LoopCarousel() -> Element {
+    fn RewindLoopCarousel() -> Element {
         rsx! {
-            Carousel { aria_label: "Featured photos", r#loop: true,
+            Carousel { aria_label: "Featured photos", r#loop: true, loop_mode: LoopMode::Rewind,
                 CarouselPrevious { "Previous" }
                 CarouselNext { "Next" }
                 CarouselContent {
@@ -5111,10 +5316,10 @@ mod ssr_tests {
         // Even on the very first, pre-effect render (`count == 0`, the
         // same moment `next_button_is_disabled_before_registration_effects_run`
         // asserts the NON-loop `CarouselNext` conservatively disables) --
-        // `loop` makes both buttons unconditionally not-disabled, per the
-        // approved decision (backlog row 91): they wrap instead of ever
-        // reaching a real boundary.
-        let html = render(LoopCarousel);
+        // explicit `LoopMode::Rewind` makes both buttons unconditionally
+        // not-disabled, per the approved decision (backlog row 91): they
+        // wrap instead of ever reaching a real boundary.
+        let html = render(RewindLoopCarousel);
         let previous_tag = button_tag(&html, 0);
         let next_tag = button_tag(&html, 1);
         assert!(!previous_tag.contains("disabled"));
@@ -5123,7 +5328,7 @@ mod ssr_tests {
 
     #[test]
     fn loop_enabled_previous_stays_enabled_once_items_have_registered() {
-        let mut dom = VirtualDom::new(LoopCarousel);
+        let mut dom = VirtualDom::new(RewindLoopCarousel);
         dom.rebuild_in_place();
         for _ in 0..4 {
             dom.render_immediate(&mut dioxus::core::NoOpMutations);
@@ -5133,6 +5338,38 @@ mod ssr_tests {
         let next_tag = button_tag(&html, 1);
         assert!(!previous_tag.contains("disabled"));
         assert!(!next_tag.contains("disabled"));
+    }
+
+    // Red-first for the new behaviour: `r#loop: true` with NO explicit
+    // `loop_mode` (so the default, `LoopMode::Seamless`) on the plain
+    // children API -- which has no seamless path available to it at all
+    // (see `LoopMode`'s own doc) -- must degrade to a real no-op, not
+    // silently inherit the old always-rewind behavior.
+    #[component]
+    fn SeamlessDefaultLoopCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                    CarouselItem { index: 2usize, "Three" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn seamless_default_loop_mode_does_not_wrap_the_plain_children_api() {
+        let mut dom = VirtualDom::new(SeamlessDefaultLoopCarousel);
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.render_immediate(&mut dioxus::core::NoOpMutations);
+        }
+        let html = dioxus_ssr::render(&dom);
+        let previous_tag = button_tag(&html, 0);
+        assert!(previous_tag.contains("disabled"));
     }
 
     // -- Autoplay + rotation control -----------------------------------

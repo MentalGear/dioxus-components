@@ -55,9 +55,10 @@ function demoFrame(
     | "indicators"
     | "vertical"
     | "rtl"
-    | "looping"
+    | "rewind"
     | "autoplay"
     | "virtual_loop"
+    | "virtual_loop_rtl"
     | "virtual_many",
 ): Locator {
   const id = variant === "main" ? "component-preview-frame" : `component-preview-frame-${variant}`;
@@ -1719,17 +1720,22 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
 });
 
 /**
- * `loop`: rewind-style wraparound (backlog row 91, approved fast-follow).
- * The `looping` variant (5 slides, LTR) and `looping_rtl` variant (4
- * slides, `dir="rtl"`) close both directions and the RTL key-swap
- * together -- see `preview/src/components/carousel/variants/looping{,_rtl}/mod.rs`.
+ * `loop_mode: LoopMode::Rewind` -- the explicit opt-in (backlog row 91's
+ * shadcn-parity addendum); `r#loop: true` alone (the default
+ * `LoopMode::Seamless`) does nothing for the plain children API any more,
+ * see the "library-only v1" describe block above and
+ * `primitives/src/carousel.rs`'s own `LoopMode` doc. Retires the old
+ * `looping`/`looping_rtl` demos (which showed this behavior unconditionally,
+ * with no opt-in) in favor of one `rewind` demo, two rows (LTR/RTL) --
+ * see `preview/src/components/carousel/variants/rewind/mod.rs`.
  */
-test.describe("Carousel: loop (rewind-style wraparound)", () => {
+test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("Previous and Next are never disabled, even at the first/last slide", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
 
     await expect(previous).toBeEnabled();
     await expect(next).toBeEnabled();
@@ -1737,30 +1743,40 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     for (let i = 0; i < 4; i++) {
       await next.click();
     }
-    await expect(frame.getByRole("group", { name: "5 of 5" })).toHaveAttribute("data-selected", "true");
-    // A non-loop carousel would have `next` disabled here (see the
-    // library-only v1 describe block above) -- `loop` never does.
+    await expect(region.getByRole("group", { name: "5 of 5" })).toHaveAttribute("data-selected", "true");
+    // A non-loop (or non-opted-in) carousel would have `next` disabled
+    // here -- `LoopMode::Rewind` never does.
     await expect(next).toBeEnabled();
     await expect(previous).toBeEnabled();
   });
 
-  test("Next at the last slide rewinds to the first; Previous at the first rewinds to the last", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const content = frame.locator(".dx-carousel-content");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+  test("Next at the last slide rewinds to the first INSTANTLY; Previous at the first rewinds to the last", async ({ page }) => {
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const content = region.locator(".dx-carousel-content");
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     // Previous from slide 1 wraps to slide 5.
     await previous.click();
     await expect(slide(5)).toHaveAttribute("data-selected", "true");
     await expectSnappedToBoundary(content, slide(5));
 
-    // Next from slide 5 wraps back to slide 1.
-    await next.click();
+    // Next from slide 5 wraps back to slide 1 -- and, unlike every other
+    // (animated) transition (see the "actually animates" describe block's
+    // own identically-shaped test), does so as an INSTANT jump: sampling
+    // `scrollLeft` across the transition must never pass through an
+    // intermediate value, only the start and end positions.
+    const contentId = (await content.getAttribute("id"))!;
+    const samples = await sampleScrollDuring(page, contentId, "scrollLeft", () => next.click());
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
     await expectSnappedToBoundary(content, slide(1));
+    expect(
+      passesThroughAnIntermediateValue(samples),
+      `expected an instant jump (no intermediate scrollLeft between the first (${samples[0]}) and last (${samples[samples.length - 1]}) sample); got: ${JSON.stringify(samples)}`,
+    ).toBe(false);
 
     // Root-level ArrowRight at the last slide also wraps.
     for (let i = 0; i < 4; i++) {
@@ -1772,12 +1788,13 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("under RTL, loop still wraps both directions with the swapped arrow keys", async ({ page }) => {
-    await goto(page, "looping_rtl");
-    const frame = demoFrame(page, "looping_rtl");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+  test("under RTL, loop_mode Rewind still wraps both directions with the swapped arrow keys", async ({ page }) => {
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery (RTL)" });
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 4` });
 
     await expect(previous).toBeEnabled();
     await expect(next).toBeEnabled();
@@ -1803,14 +1820,15 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
   });
 
   test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const content = frame.locator(".dx-carousel-content");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const content = region.locator(".dx-carousel-content");
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
     // A large rightward drag from slide 1 (nothing before it) should
-    // rubber-band, not wrap to slide 5 -- `loop` only governs
+    // rubber-band, not wrap to slide 5 -- `loop`/`loop_mode` only govern
     // Previous/Next/the root keyboard (this crate's own module doc).
     await dragBy(page, content, 250, 0);
     await expect(async () => {
@@ -1819,10 +1837,10 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("axe: the looping variant has no automatically detectable a11y issues", async ({ page }) => {
-    await goto(page, "looping");
-    await expectNoAxeViolations(page, "carousel: looping variant", {
-      include: "#component-preview-frame-looping",
+  test("axe: the rewind variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "rewind");
+    await expectNoAxeViolations(page, "carousel: rewind variant", {
+      include: "#component-preview-frame-rewind",
     });
   });
 });
@@ -2360,7 +2378,14 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(namesAfter).not.toContain("1 of 5");
   });
 
-  for (const variant of ["indicators", "autoplay", "looping"] as const) {
+  // `looping`/`looping_rtl` (retired -- see the `LoopMode` describe block
+  // above) is not replaced with `rewind` here: `rewind` renders TWO
+  // independent `Carousel` regions on one page, so a single flat
+  // `.dx-carousel-item` locator across both would see the RTL row's own
+  // non-inert current slide land at an index this loop's "everything past
+  // 0 is inert" assumption does not hold for -- the single-region
+  // assumption below is real, not incidental.
+  for (const variant of ["indicators", "autoplay"] as const) {
     test(`non-current slides are inert on the ${variant} variant too`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
@@ -3011,6 +3036,27 @@ test.describe("CarouselVirtualContent: a11y", () => {
     });
     await expectNoAxeViolations(page, "carousel: virtual_many variant", {
       include: "#component-preview-frame-virtual_many",
+    });
+  });
+
+  test("virtual_loop_rtl: seamless loop wraps under RTL with the swapped arrow keys too", async ({ page }) => {
+    // Cheap RTL coverage of the identical seamless-loop path (per-lane
+    // instruction: "add an RTL variant if cheap") -- not a full duplicate
+    // of every `virtual_loop` test above, just the one thing RTL could
+    // plausibly break: the key-swap composed with physical wraparound.
+    await goto(page, "virtual_loop_rtl");
+    const frame = demoFrame(page, "virtual_loop_rtl");
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const label = selectedLabel(frame);
+
+    await expect.poll(label).toBe("1 of 12");
+    // RTL: ArrowLeft is the swapped "next" key (Direction::resolve_horizontal).
+    await next.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(label).toBe("2 of 12");
+
+    await expectNoAxeViolations(page, "carousel: virtual_loop_rtl variant", {
+      include: "#component-preview-frame-virtual_loop_rtl",
     });
   });
 });

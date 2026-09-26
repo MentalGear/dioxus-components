@@ -18,7 +18,7 @@ use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 // return type within this crate's own demos (the `api` variant) -- re-exported anyway so a
 // consumer building their own custom picker can name the type explicitly.
 pub use dioxus_primitives::carousel::{
-    CarouselAlign, CarouselApi, CarouselOrientation, use_carousel,
+    CarouselAlign, CarouselApi, CarouselOrientation, LoopMode, use_carousel,
 };
 
 /// The props for the [`Carousel`] component.
@@ -46,10 +46,15 @@ pub struct CarouselProps {
     pub default_value: usize,
 
     /// Whether Previous/Next (and the root's own arrow keys) wrap around
-    /// at the ends. See [`carousel::Carousel`]'s own doc for the
-    /// rewind-style semantics.
+    /// at the ends at all. See [`LoopMode`]'s own doc for what actually
+    /// decides whether that wrap is seamless, an instant rewind, or a
+    /// no-op.
     #[props(default)]
     pub r#loop: ReadSignal<bool>,
+
+    /// How `r#loop` wraps at the ends. Defaults to [`LoopMode::Seamless`].
+    #[props(default)]
+    pub loop_mode: ReadSignal<LoopMode>,
 
     /// Called whenever the selected slide changes.
     #[props(default)]
@@ -81,6 +86,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
             value: props.value,
             default_value: props.default_value,
             r#loop: props.r#loop,
+            loop_mode: props.loop_mode,
             on_value_change: props.on_value_change,
             dir: props.dir,
             attributes: merged,
