@@ -1437,21 +1437,67 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     // `deltaX` -- see the start-boundary test's own comment above.
     // Negative at slide 1 (the start) asks for more "previous" than
     // exists, same direction as the earlier wheel tests in this block.
-    const sendBurst = async (n: number) => {
-      for (let i = 0; i < n; i++) {
-        await page.mouse.wheel(-80, 0);
-      }
-    };
+    //
+    // Both bursts -- and both transform reads -- happen inside ONE
+    // synchronous in-page loop, never as two separate `page.mouse.wheel()`
+    // round trips (a real CDP round trip per call) with a
+    // `readContentTransform()` `page.evaluate()` await in between (what
+    // this test used to do). That gap is a race, not a rounding error:
+    // `CAROUSEL_WHEEL_BOUNCE_JS`'s release-on-decay heuristic
+    // (`wheelSpent`, `primitives/src/carousel.rs`) treats ANY constant,
+    // non-rising delta stream as "spent" after just two events -- its
+    // plateau branch accepts a delta merely EQUAL to the previous one,
+    // which a perfectly uniform synthetic burst always is -- and starts a
+    // 340ms spring-back (`bounceHome`) right there, mid-burst. A real
+    // hand never sends perfectly identical deltas, so this rarely bites
+    // live traffic, but it fires on every event this test sends. Reading
+    // `depth1`/`depth2` across a real async gap therefore samples an
+    // animation that is already mid-flight back toward zero, at whatever
+    // arbitrary point wall-clock timing happened to interrupt it -- found
+    // live via an in-page `MutationObserver` trace: the exact same
+    // release/spring-back/interrupt cycle fires on this repo's own `main`
+    // branch too (pre-existing, not a lane regression), it just happened
+    // to sample a losing phase of that cycle after this lane's other,
+    // unrelated changes shifted per-frame timing slightly -- a coincidence
+    // the assertion below should never have been exposed to either way.
+    // Dispatching the wheel events as native `WheelEvent`s directly
+    // in-page, back to back with no `await` between them, keeps the
+    // entire 20-event sequence (and both reads) inside one synchronous JS
+    // turn: `release()`/`bounceHome()` still fires (a flat stream is still
+    // classified as spent), but its spring-back tween's first step always
+    // runs at `t ≈ 0` (no real time has elapsed), and any
+    // `requestAnimationFrame` it schedules is superseded by the very next
+    // dispatch before the browser ever gets a chance to paint one -- so
+    // the release fires without ever visibly unwinding progress, and the
+    // accumulated overdrag grows exactly as the curve's own math promises
+    // (this test's own header doc). This is what "sample in-page" means
+    // here: not a workaround for a slow test, but the only sampling
+    // method that is not itself racing a live animation.
+    const burst = (n1: number, n2: number) =>
+      content.evaluate(
+        (el, { n1, n2 }) => {
+          const fire = () => {
+            el.dispatchEvent(
+              new WheelEvent("wheel", { deltaX: -80, deltaY: 0, bubbles: true, cancelable: true }),
+            );
+          };
+          for (let i = 0; i < n1; i++) fire();
+          const t1 = (el as HTMLElement).style.transform;
+          for (let i = 0; i < n2; i++) fire();
+          const t2 = (el as HTMLElement).style.transform;
+          return [t1, t2] as const;
+        },
+        { n1, n2 },
+      );
 
-    await sendBurst(10);
-    const depth1 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    const [transform1, transform2] = await burst(10, 10);
+    const depth1 = Math.abs(parseTranslatePx(transform1) ?? 0);
     expect(depth1, "expected a nonzero bounce after the first burst").toBeGreaterThan(0);
     expect(depth1).toBeLessThanOrEqual(axisSize + 1);
 
     // Doubling the total raw input (20 events total, same magnitude each,
     // so this is still one sustained push, never decaying).
-    await sendBurst(10);
-    const depth2 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    const depth2 = Math.abs(parseTranslatePx(transform2) ?? 0);
     expect(depth2).toBeLessThanOrEqual(axisSize + 1);
     expect(depth2, "still pushing should still grow the depth").toBeGreaterThan(depth1);
     expect(depth2, "doubling the input should not double the depth (sub-linear curve)").toBeLessThan(depth1 * 2);
