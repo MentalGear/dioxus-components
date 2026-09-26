@@ -123,6 +123,58 @@ impl CarouselOrientation {
     }
 }
 
+/// # Gap model
+///
+/// shadcn's own carousel puts the inter-slide gap INSIDE each slide's own
+/// border-box (a leading-edge `padding-inline`/`padding-block`), with
+/// `CarouselContent`'s own scroller carrying the exactly-compensating
+/// negative margin on that same edge/axis -- the standard Tailwind
+/// `-ml-4`/`pl-4` idiom -- rather than a real flex `gap` between items.
+/// This crate ports that construction (backlog row 91's shadcn-parity
+/// addendum) via [`item_gap_padding`]/[`content_gap_margin`] below, exposed
+/// as one custom property, `--dx-carousel-gap` (raw-primitive default
+/// `0px` -- a themed stylesheet is what gives it an actual token-based
+/// value, e.g. `--dx-space-4`, matching this module's own
+/// "structural-only, zero-theme-CSS" posture for every other layout-critical
+/// declaration in this file).
+///
+/// Why this matters, not just "matches shadcn": a real flex `gap` is
+/// ADDITIVE to a percentage `flex-basis` -- `N` items at `flex-basis:
+/// calc(100%/N)` plus `(N-1)` real gaps demand more main-axis size than the
+/// container has, by exactly `(N-1) * gap`, so the track overflows and the
+/// visible slide count is no longer a whole number (see
+/// `dev-docs/backlog.md` row 91's shadcn-carousel-parity research for the
+/// measured "~2.3 slides visible" incident this construction closes with no
+/// compensating arithmetic needed at the call site). With the gap living
+/// INSIDE each item's own border-box instead, `N` items' basis fractions
+/// still sum to exactly 100% of the (`-ml`-widened) content box regardless
+/// of `N`, so [`CarouselItem`]/[`CarouselVirtualContent`]'s own
+/// `--dx-carousel-per-view`/`--dx-carousel-peek` basis `calc()` (see their
+/// own "Sizes" doc) never needs to subtract a gap term at all.
+fn item_gap_padding(orientation: CarouselOrientation) -> &'static str {
+    match orientation {
+        CarouselOrientation::Horizontal => "padding-inline-start:var(--dx-carousel-gap, 0px);",
+        CarouselOrientation::Vertical => "padding-block-start:var(--dx-carousel-gap, 0px);",
+    }
+}
+
+/// The mirror of [`item_gap_padding`], applied to [`CarouselContent`]'s own
+/// scroller element (see that function's own doc for the full construction):
+/// a negative margin on the identical edge/axis, so the FIRST item's own
+/// leading-edge padding lands flush with the viewport's own clip boundary
+/// (`CarouselContent`'s own `carousel-viewport` wrapper) rather than shifting
+/// every slide's visible content rightward/downward by one gap's worth.
+fn content_gap_margin(orientation: CarouselOrientation) -> &'static str {
+    match orientation {
+        CarouselOrientation::Horizontal => {
+            "margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1);"
+        }
+        CarouselOrientation::Vertical => {
+            "margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1);"
+        }
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -2514,6 +2566,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     });
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let gap_margin = content_gap_margin(orientation);
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -2525,7 +2578,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         }
     };
     let style = format!(
-        "{axis_style}{}",
+        "{axis_style}{gap_margin}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -2772,9 +2825,10 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     // scroll-snap-stop" section, for what this is, its known limitations,
     // and why this is a plain inline declaration rather than a stylesheet
     // gated by `@supports`.
+    let gap_padding = item_gap_padding((ctx.orientation)());
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let style = format!(
-        "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+        "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3270,6 +3324,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     });
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let gap_margin = content_gap_margin(orientation_now);
     let axis_style = match orientation_now {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -3281,7 +3336,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     };
     let style = format!(
-        "{axis_style}{}",
+        "{axis_style}{gap_margin}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3308,6 +3363,10 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         let slide_id = format!("{scroller_id_now}-p{position}");
         let value = items_now[data_index].clone();
         let content = render_item.call((data_index, value));
+        let item_style = format!(
+            "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+            item_gap_padding(orientation_now)
+        );
         rsx! {
             div {
                 key: "{position}",
@@ -3315,7 +3374,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
                 role,
                 aria_roledescription: "slide",
                 aria_label: label,
-                style: "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;",
+                style: item_style,
                 "data-selected": is_selected,
                 "data-index": data_index,
                 "data-position": position,
@@ -4707,6 +4766,67 @@ mod ssr_tests {
         assert!(!html.contains("<style>"));
     }
 
+    // -- Gap model (backlog row 91's shadcn-parity addendum) -----------
+
+    #[component]
+    fn VerticalThreeSlideCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", orientation: CarouselOrientation::Vertical,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                    CarouselItem { index: 2usize, "Three" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn horizontal_item_reserves_gap_as_leading_inline_padding() {
+        // The gap lives INSIDE each item's own border-box (a leading-edge
+        // padding), never a real flex `gap` between items -- see
+        // `item_gap_padding`'s own doc for why a real `gap` would overflow
+        // a fractional `flex-basis` track. `var(..., 0px)` is the
+        // raw-primitive default (a themed stylesheet supplies the actual
+        // token, e.g. `--dx-space-4`) -- so zero theme CSS still renders a
+        // valid, harmless (zero-width) declaration rather than an
+        // invalid/dropped one.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px)"));
+        assert!(!html.contains("padding-block-start:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn vertical_item_reserves_gap_as_leading_block_padding() {
+        let html = render(VerticalThreeSlideCarousel);
+        assert!(html.contains("padding-block-start:var(--dx-carousel-gap, 0px)"));
+        assert!(!html.contains("padding-inline-start:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn horizontal_content_compensates_with_a_negative_inline_margin() {
+        // The exact mirror of the item's own leading padding -- see
+        // `content_gap_margin`'s own doc for why this keeps the first
+        // item's visible content flush with the viewport's own clip
+        // boundary instead of shifting every slide by one gap's worth.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
+        assert!(!html.contains("margin-block-start:calc(var(--dx-carousel-gap"));
+        // Never a real flex `gap` any more -- that would be additive to a
+        // fractional `flex-basis` and overflow the track (the "~2.3
+        // slides visible" incident this construction closes).
+        assert!(!html.contains("gap:var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn vertical_content_compensates_with_a_negative_block_margin() {
+        let html = render(VerticalThreeSlideCarousel);
+        assert!(html.contains("margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
+        assert!(!html.contains("margin-inline-start:calc(var(--dx-carousel-gap"));
+    }
+
     // -- `loop` -------------------------------------------------------
 
     #[component]
@@ -5039,5 +5159,17 @@ mod ssr_tests {
         assert_eq!(positions.len(), items.len());
         let data_indices: Vec<usize> = items.iter().map(|i| i.data_index).collect();
         assert_eq!(data_indices, vec![1, 2, 0, 1, 2]);
+    }
+
+    #[test]
+    fn virtual_content_slides_reserve_gap_the_same_way_plain_items_do() {
+        // `CarouselVirtualContent`'s own rendered slide markup duplicates
+        // (rather than shares) `CarouselItem`'s inline style construction --
+        // see that component's own doc for why a fresh string is built here
+        // instead of calling into `CarouselItem` -- so the gap model must be
+        // pinned on this path too, not just the plain children API.
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px)"));
+        assert!(html.contains("margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
     }
 }

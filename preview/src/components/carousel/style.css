@@ -22,7 +22,17 @@
 }
 
 .dx-carousel-content {
-    gap: var(--dx-space-4);
+    /* The gap between slides -- read by `primitives/src/carousel.rs`'s own
+       `item_gap_padding`/`content_gap_margin` (a leading-edge padding on
+       every `CarouselItem`, exactly compensated by a negative margin here),
+       never a real flex `gap` -- see that module's own "Gap model" doc for
+       why: a real `gap` is additive to a fractional `flex-basis` and
+       overflows the track for any per-view count above 1
+       (`dev-docs/backlog.md` row 91's shadcn-parity addendum). Token-based
+       default, matching today's visual spacing; override per-instance
+       (e.g. the `spacing` demo's presets) with an inline
+       `style="--dx-carousel-gap: ...;"` on `CarouselContent`. */
+    --dx-carousel-gap: var(--dx-space-4);
 
     /* Hide the native scrollbar -- dragging/wheel/trackpad scrolling and
        keyboard focus still work identically either way; only the

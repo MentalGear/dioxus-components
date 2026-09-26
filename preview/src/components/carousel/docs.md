@@ -33,6 +33,12 @@ Each `CarouselItem` defaults its own accessible name to `"{n} of {m}"` (APG's ow
 
 How much of the track each slide occupies is a CSS decision, not a prop: `CarouselItem` defaults to `flex: 0 0 100%` (one full slide per view). Override it per item with an inline `style` (or `flex_basis`) to build a "peek"/multi-item-per-view layout -- see the `multiple` variant.
 
+## Spacing (the gap between slides)
+
+The gap between slides is a `--dx-carousel-gap` custom property, read by `CarouselItem` (a leading-edge `padding-inline-start`/`padding-block-start`) and `CarouselContent` (the exactly-compensating negative `margin-inline-start`/`margin-block-start`) -- the standard shadcn/Tailwind `-ml-4`/`pl-4` idiom, not a real flex `gap`. This matters, not just for parity: a real `gap` is *additive* to a percentage `flex-basis`, so `N` items at `flex-basis: calc(100%/N)` plus `(N-1)` real gaps overflow the track by exactly `(N-1) * gap` -- with the gap living inside each item's own border-box instead, `N` basis fractions always sum to exactly 100% regardless of `N`, so a multi-per-view layout (see "Sizes" below) never needs to subtract a gap term at all.
+
+`.dx-carousel-content` sets `--dx-carousel-gap: var(--dx-space-4)` (16px) by default -- override it per instance with an inline `style="--dx-carousel-gap: var(--dx-space-2);"` on `CarouselContent`. See the `spacing` variant for shadcn's own four presets (`--dx-space-1` through `--dx-space-4`, i.e. `-ml-1/pl-1` ... `-ml-4/pl-4`).
+
 ## Orientation
 
 `orientation: CarouselOrientation::Vertical` pages with `ArrowUp`/`ArrowDown` instead of `ArrowLeft`/`ArrowRight`, and scrolls on the block axis. A vertical carousel needs an explicit height on `CarouselContent` (e.g. `style: "height: 20rem;"`) -- there is nothing else to derive one from, the same way `ScrollArea` needs an explicit `height`.
