@@ -269,34 +269,6 @@
     transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
-.dx-carousel-indicators {
-    display: flex;
-    justify-content: center;
-    gap: var(--dx-space-2);
-    margin-block-start: var(--dx-space-4);
-}
-
-.dx-carousel-indicator {
-    width: var(--dx-space-2);
-    height: var(--dx-space-2);
-    box-sizing: border-box;
-    padding: 0;
-    border: none;
-    border-radius: var(--dx-radius-full);
-    background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
-    cursor: pointer;
-    touch-action: manipulation;
-}
-
-.dx-carousel-indicator[data-active="true"] {
-    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
-}
-
-.dx-carousel-indicator:focus-visible {
-    outline: 2px solid var(--dx-ring-color);
-    outline-offset: 2px;
-}
-
 /* Rotation control (autoplay) -- a small circular button, matching
    Previous/Next's own footprint/border/background so the three read as
    one control family; placed by the caller (see docs.md's "Autoplay"
@@ -329,15 +301,24 @@
     outline-offset: 2px;
 }
 
-/* Tablist (dot-picker) variant -- APG's "tabbed" carousel style. */
-.dx-carousel-tab-list {
+/* Indicators (dot-picker) -- APG's "tabbed" carousel style
+   (`role="tablist"` of `role="tab"` dots, `CarouselIndicators`/
+   `CarouselIndicator`, renamed from `CarouselTabList`/`CarouselTab` --
+   pre-1.0 fork rename, owner-approved, dev-docs/backlog.md row 91's
+   shadcn-parity addendum). Retires this component's own separate,
+   non-tablist `CarouselIndicators` (a plain `use_carousel()`-built picker)
+   -- that composition now lives in the `api` demo instead, built directly
+   on `use_carousel()` the same way docs.md's own "A custom picker" section
+   already shows it, rather than as a second exported component whose name
+   would otherwise collide with this one. */
+.dx-carousel-indicators {
     display: flex;
     justify-content: center;
     gap: var(--dx-space-2);
     margin-block-start: var(--dx-space-4);
 }
 
-.dx-carousel-tab {
+.dx-carousel-indicator {
     width: var(--dx-space-2);
     height: var(--dx-space-2);
     box-sizing: border-box;
@@ -347,13 +328,28 @@
     background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
     cursor: pointer;
     touch-action: manipulation;
+    opacity: 0.5;
+
+    /* The active dot fades in (opacity) and widens into a pill (width) --
+       both plain token-based transitions; no per-component
+       `prefers-reduced-motion` override is needed here, because this
+       button already carries `role="tab"`, which
+       `dx-components-theme.css`'s own shared reduced-motion layer already
+       forces to a near-zero `transition-duration` (`!important`) under
+       that preference -- the same mechanism every other interactive
+       element in this theme relies on, not a one-off for this component. */
+    transition:
+        opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
+        width var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
-.dx-carousel-tab[aria-selected="true"] {
+.dx-carousel-indicator[aria-selected="true"] {
     background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
+    opacity: 1;
+    width: var(--dx-space-4);
 }
 
-.dx-carousel-tab:focus-visible {
+.dx-carousel-indicator:focus-visible {
     outline: 2px solid var(--dx-ring-color);
     outline-offset: 2px;
 }

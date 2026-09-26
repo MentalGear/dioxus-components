@@ -125,10 +125,10 @@ const LIBRARY_GOTO = { timeout: 20 * 60 * 1000 };
 const tabbedReferenceUrl = pathToFileURL(
   path.join(REFERENCE_ROOT, "carousel/examples/carousel-2-tablist.html"),
 ).href;
-const TABBED_LIBRARY_URL = `${BASE_URL}/component/?name=carousel&variant=tabs&`;
+const TABBED_LIBRARY_URL = `${BASE_URL}/component/?name=carousel&variant=indicators&`;
 
 function tabbedLibraryFrame(page: Page): Locator {
-  return page.locator("#component-preview-frame-tabs");
+  return page.locator("#component-preview-frame-indicators");
 }
 
 /**
@@ -359,7 +359,7 @@ test.describe("Library-only: v1 has no loop, so Previous/Next reach a real, disa
  *
  * The reference's own combined widget also has a rotation control (its
  * own `R4`-equivalent tab-order rule would additionally place it before
- * the tablist) -- this library's own `tabs` variant deliberately composes
+ * the tablist) -- this library's own `indicators` variant deliberately composes
  * *only* the tablist + content (no `CarouselAutoplay`/`CarouselRotationControl`),
  * matching the reference's own "similar examples" cross-reference that the
  * prev-next style is the one to pair with autoplay and the tabbed style is
@@ -475,7 +475,7 @@ test.describe("Reference: W3C's own Carousel tabbed example (carousel-2-tablist.
   });
 });
 
-test.describe("Library: our own carousel primitive (tabs variant)", () => {
+test.describe("Library: our own carousel primitive (indicators variant)", () => {
   test("R5: the tablist has role=tablist and an accessible name", async ({ page }) => {
     await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
     const frame = tabbedLibraryFrame(page);
@@ -556,10 +556,10 @@ test.describe("Library: our own carousel primitive (tabs variant)", () => {
     expect(await precedes(tablist, firstPanel)).toBe(true);
   });
 
-  test("axe: the library's tabs variant has no automatically detectable a11y issues", async ({ page }) => {
+  test("axe: the library's indicators variant has no automatically detectable a11y issues", async ({ page }) => {
     await gotoHydrated(page, TABBED_LIBRARY_URL, LIBRARY_GOTO);
-    await expectNoAxeViolations(page, "carousel: library tabs variant", {
-      include: "#component-preview-frame-tabs",
+    await expectNoAxeViolations(page, "carousel: library indicators variant", {
+      include: "#component-preview-frame-indicators",
     });
   });
 });

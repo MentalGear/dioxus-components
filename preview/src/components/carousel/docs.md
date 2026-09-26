@@ -53,7 +53,7 @@ The gap between slides is a `--dx-carousel-gap` custom property, read by `Carous
 
 ## A custom picker (dot indicators, etc.)
 
-`use_carousel()` returns a read-only `CarouselApi` (`selected`, `count`, `can_scroll_prev`, `can_scroll_next`) plus `scroll_to(index)`, for building any picker UI alongside or instead of `CarouselPrevious`/`CarouselNext`. See the `indicators` variant's `CarouselIndicators`, or the `indicators` demo's own composition:
+`use_carousel()` returns a read-only `CarouselApi` (`selected`, `count`, `can_scroll_prev`, `can_scroll_next`) plus `scroll_to(index)`, for building any picker UI alongside or instead of `CarouselPrevious`/`CarouselNext`. See the `api` demo's own composition:
 
 ```rust
 let api = use_carousel();
@@ -103,26 +103,28 @@ Carousel { aria_label: "Featured photos",
 
 Rotation pauses while keyboard focus is anywhere inside the carousel, or while hovering it. Un-hovering resumes it (unless focus is *also* currently holding it paused); losing focus does **not** auto-resume -- only clicking `CarouselRotationControl` again does (matching the vendored tabbed reference's own accessibility-features prose). `prefers-reduced-motion: reduce` always forces rotation off at mount, checked once client-side, regardless of any `default_playing` you pass.
 
-`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselTab`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
+`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselIndicator`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
 
 Ticking pages through the same path `CarouselNext` uses, so `loop` applies: without `loop`, rotation simply stops once it reaches the last slide (rather than ticking forever against a no-op the way `embla-carousel-autoplay`'s own documented behavior does); with `loop`, it rewinds and keeps going. See the `autoplay` variant.
 
-## Tablist (dot-picker) variant
+## Indicators
 
-The APG "tabbed" carousel style: a `CarouselTabList` of `CarouselTab` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
+The APG "tabbed" carousel style: a `CarouselIndicators` of `CarouselIndicator` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
 
 ```rust
 Carousel { aria_label: "Featured photos",
-    CarouselTabList {
+    CarouselIndicators {
         for i in 0..count {
-            CarouselTab { key: "{i}", index: i }
+            CarouselIndicator { key: "{i}", index: i }
         }
     }
     CarouselContent { /* CarouselItems, same indices */ }
 }
 ```
 
-`CarouselTabList` is `role="tablist"`; each `CarouselTab` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselTabList` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among tabs and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `tabs` variant.
+`CarouselIndicators` (renamed from `CarouselTabList`; `CarouselIndicator` from `CarouselTab` -- pre-1.0 fork rename, no deprecated alias) is `role="tablist"`; each `CarouselIndicator` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselIndicators` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among the dots and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `indicators` variant.
+
+**`CarouselIndicators` vs. `Tabs`.** Reach for `Tabs` (`crate::components::tabs`) instead when each "page" is a genuinely separate panel that *hides* the others (only the active one is ever visible or scrollable) -- a settings page's sections, for instance. Reach for `CarouselIndicators` when every "page" is a slide in the *same* horizontally/vertically scrolling track, and the dots are just a shortcut for a position a user could also reach by paging or dragging -- that scroll-snap track, and the fact that neighbouring slides are physically adjacent and (depending on `--dx-carousel-per-view`/`--dx-carousel-peek`) sometimes partially visible at once, is what `Tabs` has no equivalent for at all.
 
 ## Virtualised content
 
@@ -143,7 +145,7 @@ Carousel { aria_label: "Featured photos", r#loop: true,
 }
 ```
 
-Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselTabList`/`CarouselTab` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
+Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselIndicators`/`CarouselIndicator` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
 
 **When to virtualise.** With `virtualize` left at its default (`None`), the DOM only ever holds `2 * radius + 1` slides once your data set is bigger than that window -- a smaller data set renders every slide (there's nothing to save). Pass `virtualize: Some(true)` to always window, even for a small data set, or `virtualize: Some(false)` to always render every slide regardless of size.
 

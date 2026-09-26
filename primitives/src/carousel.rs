@@ -482,7 +482,7 @@ fn carousel_key_intent(
 /// overwhelmingly common case) happens to truncate at the only snap point
 /// in its path anyway, which is also the correct destination, so it read
 /// as correct in isolation; a multi-slide jump (`loop`'s rewind
-/// wraparound, a `CarouselTab` activation more than one tab away,
+/// wraparound, a `CarouselIndicator` activation more than one tab away,
 /// [`CarouselApi::scroll_to`] to a distant index) is what exposed it, via
 /// a pre-existing, previously-green `carousel.spec.ts` test
 /// (`clicking a tab activates its slide and moves the roving tab stop`,
@@ -1702,7 +1702,7 @@ struct CarouselContext {
     loop_enabled: ReadSignal<bool>,
     /// The resolved text direction -- the exact same value [`Carousel`]'s
     /// own root already computed via `use_direction(props.dir)`, republished
-    /// here so [`CarouselTabList`]/[`CarouselTab`] reuse it verbatim rather
+    /// here so [`CarouselIndicators`]/[`CarouselIndicator`] reuse it verbatim rather
     /// than calling `use_direction(None)` a second time, which would
     /// silently disagree with the root's own resolution whenever a caller
     /// passes an explicit `dir` prop on [`Carousel`] itself rather than
@@ -1715,7 +1715,7 @@ struct CarouselContext {
     /// actually exists. The same "publish into a shared, always-initialized
     /// slot" idiom `content_id` above already uses.
     autoplay: AutoplayContext,
-    /// Published (`true`) by [`CarouselTabList`] on mount so
+    /// Published (`true`) by [`CarouselIndicators`] on mount so
     /// [`CarouselItem`] can switch its own role from `group` to
     /// `tabpanel` -- see that component's own "Tablist variant" doc.
     tablist_present: Signal<bool>,
@@ -1792,7 +1792,7 @@ struct AutoplayContext {
     /// Mirrors [`CarouselAutoplayProps::stop_on_interaction`]; published
     /// here (not read directly off the props) so [`AutoplayContext::note_interaction`]
     /// can be called from components (`CarouselPrevious`/`CarouselNext`/
-    /// `CarouselTab`/[`use_carousel`]) that have no direct access to
+    /// `CarouselIndicator`/[`use_carousel`]) that have no direct access to
     /// [`CarouselAutoplay`]'s own props.
     stop_on_interaction: Signal<bool>,
     /// Mirrors [`CarouselAutoplayProps::stop_on_mouse_enter`]; see
@@ -1809,7 +1809,7 @@ impl AutoplayContext {
     /// `stop_on_interaction` enabled (its own default `true`) -- called
     /// from every *manual, discrete* paging entry point:
     /// [`CarouselPrevious`]/[`CarouselNext`], [`Carousel`]'s own root
-    /// keyboard handler, [`CarouselTab`], and [`CarouselApi::scroll_to`].
+    /// keyboard handler, [`CarouselIndicator`], and [`CarouselApi::scroll_to`].
     /// Mirrors embla-carousel's own `embla-carousel-autoplay` plugin
     /// option of the same name.
     ///
@@ -2151,7 +2151,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // the move"). A single, source-agnostic target rather than
     // special-casing which button (if any) caused the move keeps this one
     // effect correct for every transition source (buttons, the root
-    // keyboard handler, `CarouselTab`, `CarouselApi::scroll_to`, and a
+    // keyboard handler, `CarouselIndicator`, `CarouselApi::scroll_to`, and a
     // drag/wheel/trackpad settle that changes `selected` with no button
     // involved at all) without threading "who caused this" through every
     // one of them.
@@ -2952,7 +2952,7 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
         }
     };
 
-    // `role="tabpanel"` (in lieu of `group`) once a `CarouselTabList` has
+    // `role="tabpanel"` (in lieu of `group`) once a `CarouselIndicators` has
     // registered -- the APG tabbed style, `carousel-2-tablist.html`'s own
     // markup. `aria-roledescription="slide"` stays regardless: the
     // vendored tabbed example's own markup keeps it alongside `tabpanel`
@@ -3074,7 +3074,7 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 ///
 /// Publishes its own count into [`CarouselContext`] the same way
 /// [`CarouselItem`]'s own registration effect does, so
-/// [`CarouselPrevious`]/[`CarouselNext`]/[`CarouselTabList`]/[`CarouselTab`]/
+/// [`CarouselPrevious`]/[`CarouselNext`]/[`CarouselIndicators`]/[`CarouselIndicator`]/
 /// [`CarouselAutoplay`]/[`CarouselRotationControl`]/the root's own arrow
 /// keys/[`use_carousel`] all keep working completely unchanged -- none of
 /// them know this component exists; every one of them only ever reads or
@@ -3138,7 +3138,7 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 ///   paging path in this module already uses. The target position is
 ///   already a rendered window slide (`radius >= 1`), so this alone never
 ///   touches the window.
-/// - A change to any other data index (a distant [`CarouselTab`] click, a
+/// - A change to any other data index (a distant [`CarouselIndicator`] click, a
 ///   controlled `value` jump) resolves to whichever POSITION nearest the
 ///   current anchor carries that data index, sets `anchor` to it directly
 ///   -- an instant re-render around the new centre, so it is simply the
@@ -3780,7 +3780,7 @@ pub struct CarouselAutoplayProps {
 
     /// Whether rotation stops for good (until [`CarouselRotationControl`]
     /// is explicitly clicked again) after a manual paging action --
-    /// Previous/Next, the root keyboard handler, a [`CarouselTab`], or a
+    /// Previous/Next, the root keyboard handler, a [`CarouselIndicator`], or a
     /// custom picker's own [`CarouselApi::scroll_to`]. Mirrors
     /// `embla-carousel-autoplay`'s own `stopOnInteraction` option and its
     /// default (`true`).
@@ -3969,7 +3969,7 @@ pub struct CarouselRotationControlProps {
 /// their place.
 ///
 /// **Composition:** place this **first** among [`Carousel`]'s children --
-/// before [`CarouselPrevious`]/[`CarouselTabList`]/[`CarouselContent`] --
+/// before [`CarouselPrevious`]/[`CarouselIndicators`]/[`CarouselContent`] --
 /// so it is the first focusable element in the carousel, matching APG's
 /// own explicit requirement ("Rotation control ... precede\[s\] the slide
 /// content in the Tab sequence"). This component cannot enforce that
@@ -4035,7 +4035,7 @@ pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
             // (`playwright/carousel.spec.ts`'s own "autoplay" describe
             // block was red without this). Keyboard/pointer focus on every
             // OTHER focusable piece of the carousel (Previous/Next, the
-            // content track, a `CarouselTab`) still pauses normally.
+            // content track, a `CarouselIndicator`) still pauses normally.
             onfocusin: move |event: Event<FocusData>| event.stop_propagation(),
             onfocusout: move |event: Event<FocusData>| event.stop_propagation(),
             ..attributes,
@@ -4045,15 +4045,15 @@ pub fn CarouselRotationControl(props: CarouselRotationControlProps) -> Element {
     }
 }
 
-/// Shared roving-focus state for one [`CarouselTabList`], consumed by its
-/// [`CarouselTab`] children -- the tablist's *own* [`CollectionState`],
+/// Shared roving-focus state for one [`CarouselIndicators`], consumed by its
+/// [`CarouselIndicator`] children -- the tablist's *own* [`CollectionState`],
 /// entirely separate from [`CarouselContext`]'s own `selected`/`count`
 /// (which stay the single source of truth for which slide is current;
 /// this collection only tracks *focus* among the tab buttons themselves,
 /// the same separation `tabs.rs`'s own `TabsContext`/`CollectionState`
 /// pair keeps).
 #[derive(Clone, Copy)]
-struct CarouselTabListContext {
+struct CarouselIndicatorsContext {
     focus: CollectionState,
     /// Reused verbatim from [`CarouselContext::direction`] -- see that
     /// field's own doc for why a fresh `use_direction(None)` call here
@@ -4061,21 +4061,21 @@ struct CarouselTabListContext {
     direction: Direction,
 }
 
-/// The props for the [`CarouselTabList`] component.
+/// The props for the [`CarouselIndicators`] component.
 #[derive(Props, Clone, PartialEq)]
-pub struct CarouselTabListProps {
+pub struct CarouselIndicatorsProps {
     /// Additional attributes to apply to the tablist element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
 
-    /// The [`CarouselTab`] children.
+    /// The [`CarouselIndicator`] children.
     pub children: Element,
 }
 
-/// # CarouselTabList
+/// # CarouselIndicators
 ///
 /// The slide-picker row for the APG **tabbed** carousel style:
-/// `role="tablist"` containing one [`CarouselTab`] per slide. Composing
+/// `role="tablist"` containing one [`CarouselIndicator`] per slide. Composing
 /// this on this crate's own `crate::collection` roving-focus machinery
 /// (the same module [`crate::tabs::Tabs`] itself is built on) rather than
 /// [`crate::tabs::Tabs`]/`TabTrigger`/`TabContent` directly was a
@@ -4097,7 +4097,7 @@ pub struct CarouselTabListProps {
 ///    "Right Arrow: Moves focus to the next tab ... Shows the slide
 ///    associated with the newly focused tab" (no `Enter` needed,
 ///    `examples/carousel-2-tablist.html`'s own keyboard table). Building
-///    [`CarouselTab`] directly on `crate::collection` (below) makes this
+///    [`CarouselIndicator`] directly on `crate::collection` (below) makes this
 ///    one line (`onfocus` calling [`CarouselContext::set_selected`]
 ///    directly) instead of a manual-activation component fighting its own
 ///    contract.
@@ -4121,7 +4121,7 @@ pub struct CarouselTabListProps {
 ///
 /// This must be used inside a [`Carousel`] component.
 #[component]
-pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
+pub fn CarouselIndicators(props: CarouselIndicatorsProps) -> Element {
     let ctx: CarouselContext = use_context();
     let mut tablist_present = ctx.tablist_present;
 
@@ -4132,7 +4132,7 @@ pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
     // Always wraps (`ReadSignal::new(Signal::new(true))`) -- see this
     // component's own doc, "Arrow-key wrap."
     let focus = use_collection_provider(ReadSignal::new(Signal::new(true)));
-    use_context_provider(|| CarouselTabListContext {
+    use_context_provider(|| CarouselIndicatorsContext {
         focus,
         direction: ctx.direction,
     });
@@ -4162,9 +4162,9 @@ pub fn CarouselTabList(props: CarouselTabListProps) -> Element {
     }
 }
 
-/// The props for the [`CarouselTab`] component.
+/// The props for the [`CarouselIndicator`] component.
 #[derive(Props, Clone, PartialEq)]
-pub struct CarouselTabProps {
+pub struct CarouselIndicatorProps {
     /// The index of the slide this tab controls (0-based) -- the same
     /// convention [`CarouselItem::index`] and `tabs.rs`'s own
     /// `TabTrigger`/`TabContent` `index` props use.
@@ -4182,7 +4182,7 @@ pub struct CarouselTabProps {
     pub children: Element,
 }
 
-/// # CarouselTab
+/// # CarouselIndicator
 ///
 /// One slide-picker button: `role="tab"`, roving `tabindex`, `aria-selected`,
 /// `aria-controls` pointing at the matching [`CarouselItem`]'s own id.
@@ -4190,17 +4190,17 @@ pub struct CarouselTabProps {
 /// selected one, roving tabindex) or by `ArrowLeft`/`ArrowRight`/`Home`/`End`
 /// moving focus onto it -- **automatically** selects and scrolls to its
 /// slide (no `Enter`/click needed), matching APG's own tabbed-style
-/// automatic-activation contract. See [`CarouselTabList`]'s own doc for
+/// automatic-activation contract. See [`CarouselIndicators`]'s own doc for
 /// why this is a purpose-built component on `crate::collection` rather
 /// than [`crate::tabs::TabTrigger`] directly (manual activation there is
 /// the wrong contract for this pattern).
 ///
-/// This must be used inside a [`CarouselTabList`] component, with indices
+/// This must be used inside a [`CarouselIndicators`] component, with indices
 /// matching the sibling [`CarouselItem`]s one-to-one.
 #[component]
-pub fn CarouselTab(props: CarouselTabProps) -> Element {
+pub fn CarouselIndicator(props: CarouselIndicatorProps) -> Element {
     let carousel_ctx: CarouselContext = use_context();
-    let tablist_ctx: CarouselTabListContext = use_context();
+    let tablist_ctx: CarouselIndicatorsContext = use_context();
     let index = props.index;
 
     let is_selected = use_memo(move || (carousel_ctx.selected)() == index());
@@ -5224,9 +5224,9 @@ mod ssr_tests {
     fn TablistCarousel() -> Element {
         rsx! {
             Carousel { aria_label: "Featured photos",
-                CarouselTabList {
-                    CarouselTab { index: 0usize, "1" }
-                    CarouselTab { index: 1usize, "2" }
+                CarouselIndicators {
+                    CarouselIndicator { index: 0usize, "1" }
+                    CarouselIndicator { index: 1usize, "2" }
                 }
                 CarouselContent {
                     CarouselItem { index: 0usize, "One" }
@@ -5239,7 +5239,7 @@ mod ssr_tests {
     #[test]
     fn item_is_group_role_before_a_carousel_tab_list_has_mounted() {
         // Same hydration-parity shape as autoplay's own "before mount"
-        // test above: `CarouselTabList`'s presence publish is effect-driven,
+        // test above: `CarouselIndicators`'s presence publish is effect-driven,
         // so a bare `rebuild_in_place` (SSR, and the client's own
         // pre-hydration first render) still sees the ordinary `group` role.
         let html = render(ThreeSlideCarousel);

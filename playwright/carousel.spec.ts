@@ -50,12 +50,13 @@ function demoFrame(
     | "sizes"
     | "spacing"
     | "peek"
+    | "align"
+    | "api"
     | "indicators"
     | "vertical"
     | "rtl"
     | "looping"
     | "autoplay"
-    | "tabs"
     | "virtual_loop"
     | "virtual_many",
 ): Locator {
@@ -688,19 +689,34 @@ test.describe("Carousel: vertical orientation pages on the block axis", () => {
 });
 
 test.describe("Carousel: a custom picker built on use_carousel()'s CarouselApi", () => {
+  // Lives on the `api` demo now -- the old `indicators` variant that used
+  // to host this custom, non-tablist dot picker was merged into the APG
+  // tablist demo (`CarouselIndicators`/`CarouselIndicator`, renamed from
+  // `CarouselTabList`/`CarouselTab`); see playwright/carousel.spec.ts's own
+  // "tablist (dot-picker) variant" describe block for that one instead.
   test("clicking a dot indicator jumps directly to that slide, and the active dot tracks the selection", async ({ page }) => {
-    await goto(page, "indicators");
-    const frame = demoFrame(page, "indicators");
-    const indicators = frame.locator(".dx-carousel-indicator");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await goto(page, "api");
+    const frame = demoFrame(page, "api");
+    const indicators = frame.locator('[aria-label="Slide picker"] button');
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
 
-    await expect(indicators).toHaveCount(4);
+    await expect(indicators).toHaveCount(5);
     await expect(indicators.nth(0)).toHaveAttribute("data-active", "true");
 
     await indicators.nth(2).click();
     await expect(slide(3)).toHaveAttribute("data-selected", "true");
     await expect(indicators.nth(2)).toHaveAttribute("data-active", "true");
     await expect(indicators.nth(0)).toHaveAttribute("data-active", "false");
+  });
+
+  test("the visible 'Slide n of m' counter tracks the selection", async ({ page }) => {
+    await goto(page, "api");
+    const frame = demoFrame(page, "api");
+    const counter = frame.locator("p", { hasText: /^Slide \d+ of \d+$/ });
+
+    await expect(counter).toHaveText("Slide 1 of 5");
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expect(counter).toHaveText("Slide 2 of 5");
   });
 });
 
@@ -1998,14 +2014,18 @@ test.describe("Carousel: autoplay + rotation control", () => {
 });
 
 /**
- * Tablist (dot-picker) variant -- APG's "tabbed" carousel style. The
- * `tabs` variant has 5 slides, no separate Previous/Next (matching the
- * vendored reference's own structure).
+ * Indicators (tablist/dot-picker) variant -- APG's "tabbed" carousel
+ * style, `CarouselIndicators`/`CarouselIndicator` (renamed from
+ * `CarouselTabList`/`CarouselTab`). The `indicators` variant has 5 slides,
+ * no separate Previous/Next (matching the vendored reference's own
+ * structure). Merged with what used to be a separate, non-tablist
+ * `indicators` demo (a custom `use_carousel()`-built dot picker) -- that
+ * composition now lives on the `api` demo instead.
  */
-test.describe("Carousel: tablist (dot-picker) variant", () => {
+test.describe("Carousel: indicators (tablist/dot-picker) variant", () => {
   test("roles: tablist/tab/tabpanel, roving tabindex, aria-selected sync with the current slide", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tablist = frame.getByRole("tablist");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2022,8 +2042,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("clicking a tab activates its slide and moves the roving tab stop", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2038,8 +2058,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("ArrowRight/ArrowLeft move focus and automatically activate the newly focused tab (no Enter needed)", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
 
@@ -2055,8 +2075,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("ArrowLeft/ArrowRight wrap at both ends of the tablist", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
 
     await tabs.nth(0).focus();
@@ -2069,8 +2089,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("Home/End move focus to the first/last tab and activate it", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
 
@@ -2085,18 +2105,18 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("each tab's aria-controls points at its matching tabpanel's id", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const firstTab = frame.getByRole("tab").nth(0);
     const firstPanelId = await frame.locator('[role="tabpanel"]').nth(0).getAttribute("id");
     expect(firstPanelId).toBeTruthy();
     await expect(firstTab).toHaveAttribute("aria-controls", firstPanelId!);
   });
 
-  test("axe: the tabs variant has no automatically detectable a11y issues", async ({ page }) => {
-    await goto(page, "tabs");
-    await expectNoAxeViolations(page, "carousel: tabs variant", {
-      include: "#component-preview-frame-tabs",
+  test("axe: the indicators variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "indicators");
+    await expectNoAxeViolations(page, "carousel: indicators variant", {
+      include: "#component-preview-frame-indicators",
     });
   });
 });
@@ -2149,7 +2169,7 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
  *   outside. `preventScroll: true` is exactly the tool the platform gives
  *   a caller to opt out of that default when it does its own scroll
  *   positioning, which is precisely this test's situation; it isolates
- *   the thing actually under test -- `CarouselTab`'s own `onfocus` handler
+ *   the thing actually under test -- `CarouselIndicator`'s own `onfocus` handler
  *   (`carousel_ctx.set_selected.call(...)`) -- from that unrelated native
  *   behavior. Confirmed live: plain `.focus()` moves the page on *both*
  *   pre-fix and post-fix code (the native behavior, unaffected by this
@@ -2235,11 +2255,11 @@ test.describe("Carousel: paging never scrolls the page (ancestor-scroll regressi
     await expectSnappedToBoundary(content, slide(1));
   });
 
-  test("a CarouselTab activation never moves window scroll position (isolated from the browser's own focus-scroll)", async ({
+  test("a CarouselIndicator activation never moves window scroll position (isolated from the browser's own focus-scroll)", async ({
     page,
   }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tab = frame.getByRole("tab").nth(2);
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2340,7 +2360,7 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(namesAfter).not.toContain("1 of 5");
   });
 
-  for (const variant of ["tabs", "autoplay", "looping"] as const) {
+  for (const variant of ["indicators", "autoplay", "looping"] as const) {
     test(`non-current slides are inert on the ${variant} variant too`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
