@@ -324,6 +324,45 @@ summary,
   tab-size: 4;
 }
 
+/* axe `color-contrast` (docs/backlog.md row 39 residue): the vendored
+ * `github-light` syntax-highlighter theme's comment token, `#6e7781`,
+ * measures 4.39:1 against this block's own background above
+ * (`--primary-color-1`, `#fbfbfb` light) -- below WCAG AA's 4.5:1 for
+ * normal text. That theme is generated at compile time by the
+ * `dioxus-code`/`arborium-theme` crates (crates.io -- not source this
+ * repo vendors) into `docs/assets/github-light*.css`, which
+ * `scripts/deploy-preview.sh` regenerates from scratch on every deploy,
+ * so a fix committed to that generated file would be silently reverted
+ * by the next build. This override has to live here, in source, instead:
+ * `.dx-preview-code-theme <theme class>` beats the theme's own
+ * `<theme class>`-only rule on specificity alone (two classes vs. one),
+ * so it wins regardless of stylesheet load order. `#59636e` is GitHub's
+ * own newer light-theme comment color (5.91:1 against `#fbfbfb`), same
+ * hue family, same visual register as a comment. Covers every class
+ * variant the theme crate generates for this theme: the plain
+ * `.dxc-github-light`, its `-system-light-` pairing (both actually
+ * rendered on this site), and its `-system-dark-` pairing (the
+ * `github-light` theme's own dark-context slot -- generated but not
+ * currently rendered anywhere, fixed anyway since it is the same theme).
+ * Deliberately does NOT touch `github-dark` (used for `data-theme=dark`,
+ * a wholly different theme+palette, already >= 6.28:1 against its own
+ * dark background -- see playwright/axe.ts's header doc for that
+ * measurement). */
+/* stylelint-disable selector-class-pattern */
+.dx-preview-code-theme .dxc-github-light,
+.dx-preview-code-theme .dxc-system-light-github-light {
+  --dxc-light-a-c-color: #59636e;
+  --dxc-light-a-cd-color: #59636e;
+  --dxc-light-var-muted: #59636e;
+}
+
+.dx-preview-code-theme .dxc-system-dark-github-light {
+  --dxc-dark-a-c-color: #59636e;
+  --dxc-dark-a-cd-color: #59636e;
+  --dxc-dark-var-muted: #59636e;
+}
+/* stylelint-enable selector-class-pattern */
+
 .dx-code-block {
   overflow: hidden;
   width: 100%;
