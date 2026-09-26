@@ -1,7 +1,10 @@
 /**
  * Carousel: smoke + a11y attributes + keyboard paging (LTR and RTL) +
  * end-of-range button state + scroll-snap landing, across every shipped
- * variant (main, sizes, indicators, vertical, rtl).
+ * variant (main, sizes, peek, vertical, rtl) that has ordinary
+ * Previous/Next + role=group slides -- `indicators` (the APG tablist
+ * style) has neither, so it is covered by its own dedicated describe
+ * block instead of this generic sweep.
  *
  * SCOPING: every variant of a "Normal"-kind component renders on the same
  * page at once (`ComponentVariantHighlight` in `preview/src/main.rs`), so
@@ -363,7 +366,7 @@ function passesThroughAnIntermediateValue(samples: number[]): boolean {
   return samples.some((v) => v > lo + 1 && v < hi - 1);
 }
 
-for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
+for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
   test.describe(`Carousel (${variant} variant): smoke + a11y attributes`, () => {
     test(`region has role=region, aria-roledescription=carousel, and an accessible name that doesn't contain the word "carousel"`, async ({ page }) => {
       await goto(page, variant);
@@ -432,11 +435,22 @@ test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement
   const BUTTON_SIZE_PX = 28;
   const MIN_CLEAR_PX = 20 - 1; // 1px tolerance for sub-pixel layout rounding
 
-  for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
+  for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
     test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the track`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
-      const content = frame.locator(".dx-carousel-content");
+      // The clipping viewport wrapper, NOT `.dx-carousel-content` itself:
+      // the gap model (backlog row 91's shadcn-parity addendum) gives the
+      // scroller its own negative `margin-inline-start`/`-block-start`
+      // (`--dx-carousel-gap`'s own compensation), which deliberately
+      // widens and shifts `.dx-carousel-content`'s own layout box by the
+      // gap's width -- clipped by this wrapper, so nothing about it looks
+      // different, but a raw `boundingBox()` of the scroller itself no
+      // longer marks the track's own VISUAL edge the way it did before
+      // that construction existed. The viewport wrapper's own box is
+      // exactly the clipped, visual track edge, unaffected by the gap
+      // model either way.
+      const content = frame.locator('[data-slot="carousel-viewport"]');
       const previous = frame.getByRole("button", { name: "Previous slide" });
       const next = frame.getByRole("button", { name: "Next slide" });
 
@@ -516,7 +530,7 @@ test.describe("Carousel: arrows never overflow their frame (carousel-narrow regr
           GOTO_OPTS,
         );
 
-        for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
+        for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
           const frame = demoFrame(page, variant);
           const previous = frame.getByRole("button", { name: "Previous slide" });
           const next = frame.getByRole("button", { name: "Next slide" });
@@ -1733,7 +1747,7 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("Previous and Next are never disabled, even at the first/last slide", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
-    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
     const previous = region.getByRole("button", { name: /previous/i });
     const next = region.getByRole("button", { name: /next/i });
 
@@ -1753,7 +1767,7 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("Next at the last slide rewinds to the first INSTANTLY; Previous at the first rewinds to the last", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
-    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
     const content = region.locator(".dx-carousel-content");
     const previous = region.getByRole("button", { name: /previous/i });
     const next = region.getByRole("button", { name: /next/i });
@@ -1791,7 +1805,7 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("under RTL, loop_mode Rewind still wraps both directions with the swapped arrow keys", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
-    const region = frame.getByRole("region", { name: "Rewind-loop gallery (RTL)" });
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery (RTL)", exact: true });
     const previous = region.getByRole("button", { name: /previous/i });
     const next = region.getByRole("button", { name: /next/i });
     const slide = (n: number) => region.getByRole("group", { name: `${n} of 4` });
@@ -1822,7 +1836,7 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
-    const region = frame.getByRole("region", { name: "Rewind-loop gallery" });
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
     const content = region.locator(".dx-carousel-content");
     const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
@@ -2486,21 +2500,41 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     await goto(page, "sizes");
     const frame = demoFrame(page, "sizes");
     const viewport = frame.locator('[data-slot="carousel-viewport"]');
+    const content = frame.locator(".dx-carousel-content");
     const items = frame.locator(".dx-carousel-item");
 
     const viewportBox = await viewport.boundingBox();
+    const contentBox = await content.boundingBox();
     expect(viewportBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
     const perView = await frame
       .locator(".dx-carousel-demo-sizes")
       .evaluate((el) => getComputedStyle(el).getPropertyValue("--dx-carousel-per-view").trim());
     const n = Number(perView);
     expect(n).toBeGreaterThanOrEqual(2);
 
+    // Each item's own basis is `calc(100% / n)` OF THE SCROLLER's own
+    // (content) width, not the clipped viewport's -- the gap model's own
+    // negative-margin compensation deliberately widens the scroller by
+    // `--dx-carousel-gap`'s own width (`content_gap_margin`'s own doc),
+    // clipped by the viewport wrapper, so `contentBox.width`, not
+    // `viewportBox.width`, is the correct denominator here.
     for (let i = 0; i < n; i++) {
       const box = await items.nth(i).boundingBox();
       expect(box).not.toBeNull();
-      expect(box!.width).toBeCloseTo(viewportBox!.width / n, 0);
+      expect(box!.width).toBeCloseTo(contentBox!.width / n, 0);
     }
+    // The N slides still visually fill the clipped viewport exactly, with
+    // no overflow: the last of the N items' own right edge lands flush
+    // with the viewport's own right edge (both are pinned to the same
+    // physical edge by construction -- content's own right edge is never
+    // shifted, only its left edge is, so this holds regardless of gap).
+    const lastVisibleBox = await items.nth(n - 1).boundingBox();
+    expect(lastVisibleBox).not.toBeNull();
+    expect(lastVisibleBox!.x + lastVisibleBox!.width).toBeCloseTo(
+      viewportBox!.x + viewportBox!.width,
+      0,
+    );
     // The (n+1)-th slide (0-based index n) must not be even partially
     // inside the viewport -- a whole-slide layout has no partial peek.
     const nextBox = await items.nth(n).boundingBox();
@@ -2900,8 +2934,11 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
 
     // Jump straight to slide 7 (6 away -- outside the 5-slide window),
     // the "distant dot click" re-anchor path (`CarouselVirtualContent`'s
-    // own "Seamless loop" doc, second bullet).
-    await frame.locator('[aria-label="Go to slide 7"]').click();
+    // own "Seamless loop" doc, second bullet). `CarouselIndicator`'s own
+    // default accessible name is "Slide {n}" (renamed from the old
+    // `CarouselTabList`/`CarouselTab` -- see `component.rs`'s own doc),
+    // not the retired custom dot-picker's "Go to slide {n}".
+    await frame.getByRole("tab", { name: "Slide 7" }).click();
     await expect.poll(label).toBe("7 of 12");
     await expect(frame.locator("[data-position]")).toHaveCount(5);
     // Now a single Next from there still advances by exactly one, proving
@@ -3087,7 +3124,7 @@ test.describe("CarouselVirtualContent: a11y", () => {
     await goto(page, "virtual_loop_rtl");
     const frame = demoFrame(page, "virtual_loop_rtl");
     const next = frame.getByRole("button", { name: "Next slide" });
-    const label = selectedLabel(frame);
+    const label = () => frame.locator('[data-selected="true"]').getAttribute("aria-label");
 
     await expect.poll(label).toBe("1 of 12");
     // RTL: ArrowLeft is the swapped "next" key (Direction::resolve_horizontal).

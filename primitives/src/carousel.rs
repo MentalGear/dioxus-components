@@ -1007,7 +1007,24 @@ const CAROUSEL_DRAG_JS: &str = "\
     const RUBBER_C = 0.55; // WebKit's own published rubber-band constant (research doc §4)
 
     function axisSize() {
-        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+        // The clipping viewport wrapper's own size (`el`'s direct parent,
+        // `CarouselContent`'s own \"data-slot=carousel-viewport\" div --
+        // see that component's own doc), NOT `el.clientWidth`/`clientHeight`
+        // directly: the gap model's own negative `margin-inline-start`/
+        // `-block-start` compensation (`content_gap_margin`'s own doc)
+        // deliberately widens the scroller's own layout box by the gap's
+        // width, clipped by this wrapper -- so `el`'s own clientWidth is
+        // no longer the track's true VISUAL size once a non-zero
+        // `--dx-carousel-gap` is in effect, and using it here would subtly
+        // recalibrate the rubber-band feel by the gap's width for no
+        // reason connected to this feature at all (found live: a 16px gap
+        // widened a 320px track's `clientWidth` to 336px, a ~5% rubber
+        // limit drift that broke this exact test's own tight threshold).
+        const track = el.parentElement;
+        const size = orientation === 'horizontal'
+            ? (track ? track.clientWidth : el.clientWidth)
+            : (track ? track.clientHeight : el.clientHeight);
+        return size || 320;
     }
     function rubberLimit() {
         // Asymptote at trackWidth/0.55 (research doc §4/§5) -- no fixed
@@ -1488,7 +1505,16 @@ const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
     let deviceMinDelta = Infinity; // learned: the smallest step this hardware sends
 
     function axisSize() {
-        return (orientation === 'horizontal' ? el.clientWidth : el.clientHeight) || 320;
+        // See `CAROUSEL_DRAG_JS`'s own identical helper's doc: the
+        // clipping viewport wrapper's own size, not `el`'s (the gap
+        // model's negative-margin compensation widens `el`'s own
+        // clientWidth/clientHeight by the gap, which is not the track's
+        // true visual size).
+        const track = el.parentElement;
+        const size = orientation === 'horizontal'
+            ? (track ? track.clientWidth : el.clientWidth)
+            : (track ? track.clientHeight : el.clientHeight);
+        return size || 320;
     }
     // Apple's own published rubber-band curve, `f(x) = x*c*d / (d + c*x)`
     // (research doc §4: `b(x) = (1 - 1/(x*c/d + 1))*d`, algebraically the
@@ -2626,6 +2652,34 @@ pub struct CarouselContentProps {
 /// stray selector to latch onto. See that wrapper's own doc comment,
 /// right above this component's `rsx!` body, for the full construction.
 ///
+/// **`display: flow-root`, alongside `overflow: clip`, on this same
+/// wrapper.** Found live (this lane, vertical-orientation "shadcn-parity
+/// geometry" test): `overflow: clip` alone did not stop this wrapper's
+/// own vertical (block-axis) margin from collapsing through to its child
+/// -- `CarouselContent`'s own scroller, under [`CarouselOrientation::Vertical`],
+/// carries a NEGATIVE `margin-block-start` (the gap model's own
+/// `content_gap_margin`, physically `margin-top` in this crate's only
+/// writing mode), and margin collapsing is a block-axis-only phenomenon
+/// (horizontal/inline margins never collapse at all, in any writing mode
+/// -- which is exactly why the identical construction needed no such fix
+/// for [`CarouselOrientation::Horizontal`]'s own width-absorption: no
+/// collapsing was ever involved there to begin with). Measured live: with
+/// only `overflow: clip`, this wrapper's own rendered box SHIFTED upward
+/// by the gap's own size and its height silently absorbed the negative
+/// margin (270px stayed 270px instead of becoming 254px) -- i.e., this
+/// wrapper's margin computed as if it had adopted its child's `-16px`
+/// itself, encroaching 16px into `style.css`'s own `padding-block`
+/// button-clearance reservation. `display: flow-root` is the explicit,
+/// purpose-built CSS property for "this box establishes its own new block
+/// formatting context" (unlike relying on `overflow` for the same effect,
+/// which is really a side effect of a value meant for something else) --
+/// added alongside `overflow: clip` (kept for the scrollport-avoidance
+/// reasoning above, which `flow-root` alone says nothing about), it
+/// measured correctly: this wrapper's own box neither shifts nor absorbs
+/// its child's negative margin, and the child pokes out (clipped) by
+/// exactly the margin's own size instead, matching the CSS2.1 auto-height
+/// formula for a genuine new-BFC container.
+///
 /// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
 /// attribute: both mutate `element.style.transform` as a plain DOM write,
 /// the same escape hatch `CAROUSEL_DRAG_JS`'s own `scroll-snap-type`
@@ -2898,7 +2952,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         // tree both times.
         div {
             "data-slot": "carousel-viewport",
-            style: "overflow: clip;",
+            style: "overflow: clip; display: flow-root;",
 
             div {
                 id,
@@ -3706,7 +3760,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         // identical to that one's.
         div {
             "data-slot": "carousel-viewport",
-            style: "overflow: clip;",
+            style: "overflow: clip; display: flow-root;",
 
             div {
                 id,
@@ -5181,6 +5235,24 @@ mod ssr_tests {
         let html = render(VerticalThreeSlideCarousel);
         assert!(html.contains("margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
         assert!(!html.contains("margin-inline-start:calc(var(--dx-carousel-gap"));
+    }
+
+    #[test]
+    fn carousel_viewport_wrapper_establishes_its_own_block_formatting_context() {
+        // `display: flow-root`, alongside `overflow: clip` -- see the
+        // viewport wrapper's own doc for the live-measured vertical-
+        // orientation margin-collapse bug this closes (`overflow: clip`
+        // alone did not stop this wrapper's own block-axis margin from
+        // collapsing through to `CarouselContent`'s negative
+        // `margin-block-start`, under `CarouselOrientation::Vertical`).
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains(r#"style="overflow: clip; display: flow-root;""#));
+    }
+
+    #[test]
+    fn virtual_content_viewport_wrapper_establishes_its_own_block_formatting_context() {
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains(r#"style="overflow: clip; display: flow-root;""#));
     }
 
     // -- Sizes: whole slides by default, opt-in peek --------------------
