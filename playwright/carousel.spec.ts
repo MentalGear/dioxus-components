@@ -2911,14 +2911,20 @@ test.describe("CarouselVirtualContent: a11y", () => {
     await expect(previous).toBeDisabled();
     await expect(next).toBeEnabled();
 
-    // Paced with `expect.poll` after every click -- see the
-    // "ArrowRight/ArrowLeft" test's own comment, above, for why a
-    // zero-delay flood of 200 clicks is not this construction's target
-    // use case (a settle needs real wall-clock time to land within
+    // Paced with a small explicit wait *and* `expect.poll` after every
+    // click -- see the "ArrowRight/ArrowLeft" test's own comment, above,
+    // for why a zero-delay flood of 200 clicks is not this construction's
+    // target use case (a settle needs real wall-clock time to land within
     // `radius`'s own margin); this is still far faster than a real user,
-    // just not adversarially so.
+    // just not adversarially so. The explicit wait matters more here than
+    // in the shorter loop/wrap tests above: at 200 iterations even a rare
+    // (~1-in-200) settle-latency race is likely to surface at least once,
+    // measured live against the SSG lane specifically (a plain
+    // `expect.poll` alone, with no wait, missed exactly one step around
+    // i=176 in that environment).
     for (let i = 2; i <= 200; i++) {
       await next.dispatchEvent("click");
+      await page.waitForTimeout(40);
       await expect.poll(label).toBe(`${i} of 200`);
     }
     await expect(next).toBeDisabled();
