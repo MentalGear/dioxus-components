@@ -7,7 +7,7 @@ pub fn Demo() -> Element {
     let mut show_solid = use_signal(|| true);
 
     rsx! {
-        div { style: "display: grid; gap: 0.75rem; max-width: 20rem;",
+        div { class: "dx-combobox-demo", style: "display: grid; gap: 0.75rem;",
             div { style: "display: flex; gap: 0.5rem;",
                 button {
                     r#type: "button",

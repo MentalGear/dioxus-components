@@ -1,5 +1,10 @@
 .dx-form-fixture {
     display: flex;
+
+    /* width: 100% -- dev-docs/backlog.md row 94: direct child of
+       `.dx-component-preview-frame` (flex column) -- max-width alone
+       shrink-wraps instead of reaching the cap. */
+    width: 100%;
     max-width: 42rem;
     flex-direction: column;
     gap: var(--dx-space-10);

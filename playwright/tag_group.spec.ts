@@ -1,6 +1,8 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations } from "./axe";
 import { BASE_URL as BASE } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 const URL = `${BASE}/component/?name=tag_group&`;
 const LOAD_TIMEOUT = 20 * 60 * 1000;
@@ -21,8 +23,11 @@ function tag(page: Page, name: string) {
   return multiVariant(page).getByRole("row", { name });
 }
 
+// dev-docs/backlog.md row 109: this suite interacts (click/keyboard) right
+// after navigating, on the SSG lane -- `gotoHydrated` so that can't land
+// before hydration attaches listeners.
 async function loadTagGroup(page: Page) {
-  await page.goto(URL, { timeout: LOAD_TIMEOUT, waitUntil: "networkidle" });
+  await gotoHydrated(page, URL, { timeout: LOAD_TIMEOUT });
   const variant = multiVariant(page);
   await variant.scrollIntoViewIfNeeded();
   await expect(variant.getByText("Labels", { exact: true })).toBeVisible({

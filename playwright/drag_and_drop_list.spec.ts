@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { expectNoAxeViolations } from "./axe";
 import { BASE_URL as BASE } from "./base-url";
 

@@ -19,9 +19,11 @@
  *     and `samples` on `window`) via ACCORDION_URL -- how the fix was first
  *     measured, 138px -> 16px plateau -> snap before, monotonic to 0 after.
  */
-import { test, type Page } from "@playwright/test";
+import { test } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { assertCloseAnimationReachesZero, Sample } from "./assert-close-animation";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 const APP_URL =
   process.env.ACCORDION_URL ?? `${BASE_URL}/component/?name=accordion&`;
@@ -30,7 +32,11 @@ const LOAD_TIMEOUT = 20 * 60 * 1000;
 
 /** App-lane: drive the real accordion component like accordion.spec.ts does. */
 async function sampleCloseInApp(page: Page): Promise<Sample[]> {
-  await page.goto(APP_URL, { timeout: LOAD_TIMEOUT, waitUntil: "networkidle" });
+  // dev-docs/backlog.md row 109: this test clicks the accordion trigger
+  // right after navigating, on the SSG lane -- `gotoHydrated` (not a plain
+  // `page.goto`) so that click can't land before hydration attaches
+  // listeners.
+  await gotoHydrated(page, APP_URL, { timeout: LOAD_TIMEOUT });
   const accordionItems = page.locator("[data-open]").filter({ has: page.getByRole("button") });
   const firstItem = accordionItems.first();
   const button = accordionItems.getByRole("button").first();

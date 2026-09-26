@@ -507,6 +507,7 @@ fn TooltipContentRendered(
 #[cfg(all(test, feature = "web"))]
 mod anchor_style_hydration_parity {
     use super::*;
+    use crate::test_support::find_element;
     use dioxus_core::NoOpMutations;
 
     #[component]
@@ -540,15 +541,25 @@ mod anchor_style_hydration_parity {
         dom.render_immediate(&mut NoOpMutations);
         let html = dioxus_ssr::render(&dom);
 
-        let tag_start = html.find(r#"id="anchor-style-tooltip-content""#).unwrap();
-        let tag_end = html[tag_start..].find('>').unwrap() + tag_start;
-        let opening_tag = &html[tag_start..tag_end];
+        // Backlog row 108: found via an order-independent attribute-map
+        // lookup, not by slicing forward from the `id="..."` match's own
+        // position to the next `>` -- `TooltipContent`'s attributes go
+        // through `merge_attributes` (this module's own `attributes`
+        // variable a few lines up), which sorts by name, so an attribute
+        // that sorts earlier than `id` (e.g. a `class`/`data-*` attribute)
+        // would silently fall outside a forward-only slice.
+        let content = find_element(&html, |attrs| {
+            attrs.get("id").map(String::as_str) == Some("anchor-style-tooltip-content")
+        })
+        .expect("no anchor-style-tooltip-content element in html");
         assert_eq!(
-            opening_tag.matches("style=\"").count(),
+            content.tag.matches("style=\"").count(),
             1,
-            "expected exactly one style attribute on the content element, got: {opening_tag}"
+            "expected exactly one style attribute on the content element, got: {}",
+            content.tag
         );
-        assert!(opening_tag.contains("position-anchor"));
-        assert!(opening_tag.contains("min-height"));
+        let style = content.attrs.get("style").expect("style attribute");
+        assert!(style.contains("position-anchor"));
+        assert!(style.contains("min-height"));
     }
 }

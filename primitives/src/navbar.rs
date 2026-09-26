@@ -803,18 +803,40 @@ fn NavbarContentRendered(
     let open = nav_ctx.is_open;
     let index = nav_ctx.index;
 
-    // Drive `showPopover()`/`hidePopover()` from `open`, and sync a native
-    // close back into `ctx.open_nav` -- but *only* when this nav is still
-    // the one recorded as open. Same guard, and the same reason, as
-    // `MenubarContentRendered`'s identical callback (`menubar.rs`, see its
-    // doc): `Navbar`'s own effect reacting to focus changes can move
-    // `ctx.open_nav` straight from `Some(this index)` to
-    // `Some(another index)` in one step, and per WHATWG HTML, showing the
-    // *new* nav's `auto` popover natively closes this (now-unrelated)
-    // sibling `auto` popover for us, firing this same `toggle` callback
-    // with `is_open: false` *after* `ctx.open_nav` already points at the
-    // other nav.
-    crate::top_layer::use_popover_sync(
+    // Drive `showPopover()` from `open`, and sync a native close back into
+    // `ctx.open_nav` -- but *only* when this nav is still the one recorded
+    // as open. Same guard, and the same reason, as `MenubarContentRendered`'s
+    // identical callback (`menubar.rs`, see its doc): `Navbar`'s own effect
+    // reacting to focus changes can move `ctx.open_nav` straight from
+    // `Some(this index)` to `Some(another index)` in one step, and per
+    // WHATWG HTML, showing the *new* nav's `auto` popover natively closes
+    // this (now-unrelated) sibling `auto` popover for us, firing this same
+    // `toggle` callback with `is_open: false` *after* `ctx.open_nav` already
+    // points at the other nav.
+    //
+    // `use_popover_shown_while_mounted`, not the plain `use_popover_sync` --
+    // this content, like `NavigationMenuContent`
+    // (`navigation_menu.rs`), renders through [`use_animated_open`] above,
+    // which deliberately keeps the element mounted with `data-state="closed"`
+    // for its whole exit animation (plus a settle hold) before actually
+    // unmounting it. `use_popover_sync`'s "signal -> browser" effect calls
+    // `hidePopover()` the instant `open` goes `false`, which (per the UA
+    // popover stylesheet's `[popover]:not(:popover-open) { display: none }`)
+    // sets `display: none` on the content before `use_animated_open`'s own
+    // rAF-deferred `getAnimations()` check ever ran -- the exact defect
+    // `docs/backlog.md` row 77 flagged as a likely (never-investigated)
+    // sibling of the identical `NavigationMenu` bug it fixed. Confirmed by
+    // execution here too: an in-page rAF sample of a real close showed
+    // `opacity`/`transform` jump straight from the open resting value to the
+    // closed target between two consecutive animation frames, with the
+    // content already disconnected from the DOM one frame later -- no
+    // transition frame ever ran. `PopoverKind::Auto` (unlike
+    // `NavigationMenuContent`'s `Manual`) is proven safe with this hook
+    // already: `popover.rs`'s modal-less `Popover` pairs the identical
+    // `Auto` + `use_popover_shown_while_mounted` combination (see that
+    // hook's own doc, "Bug 2 (reopen-while-still-mounted, auto only)",
+    // which is reasoned against exactly this pairing).
+    crate::top_layer::use_popover_shown_while_mounted(
         id.clone(),
         open,
         Callback::new(move |is_open: bool| {

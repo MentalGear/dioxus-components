@@ -85,7 +85,8 @@
  * describes for `DropdownMenu`/`ContextMenu`/`Menubar`.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BASE_URL } from "../../base-url";

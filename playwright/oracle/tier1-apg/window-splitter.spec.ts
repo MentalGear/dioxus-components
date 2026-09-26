@@ -60,7 +60,8 @@
  * `collapsed_size: 0`, neighbor `min_size: 20`).
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
 
 const BASE = `${BASE_URL}/component/?name=resizable&`;

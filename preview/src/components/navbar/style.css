@@ -106,46 +106,173 @@
   margin-inline-start: calc(-1 * var(--dx-space-1));
 }
 
-.dx-navbar-content[data-state="closed"] {
-  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease-in), transform var(--dx-motion-duration-base) var(--dx-motion-ease-in);
+/* `animation`+`@keyframes`, not `transition` -- deliberately mirroring
+ * `../navigation_menu/style.css`'s identical technique for its own content
+ * panel (`docs/backlog.md` row 77's own flagged follow-up: "`navbar.rs`
+ * pairs the identical `use_animated_open` + `use_popover_sync` combination,
+ * so it likely carries the same dead exit-animation defect"). Root-caused
+ * and confirmed by execution here, the same two-part class:
+ *
+ * (1) This content never sets a `data-side`/`data-align` attribute (unlike
+ * `popover.rs`/`hover_card.rs`/`tooltip.rs`), so the shared, engine-injected
+ * anchor-positioning stylesheet's per-side `anchor()` placement rules
+ * (`primitives/src/top_layer.rs`'s `ANCHOR_POSITIONING_CSS_JS_LITERAL`)
+ * never match it, meaning native CSS Anchor Positioning never actually
+ * places this content anywhere -- so `use_anchor_position_fallback`'s own
+ * `matches()` self-check always concludes the native path failed and takes
+ * over with a JS-computed *inline* `style.transform = 'none'`. An inline
+ * style's specificity beats any selector however specific, so the
+ * `transition`-based `transform` rules below were silently dead.
+ *
+ * (2) The web arm's `use_popover_sync` called `hidePopover()` synchronously
+ * the instant `open` went `false` -- removing the content before any
+ * transition frame could run at all. Confirmed live (an in-page rAF sample
+ * of a real close): `opacity`/`transform` jumped straight from the open
+ * resting value to the closed target between two consecutive animation
+ * frames, with the content already disconnected from the DOM one frame
+ * later -- not one transition frame ever ran, for either open or close.
+ *
+ * CSS Animations sit in a cascade tier *above* normal author declarations --
+ * inline styles included -- which is why switching to `animation`+
+ * `@keyframes` here closes cause (1) outright; cause (2) is fixed on the
+ * Rust side, by `NavbarContentRendered` switching from `use_popover_sync` to
+ * `use_popover_shown_while_mounted` (`primitives/src/navbar.rs`), the same
+ * hook `NavigationMenuContentRendered` already uses for this exact reason.
+ * A `@keyframes` animation also sidesteps a second, navbar-specific gap a
+ * plain higher-specificity `transition` rule could not: this content mounts
+ * with `data-state="open"` already set on its very first painted frame (no
+ * separate "closed" frame precedes it), so a `transition` -- which requires
+ * an actual prior computed-style value to interpolate *from* -- never had
+ * anything to animate on open either; an `@keyframes` animation instead
+ * always plays its full `0%` -> `100%` progression once applied, regardless
+ * of whether the element was just inserted. `getAnimations()`
+ * (`use_animated_open`, `primitives/src/lib.rs`) treats a running
+ * `CSSAnimation` exactly like a `CSSTransition`, so this swap needs no
+ * further Rust-side change beyond the hook switch above.
+ *
+ * One keyframe pair per `data-open-menu-direction` variant (three: this nav
+ * closing on its own, and closing because a sibling to its start/end opened
+ * instead) plus their `[dir="rtl"]` physical-sign counterparts -- mirrors
+ * the exact set of `transform` values the previous `transition`-based rules
+ * encoded per variant, just now as explicit keyframe endpoints instead of
+ * an implicit before/after computed-style diff. */
+.dx-navbar-content[data-state="closed"][data-open-menu-direction="start"] {
+  animation: dx-navbar-content-animate-out-start var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
-/* rtl-physical: `data-open-menu-direction` is already logical ("start"/
-   "end"), but `transform: translateX()` is never direction-aware, so the
-   LTR-authored physical sign below is only correct while `dir="ltr"`. The
-   `[dir="rtl"]` block further down negates both signs so "start" still
-   slides toward the reading-direction start in RTL. */
-.dx-navbar-content[data-state="closed"][data-open-menu-direction="start"] {
-  transform: translateX(-100%) scale(0.98); /* rtl-physical: see comment above */
+@keyframes dx-navbar-content-animate-out-start {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-100%) scale(0.98); /* rtl-physical: see comment above */
+  }
 }
 
 .dx-navbar-content[data-state="closed"][data-open-menu-direction="end"] {
-  transform: translateX(100%) scale(0.98); /* rtl-physical: see comment above */
+  animation: dx-navbar-content-animate-out-end var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+}
+
+@keyframes dx-navbar-content-animate-out-end {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.98); /* rtl-physical: see comment above */
+  }
 }
 
 .dx-navbar-content[data-state="closed"][data-open-menu-direction="closed"] {
-  transform: translateY(1rem) scale(0.98);
+  animation: dx-navbar-content-animate-out-closed var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
-/* rtl-physical: RTL counterparts of the "start"/"end" rules above, signs
-   negated. */
+@keyframes dx-navbar-content-animate-out-closed {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.98);
+  }
+}
+
+/* rtl-physical: RTL counterparts of the "start"/"end" animations above,
+   signs negated -- same reasoning as the pre-existing `[dir="rtl"]`
+   override rules this replaces. */
 [dir="rtl"] .dx-navbar-content[data-state="closed"][data-open-menu-direction="start"] {
-  transform: translateX(100%) scale(0.98); /* rtl-physical */
+  animation-name: dx-navbar-content-animate-out-start-rtl;
+}
+
+@keyframes dx-navbar-content-animate-out-start-rtl {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.98); /* rtl-physical */
+  }
 }
 
 [dir="rtl"] .dx-navbar-content[data-state="closed"][data-open-menu-direction="end"] {
-  transform: translateX(-100%) scale(0.98); /* rtl-physical */
+  animation-name: dx-navbar-content-animate-out-end-rtl;
+}
+
+@keyframes dx-navbar-content-animate-out-end-rtl {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-100%) scale(0.98); /* rtl-physical */
+  }
 }
 
 .dx-navbar-content[data-state="open"] {
-  opacity: 1;
+  animation: dx-navbar-content-animate-in var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: auto;
+}
+
+@keyframes dx-navbar-content-animate-in {
+  0% {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.98);
+  }
 
   /* rtl-physical: resting state, zero offset on both axes -- no side is
      encoded, so nothing to mirror. */
-  transform: translateX(0) translateY(0) scale(1);
-  transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
-    transform var(--dx-motion-duration-slow) cubic-bezier(0.16, 1, 0.3, 1);
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+/* row 31a's shared `prefers-reduced-motion` layer (dx-components-theme.css)
+ * only covers interactive roots, not animated content (see that file's own
+ * comment) -- this content's open/close motion is animated content, so it
+ * needs its own override, matching the per-component convention
+ * `../navigation_menu/style.css`/`input_otp`/`spinner`/`../tooltip/
+ * style.css`/`../popover/style.css`/`../drawer/style.css` already carry.
+ * `!important` so this wins regardless of specificity or cascade-origin
+ * ordering, the same reasoning this file's own root-cause comment above
+ * worked through in detail. */
+@media (prefers-reduced-motion: reduce) {
+  .dx-navbar-content,
+  .dx-navbar-expand-icon {
+    animation-duration: var(--dx-motion-duration-reduced) !important;
+    transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
 }
 
 .dx-navbar-item {

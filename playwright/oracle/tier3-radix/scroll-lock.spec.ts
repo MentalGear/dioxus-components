@@ -76,15 +76,19 @@
  * it *removes* the shift on classic-scrollbar platforms.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/scrolls triggers right
+// after navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 const goto = (page: Page, name: string) =>
-  page.goto(`${BASE_URL}/component/?name=${name}&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=${name}&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /** Sanity check: the route must actually have more content than fits in the

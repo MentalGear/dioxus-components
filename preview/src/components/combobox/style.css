@@ -3,6 +3,24 @@
   display: inline-block;
 }
 
+/*
+ * Demo-page wrapper shared by this component's `disabled`/`controlled`/
+ * `dynamic` variant galleries (`variants/{disabled,controlled,dynamic}/
+ * mod.rs`) -- not part of the themed Combobox widget above. Each of those
+ * three renders its own root `div` as the direct child of
+ * `.dx-component-preview-frame` (`preview/assets/main.css`), a
+ * column-direction flexbox; without an explicit `width` that div
+ * shrink-wraps to its content instead of reaching its `max-width` cap
+ * (dev-docs/backlog.md row 94, confirmed here: rendered at 200/200/236px
+ * against this 320px cap before `width: 100%`). `display`/`gap` stay
+ * inline per variant (they differ slightly), only the shared, previously
+ * bugged `max-width`/`width` pair moves here.
+ */
+.dx-combobox-demo {
+  width: 100%;
+  max-width: 20rem;
+}
+
 .dx-combobox-input-wrapper {
   position: relative;
   width: 200px;

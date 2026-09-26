@@ -336,10 +336,11 @@
  * without this file failing.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { gotoHydrated } from "../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 const BASE = "http://127.0.0.1:8090";
@@ -722,7 +723,12 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   test("Rule 3: Dropdown Menu 'Open Menu' opens its menu on a hard-loaded main page", async ({
     page,
   }) => {
-    await page.goto(`${BASE}/`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    // dev-docs/backlog.md row 109's own follow-up: this test clicks the
+    // trigger right after navigating, on the SSG lane -- `gotoHydrated` so
+    // that click can't land before hydration attaches listeners. (Rule 2
+    // above is a pure console/error check with no interaction, so it keeps
+    // a plain `page.goto`.)
+    await gotoHydrated(page, `${BASE}/`, { timeout: NAV_TIMEOUT });
 
     const trigger = page.getByRole("button", { name: "Open Menu" });
     await expect(trigger).toBeVisible();

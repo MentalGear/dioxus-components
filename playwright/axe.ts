@@ -67,24 +67,57 @@
  * color, and two components misusing a token meant for dark surfaces as
  * light-mode text).
  *
- * `EXCLUDE_VENDORED_CODE_HIGHLIGHT` — the one remaining exclusion, and it
- * is a genuine false positive at every site it's used: after the fix
- * above, re-measuring the same 49 routes found exactly one remaining
- * combination, inside `.dx-preview-code-theme` -- every syntax-highlighted
- * code span this app renders, both the "Manual installation"/component-
- * source code viewer (`preview/src/main.rs`'s `CodeBlock`, which wraps a
- * `PreviewCode`) and the same highlighter's output embedded directly in a
- * component's markdown-rendered "Usage notes" prose (no `CodeBlock`
- * wrapper there, so `.dx-preview-code-theme` itself, not `.dx-code-block`,
- * is the one selector both sites actually share) -- a comment token at
- * 4.39:1, from the vendored, build-time-generated `github-light`
- * syntax-highlighting theme (`preview/assets/github-light*.css`, not a
- * file this repo authors or owns the palette of; regenerating it from a
- * different highlighter theme is a real fix, but out of this round's
- * scope, filed as part of row 39). Scoped with axe's own `.exclude()` --
- * a *region* exclusion, skipping that one already-known, already-narrow
- * subtree entirely, not a page-wide `disableRules` -- so a component's own
- * contrast defect anywhere else on the same page still fails the scan.
+ * `EXCLUDE_VENDORED_CODE_HIGHLIGHT` — **fixed by construction, row 39
+ * residue closed.** This used to scope out `.dx-preview-code-theme` --
+ * every syntax-highlighted code span this app renders, both the "Manual
+ * installation"/component-source code viewer (`preview/src/main.rs`'s
+ * `CodeBlock`, which wraps a `PreviewCode`) and the same highlighter's
+ * output embedded directly in a component's markdown-rendered "Usage
+ * notes" prose -- because its comment token measured 4.39:1, from the
+ * vendored, build-time-generated `github-light` syntax-highlighting
+ * theme. That theme's CSS is NOT source this repo owns -- it's generated
+ * fresh from the `dioxus-code`/`arborium-theme` crates (crates.io) into
+ * `docs/assets/github-light*.css` on every `scripts/deploy-preview.sh`
+ * run, so a fix committed to that generated file is silently reverted by
+ * the next deploy. The real fix lives in `preview/assets/main.css`
+ * instead: an override rule, `.dx-preview-code-theme <theme class>`
+ * (two classes, beating the theme's own single-class rule on
+ * specificity regardless of stylesheet load order), for the theme's
+ * three comment-family custom properties
+ * (`--dxc-*-a-c-color`/`--dxc-*-a-cd-color`/`--dxc-*-var-muted`) across
+ * every class variant the theme crate generates for `github-light`
+ * (plain, `-system-light-`, `-system-dark-`). Root cause: those
+ * properties carry the upstream `arborium-theme` crate's `#6e7781`,
+ * which clears 4.5:1 against `#ffffff`/`#f2f2f2` but not against this
+ * app's actual code-block background, `--primary-color-1`'s light value
+ * `#fbfbfb` (`.dx-preview-code-theme`'s own `background-color`,
+ * `preview/assets/main.css`) -- 4.39:1. Every other token in the theme
+ * already cleared 4.5:1 against `#fbfbfb` (measured: `#1f2328` 15.27:1,
+ * `#8250df` 4.88:1, `#0550ae` 7.34:1, `#0a3069` 12.38:1, `#cf222e`
+ * 5.18:1, `#953800`/`#116329` 7.14:1, `#0969da` 5.02:1), so the comment
+ * token was the one change needed: `#6e7781` -> `#59636e` (GitHub's own
+ * newer light-theme comment color), 5.91:1 against `#fbfbfb` (6.11:1
+ * against the theme's own claimed `#ffffff`/`#fff` background, 5.46:1
+ * against its `#f2f2f2` surface token) -- same hue family, same visual
+ * register as a comment, now compliant everywhere it's actually
+ * rendered. See `preview/assets/main.css`'s own comment on that override
+ * rule for the full detail. The paired `github-dark` theme (used for
+ * `data-theme=dark`, a different theme entirely, not this constant's
+ * concern) was checked too: its comment token `#8b949e` already clears
+ * 6.28:1 against this app's dark code-block background
+ * (`--primary-color-1`'s dark value, `#0e0e0e`), and every other
+ * `github-dark` token clears at least 6.28:1 as well, so it needed no
+ * change, and is untouched.
+ *
+ * `EXCLUDE_VENDORED_CODE_HIGHLIGHT` itself is kept as an exported
+ * `AxeRegionExclusion` -- with a selector that now excludes nothing (see
+ * `expectNoAxeViolations`'s handling of an empty selector, below) -- purely
+ * for call-site compatibility: `~20+` spec files (owned by other lanes at
+ * the time this was fixed) still `import` and pass it to
+ * `expectNoAxeViolations({ excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] })`,
+ * and rewriting every one of those call sites was out of this fix's file
+ * scope. It is slated for removal (along with every call site that still
+ * references it) the next time those spec files are touched.
  *
  * ## Readiness: every scan waits for the app's first paint
  *
@@ -137,23 +170,40 @@ export interface AxeRegionExclusion {
 }
 
 /**
- * The one remaining `color-contrast` exclusion after this round's
- * construction fix -- see this file's header doc ("`color-contrast`:
- * fixed by construction, not excluded") for the measurement and the fix.
- * Scoped to `.dx-preview-code-theme` (every syntax-highlighted code span
- * this app renders -- see this file's header doc for the two distinct
- * sites that share this one class), where the vendored, build-time-
- * generated `github-light` theme's comment-token color still measures
- * 4.39:1. Harmless to pass on a scan whose page has no highlighted code at
- * all -- an `.exclude()` selector matching nothing excludes nothing.
+ * RETAINED ONLY FOR CALL-SITE COMPATIBILITY -- slated for removal.
+ *
+ * The underlying defect this used to work around (the vendored
+ * `github-light` syntax-highlighting theme's comment token, `#6e7781`,
+ * measuring 4.39:1 against this app's actual code-block background,
+ * `#fbfbfb`) was fixed by construction, in source -- NOT in the
+ * crate-generated `docs/assets/github-light*.css` (regenerated, and so
+ * silently reverted, by every `scripts/deploy-preview.sh` run) but as a
+ * higher-specificity override in `preview/assets/main.css`, which sets
+ * the theme's comment-token custom properties to `#59636e` (5.91:1) on
+ * `.dx-preview-code-theme <theme class>`. `.dx-preview-code-theme` has
+ * no remaining `color-contrast` violation to exclude. See this file's
+ * header doc ("`EXCLUDE_VENDORED_CODE_HIGHLIGHT` — fixed by
+ * construction, row 39 residue closed") and `preview/assets/main.css`'s
+ * own comment on that override rule for the full before/after
+ * measurement.
+ *
+ * The constant stays exported, with a selector that excludes nothing (see
+ * `expectNoAxeViolations`'s empty-selector handling below), purely so the
+ * many spec files that still `import` and pass it to
+ * `expectNoAxeViolations({ excludeRegions: [...] })` keep compiling and
+ * running unchanged -- rewriting each of those call sites is out of this
+ * fix's scope (they belong to other lanes/rounds). Once every call site is
+ * updated to drop this import, delete it along with this comment.
  */
 export const EXCLUDE_VENDORED_CODE_HIGHLIGHT: AxeRegionExclusion = {
-  selector: ".dx-preview-code-theme",
+  selector: "",
   reason:
-    "vendored, build-time-generated github-light syntax-highlighting theme " +
-    "(preview/assets/github-light*.css) measures 4.39:1 for comment tokens " +
-    "(#6e7781 on #fbfbfb) -- a third-party theme this repo does not author " +
-    "or own the palette of; filed docs/backlog.md row 39",
+    "no-op, retained only for call-site compatibility -- the github-light " +
+    "theme's comment-token contrast defect this used to exclude " +
+    "(#6e7781 on #fbfbfb, 4.39:1) was fixed by construction, in source " +
+    "(preview/assets/main.css overrides the theme's comment tokens -> " +
+    "#59636e, 5.91:1, since the theme's own generated CSS is reverted by " +
+    "every deploy); see docs/backlog.md row 39 and this file's header doc",
 };
 
 export interface AxeScanOptions {
@@ -283,6 +333,19 @@ export async function expectNoAxeViolations(
           `${JSON.stringify(region.selector)} requires a non-empty "reason" ` +
           `(axe.ts's exclusion-with-reason rule — see this file's header doc)`,
       );
+    }
+    // A no-op region exclusion (empty selector, or an array of only empty/
+    // blank selectors) is ignored rather than passed to axe's `.exclude()`.
+    // This is what lets `EXCLUDE_VENDORED_CODE_HIGHLIGHT` stay a real,
+    // importable `AxeRegionExclusion` after its underlying defect was fixed
+    // by construction (see that constant's doc comment): its selector is
+    // `""`, and every existing call site keeps compiling and scanning the
+    // page normally instead of passing an empty string straight to axe
+    // (which is not guaranteed to safely mean "exclude nothing").
+    const selectors = Array.isArray(region.selector) ? region.selector : [region.selector];
+    const isNoop = selectors.every((s) => s.trim().length === 0);
+    if (isNoop) {
+      continue;
     }
     builder = builder.exclude(region.selector);
   }

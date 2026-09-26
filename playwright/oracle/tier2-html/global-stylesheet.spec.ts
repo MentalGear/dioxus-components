@@ -19,7 +19,7 @@
  * global stylesheet must be in the applied set on every route, judged by a
  * property only it sets.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../../fixtures";
 import { BASE_URL } from "../../base-url";
 
 const ROUTES = [

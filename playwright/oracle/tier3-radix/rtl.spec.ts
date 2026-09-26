@@ -111,7 +111,8 @@
  * via `BASE_URL`, imported (not a local literal) since this is a new file.
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { BASE_URL } from "./../../base-url";
 
 async function goto(page: Page, name: string, variant: string) {

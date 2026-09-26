@@ -20,7 +20,8 @@
  * `inside_labels`/`active_index` -- was integrated): all 10/10 of shadcn's
  * `chart-bar-*` demos.
  */
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 

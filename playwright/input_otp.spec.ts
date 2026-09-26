@@ -1,11 +1,15 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+// dev-docs/backlog.md row 109: every test here types into the OTP input
+// right after navigating, on the SSG lane -- `gotoHydrated` so that can't
+// land before hydration attaches listeners.
+import { gotoHydrated } from "./hydration";
 
 const URL = `${BASE_URL}/component/?name=input_otp&`;
 
 test("typing fills the boxes and the real input's value matches", async ({ page }) => {
-  await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
   const input = page.locator("#otp-main");
   await expect(input).toBeVisible();
@@ -28,7 +32,7 @@ test("typing fills the boxes and the real input's value matches", async ({ page 
 
 test("paste fills all slots at once", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
   const input = page.locator("#otp-main");
   await input.click();
@@ -43,7 +47,7 @@ test("paste fills all slots at once", async ({ page }) => {
 });
 
 test("Backspace/Delete/ArrowLeft/ArrowRight move the active slot", async ({ page }) => {
-  await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
   const input = page.locator("#otp-main");
   const slot = (i: number) => page.locator(`#otp-main + div [data-slot-index="${i}"]`);
@@ -82,7 +86,7 @@ test("Backspace/Delete/ArrowLeft/ArrowRight move the active slot", async ({ page
 });
 
 test("disabled state blocks input", async ({ page }) => {
-  await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
   const input = page.locator("#otp-disabled");
   await expect(input).toBeDisabled();
@@ -120,7 +124,7 @@ test("disabled state blocks input", async ({ page }) => {
  */
 test.describe("Hit-target coverage (2026-09-17 -- almost no hit target regression)", () => {
   test("the real input's bounding box covers the full visible row", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
     const input = page.locator("#otp-main");
     await expect(input).toBeVisible();
@@ -154,7 +158,7 @@ test.describe("Hit-target coverage (2026-09-17 -- almost no hit target regressio
   test("clicking anywhere on a visible slot (not just the gaps between them) focuses the real input", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 
     const input = page.locator("#otp-main");
     await expect(input).toBeVisible();
@@ -236,7 +240,7 @@ test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-targ
     // fix is which slot is shown active: only slot 0 (the slot the caret
     // can actually be at), never 3 or 5.
     for (const idx of [0, 3, 5]) {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       const input = page.locator("#otp-main");
       const p = await slotCenter(page, "#otp-main", idx);
       await page.mouse.click(p.x, p.y);
@@ -254,7 +258,7 @@ test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-targ
   test("clicking a partially-filled input's slots lands at that slot's own index, clamped to the value's length", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     await input.click();
     await page.keyboard.type("123");
@@ -283,7 +287,7 @@ test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-targ
   test("clicking a fully-filled input's slots lands exactly at that slot's own index, no clamping needed", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     await input.click();
     await page.keyboard.type("123456");
@@ -297,7 +301,7 @@ test.describe("Click-to-caret positioning (2026-09-17 -- second, deeper hit-targ
   });
 
   test("disabled state still blocks click-to-caret positioning", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-disabled");
     const p = await slotCenter(page, "#otp-disabled", 1);
     await page.mouse.click(p.x, p.y);
@@ -336,7 +340,7 @@ test.describe("Click-then-type replace (2026-09-17 -- selection-vs-collapsed-car
   test("clicking a slot in a full value selects that one character, so typing replaces it instead of being blocked by maxlength", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     await input.click();
     await page.keyboard.type("123456");
@@ -357,7 +361,7 @@ test.describe("Click-then-type replace (2026-09-17 -- selection-vs-collapsed-car
   test("clicking a slot in a partial value selects that one character, so typing replaces it instead of shifting the rest right", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     await input.click();
     await page.keyboard.type("123");
@@ -377,7 +381,7 @@ test.describe("Click-then-type replace (2026-09-17 -- selection-vs-collapsed-car
   test("clicking the last filled character replaces just that character, not an insert past maxlength", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     await input.click();
     await page.keyboard.type("12345");
@@ -395,7 +399,7 @@ test.describe("Click-then-type replace (2026-09-17 -- selection-vs-collapsed-car
   test("clicking past the end of an empty value still collapses to a plain caret at 0 -- nothing exists there to select", async ({
     page,
   }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const input = page.locator("#otp-main");
     const p = await slotCenter(page, "#otp-main", 3);
     await page.mouse.click(p.x, p.y);
@@ -411,7 +415,7 @@ test.describe("Axe automated scan", () => {
   // Input OTP has no overlay/expand/select interaction -- like Input/Input
   // Group, one state to scan (docs/conformance-harness.md).
   test("loaded has no automatically detectable a11y issues", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     await expect(page.locator("#otp-main")).toBeVisible();
     await expectNoAxeViolations(page, "input_otp: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
