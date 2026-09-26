@@ -66,6 +66,8 @@ pub mod slider;
 pub mod switch;
 pub mod tabs;
 pub mod tag_group;
+#[cfg(test)]
+mod test_support;
 pub mod toast;
 pub mod toggle;
 pub mod toggle_group;

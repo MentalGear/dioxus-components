@@ -380,6 +380,7 @@ mod tests {
     use super::*;
     use crate::chart::components::chart::Chart;
     use crate::chart::{ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartSeries};
+    use crate::test_support::{find_element, find_elements};
     use dioxus_core::NoOpMutations;
 
     /// Sets `active_index` once, synchronously, during this component's
@@ -617,24 +618,24 @@ mod tests {
     /// hidden table (correctly, always) does" -- scoping to this tail
     /// slice is what makes an override assertion meaningful.
     ///
-    /// Seeks back to the preceding `<` rather than starting exactly at the
-    /// `data-slot="chart-tooltip"` match: the root `<div>`'s attributes go
-    /// through `merge_attributes` (§4(a) of the stage-2 handoff), which
-    /// sorts them by name, so `data-slot` is very often NOT the tag's first
-    /// attribute (e.g. `aria-hidden`/`data-indicator` both sort before it).
-    /// Slicing from the match itself silently dropped every attribute that
-    /// sorts earlier -- found via a root-tag assertion that failed despite
-    /// the merged `Vec<Attribute>` being verified correct immediately
-    /// before the `rsx!` spread; the dropped attributes were real, just
-    /// outside this fn's own (buggy) slice.
+    /// Backlog row 108: located via [`find_element`] (an order-independent
+    /// attribute-map lookup), not by slicing the raw HTML string from the
+    /// `data-slot="chart-tooltip"` match's own position -- the root
+    /// `<div>`'s attributes go through `merge_attributes` (§4(a) of the
+    /// stage-2 handoff), which sorts them by name, so `data-slot` is very
+    /// often NOT the tag's first attribute (e.g. `aria-hidden`/
+    /// `data-indicator` both sort before it), and slicing from the match
+    /// itself used to silently drop every attribute that sorts earlier --
+    /// found via a root-tag assertion that failed despite the merged
+    /// `Vec<Attribute>` being verified correct immediately before the
+    /// `rsx!` spread; the dropped attributes were real, just outside this
+    /// fn's own (buggy) slice.
     fn tooltip_fragment(html: &str) -> &str {
-        let match_start = html
-            .find(r#"data-slot="chart-tooltip""#)
-            .expect("no chart-tooltip root in html");
-        let start = html[..match_start]
-            .rfind('<')
-            .expect("no opening tag before the match");
-        &html[start..]
+        let root = find_element(html, |attrs| {
+            attrs.get("data-slot").map(String::as_str) == Some("chart-tooltip")
+        })
+        .expect("no chart-tooltip root in html");
+        &html[root.start..]
     }
 
     fn render_with(tooltip_props: ChartTooltipProps) -> String {
@@ -670,18 +671,30 @@ mod tests {
         // handoff), which sorts by name -- correct, SSR/CSR-consistent
         // output, just not necessarily in the order they were written in
         // this file's own `attributes!` call. Each attribute's own
-        // presence/value is what matters, not their relative order.
-        let root = tooltip_fragment(&html);
-        let root_tag_end = root.find('>').unwrap_or(root.len());
-        let root_tag = &root[..root_tag_end];
-        assert!(root_tag.contains(r#"data-slot="chart-tooltip""#));
-        assert!(root_tag.contains(r#"data-state="open""#));
-        assert!(root_tag.contains(r#"data-indicator="line""#));
+        // presence/value is what matters, not their relative order, so
+        // this looks each one up in an order-independent attribute map
+        // (backlog row 108) rather than slicing on a match's position or
+        // concatenating two attributes and asserting they're adjacent.
+        let root = find_element(&html, |attrs| {
+            attrs.get("data-slot").map(String::as_str) == Some("chart-tooltip")
+        })
+        .expect("no chart-tooltip root in html");
         assert_eq!(
-            html.matches(r#"data-slot="chart-swatch" data-indicator="line""#)
-                .count(),
-            2
+            root.attrs.get("data-state").map(String::as_str),
+            Some("open")
         );
+        assert_eq!(
+            root.attrs.get("data-indicator").map(String::as_str),
+            Some("line")
+        );
+
+        let swatches = find_elements(&html, |attrs| {
+            attrs.get("data-slot").map(String::as_str) == Some("chart-swatch")
+        });
+        assert_eq!(swatches.len(), 2);
+        assert!(swatches
+            .iter()
+            .all(|el| el.attrs.get("data-indicator").map(String::as_str) == Some("line")));
     }
 
     #[test]
@@ -690,11 +703,15 @@ mod tests {
             indicator: TooltipIndicator::Dashed,
             ..default_tooltip_props()
         });
-        assert_eq!(
-            html.matches(r#"data-slot="chart-swatch" data-indicator="dashed""#)
-                .count(),
-            2
-        );
+        // Backlog row 108: looked up order-independently, not via a
+        // concatenated two-attribute substring match.
+        let swatches = find_elements(&html, |attrs| {
+            attrs.get("data-slot").map(String::as_str) == Some("chart-swatch")
+        });
+        assert_eq!(swatches.len(), 2);
+        assert!(swatches
+            .iter()
+            .all(|el| el.attrs.get("data-indicator").map(String::as_str) == Some("dashed")));
     }
 
     #[test]
@@ -719,11 +736,15 @@ mod tests {
     fn dot_indicator_is_the_default() {
         let html = render_with(default_tooltip_props());
         assert!(html.contains(r#"data-indicator="dot""#));
-        assert_eq!(
-            html.matches(r#"data-slot="chart-swatch" data-indicator="dot""#)
-                .count(),
-            2
-        );
+        // Backlog row 108: looked up order-independently, not via a
+        // concatenated two-attribute substring match.
+        let swatches = find_elements(&html, |attrs| {
+            attrs.get("data-slot").map(String::as_str) == Some("chart-swatch")
+        });
+        assert_eq!(swatches.len(), 2);
+        assert!(swatches
+            .iter()
+            .all(|el| el.attrs.get("data-indicator").map(String::as_str) == Some("dot")));
     }
 
     #[test]
@@ -829,10 +850,25 @@ mod tests {
         // row's own outer `chart-tooltip-item` container still present.
         assert_eq!(html.matches(r#"data-slot="chart-tooltip-item""#).count(), 2);
         assert_eq!(html.matches(r#"data-slot="custom-row""#).count(), 2);
-        assert!(html.contains(r#"data-key="desktop""#));
-        assert!(html.contains(r#"data-key="mobile""#));
-        assert!(html.contains(r#"data-key="desktop" data-last="false""#));
-        assert!(html.contains(r#"data-key="mobile" data-last="true""#));
+        // Backlog row 108: looked up order-independently rather than
+        // asserting `data-key`/`data-last` are adjacent, in that order, in
+        // the raw string.
+        let desktop_row = find_element(&html, |attrs| {
+            attrs.get("data-key").map(String::as_str) == Some("desktop")
+        })
+        .expect("desktop row");
+        assert_eq!(
+            desktop_row.attrs.get("data-last").map(String::as_str),
+            Some("false")
+        );
+        let mobile_row = find_element(&html, |attrs| {
+            attrs.get("data-key").map(String::as_str) == Some("mobile")
+        })
+        .expect("mobile row");
+        assert_eq!(
+            mobile_row.attrs.get("data-last").map(String::as_str),
+            Some("true")
+        );
         // 186 + 80 = 266.
         assert!(
             html.contains("data-total=\"266\""),
