@@ -29,7 +29,7 @@ dioxus-ssr = "0.7.0"
 
 [features]
 web = ["dioxus/web", "dioxus-primitives/web"]
-desktop = ["dioxus/desktop"]
+desktop = ["dioxus/desktop", "dioxus-primitives/web"]
 fullstack = ["dioxus/fullstack"]
 server = ["dioxus/server", "dioxus/fullstack", "dioxus-primitives/web"]
 native = ["dioxus/native"]
