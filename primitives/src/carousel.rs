@@ -639,18 +639,19 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
 /// dioxus.recv()` can resolve and remove its listeners before the element
 /// is gone.
 ///
-/// `on_position`, when `Some`, is written the nearest slide's own logical
-/// POSITION (`data-position`, may differ from its data index) -- used only
-/// by [`CarouselVirtualContent`] to keep its own anchor in sync with a
-/// native drag/wheel/trackpad settle; `None` for the plain children API
-/// ([`CarouselContent`]), where position and data index always agree.
+/// `on_position`, when `Some`, is called with the nearest slide's own
+/// logical POSITION (`data-position`, may differ from its data index) --
+/// used only by [`CarouselVirtualContent`] to keep its own anchor
+/// bookkeeping in sync with a native drag/wheel/trackpad settle (or with
+/// its own animated paging call finishing); `None` for the plain children
+/// API ([`CarouselContent`]), where position and data index always agree.
 fn use_carousel_scroll_tracking(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
     set_selected: Callback<usize>,
     count: Memo<usize>,
     mut visible_range: Signal<(usize, usize)>,
-    on_position: Option<Signal<isize>>,
+    on_position: Option<Callback<isize>>,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
@@ -661,8 +662,8 @@ fn use_carousel_scroll_tracking(
             while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
                 if kind == "selected" {
                     set_selected.call(a.max(0) as usize);
-                    if let Some(mut anchor) = on_position {
-                        anchor.set(b as isize);
+                    if let Some(on_position) = on_position {
+                        on_position.call(b as isize);
                     }
                 } else {
                     let count_now = *count.peek();
@@ -3025,6 +3026,12 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     };
 
     let mut anchor = use_signal(|| (ctx.selected)() as isize);
+    // The position the next physical step should be computed relative to
+    // -- see the paging effect's own doc, "Load-bearing guard" and the
+    // dedicated doc just above it, for why this must be tracked
+    // separately from `anchor` (which only ever moves once a physical
+    // scroll has genuinely settled).
+    let mut intended = use_signal(|| (ctx.selected)() as isize);
 
     // Publish `count` into the shared context, and either a real
     // per-data-index id (small/non-virtualised -- the existing built-in
@@ -3046,13 +3053,23 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     });
 
+    // A settle (native drag/wheel/trackpad, or one of this component's own
+    // animated paging calls below finishing) reports the slide it actually
+    // rested on -- `anchor` (drives the render window) and `intended`
+    // (the paging effect's own "what to compute the next step from")
+    // both snap to it together, so the two can never drift apart once a
+    // physical scroll has genuinely finished.
+    let on_settle_position = use_callback(move |position: isize| {
+        anchor.set(position);
+        intended.set(position);
+    });
     use_carousel_scroll_tracking(
         id,
         ctx.orientation,
         ctx.set_selected,
         ctx.count,
         ctx.visible_range,
-        Some(anchor),
+        Some(on_settle_position),
     );
     use_carousel_drag(id, ctx.orientation, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
@@ -3061,6 +3078,43 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     // see "Seamless loop" doc. A no-op whenever virtualisation is
     // inactive: the built-in `Carousel`-level effect (real per-data-index
     // ids, published above) already handles that case.
+    //
+    // **Two load-bearing fixes, both found live (this lane's own dx-serve
+    // verification against the real, running dev server -- not merely
+    // reasoned through):**
+    //
+    // 1. This must compute the next target from `intended` (the last
+    //    position THIS effect itself has already asked for), never from
+    //    `anchor` (the last position a physical scroll actually SETTLED
+    //    on). `anchor` only updates once `on_settle_position` above fires
+    //    -- which for an animated (not instant) step happens only after
+    //    the browser's own `scrollend` -- so a second `selected` change
+    //    arriving before the first step has finished animating (found
+    //    live: consecutive `CarouselAutoplay` ticks close enough together)
+    //    would otherwise still read the PRE-first-step anchor, compute the
+    //    same target the first step already asked for, and silently
+    //    swallow one entire step (measured: ticks 1..12 with `delay_ms:
+    //    1200` skipped index 6 outright, landing on 5 then 7). Reading
+    //    `intended` instead -- updated immediately, in the same tick this
+    //    effect runs, in both branches below -- means a rapid-fire second
+    //    change always computes relative to where the first one is
+    //    already headed, not where the scroller has physically gotten to
+    //    yet.
+    // 2. Skip entirely once `intended` already denotes `new_sel`: a settle
+    //    calls `ctx.set_selected` and `on_settle_position` together for
+    //    the SAME reported slide, so by the time this effect observes
+    //    that `selected` change, `intended` (like `anchor`) may already
+    //    agree with it. Recomputing a jump from `old_sel` regardless (an
+    //    earlier version of this effect did exactly that, before
+    //    `intended` existed at all) treated the settle's own report as a
+    //    fresh navigation request layered on the *previous* selected
+    //    value, landing on a second, wrong position and triggering
+    //    another settle -- an unbounded feedback loop, measured live: the
+    //    anchor drifted continuously in one direction for as long as the
+    //    page was left open, entirely without user interaction. Only a
+    //    change nothing has already reconciled (a button/key/autoplay/
+    //    tab/`scroll_to` call, none of which ever touch `intended`
+    //    themselves) reaches the jump logic below.
     let prev_selected = use_previous(ctx.selected.into());
     let orientation = ctx.orientation;
     let content_id = ctx.content_id;
@@ -3071,23 +3125,60 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         if !virtualize_active_now() || n == 0 || old_sel == new_sel {
             return;
         }
+        let cur_intended = *intended.peek();
+        if n > 0 && cur_intended.rem_euclid(n as isize) as usize == new_sel {
+            // `intended` already agrees with the new selected value -- see
+            // this effect's own doc, fix 2, for why this must be a no-op.
+            return;
+        }
         let wrapped = shortest_signed_delta(old_sel, new_sel, n);
         if wrapped == 0 {
             return;
         }
-        let cur_anchor = *anchor.peek();
-        let target_position = cur_anchor + wrapped;
+        let target_position = cur_intended + wrapped;
         let scroller_id = content_id.peek().clone();
         if scroller_id.is_empty() {
             return;
         }
         let orientation_str = orientation().as_str().to_string();
-        if wrapped.unsigned_abs() as usize <= radius {
+        // **Third load-bearing fix, also found live.** Whether the target
+        // is "already a rendered window slide" must be measured against
+        // `anchor` (the last SETTLED position -- what the render window
+        // is actually keyed from), never against `intended`'s own step
+        // size. `intended` moves the instant this effect runs (fix 1,
+        // above), but the window only re-centres once a settle actually
+        // lands -- which, for an animated (non-instant) step, only
+        // happens after the browser's own `scrollend`, real wall-clock
+        // time later. A second (or third) `selected` change arriving
+        // before that -- measured live: two `CarouselNext` clicks a few
+        // hundred ms apart, comfortably human-paced, well inside a
+        // `radius: 2` window's own margin -- can walk `intended` further
+        // from `anchor` than `radius` even though each individual STEP is
+        // still exactly one. Using `wrapped` (the step size) here instead
+        // of this distance let that second step's own animated call
+        // target a position outside the still-`anchor`-centred window --
+        // an id with no element behind it -- so the `scrollBy` silently
+        // no-opped (`CAROUSEL_SCROLL_TO_JS`'s own null-target guard) and
+        // the click was lost outright, with the *original* (first) step's
+        // own scroll finishing normally afterward and its genuinely
+        // correct settle then overwriting `intended` back down to its own
+        // target -- confirmed live via a temporary trace: "old_sel=2
+        // new_sel=3" (the second click, computed correctly) followed
+        // moments later by "settle position=2" (the first click's own,
+        // late-arriving, entirely valid settle silently reverting the
+        // second one). Measuring against `anchor` instead means a target
+        // that has drifted outside the true rendered window takes the
+        // instant re-anchor branch below -- which needs no pre-rendered
+        // element at all -- rather than silently failing to reach an
+        // element that was never going to exist.
+        let cur_anchor = *anchor.peek();
+        if (target_position - cur_anchor).unsigned_abs() as usize <= radius {
             // Already a rendered window slide -- animate the existing
-            // scroller-only paging helper to it; the settle this
-            // triggers (`use_carousel_scroll_tracking`'s own reported
-            // position) is what actually moves `anchor`, once the scroll
-            // genuinely finishes.
+            // scroller-only paging helper to it. `intended` moves right
+            // away (fix 1); `anchor` (and the window it drives) only
+            // moves once `on_settle_position` reports this scroll has
+            // actually finished.
+            intended.set(target_position);
             let target_id = format!("{scroller_id}-p{target_position}");
             let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
             let _ = eval.send((
@@ -3098,27 +3189,39 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
                 CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
             ));
         } else {
-            // Outside the current window (a distant jump) -- re-anchor
-            // instantly; the alignment effect below does the matching
-            // instant scroll once this render has committed.
+            // Outside the current window (a distant jump, OR `intended`
+            // has drifted further from the last settle than `radius`
+            // allows) -- re-anchor both instantly; the alignment effect
+            // below does the matching instant scroll once this render has
+            // committed.
+            intended.set(target_position);
             anchor.set(target_position);
         }
     });
 
-    // Re-align the scroller to `anchor`'s own slide whenever it moves --
-    // covers both the instant-jump branch above and every settle-driven
-    // move (paging, drag, wheel/trackpad) reported back by
-    // `use_carousel_scroll_tracking`. Always instant: by the time this
-    // runs, the physical "this should feel like a slide" motion has
-    // already happened, either via the browser's own native scroll or via
-    // the animated `CAROUSEL_SCROLL_TO_JS` call above -- this call only
-    // ever compensates the window's own re-centring, which must not
-    // itself be seen to animate.
-    let prev_anchor = use_previous(anchor.into());
+    // Re-align the scroller to `anchor`'s own slide -- covers the
+    // instant-jump branch above, every settle-driven move (paging, drag,
+    // wheel/trackpad) reported back by `use_carousel_scroll_tracking`,
+    // AND the one-time transition from full-list to windowed rendering
+    // (`virtualize_active` flipping `false` -> `true`): the window's own
+    // radius-worth of leading slides only exist once that flip happens,
+    // so the scroller's physical position (wherever it happened to rest
+    // showing the full list) needs the identical realignment even though
+    // `anchor`'s own numeric value does not change at that moment.
+    // `align_key` bundles both triggers into one comparison rather than
+    // two separate effects racing each other over the same scroller.
+    // Always instant: by the time this runs, the physical "this should
+    // feel like a slide" motion has already happened, either via the
+    // browser's own native scroll or via the animated
+    // `CAROUSEL_SCROLL_TO_JS` call above -- this call only ever
+    // compensates the window's own re-centring (or its own initial
+    // appearance), which must not itself be seen to animate.
+    let align_key = use_memo(move || (anchor(), virtualize_active_now()));
+    let prev_align_key = use_previous(align_key.into());
     use_effect(move || {
-        let a = anchor();
-        let pa = prev_anchor();
-        if !virtualize_active_now() || a == pa {
+        let (a, active) = align_key();
+        let (pa, pactive) = prev_align_key();
+        if !active || (a == pa && active == pactive) {
             return;
         }
         let scroller_id = content_id.peek().clone();

@@ -13,6 +13,13 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 /// at most 5 slides mounted at once regardless of the 12-item data set --
 /// `playwright/carousel.spec.ts` asserts this DOM-node-count bound
 /// directly.
+///
+/// Also carries `CarouselAutoplay` (so the same seamless wrap is exercised
+/// by an automatic tick, not only by explicit Next/Prev/keyboard) and
+/// `CarouselIndicators` (the existing `use_carousel()`-based dot picker,
+/// composed exactly the way the `indicators` variant already does for the
+/// plain children API -- proof this data-driven root is a drop-in for
+/// every consumer of `CarouselContext`, not just Previous/Next).
 #[component]
 pub fn Demo() -> Element {
     let items: Vec<String> = (0..12).map(|i| format!("{}", i + 1)).collect();
@@ -20,6 +27,7 @@ pub fn Demo() -> Element {
         // See `variants/main/mod.rs`'s own comment for the `26rem` derivation.
         div { style: "width: 100%; max-width: 26rem; margin: 0 auto;",
             Carousel { aria_label: "Seamless looping gallery", r#loop: true,
+                CarouselAutoplay { delay_ms: 1200u64 }
                 CarouselPrevious { ChevronLeft {} }
                 CarouselNext { ChevronRight {} }
                 CarouselVirtualContent::<String> {
@@ -31,6 +39,7 @@ pub fn Demo() -> Element {
                         }
                     },
                 }
+                CarouselIndicators {}
             }
         }
     }
