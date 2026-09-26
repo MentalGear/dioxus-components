@@ -2451,6 +2451,36 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(isBody).toBe(false);
   });
 
+  test("the focus redirect never scrolls the page (focus() scrolls ancestors unless preventScroll)", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slideButton = frame.getByTestId("carousel-slide-button");
+
+    // Park the page so the content region's top edge is just off-screen: a
+    // bare `focus()` on it would scroll the page to reveal it.
+    let previous: number | null = null;
+    for (let i = 0; i < 50; i++) {
+      const y = await page.evaluate(() => window.scrollY);
+      if (y === previous) break;
+      previous = y;
+      await page.waitForTimeout(150);
+    }
+    const contentId = await content.getAttribute("id");
+    await page.evaluate((id) => {
+      const top = document.getElementById(id!)!.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: top + 40, left: 0, behavior: "instant" });
+    }, contentId);
+    await slideButton.evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
+    await expect(slideButton).toBeFocused();
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+
+    await page.keyboard.press("ArrowRight");
+    await expect(frame.getByRole("group", { name: "2 of 5" })).toHaveAttribute("data-selected", "true");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id ?? null)).toBe(contentId);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+  });
+
   test("Tab from the last focusable in the current slide leaves the carousel -- no keyboard trap", async ({ page }) => {
     await goto(page, "main");
     const frame = demoFrame(page, "main");

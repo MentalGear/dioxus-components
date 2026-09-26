@@ -1944,7 +1944,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
         // own fallback-to-`body` by the time this runs.
         document::eval(&format!(
             "var root = document.getElementById('{target}'); \
-             if (root) {{ root.focus(); }}"
+             if (root) {{ root.focus({{ preventScroll: true }}); }}"
         ));
     });
 
