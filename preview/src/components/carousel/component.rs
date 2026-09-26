@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use dioxus_primitives::carousel::{
     self, CarouselAutoplayProps, CarouselContentProps, CarouselItemProps, CarouselPreviousProps,
     CarouselRotationControlProps, CarouselTabListProps, CarouselTabProps,
+    CarouselVirtualContentProps,
 };
 use dioxus_primitives::direction::Direction;
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
@@ -110,6 +111,29 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
             id: props.id,
             attributes: merged,
             {props.children}
+        }
+    }
+}
+
+#[component]
+pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
+    props: CarouselVirtualContentProps<T>,
+) -> Element {
+    let base = attributes!(div {
+        class: "dx-carousel-content"
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
+        carousel::CarouselVirtualContent::<T> {
+            id: props.id,
+            items: props.items,
+            render_item: props.render_item,
+            radius: props.radius,
+            virtualize: props.virtualize,
+            draggable: props.draggable,
+            attributes: merged,
         }
     }
 }
