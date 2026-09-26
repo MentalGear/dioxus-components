@@ -2932,6 +2932,7 @@ fn RangeCalendarDay(props: CalendarDayProps) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::find_element;
     use std::cell::Cell;
     use time::macros::date;
 
@@ -3474,50 +3475,42 @@ mod tests {
         dom.rebuild_in_place();
         let html = dioxus_ssr::render(&dom);
 
-        let unavailable_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 15)));
-        let available_label = format!(r#"aria-label="{}""#, aria_label(&date!(2024 - 06 - 16)));
-        let unavailable_label_pos = html
-            .find(&unavailable_label)
-            .expect("unavailable day must render");
-        let available_label_pos = html
-            .find(&available_label)
-            .expect("available day must render");
+        // Backlog row 108: rather than slicing the raw HTML string from an
+        // `aria-label="..."` match's own position (fragile -- `merge_attributes`,
+        // row 93, sorts attributes by name, so no other attribute's position
+        // relative to `aria-label` is guaranteed), parse each `<button>` into
+        // an order-independent attribute map and look each one up by
+        // `aria-label` directly.
+        let unavailable_label = aria_label(&date!(2024 - 06 - 15));
+        let available_label = aria_label(&date!(2024 - 06 - 16));
 
-        // Anchor each slice on the enclosing `<button`'s start, not the
-        // `aria-label` attribute's own position: `merge_attributes` (backlog
-        // row 93) renders attributes sorted by name rather than in literal
-        // source order, so `aria-disabled` (`d` < `l`) now precedes
-        // `aria-label` in the output -- slicing from `aria-label` itself
-        // would cut it off into the *previous* cell's slice.
-        let unavailable_pos = html[..unavailable_label_pos]
-            .rfind("<button")
-            .expect("unavailable day's enclosing <button> must be found");
-        let available_pos = html[..available_label_pos]
-            .rfind("<button")
-            .expect("available day's enclosing <button> must be found");
+        let unavailable = find_element(&html, |attrs| {
+            attrs.get("aria-label").map(String::as_str) == Some(unavailable_label.as_str())
+        })
+        .expect("unavailable day must render");
+        let available = find_element(&html, |attrs| {
+            attrs.get("aria-label").map(String::as_str) == Some(available_label.as_str())
+        })
+        .expect("available day must render");
 
-        // Slice each day's own attribute run (up to the next day's button,
-        // or the end of the string for the last one) so
-        // `aria-disabled=false`/`aria-disabled=true` are each checked
-        // against the correct cell, not just "somewhere in the whole grid".
-        let unavailable_html = &html[unavailable_pos..available_pos.max(unavailable_pos)];
-        let available_html = &html[available_pos..];
-
-        assert!(
-            unavailable_html.contains("data-unavailable=true"),
-            "sanity: the fixture's disabled_ranges must actually make this day unavailable: {unavailable_html}"
+        assert_eq!(
+            unavailable.attrs.get("data-unavailable").map(String::as_str),
+            Some("true"),
+            "sanity: the fixture's disabled_ranges must actually make this day unavailable: {unavailable:?}"
+        );
+        assert_eq!(
+            unavailable.attrs.get("aria-disabled").map(String::as_str),
+            Some("true"),
+            "an unavailable day must carry aria-disabled=true: {unavailable:?}"
         );
         assert!(
-            unavailable_html.contains("aria-disabled=true"),
-            "an unavailable day must carry aria-disabled=true: {unavailable_html}"
+            !available.attrs.contains_key("data-unavailable"),
+            "sanity: the following day must be available: {available:?}"
         );
-        assert!(
-            !available_html.contains("data-unavailable"),
-            "sanity: the following day must be available: {available_html}"
-        );
-        assert!(
-            available_html.contains("aria-disabled=false"),
-            "an available day must still carry an explicit aria-disabled=false: {available_html}"
+        assert_eq!(
+            available.attrs.get("aria-disabled").map(String::as_str),
+            Some("false"),
+            "an available day must still carry an explicit aria-disabled=false: {available:?}"
         );
     }
 
