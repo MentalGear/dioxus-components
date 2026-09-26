@@ -123,6 +123,57 @@ impl CarouselOrientation {
     }
 }
 
+/// Where each [`CarouselItem`] snaps to rest against
+/// [`CarouselContent`]'s own scrollport -- matches Embla's (and shadcn's
+/// own `opts={{ align }}`) three-way `start`/`center`/`end`, and maps
+/// directly onto the CSS Scroll Snap spec's own `scroll-snap-align`
+/// keywords of the same names (this crate's own [`CarouselItem`] sets
+/// `scroll-snap-align` to whichever one is in force -- see
+/// [`Self::as_str`]).
+///
+/// Every place this module computes "where a slide rests" -- the explicit
+/// `scrollBy`-by-delta paging call ([`CAROUSEL_SCROLL_TO_JS`]), the
+/// "which slide is nearest" search a native scroll/drag release settles
+/// to ([`CAROUSEL_SCROLL_TRACKING_JS`]/[`CAROUSEL_DRAG_JS`]) -- reads this
+/// value and anchors on the matching point (an item/the scrollport's own
+/// leading edge, midpoint, or trailing edge) rather than always the
+/// leading edge, so a caller who sets `align: CarouselAlign::Center` (for
+/// example) gets a *consistent* rest position regardless of whether the
+/// user paged there with a button, the keyboard, a drag, or native
+/// wheel/trackpad/touch scrolling (the last of which the browser itself
+/// already snaps correctly from `scroll-snap-align` alone -- this value
+/// only needs to reach this module's own JS so its explicit paging/nearest-
+/// slide logic agrees with what the browser will have already done
+/// natively).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CarouselAlign {
+    /// The item's leading edge rests against the scrollport's leading
+    /// edge -- shadcn's own default (`opts={{ align: "start" }}` in every
+    /// one of its demos that sets `align` explicitly, and Embla's
+    /// documented default even where a demo omits the option entirely).
+    #[default]
+    Start,
+    /// The item's midpoint rests against the scrollport's midpoint.
+    Center,
+    /// The item's trailing edge rests against the scrollport's trailing
+    /// edge.
+    End,
+}
+
+impl CarouselAlign {
+    /// Returns `"start"`, `"center"`, or `"end"` -- both this module's own
+    /// JS anchor-point argument and the exact keyword [`CarouselItem`]'s
+    /// `scroll-snap-align` uses, so a single value serves both without a
+    /// second mapping to keep in sync.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Center => "center",
+            Self::End => "end",
+        }
+    }
+}
+
 /// # Gap model
 ///
 /// shadcn's own carousel puts the inter-slide gap INSIDE each slide's own
@@ -450,11 +501,28 @@ fn carousel_key_intent(
 /// same non-`scrollend`-browser fallback [`CAROUSEL_DRAG_JS`] already
 /// needs it for.
 const CAROUSEL_SCROLL_TO_JS: &str = "\
-    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs] = await dioxus.recv();
+    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs, align] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
     const scroller = document.getElementById(scrollerId);
     const target = document.getElementById(targetId);
+    // The point on `rect`, along this carousel's own axis, that
+    // `align` (CarouselAlign::as_str()'s own 'start'/'center'/'end')
+    // rests against -- applied identically to the target slide and the
+    // scroller's own viewport rect below, so e.g. `align: 'center'`
+    // aligns the slide's midpoint with the viewport's midpoint rather
+    // than always the leading edge. Mirrors the native `scroll-snap-align`
+    // keyword `CarouselItem` already sets to the same value -- this is
+    // what keeps an explicit `scrollBy`-by-delta paging call consistent
+    // with wherever the browser's own native snapping would have already
+    // landed.
+    const anchorOf = (rect) => {
+        const start = orientation === 'horizontal' ? rect.left : rect.top;
+        const end = orientation === 'horizontal' ? rect.right : rect.bottom;
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     // A real drag (CAROUSEL_DRAG_JS) already owns the scroll position and
     // `scroll-snap-type` for as long as `data-dragging` is set -- found
     // live in this session: `use_carousel_scroll_tracking` reports a
@@ -479,7 +547,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     if (scroller && target && !scroller.hasAttribute('data-dragging')) {
         const s = scroller.getBoundingClientRect();
         const t = target.getBoundingClientRect();
-        const delta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+        const delta = anchorOf(t) - anchorOf(s);
         // A genuine no-op (already aligned -- the mount settle when
         // `default_value` needs no jump, or `use_carousel_scroll_tracking`
         // reporting the position a native scroll already reached) must
@@ -550,12 +618,21 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// (`dev-docs/recommended-implementations.md` §11 Rule 1) to begin with.
 /// Both listeners are `passive: true` (§11 Rule 2).
 const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
-    const [id, orientation] = await dioxus.recv();
+    const [id, orientation, align] = await dioxus.recv();
     const container = document.getElementById(id);
     if (!container) {
         await dioxus.recv();
         return;
     }
+    // See `CAROUSEL_SCROLL_TO_JS`'s own identical helper's doc: which
+    // slide counts as 'nearest' (and therefore `selected`) must anchor on
+    // the same point `align` snaps to, so this agrees with wherever the
+    // browser's own native scroll-snap settling already landed.
+    const anchorOf = (start, end) => {
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     let lastNearest = null;
     let lastNearestPos = null;
     let lastVisStart = null;
@@ -622,7 +699,9 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             const rect = child.getBoundingClientRect();
             const childStart = orientation === 'horizontal' ? rect.left : rect.top;
             const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
-            const dist = Math.abs(childStart - containerStart);
+            const dist = Math.abs(
+                anchorOf(childStart, childEnd) - anchorOf(containerStart, containerEnd)
+            );
             if (dist < nearestDist) {
                 nearestDist = dist;
                 nearest = dataIndex;
@@ -726,6 +805,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
 fn use_carousel_scroll_tracking(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
+    align: ReadSignal<CarouselAlign>,
     set_selected: Callback<usize>,
     count: Memo<usize>,
     mut visible_range: Signal<(usize, usize)>,
@@ -734,8 +814,9 @@ fn use_carousel_scroll_tracking(
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
-        let _ = eval.send((id, orientation_str));
+        let _ = eval.send((id, orientation_str, align_str));
         spawn(async move {
             while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
                 if kind == "selected" {
@@ -819,12 +900,21 @@ const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 /// defers restoring this property until that explicit settle has
 /// actually finished.
 const CAROUSEL_DRAG_JS: &str = "\
-    const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs] = await dioxus.recv();
+    const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs, align] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
         await dioxus.recv();
         return;
     }
+    // See `CAROUSEL_SCROLL_TO_JS`'s own identical helper's doc -- release
+    // settle below finds the 'nearest' slide (and the delta to it) by the
+    // same align-aware anchor point, so a drag lands consistently with
+    // wherever a button/keyboard/native scroll would have.
+    const anchorOf = (start, end) => {
+        if (align === 'center') return (start + end) / 2;
+        if (align === 'end') return end;
+        return start;
+    };
     const thresholdSq = thresholdPx * thresholdPx;
     let pointerId = null;
     let originX = 0;
@@ -1114,10 +1204,14 @@ const CAROUSEL_DRAG_JS: &str = "\
             if (children.length > 0) {
                 const containerRect = el.getBoundingClientRect();
                 const containerStart = orientation === 'horizontal' ? containerRect.left : containerRect.top;
+                const containerEnd = orientation === 'horizontal' ? containerRect.right : containerRect.bottom;
                 children.forEach((child) => {
                     const rect = child.getBoundingClientRect();
                     const childStart = orientation === 'horizontal' ? rect.left : rect.top;
-                    const dist = Math.abs(childStart - containerStart);
+                    const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
+                    const dist = Math.abs(
+                        anchorOf(childStart, childEnd) - anchorOf(containerStart, containerEnd)
+                    );
                     if (dist < nearestDist) {
                         nearestDist = dist;
                         nearest = child;
@@ -1134,7 +1228,11 @@ const CAROUSEL_DRAG_JS: &str = "\
                 const settleBehavior = reduced ? 'auto' : 'smooth';
                 const s = el.getBoundingClientRect();
                 const t = nearest.getBoundingClientRect();
-                const settleDelta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+                const sStart = orientation === 'horizontal' ? s.left : s.top;
+                const sEnd = orientation === 'horizontal' ? s.right : s.bottom;
+                const tStart = orientation === 'horizontal' ? t.left : t.top;
+                const tEnd = orientation === 'horizontal' ? t.right : t.bottom;
+                const settleDelta = anchorOf(tStart, tEnd) - anchorOf(sStart, sEnd);
                 // `nearest` is already exactly where it should be (the
                 // drag released right on a boundary) -- `scrollBy({left:
                 // 0})` never fires `scrollend` (CAROUSEL_SCROLL_TO_JS's
@@ -1239,11 +1337,13 @@ const CAROUSEL_DRAG_JS: &str = "\
 fn use_carousel_drag(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
+    align: ReadSignal<CarouselAlign>,
     enabled: ReadSignal<bool>,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let eval = document::eval(CAROUSEL_DRAG_JS);
         // No spawned receive loop here, unlike `use_carousel_scroll_tracking`
         // just above -- this script never `dioxus.send`s anything back (see
@@ -1256,6 +1356,7 @@ fn use_carousel_drag(
             CAROUSEL_DRAG_THRESHOLD_PX,
             enabled(),
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
         move || {
             let _ = eval.send(true);
@@ -1568,6 +1669,13 @@ fn use_carousel_wheel_bounce(
 #[derive(Clone, Copy)]
 struct CarouselContext {
     orientation: ReadSignal<CarouselOrientation>,
+    /// Where each slide rests against the scrollport -- see
+    /// [`CarouselAlign`]'s own doc. Read by [`CarouselItem`]/
+    /// [`CarouselVirtualContent`] for `scroll-snap-align`, and by every
+    /// JS bridge that computes a paging delta or a "nearest slide" search
+    /// ([`CAROUSEL_SCROLL_TO_JS`], [`CAROUSEL_SCROLL_TRACKING_JS`],
+    /// [`CAROUSEL_DRAG_JS`]).
+    align: ReadSignal<CarouselAlign>,
     /// Always in `[0, count)` (or `0` if `count == 0`) -- see
     /// [`clamp_selected`]. The single source of truth every sub-component
     /// reads instead of re-deriving its own notion of "which slide is
@@ -1726,6 +1834,13 @@ pub struct CarouselProps {
     #[props(default)]
     pub orientation: ReadSignal<CarouselOrientation>,
 
+    /// Where each slide rests against the scrollport. Defaults to
+    /// [`CarouselAlign::Start`] -- matches shadcn's own default and every
+    /// one of its demos (`opts={{ align: "start" }}`, `dev-docs/research/shadcn-carousel-parity.md`).
+    /// See [`CarouselAlign`]'s own doc for what changes with `Center`/`End`.
+    #[props(default)]
+    pub align: ReadSignal<CarouselAlign>,
+
     /// The controlled selected slide index (0-based). `None` for
     /// uncontrolled use (see [`Self::default_value`]).
     pub value: ReadSignal<Option<usize>>,
@@ -1851,6 +1966,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
         use_controlled(props.value, props.default_value, props.on_value_change);
     let direction = use_direction(props.dir);
     let orientation = props.orientation;
+    let align = props.align;
 
     let item_ids: Signal<Vec<String>> = use_signal(Vec::new);
     let count = use_memo(move || item_ids.len());
@@ -1898,6 +2014,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
 
     use_context_provider(|| CarouselContext {
         orientation,
+        align,
         selected,
         set_selected,
         count,
@@ -1993,6 +2110,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
             return;
         }
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
         let _ = eval.send((
             scroller_id,
@@ -2000,6 +2118,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
             orientation_str,
             first,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
     });
 
@@ -2561,12 +2680,13 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     use_carousel_scroll_tracking(
         id,
         ctx.orientation,
+        ctx.align,
         ctx.set_selected,
         ctx.count,
         ctx.visible_range,
         None,
     );
-    use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
     let orientation = (ctx.orientation)();
@@ -2853,9 +2973,10 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     // gated by `@supports`.
     let gap_padding = item_gap_padding((ctx.orientation)());
     let basis = item_basis_style();
+    let align_str = (ctx.align)().as_str();
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let style = format!(
-        "{basis}scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
+        "{basis}scroll-snap-align:{align_str};scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3147,12 +3268,13 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     use_carousel_scroll_tracking(
         id,
         ctx.orientation,
+        ctx.align,
         ctx.set_selected,
         ctx.count,
         ctx.visible_range,
         Some(on_settle_position),
     );
-    use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
     // Translate a `selected` (data index) change into a physical move --
@@ -3198,6 +3320,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     //    themselves) reaches the jump logic below.
     let prev_selected = use_previous(ctx.selected.into());
     let orientation = ctx.orientation;
+    let align = ctx.align;
     let content_id = ctx.content_id;
     use_effect(move || {
         let new_sel = (ctx.selected)();
@@ -3261,6 +3384,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
             // actually finished.
             intended.set(target_position);
             let target_id = format!("{scroller_id}-p{target_position}");
+            let align_str = align().as_str().to_string();
             let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
             let _ = eval.send((
                 scroller_id,
@@ -3268,6 +3392,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
                 orientation_str,
                 false,
                 CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+                align_str,
             ));
         } else {
             // Outside the current window (a distant jump, OR `intended`
@@ -3311,6 +3436,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
         let target_id = format!("{scroller_id}-p{a}");
         let orientation_str = orientation().as_str().to_string();
+        let align_str = align().as_str().to_string();
         let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
         let _ = eval.send((
             scroller_id,
@@ -3318,6 +3444,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
             orientation_str,
             true,
             CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            align_str,
         ));
     });
 
@@ -3341,6 +3468,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let scroller_id_now = id();
 
     let orientation_now = (ctx.orientation)();
+    let align_now = (ctx.align)();
     let draggable = (props.draggable)();
     let aria_live = (ctx.autoplay.present)().then(|| {
         if (ctx.autoplay.rotating)() {
@@ -3391,8 +3519,9 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         let value = items_now[data_index].clone();
         let content = render_item.call((data_index, value));
         let item_style = format!(
-            "{}scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+            "{}scroll-snap-align:{};scroll-snap-stop:always;min-width:0;min-height:0;{}",
             item_basis_style(),
+            align_now.as_str(),
             item_gap_padding(orientation_now)
         );
         rsx! {
@@ -4877,6 +5006,67 @@ mod ssr_tests {
         ));
     }
 
+    // -- `align` ---------------------------------------------------------
+
+    #[test]
+    fn item_scroll_snap_align_defaults_to_start() {
+        // Matches shadcn's own default (`opts={{ align: "start" }}` in
+        // every demo that sets it explicitly) -- unchanged from before
+        // `align` existed as a prop at all.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains("scroll-snap-align:start;"));
+    }
+
+    #[component]
+    fn CenterAlignedCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::Center,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn EndAlignedCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::End,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn align_center_sets_scroll_snap_align_center_on_every_item() {
+        let html = render(CenterAlignedCarousel);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert_eq!(html.matches("scroll-snap-align:center;").count(), 2);
+    }
+
+    #[test]
+    fn align_end_sets_scroll_snap_align_end_on_every_item() {
+        let html = render(EndAlignedCarousel);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert_eq!(html.matches("scroll-snap-align:end;").count(), 2);
+    }
+
+    #[test]
+    fn align_as_str_matches_the_scroll_snap_align_keywords() {
+        assert_eq!(CarouselAlign::Start.as_str(), "start");
+        assert_eq!(CarouselAlign::Center.as_str(), "center");
+        assert_eq!(CarouselAlign::End.as_str(), "end");
+    }
+
+    #[test]
+    fn align_default_is_start() {
+        assert_eq!(CarouselAlign::default(), CarouselAlign::Start);
+    }
+
     #[component]
     fn CarouselWithBasisOverride() -> Element {
         rsx! {
@@ -5231,6 +5421,25 @@ mod ssr_tests {
         assert_eq!(positions.len(), items.len());
         let data_indices: Vec<usize> = items.iter().map(|i| i.data_index).collect();
         assert_eq!(data_indices, vec![1, 2, 0, 1, 2]);
+    }
+
+    #[component]
+    fn VirtualCarouselCenterAligned() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", align: CarouselAlign::Center,
+                CarouselVirtualContent::<String> {
+                    items: string_items(12),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn virtual_content_item_scroll_snap_align_follows_the_align_prop() {
+        let html = render(VirtualCarouselCenterAligned);
+        assert!(!html.contains("scroll-snap-align:start;"));
+        assert!(html.contains("scroll-snap-align:center;"));
     }
 
     #[test]

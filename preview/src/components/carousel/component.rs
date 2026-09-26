@@ -16,7 +16,9 @@ use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 #[allow(unused_imports)] // `CarouselApi` is only ever named as `use_carousel()`'s inferred
 // return type in this file's own `CarouselIndicators` -- re-exported anyway so a
 // consumer building their own custom picker can name the type explicitly.
-pub use dioxus_primitives::carousel::{CarouselApi, CarouselOrientation, use_carousel};
+pub use dioxus_primitives::carousel::{
+    CarouselAlign, CarouselApi, CarouselOrientation, use_carousel,
+};
 
 /// The props for the [`Carousel`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -28,6 +30,12 @@ pub struct CarouselProps {
     /// The axis the carousel pages along.
     #[props(default)]
     pub orientation: ReadSignal<CarouselOrientation>,
+
+    /// Where each slide rests against the scrollport. Defaults to
+    /// `start`, matching shadcn. See [`carousel::Carousel`]'s own doc for
+    /// what changes with `Center`/`End`.
+    #[props(default)]
+    pub align: ReadSignal<CarouselAlign>,
 
     /// The controlled selected slide index.
     pub value: ReadSignal<Option<usize>>,
@@ -68,6 +76,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/carousel/style.css") }
         carousel::Carousel {
             orientation: props.orientation,
+            align: props.align,
             value: props.value,
             default_value: props.default_value,
             r#loop: props.r#loop,

@@ -43,6 +43,10 @@ The gap between slides is a `--dx-carousel-gap` custom property, read by `Carous
 
 `.dx-carousel-content` sets `--dx-carousel-gap: var(--dx-space-4)` (16px) by default -- override it per instance with an inline `style="--dx-carousel-gap: var(--dx-space-2);"` on `CarouselContent`. See the `spacing` variant for shadcn's own four presets (`--dx-space-1` through `--dx-space-4`, i.e. `-ml-1/pl-1` ... `-ml-4/pl-4`).
 
+## Align
+
+`align: CarouselAlign::Start | Center | End` (default `Start`, matching shadcn's own `opts={{ align: "start" }}`) controls where each slide rests against the scrollport -- its leading edge, its midpoint, or its trailing edge. This sets `scroll-snap-align` on every slide, and every place this component computes "where a slide rests" (the explicit Previous/Next/keyboard paging call, and the "which slide is nearest" search a native scroll or a drag release settles to) anchors on the same point, so the rest position stays consistent regardless of how the user got there. With no leftover space in the track (whole slides, no peek) the three look identical; `align` only visibly differs once there is a fractional remainder to place -- see the `align` variant, which pairs it with `--dx-carousel-per-view: 2` and `--dx-carousel-peek: 20%` to make the difference visible.
+
 ## Orientation
 
 `orientation: CarouselOrientation::Vertical` pages with `ArrowUp`/`ArrowDown` instead of `ArrowLeft`/`ArrowRight`, and scrolls on the block axis. A vertical carousel needs an explicit height on `CarouselContent` (e.g. `style: "height: 20rem;"`) -- there is nothing else to derive one from, the same way `ScrollArea` needs an explicit `height`.
