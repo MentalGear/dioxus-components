@@ -32,7 +32,7 @@
  * docs/conformance-harness.md's tier-1 calibration table ("Vendor the page").
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../../fixtures";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 

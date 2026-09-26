@@ -1,4 +1,5 @@
-import { test, expect, devices, type Page } from "@playwright/test";
+import { test, expect, devices } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 
