@@ -74,30 +74,40 @@
  * `CodeBlock`, which wraps a `PreviewCode`) and the same highlighter's
  * output embedded directly in a component's markdown-rendered "Usage
  * notes" prose -- because its comment token measured 4.39:1, from the
- * vendored, build-time-generated `github-light` syntax-highlighting theme
- * (the checked-in `docs/assets/github-light*.css`: the plain theme plus
- * its `-system-light-`/`-system-dark-` pairings, all three sharing the
- * same `--dxc-*-a-c-color`/`--dxc-*-a-cd-color`/`--dxc-*-var-muted`
- * comment-token custom properties). Root cause: those three properties
- * carried the upstream `arborium-theme` crate's `#6e7781`, which clears
- * 4.5:1 against `#ffffff`/`#f2f2f2` but not against this app's actual
- * code-block background, `--primary-color-1`'s light value `#fbfbfb`
- * (`.dx-preview-code-theme`'s own `background-color`, `preview/assets/
- * main.css`) -- 4.39:1. Every other token in the theme already cleared
- * 4.5:1 against `#fbfbfb` (measured: `#1f2328` 15.27:1, `#8250df` 4.88:1,
- * `#0550ae` 7.34:1, `#0a3069` 12.38:1, `#cf222e` 5.18:1, `#953800`/
- * `#116329` 7.14:1, `#0969da` 5.02:1), so the comment token was the one
- * change needed: `#6e7781` -> `#59636e` (GitHub's own newer light-theme
- * comment color) in all three files, 5.91:1 against `#fbfbfb` (6.11:1
+ * vendored, build-time-generated `github-light` syntax-highlighting
+ * theme. That theme's CSS is NOT source this repo owns -- it's generated
+ * fresh from the `dioxus-code`/`arborium-theme` crates (crates.io) into
+ * `docs/assets/github-light*.css` on every `scripts/deploy-preview.sh`
+ * run, so a fix committed to that generated file is silently reverted by
+ * the next deploy. The real fix lives in `preview/assets/main.css`
+ * instead: an override rule, `.dx-preview-code-theme <theme class>`
+ * (two classes, beating the theme's own single-class rule on
+ * specificity regardless of stylesheet load order), for the theme's
+ * three comment-family custom properties
+ * (`--dxc-*-a-c-color`/`--dxc-*-a-cd-color`/`--dxc-*-var-muted`) across
+ * every class variant the theme crate generates for `github-light`
+ * (plain, `-system-light-`, `-system-dark-`). Root cause: those
+ * properties carry the upstream `arborium-theme` crate's `#6e7781`,
+ * which clears 4.5:1 against `#ffffff`/`#f2f2f2` but not against this
+ * app's actual code-block background, `--primary-color-1`'s light value
+ * `#fbfbfb` (`.dx-preview-code-theme`'s own `background-color`,
+ * `preview/assets/main.css`) -- 4.39:1. Every other token in the theme
+ * already cleared 4.5:1 against `#fbfbfb` (measured: `#1f2328` 15.27:1,
+ * `#8250df` 4.88:1, `#0550ae` 7.34:1, `#0a3069` 12.38:1, `#cf222e`
+ * 5.18:1, `#953800`/`#116329` 7.14:1, `#0969da` 5.02:1), so the comment
+ * token was the one change needed: `#6e7781` -> `#59636e` (GitHub's own
+ * newer light-theme comment color), 5.91:1 against `#fbfbfb` (6.11:1
  * against the theme's own claimed `#ffffff`/`#fff` background, 5.46:1
  * against its `#f2f2f2` surface token) -- same hue family, same visual
- * register as a comment, now compliant everywhere it's actually rendered.
- * The paired `github-dark` theme (used for `data-theme=dark`, a different
- * theme entirely, not this constant's concern) was checked too: its
- * comment token `#8b949e` already clears 6.28:1 against this app's dark
- * code-block background (`--primary-color-1`'s dark value, `#0e0e0e`),
- * and every other `github-dark` token clears at least 6.28:1 as well, so
- * it needed no change.
+ * register as a comment, now compliant everywhere it's actually
+ * rendered. See `preview/assets/main.css`'s own comment on that override
+ * rule for the full detail. The paired `github-dark` theme (used for
+ * `data-theme=dark`, a different theme entirely, not this constant's
+ * concern) was checked too: its comment token `#8b949e` already clears
+ * 6.28:1 against this app's dark code-block background
+ * (`--primary-color-1`'s dark value, `#0e0e0e`), and every other
+ * `github-dark` token clears at least 6.28:1 as well, so it needed no
+ * change, and is untouched.
  *
  * `EXCLUDE_VENDORED_CODE_HIGHLIGHT` itself is kept as an exported
  * `AxeRegionExclusion` -- with a selector that now excludes nothing (see
@@ -165,12 +175,17 @@ export interface AxeRegionExclusion {
  * The underlying defect this used to work around (the vendored
  * `github-light` syntax-highlighting theme's comment token, `#6e7781`,
  * measuring 4.39:1 against this app's actual code-block background,
- * `#fbfbfb`) was fixed by construction: `docs/assets/github-light*.css`'s
- * comment-token custom properties now carry `#59636e` (5.91:1), so
- * `.dx-preview-code-theme` has no remaining `color-contrast` violation to
- * exclude. See this file's header doc ("`EXCLUDE_VENDORED_CODE_HIGHLIGHT`
- * — fixed by construction, row 39 residue closed") for the full
- * before/after measurement.
+ * `#fbfbfb`) was fixed by construction, in source -- NOT in the
+ * crate-generated `docs/assets/github-light*.css` (regenerated, and so
+ * silently reverted, by every `scripts/deploy-preview.sh` run) but as a
+ * higher-specificity override in `preview/assets/main.css`, which sets
+ * the theme's comment-token custom properties to `#59636e` (5.91:1) on
+ * `.dx-preview-code-theme <theme class>`. `.dx-preview-code-theme` has
+ * no remaining `color-contrast` violation to exclude. See this file's
+ * header doc ("`EXCLUDE_VENDORED_CODE_HIGHLIGHT` — fixed by
+ * construction, row 39 residue closed") and `preview/assets/main.css`'s
+ * own comment on that override rule for the full before/after
+ * measurement.
  *
  * The constant stays exported, with a selector that excludes nothing (see
  * `expectNoAxeViolations`'s empty-selector handling below), purely so the
@@ -185,9 +200,10 @@ export const EXCLUDE_VENDORED_CODE_HIGHLIGHT: AxeRegionExclusion = {
   reason:
     "no-op, retained only for call-site compatibility -- the github-light " +
     "theme's comment-token contrast defect this used to exclude " +
-    "(#6e7781 on #fbfbfb, 4.39:1) was fixed by construction " +
-    "(docs/assets/github-light*.css's comment tokens -> #59636e, 5.91:1); " +
-    "see docs/backlog.md row 39 and this file's header doc",
+    "(#6e7781 on #fbfbfb, 4.39:1) was fixed by construction, in source " +
+    "(preview/assets/main.css overrides the theme's comment tokens -> " +
+    "#59636e, 5.91:1, since the theme's own generated CSS is reverted by " +
+    "every deploy); see docs/backlog.md row 39 and this file's header doc",
 };
 
 export interface AxeScanOptions {
