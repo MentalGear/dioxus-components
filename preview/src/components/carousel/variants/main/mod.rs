@@ -8,6 +8,24 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 /// pages the carousel like any other point on the track, but a plain
 /// click still activates the button -- see `playwright/carousel.spec.ts`'s
 /// own drag describe block, which drives exactly this element.
+///
+/// **Deliberately NOT composing `Card` here, unlike every other demo in
+/// this component** (the shadcn-parity lane's own "Per-demo parity" item):
+/// this file's own box-model comment below (the `font: inherit`/
+/// `box-sizing`/`calc(12rem + 2px)` derivation) is a cross-browser fix,
+/// already measured and shipped, that makes the button slide and the
+/// plain-`div` slides land on byte-identical `getBoundingClientRect()`
+/// dimensions -- load-bearing for the pointer-drag describe block, which
+/// depends on dragging starting from a point that is simultaneously "any
+/// point on the track" and "this specific button." Swapping in `Card`
+/// (a themed component with its own border/padding/`box-shadow` box model,
+/// entirely unrelated to this fix) would need that whole derivation
+/// re-verified from scratch for a purely visual change with no shadcn-
+/// parity requirement of its own (this is the "Sizes" top-of-page demo,
+/// already whole-slide by default) -- not worth the regression risk this
+/// pass. Every other demo (`sizes`, `spacing`, `peek`, `align`, `api`,
+/// `indicators`, `vertical`, `rtl`, `rewind`, `autoplay`, `virtual_loop`,
+/// `virtual_loop_rtl`, `virtual_many`) does compose `Card`.
 #[component]
 pub fn Demo() -> Element {
     let mut slide_one_clicked = use_signal(|| false);

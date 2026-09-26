@@ -29,9 +29,23 @@ Carousel {
 
 Each `CarouselItem` defaults its own accessible name to `"{n} of {m}"` (APG's own sanctioned exception to "don't put position/size in an accessible name") unless you supply your own `aria-label`/`aria-labelledby`.
 
-## Sizing slides
+## Sizes
 
-How much of the track each slide occupies is a CSS decision, not a prop: `CarouselItem` defaults to `flex: 0 0 100%` (one full slide per view). Override it per item with an inline `style` (or `flex_basis`) to build a "peek"/multi-item-per-view layout -- see the `multiple` variant.
+How much of the track each slide occupies is a CSS decision, not a prop. `CarouselItem` defaults its own `flex-basis` to `calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1))` -- with both variables left at their defaults (`--dx-carousel-per-view: 1`, `--dx-carousel-peek: 0%`) this is exactly `100%`, i.e. one whole slide per view, matching shadcn's own default and every one of its demos.
+
+Set `--dx-carousel-per-view` (an integer) on a wrapper (or `CarouselContent` itself) to show that many WHOLE slides at once -- see the `sizes` variant, which mirrors shadcn's own `carousel-size.tsx`: 2 whole slides per view, 3 at a wider (`lg`) breakpoint, via a plain `@media` rule setting the variable. Because the gap already lives inside each item's own border-box (see "Spacing" above), `N` slides' basis fractions always sum to exactly `100%` regardless of `N` -- no overflow, no partial slide.
+
+Set `--dx-carousel-peek` (a percentage) to additionally show a sliver of the *next* slide -- opt-in only, off by default -- see the `peek` variant. You can still override `flex-basis` directly per item with an inline `style` (or `flex_basis`) for a fully custom layout; a caller-supplied `flex-basis` always wins over the default calc, the same "later in the same `style` attribute wins" rule this crate uses everywhere else.
+
+## Spacing (the gap between slides)
+
+The gap between slides is a `--dx-carousel-gap` custom property, read by `CarouselItem` (a leading-edge `padding-inline-start`/`padding-block-start`) and `CarouselContent` (the exactly-compensating negative `margin-inline-start`/`margin-block-start`) -- the standard shadcn/Tailwind `-ml-4`/`pl-4` idiom, not a real flex `gap`. This matters, not just for parity: a real `gap` is *additive* to a percentage `flex-basis`, so `N` items at `flex-basis: calc(100%/N)` plus `(N-1)` real gaps overflow the track by exactly `(N-1) * gap` -- with the gap living inside each item's own border-box instead, `N` basis fractions always sum to exactly 100% regardless of `N`, so a multi-per-view layout (see "Sizes" below) never needs to subtract a gap term at all.
+
+`.dx-carousel-content` sets `--dx-carousel-gap: var(--dx-space-4)` (16px) by default -- override it per instance with an inline `style="--dx-carousel-gap: var(--dx-space-2);"` on `CarouselContent`. See the `spacing` variant for shadcn's own four presets (`--dx-space-1` through `--dx-space-4`, i.e. `-ml-1/pl-1` ... `-ml-4/pl-4`).
+
+## Align
+
+`align: CarouselAlign::Start | Center | End` (default `Start`, matching shadcn's own `opts={{ align: "start" }}`) controls where each slide rests against the scrollport -- its leading edge, its midpoint, or its trailing edge. This sets `scroll-snap-align` on every slide, and every place this component computes "where a slide rests" (the explicit Previous/Next/keyboard paging call, and the "which slide is nearest" search a native scroll or a drag release settles to) anchors on the same point, so the rest position stays consistent regardless of how the user got there. With no leftover space in the track (whole slides, no peek) the three look identical; `align` only visibly differs once there is a fractional remainder to place -- see the `align` variant, which pairs it with `--dx-carousel-per-view: 2` and `--dx-carousel-peek: 20%` to make the difference visible.
 
 ## Orientation
 
@@ -39,7 +53,7 @@ How much of the track each slide occupies is a CSS decision, not a prop: `Carous
 
 ## A custom picker (dot indicators, etc.)
 
-`use_carousel()` returns a read-only `CarouselApi` (`selected`, `count`, `can_scroll_prev`, `can_scroll_next`) plus `scroll_to(index)`, for building any picker UI alongside or instead of `CarouselPrevious`/`CarouselNext`. See the `indicators` variant's `CarouselIndicators`, or the `indicators` demo's own composition:
+`use_carousel()` returns a read-only `CarouselApi` (`selected`, `count`, `can_scroll_prev`, `can_scroll_next`) plus `scroll_to(index)`, for building any picker UI alongside or instead of `CarouselPrevious`/`CarouselNext`. See the `api` demo's own composition:
 
 ```rust
 let api = use_carousel();
@@ -69,7 +83,14 @@ Pointer drag mirrors the same way the keyboard does: dragging is direct manipula
 
 ## Looping
 
-`Carousel { r#loop: true }` makes Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`) wrap around at the ends -- **rewind-style**, not an embla-style seamless illusion: from the last slide, Next goes to the first (and vice versa for Previous), via the same `scrollIntoView` paging path every other transition already uses, so it visibly scrolls back across the intervening slides rather than teleporting. No cloned edge slides are ever added (they would show up in the "N of M" count and `:nth-child` styling). Dragging or wheeling past a physical edge still rubber-bands regardless of `loop` -- there is no wrap on a drag/wheel gesture, only on Previous/Next/the root keyboard. `CarouselPrevious`/`CarouselNext` are never `disabled` while `loop` is on. Defaults to `false`. See the `looping` variant.
+`Carousel { r#loop: true }` makes Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`) wrap around at the ends -- but whether that actually does anything, and what it looks like, is `loop_mode`'s decision:
+
+- **`CarouselVirtualContent`, windowed** (the default once your data set is bigger than the render window -- see "Virtualised content" below): `loop` is *always* the seamless illusion, regardless of `loop_mode` -- paging past the last item slides physically forward one already-mounted slide at a time, never a visible rewind. See the `virtual_loop` variant.
+- **Everything else** (the plain children API, or `CarouselVirtualContent` with `virtualize: Some(false)` / a data set too small to window) has no seamless illusion available to it, so `loop_mode` decides:
+  - `LoopMode::Seamless` (the **default**) -- `r#loop: true` alone does nothing here: `CarouselPrevious`/`CarouselNext` stay genuinely `disabled` at the real ends, exactly as if `loop` were off. Deliberate, not an oversight: a single prop that defaults to "the good version, where one exists" should never silently downgrade to a visibly worse fallback (a multi-second rewind scroll through an entire data set) a caller never asked for.
+  - `LoopMode::Rewind` -- the explicit opt-in: from the last slide, Next goes to the first (and vice versa for Previous), via the same scroller-only `scrollBy`-by-delta paging path every other transition already uses. Unlike every other transition, though, this one jumps **instantly** rather than animating -- matching the APG reference implementation's own basic-style example -- since animating a visible scroll back across an entire (possibly large) data set just to wrap once would be a multi-second wait, not a paging transition. `CarouselPrevious`/`CarouselNext` are never `disabled` under this mode. See the `rewind` variant.
+
+No cloned edge slides are ever added under either mode (they would show up in the "N of M" count and `:nth-child` styling). Dragging or wheeling past a physical edge still rubber-bands regardless of `loop`/`loop_mode` -- there is no wrap on a drag/wheel gesture, only on Previous/Next/the root keyboard. Both default to `false`/`Seamless`.
 
 ## Autoplay / rotation control
 
@@ -89,26 +110,28 @@ Carousel { aria_label: "Featured photos",
 
 Rotation pauses while keyboard focus is anywhere inside the carousel, or while hovering it. Un-hovering resumes it (unless focus is *also* currently holding it paused); losing focus does **not** auto-resume -- only clicking `CarouselRotationControl` again does (matching the vendored tabbed reference's own accessibility-features prose). `prefers-reduced-motion: reduce` always forces rotation off at mount, checked once client-side, regardless of any `default_playing` you pass.
 
-`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselTab`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
+`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselIndicator`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
 
 Ticking pages through the same path `CarouselNext` uses, so `loop` applies: without `loop`, rotation simply stops once it reaches the last slide (rather than ticking forever against a no-op the way `embla-carousel-autoplay`'s own documented behavior does); with `loop`, it rewinds and keeps going. See the `autoplay` variant.
 
-## Tablist (dot-picker) variant
+## Indicators
 
-The APG "tabbed" carousel style: a `CarouselTabList` of `CarouselTab` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
+The APG "tabbed" carousel style: a `CarouselIndicators` of `CarouselIndicator` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
 
 ```rust
 Carousel { aria_label: "Featured photos",
-    CarouselTabList {
+    CarouselIndicators {
         for i in 0..count {
-            CarouselTab { key: "{i}", index: i }
+            CarouselIndicator { key: "{i}", index: i }
         }
     }
     CarouselContent { /* CarouselItems, same indices */ }
 }
 ```
 
-`CarouselTabList` is `role="tablist"`; each `CarouselTab` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselTabList` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among tabs and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `tabs` variant.
+`CarouselIndicators` (renamed from `CarouselTabList`; `CarouselIndicator` from `CarouselTab` -- pre-1.0 fork rename, no deprecated alias) is `role="tablist"`; each `CarouselIndicator` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselIndicators` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among the dots and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `indicators` variant.
+
+**`CarouselIndicators` vs. `Tabs`.** Reach for `Tabs` (`crate::components::tabs`) instead when each "page" is a genuinely separate panel that *hides* the others (only the active one is ever visible or scrollable) -- a settings page's sections, for instance. Reach for `CarouselIndicators` when every "page" is a slide in the *same* horizontally/vertically scrolling track, and the dots are just a shortcut for a position a user could also reach by paging or dragging -- that scroll-snap track, and the fact that neighbouring slides are physically adjacent and (depending on `--dx-carousel-per-view`/`--dx-carousel-peek`) sometimes partially visible at once, is what `Tabs` has no equivalent for at all.
 
 ## Virtualised content
 
@@ -129,11 +152,11 @@ Carousel { aria_label: "Featured photos", r#loop: true,
 }
 ```
 
-Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselTabList`/`CarouselTab` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
+Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselIndicators`/`CarouselIndicator` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
 
 **When to virtualise.** With `virtualize` left at its default (`None`), the DOM only ever holds `2 * radius + 1` slides once your data set is bigger than that window -- a smaller data set renders every slide (there's nothing to save). Pass `virtualize: Some(true)` to always window, even for a small data set, or `virtualize: Some(false)` to always render every slide regardless of size.
 
-**Seamless looping.** With `r#loop: true` and virtualisation active, paging past the last item slides physically forward one slide at a time instead of rewinding visibly across every intervening one the way the `CarouselItem`-based `looping` variant does -- see the `virtual_loop` variant. With `r#loop: false` (or virtualisation inactive), looping is the same rewind style as the plain children API. See the `virtual_many` variant for the large-data-set case: 200 items, `loop: false`, DOM never holding more than 5.
+**Seamless looping.** With `r#loop: true` and virtualisation active, paging past the last item slides physically forward one slide at a time instead of rewinding visibly across every intervening one -- unaffected by `loop_mode` entirely, see the `virtual_loop` variant (and its RTL counterpart, `virtual_loop_rtl`). With virtualisation inactive, looping follows `loop_mode` exactly like the plain children API -- see "Looping" above. See the `virtual_many` variant for the large-data-set case: 200 items, `loop: false`, DOM never holding more than 5.
 
 **Trade-offs.** A virtualised window is a client-side enhancement layered on a fully compliant plain sequence, not a replacement for one: the server render (and a client's own pre-hydration first paint) always renders every item, in true order, with correct `"{n} of {m}"` labels -- so there is no SSR/no-JS gap. Once JS has mounted and virtualisation activates, though, slides outside the current window are not in the DOM at all, so a screen reader's browse-mode "read from here" and the browser's own find-in-page can only reach the currently-windowed slides, not the full data set -- the same cost every virtualised list (this crate's own `VirtualList` included) carries. If your data set is small enough that this doesn't matter, `virtualize: Some(false)` keeps every slide reachable at all times, at the cost of the DOM holding all of them.
 

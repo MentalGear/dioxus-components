@@ -1,4 +1,5 @@
 use super::super::component::*;
+use crate::components::card::{Card, CardContent};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight, Play};
 
@@ -29,13 +30,30 @@ pub fn Demo() -> Element {
                 CarouselContent {
                     for i in 0..5usize {
                         CarouselItem { key: "{i}", index: i,
-                            div {
-                                style: "display: flex; align-items: center; justify-content: center; height: 12rem; border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); font-size: 2rem;",
-                                "{i + 1}"
+                            Card {
+                                CardContent {
+                                    style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-3xl); font-weight: 600;",
+                                    "{i + 1}"
+                                }
                             }
                         }
                     }
                 }
+            }
+            // Deliberate divergence from shadcn's own Autoplay demo,
+            // labeled rather than left silent: shadcn's `Autoplay` plugin
+            // (`stopOnInteraction: true`, hover `stop()`/`reset()`) fully
+            // stops the timer on hover and resets it to zero on leave. This
+            // component instead follows the APG "auto-rotating carousel"
+            // pattern's own accessibility-features prose: hovering (or
+            // focusing) merely PAUSES rotation, which resumes with its
+            // remaining time on un-hover (focus is sticky -- see
+            // `CarouselAutoplayProps`' own doc for the full asymmetry) --
+            // a pause a user can rely on to read a slide without losing
+            // their place, not a restart.
+            p {
+                style: "margin: 0.5rem 0 0; text-align: center; font-size: 0.875rem; color: var(--secondary-color-3);",
+                "Pauses (not stop-and-reset) on hover or focus, per the APG auto-rotating pattern."
             }
         }
     }

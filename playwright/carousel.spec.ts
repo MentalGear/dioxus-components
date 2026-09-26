@@ -1,7 +1,10 @@
 /**
  * Carousel: smoke + a11y attributes + keyboard paging (LTR and RTL) +
  * end-of-range button state + scroll-snap landing, across every shipped
- * variant (main, multiple, indicators, vertical, rtl).
+ * variant (main, sizes, peek, vertical, rtl) that has ordinary
+ * Previous/Next + role=group slides -- `indicators` (the APG tablist
+ * style) has neither, so it is covered by its own dedicated describe
+ * block instead of this generic sweep.
  *
  * SCOPING: every variant of a "Normal"-kind component renders on the same
  * page at once (`ComponentVariantHighlight` in `preview/src/main.rs`), so
@@ -47,14 +50,18 @@ function demoFrame(
   page: Page,
   variant:
     | "main"
-    | "multiple"
+    | "sizes"
+    | "spacing"
+    | "peek"
+    | "align"
+    | "api"
     | "indicators"
     | "vertical"
     | "rtl"
-    | "looping"
+    | "rewind"
     | "autoplay"
-    | "tabs"
     | "virtual_loop"
+    | "virtual_loop_rtl"
     | "virtual_many",
 ): Locator {
   const id = variant === "main" ? "component-preview-frame" : `component-preview-frame-${variant}`;
@@ -359,7 +366,7 @@ function passesThroughAnIntermediateValue(samples: number[]): boolean {
   return samples.some((v) => v > lo + 1 && v < hi - 1);
 }
 
-for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
   test.describe(`Carousel (${variant} variant): smoke + a11y attributes`, () => {
     test(`region has role=region, aria-roledescription=carousel, and an accessible name that doesn't contain the word "carousel"`, async ({ page }) => {
       await goto(page, variant);
@@ -428,11 +435,22 @@ test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement
   const BUTTON_SIZE_PX = 28;
   const MIN_CLEAR_PX = 20 - 1; // 1px tolerance for sub-pixel layout rounding
 
-  for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+  for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
     test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the track`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
-      const content = frame.locator(".dx-carousel-content");
+      // The clipping viewport wrapper, NOT `.dx-carousel-content` itself:
+      // the gap model (backlog row 91's shadcn-parity addendum) gives the
+      // scroller its own negative `margin-inline-start`/`-block-start`
+      // (`--dx-carousel-gap`'s own compensation), which deliberately
+      // widens and shifts `.dx-carousel-content`'s own layout box by the
+      // gap's width -- clipped by this wrapper, so nothing about it looks
+      // different, but a raw `boundingBox()` of the scroller itself no
+      // longer marks the track's own VISUAL edge the way it did before
+      // that construction existed. The viewport wrapper's own box is
+      // exactly the clipped, visual track edge, unaffected by the gap
+      // model either way.
+      const content = frame.locator('[data-slot="carousel-viewport"]');
       const previous = frame.getByRole("button", { name: "Previous slide" });
       const next = frame.getByRole("button", { name: "Next slide" });
 
@@ -512,7 +530,7 @@ test.describe("Carousel: arrows never overflow their frame (carousel-narrow regr
           GOTO_OPTS,
         );
 
-        for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+        for (const variant of ["main", "sizes", "peek", "vertical", "rtl"] as const) {
           const frame = demoFrame(page, variant);
           const previous = frame.getByRole("button", { name: "Previous slide" });
           const next = frame.getByRole("button", { name: "Next slide" });
@@ -686,19 +704,34 @@ test.describe("Carousel: vertical orientation pages on the block axis", () => {
 });
 
 test.describe("Carousel: a custom picker built on use_carousel()'s CarouselApi", () => {
+  // Lives on the `api` demo now -- the old `indicators` variant that used
+  // to host this custom, non-tablist dot picker was merged into the APG
+  // tablist demo (`CarouselIndicators`/`CarouselIndicator`, renamed from
+  // `CarouselTabList`/`CarouselTab`); see playwright/carousel.spec.ts's own
+  // "tablist (dot-picker) variant" describe block for that one instead.
   test("clicking a dot indicator jumps directly to that slide, and the active dot tracks the selection", async ({ page }) => {
-    await goto(page, "indicators");
-    const frame = demoFrame(page, "indicators");
-    const indicators = frame.locator(".dx-carousel-indicator");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await goto(page, "api");
+    const frame = demoFrame(page, "api");
+    const indicators = frame.locator('[aria-label="Slide picker"] button');
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
 
-    await expect(indicators).toHaveCount(4);
+    await expect(indicators).toHaveCount(5);
     await expect(indicators.nth(0)).toHaveAttribute("data-active", "true");
 
     await indicators.nth(2).click();
     await expect(slide(3)).toHaveAttribute("data-selected", "true");
     await expect(indicators.nth(2)).toHaveAttribute("data-active", "true");
     await expect(indicators.nth(0)).toHaveAttribute("data-active", "false");
+  });
+
+  test("the visible 'Slide n of m' counter tracks the selection", async ({ page }) => {
+    await goto(page, "api");
+    const frame = demoFrame(page, "api");
+    const counter = frame.locator("p", { hasText: /^Slide \d+ of \d+$/ });
+
+    await expect(counter).toHaveText("Slide 1 of 5");
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expect(counter).toHaveText("Slide 2 of 5");
   });
 });
 
@@ -1404,21 +1437,67 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     // `deltaX` -- see the start-boundary test's own comment above.
     // Negative at slide 1 (the start) asks for more "previous" than
     // exists, same direction as the earlier wheel tests in this block.
-    const sendBurst = async (n: number) => {
-      for (let i = 0; i < n; i++) {
-        await page.mouse.wheel(-80, 0);
-      }
-    };
+    //
+    // Both bursts -- and both transform reads -- happen inside ONE
+    // synchronous in-page loop, never as two separate `page.mouse.wheel()`
+    // round trips (a real CDP round trip per call) with a
+    // `readContentTransform()` `page.evaluate()` await in between (what
+    // this test used to do). That gap is a race, not a rounding error:
+    // `CAROUSEL_WHEEL_BOUNCE_JS`'s release-on-decay heuristic
+    // (`wheelSpent`, `primitives/src/carousel.rs`) treats ANY constant,
+    // non-rising delta stream as "spent" after just two events -- its
+    // plateau branch accepts a delta merely EQUAL to the previous one,
+    // which a perfectly uniform synthetic burst always is -- and starts a
+    // 340ms spring-back (`bounceHome`) right there, mid-burst. A real
+    // hand never sends perfectly identical deltas, so this rarely bites
+    // live traffic, but it fires on every event this test sends. Reading
+    // `depth1`/`depth2` across a real async gap therefore samples an
+    // animation that is already mid-flight back toward zero, at whatever
+    // arbitrary point wall-clock timing happened to interrupt it -- found
+    // live via an in-page `MutationObserver` trace: the exact same
+    // release/spring-back/interrupt cycle fires on this repo's own `main`
+    // branch too (pre-existing, not a lane regression), it just happened
+    // to sample a losing phase of that cycle after this lane's other,
+    // unrelated changes shifted per-frame timing slightly -- a coincidence
+    // the assertion below should never have been exposed to either way.
+    // Dispatching the wheel events as native `WheelEvent`s directly
+    // in-page, back to back with no `await` between them, keeps the
+    // entire 20-event sequence (and both reads) inside one synchronous JS
+    // turn: `release()`/`bounceHome()` still fires (a flat stream is still
+    // classified as spent), but its spring-back tween's first step always
+    // runs at `t ≈ 0` (no real time has elapsed), and any
+    // `requestAnimationFrame` it schedules is superseded by the very next
+    // dispatch before the browser ever gets a chance to paint one -- so
+    // the release fires without ever visibly unwinding progress, and the
+    // accumulated overdrag grows exactly as the curve's own math promises
+    // (this test's own header doc). This is what "sample in-page" means
+    // here: not a workaround for a slow test, but the only sampling
+    // method that is not itself racing a live animation.
+    const burst = (n1: number, n2: number) =>
+      content.evaluate(
+        (el, { n1, n2 }) => {
+          const fire = () => {
+            el.dispatchEvent(
+              new WheelEvent("wheel", { deltaX: -80, deltaY: 0, bubbles: true, cancelable: true }),
+            );
+          };
+          for (let i = 0; i < n1; i++) fire();
+          const t1 = (el as HTMLElement).style.transform;
+          for (let i = 0; i < n2; i++) fire();
+          const t2 = (el as HTMLElement).style.transform;
+          return [t1, t2] as const;
+        },
+        { n1, n2 },
+      );
 
-    await sendBurst(10);
-    const depth1 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    const [transform1, transform2] = await burst(10, 10);
+    const depth1 = Math.abs(parseTranslatePx(transform1) ?? 0);
     expect(depth1, "expected a nonzero bounce after the first burst").toBeGreaterThan(0);
     expect(depth1).toBeLessThanOrEqual(axisSize + 1);
 
     // Doubling the total raw input (20 events total, same magnitude each,
     // so this is still one sustained push, never decaying).
-    await sendBurst(10);
-    const depth2 = Math.abs(parseTranslatePx(await readContentTransform(content)) ?? 0);
+    const depth2 = Math.abs(parseTranslatePx(transform2) ?? 0);
     expect(depth2).toBeLessThanOrEqual(axisSize + 1);
     expect(depth2, "still pushing should still grow the depth").toBeGreaterThan(depth1);
     expect(depth2, "doubling the input should not double the depth (sub-linear curve)").toBeLessThan(depth1 * 2);
@@ -1701,17 +1780,22 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
 });
 
 /**
- * `loop`: rewind-style wraparound (backlog row 91, approved fast-follow).
- * The `looping` variant (5 slides, LTR) and `looping_rtl` variant (4
- * slides, `dir="rtl"`) close both directions and the RTL key-swap
- * together -- see `preview/src/components/carousel/variants/looping{,_rtl}/mod.rs`.
+ * `loop_mode: LoopMode::Rewind` -- the explicit opt-in (backlog row 91's
+ * shadcn-parity addendum); `r#loop: true` alone (the default
+ * `LoopMode::Seamless`) does nothing for the plain children API any more,
+ * see the "library-only v1" describe block above and
+ * `primitives/src/carousel.rs`'s own `LoopMode` doc. Retires the old
+ * `looping`/`looping_rtl` demos (which showed this behavior unconditionally,
+ * with no opt-in) in favor of one `rewind` demo, two rows (LTR/RTL) --
+ * see `preview/src/components/carousel/variants/rewind/mod.rs`.
  */
-test.describe("Carousel: loop (rewind-style wraparound)", () => {
+test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
   test("Previous and Next are never disabled, even at the first/last slide", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
 
     await expect(previous).toBeEnabled();
     await expect(next).toBeEnabled();
@@ -1719,30 +1803,40 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     for (let i = 0; i < 4; i++) {
       await next.click();
     }
-    await expect(frame.getByRole("group", { name: "5 of 5" })).toHaveAttribute("data-selected", "true");
-    // A non-loop carousel would have `next` disabled here (see the
-    // library-only v1 describe block above) -- `loop` never does.
+    await expect(region.getByRole("group", { name: "5 of 5" })).toHaveAttribute("data-selected", "true");
+    // A non-loop (or non-opted-in) carousel would have `next` disabled
+    // here -- `LoopMode::Rewind` never does.
     await expect(next).toBeEnabled();
     await expect(previous).toBeEnabled();
   });
 
-  test("Next at the last slide rewinds to the first; Previous at the first rewinds to the last", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const content = frame.locator(".dx-carousel-content");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+  test("Next at the last slide rewinds to the first INSTANTLY; Previous at the first rewinds to the last", async ({ page }) => {
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
+    const content = region.locator(".dx-carousel-content");
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     // Previous from slide 1 wraps to slide 5.
     await previous.click();
     await expect(slide(5)).toHaveAttribute("data-selected", "true");
     await expectSnappedToBoundary(content, slide(5));
 
-    // Next from slide 5 wraps back to slide 1.
-    await next.click();
+    // Next from slide 5 wraps back to slide 1 -- and, unlike every other
+    // (animated) transition (see the "actually animates" describe block's
+    // own identically-shaped test), does so as an INSTANT jump: sampling
+    // `scrollLeft` across the transition must never pass through an
+    // intermediate value, only the start and end positions.
+    const contentId = (await content.getAttribute("id"))!;
+    const samples = await sampleScrollDuring(page, contentId, "scrollLeft", () => next.click());
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
     await expectSnappedToBoundary(content, slide(1));
+    expect(
+      passesThroughAnIntermediateValue(samples),
+      `expected an instant jump (no intermediate scrollLeft between the first (${samples[0]}) and last (${samples[samples.length - 1]}) sample); got: ${JSON.stringify(samples)}`,
+    ).toBe(false);
 
     // Root-level ArrowRight at the last slide also wraps.
     for (let i = 0; i < 4; i++) {
@@ -1754,12 +1848,13 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("under RTL, loop still wraps both directions with the swapped arrow keys", async ({ page }) => {
-    await goto(page, "looping_rtl");
-    const frame = demoFrame(page, "looping_rtl");
-    const previous = frame.getByRole("button", { name: /previous/i });
-    const next = frame.getByRole("button", { name: /next/i });
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+  test("under RTL, loop_mode Rewind still wraps both directions with the swapped arrow keys", async ({ page }) => {
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery (RTL)", exact: true });
+    const previous = region.getByRole("button", { name: /previous/i });
+    const next = region.getByRole("button", { name: /next/i });
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 4` });
 
     await expect(previous).toBeEnabled();
     await expect(next).toBeEnabled();
@@ -1785,14 +1880,15 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
   });
 
   test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
-    await goto(page, "looping");
-    const frame = demoFrame(page, "looping");
-    const content = frame.locator(".dx-carousel-content");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
+    const content = region.locator(".dx-carousel-content");
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
     // A large rightward drag from slide 1 (nothing before it) should
-    // rubber-band, not wrap to slide 5 -- `loop` only governs
+    // rubber-band, not wrap to slide 5 -- `loop`/`loop_mode` only govern
     // Previous/Next/the root keyboard (this crate's own module doc).
     await dragBy(page, content, 250, 0);
     await expect(async () => {
@@ -1801,10 +1897,10 @@ test.describe("Carousel: loop (rewind-style wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("axe: the looping variant has no automatically detectable a11y issues", async ({ page }) => {
-    await goto(page, "looping");
-    await expectNoAxeViolations(page, "carousel: looping variant", {
-      include: "#component-preview-frame-looping",
+  test("axe: the rewind variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "rewind");
+    await expectNoAxeViolations(page, "carousel: rewind variant", {
+      include: "#component-preview-frame-rewind",
     });
   });
 });
@@ -1996,14 +2092,18 @@ test.describe("Carousel: autoplay + rotation control", () => {
 });
 
 /**
- * Tablist (dot-picker) variant -- APG's "tabbed" carousel style. The
- * `tabs` variant has 5 slides, no separate Previous/Next (matching the
- * vendored reference's own structure).
+ * Indicators (tablist/dot-picker) variant -- APG's "tabbed" carousel
+ * style, `CarouselIndicators`/`CarouselIndicator` (renamed from
+ * `CarouselTabList`/`CarouselTab`). The `indicators` variant has 5 slides,
+ * no separate Previous/Next (matching the vendored reference's own
+ * structure). Merged with what used to be a separate, non-tablist
+ * `indicators` demo (a custom `use_carousel()`-built dot picker) -- that
+ * composition now lives on the `api` demo instead.
  */
-test.describe("Carousel: tablist (dot-picker) variant", () => {
+test.describe("Carousel: indicators (tablist/dot-picker) variant", () => {
   test("roles: tablist/tab/tabpanel, roving tabindex, aria-selected sync with the current slide", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tablist = frame.getByRole("tablist");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2020,8 +2120,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("clicking a tab activates its slide and moves the roving tab stop", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2036,8 +2136,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("ArrowRight/ArrowLeft move focus and automatically activate the newly focused tab (no Enter needed)", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
 
@@ -2053,8 +2153,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("ArrowLeft/ArrowRight wrap at both ends of the tablist", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
 
     await tabs.nth(0).focus();
@@ -2067,8 +2167,8 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("Home/End move focus to the first/last tab and activate it", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tabs = frame.getByRole("tab");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
 
@@ -2083,19 +2183,59 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
   });
 
   test("each tab's aria-controls points at its matching tabpanel's id", async ({ page }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const firstTab = frame.getByRole("tab").nth(0);
     const firstPanelId = await frame.locator('[role="tabpanel"]').nth(0).getAttribute("id");
     expect(firstPanelId).toBeTruthy();
     await expect(firstTab).toHaveAttribute("aria-controls", firstPanelId!);
   });
 
-  test("axe: the tabs variant has no automatically detectable a11y issues", async ({ page }) => {
-    await goto(page, "tabs");
-    await expectNoAxeViolations(page, "carousel: tabs variant", {
-      include: "#component-preview-frame-tabs",
+  test("axe: the indicators variant has no automatically detectable a11y issues", async ({ page }) => {
+    await goto(page, "indicators");
+    await expectNoAxeViolations(page, "carousel: indicators variant", {
+      include: "#component-preview-frame-indicators",
     });
+  });
+
+  test("the active dot's opacity/width transition is present normally, and near-instant under prefers-reduced-motion", async ({
+    page,
+  }) => {
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
+    const firstTab = frame.getByRole("tab").nth(0);
+
+    const transitionDuration = await firstTab.evaluate(
+      (el) => getComputedStyle(el).transitionDuration,
+    );
+    // Two comma-separated durations (opacity, width) -- style.css's own
+    // `.dx-carousel-indicator` rule -- neither near-zero under the
+    // default (no reduced-motion) preference.
+    const durations = transitionDuration.split(",").map((s) => parseFloat(s));
+    expect(durations.length).toBeGreaterThanOrEqual(2);
+    for (const d of durations) {
+      expect(d).toBeGreaterThan(0.05);
+    }
+  });
+
+  test("the active dot's transition is near-instant under prefers-reduced-motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
+    const firstTab = frame.getByRole("tab").nth(0);
+
+    // dx-components-theme.css's own shared reduced-motion layer forces
+    // `transition-duration` to `var(--dx-motion-duration-reduced)` (0.01ms)
+    // `!important` on any `[role="tab"]` -- this button qualifies without
+    // this component needing its own per-rule override (see
+    // `.dx-carousel-indicator`'s own style.css comment).
+    const transitionDuration = await firstTab.evaluate(
+      (el) => getComputedStyle(el).transitionDuration,
+    );
+    const durations = transitionDuration.split(",").map((s) => parseFloat(s));
+    for (const d of durations) {
+      expect(d).toBeLessThan(0.01);
+    }
   });
 });
 
@@ -2147,7 +2287,7 @@ test.describe("Carousel: tablist (dot-picker) variant", () => {
  *   outside. `preventScroll: true` is exactly the tool the platform gives
  *   a caller to opt out of that default when it does its own scroll
  *   positioning, which is precisely this test's situation; it isolates
- *   the thing actually under test -- `CarouselTab`'s own `onfocus` handler
+ *   the thing actually under test -- `CarouselIndicator`'s own `onfocus` handler
  *   (`carousel_ctx.set_selected.call(...)`) -- from that unrelated native
  *   behavior. Confirmed live: plain `.focus()` moves the page on *both*
  *   pre-fix and post-fix code (the native behavior, unaffected by this
@@ -2233,11 +2373,11 @@ test.describe("Carousel: paging never scrolls the page (ancestor-scroll regressi
     await expectSnappedToBoundary(content, slide(1));
   });
 
-  test("a CarouselTab activation never moves window scroll position (isolated from the browser's own focus-scroll)", async ({
+  test("a CarouselIndicator activation never moves window scroll position (isolated from the browser's own focus-scroll)", async ({
     page,
   }) => {
-    await goto(page, "tabs");
-    const frame = demoFrame(page, "tabs");
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
     const tab = frame.getByRole("tab").nth(2);
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.locator(`[role="tabpanel"][aria-label="${n} of 5"]`);
@@ -2338,7 +2478,14 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(namesAfter).not.toContain("1 of 5");
   });
 
-  for (const variant of ["tabs", "autoplay", "looping"] as const) {
+  // `looping`/`looping_rtl` (retired -- see the `LoopMode` describe block
+  // above) is not replaced with `rewind` here: `rewind` renders TWO
+  // independent `Carousel` regions on one page, so a single flat
+  // `.dx-carousel-item` locator across both would see the RTL row's own
+  // non-inert current slide land at an index this loop's "everything past
+  // 0 is inert" assumption does not hold for -- the single-region
+  // assumption below is real, not incidental.
+  for (const variant of ["indicators", "autoplay"] as const) {
     test(`non-current slides are inert on the ${variant} variant too`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
@@ -2353,21 +2500,22 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     });
   }
 
-  test("a multi-per-view layout widens the visible set to every slide actually in the viewport (multiple variant)", async ({ page }) => {
-    await goto(page, "multiple");
-    const frame = demoFrame(page, "multiple");
+  test("a multi-per-view layout widens the visible set to every slide actually in the viewport (sizes variant)", async ({ page }) => {
+    await goto(page, "sizes");
+    const frame = demoFrame(page, "sizes");
     const items = frame.locator(".dx-carousel-item");
     const count = await items.count();
 
-    // Measured live, not assumed -- exactly how many slides are fully (or
-    // "at least half") visible at once depends on this demo's own rendered
-    // `flex-basis: 40%` against however wide its wrapper renders (this
-    // file's own established "measure, don't hardcode" convention,
-    // `slidePitch`'s own doc). The only structural invariant asserted is
-    // that the non-inert set is a contiguous prefix starting at slide 0
-    // (this demo never scrolls on its own before this point) and is more
-    // than just the one selected slide -- proving the widening actually
-    // happened, not merely that the single-slide case still works.
+    // Measured live, not assumed -- exactly how many WHOLE slides are
+    // visible at once depends on `--dx-carousel-per-view` against however
+    // wide this demo's own responsive wrapper renders (this file's own
+    // established "measure, don't hardcode" convention, `slidePitch`'s own
+    // doc) -- 2 below the demo's own `lg` breakpoint, 3 above it. The only
+    // structural invariant asserted is that the non-inert set is a
+    // contiguous prefix starting at slide 0 (this demo never scrolls on
+    // its own before this point) and is more than just the one selected
+    // slide -- proving the widening actually happened, not merely that the
+    // single-slide case still works.
     const inertFlags: boolean[] = [];
     for (let i = 0; i < count; i++) {
       inertFlags.push(await items.nth(i).evaluate((el) => el.hasAttribute("inert")));
@@ -2377,13 +2525,67 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(inertFlags.slice(0, firstInert).every((v) => v === false)).toBe(true);
     expect(inertFlags.slice(firstInert).every((v) => v === true)).toBe(true);
 
-    const names = await axTreeGroupNames(page, "#component-preview-frame-multiple [role=region]");
+    const names = await axTreeGroupNames(page, "#component-preview-frame-sizes [role=region]");
     for (let i = 0; i < firstInert; i++) {
       expect(names).toContain(`${i + 1} of ${count}`);
     }
     for (let i = firstInert; i < count; i++) {
       expect(names).not.toContain(`${i + 1} of ${count}`);
     }
+  });
+
+  test("whole-slide geometry: each visible item's width is the viewport divided by --dx-carousel-per-view, within 1px, and slides land on boundaries (sizes variant)", async ({ page }) => {
+    // Root-cause regression test for the "~2.3 slides visible" incident
+    // (`dev-docs/research/shadcn-carousel-parity.md`) this construction
+    // closes: a real flex `gap` was additive to a percentage `flex-basis`,
+    // so N items never summed to exactly the viewport width. Pinned here
+    // against the live-rendered geometry, not just the CSS source, so a
+    // future regression in the calc (or in the gap model it depends on)
+    // is caught the same way the incident itself was found -- by
+    // measurement.
+    await goto(page, "sizes");
+    const frame = demoFrame(page, "sizes");
+    const viewport = frame.locator('[data-slot="carousel-viewport"]');
+    const content = frame.locator(".dx-carousel-content");
+    const items = frame.locator(".dx-carousel-item");
+
+    const viewportBox = await viewport.boundingBox();
+    const contentBox = await content.boundingBox();
+    expect(viewportBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+    const perView = await frame
+      .locator(".dx-carousel-demo-sizes")
+      .evaluate((el) => getComputedStyle(el).getPropertyValue("--dx-carousel-per-view").trim());
+    const n = Number(perView);
+    expect(n).toBeGreaterThanOrEqual(2);
+
+    // Each item's own basis is `calc(100% / n)` OF THE SCROLLER's own
+    // (content) width, not the clipped viewport's -- the gap model's own
+    // negative-margin compensation deliberately widens the scroller by
+    // `--dx-carousel-gap`'s own width (`content_gap_margin`'s own doc),
+    // clipped by the viewport wrapper, so `contentBox.width`, not
+    // `viewportBox.width`, is the correct denominator here.
+    for (let i = 0; i < n; i++) {
+      const box = await items.nth(i).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeCloseTo(contentBox!.width / n, 0);
+    }
+    // The N slides still visually fill the clipped viewport exactly, with
+    // no overflow: the last of the N items' own right edge lands flush
+    // with the viewport's own right edge (both are pinned to the same
+    // physical edge by construction -- content's own right edge is never
+    // shifted, only its left edge is, so this holds regardless of gap).
+    const lastVisibleBox = await items.nth(n - 1).boundingBox();
+    expect(lastVisibleBox).not.toBeNull();
+    expect(lastVisibleBox!.x + lastVisibleBox!.width).toBeCloseTo(
+      viewportBox!.x + viewportBox!.width,
+      0,
+    );
+    // The (n+1)-th slide (0-based index n) must not be even partially
+    // inside the viewport -- a whole-slide layout has no partial peek.
+    const nextBox = await items.nth(n).boundingBox();
+    expect(nextBox).not.toBeNull();
+    expect(nextBox!.x).toBeGreaterThanOrEqual(viewportBox!.x + viewportBox!.width - 1);
   });
 
   test("inert state is frozen while a drag is in progress -- it only updates on release/settle", async ({ page }) => {
@@ -2545,8 +2747,14 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
   });
 
   test("a drag starting on a partially-visible neighbour slide still pages the carousel (inert content is not a hit-test target)", async ({ page }) => {
-    await goto(page, "multiple");
-    const frame = demoFrame(page, "multiple");
+    // The old `multiple` variant (a bare `flex-basis: 40%` override) is
+    // retired -- `peek` is the new, explicitly opt-in home for a genuinely
+    // partially-visible neighbour slide (`--dx-carousel-peek: 20%`); the
+    // `sizes` variant that replaced `multiple` shows only WHOLE slides by
+    // design (that is the entire point of the shadcn-parity fix), so it no
+    // longer has a partially-visible neighbour to drag-start on at all.
+    await goto(page, "peek");
+    const frame = demoFrame(page, "peek");
     const content = frame.locator(".dx-carousel-content");
     const viewport = frame.locator('[data-slot="carousel-viewport"]');
     const items = frame.locator(".dx-carousel-item");
@@ -2772,8 +2980,11 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
 
     // Jump straight to slide 7 (6 away -- outside the 5-slide window),
     // the "distant dot click" re-anchor path (`CarouselVirtualContent`'s
-    // own "Seamless loop" doc, second bullet).
-    await frame.locator('[aria-label="Go to slide 7"]').click();
+    // own "Seamless loop" doc, second bullet). `CarouselIndicator`'s own
+    // default accessible name is "Slide {n}" (renamed from the old
+    // `CarouselTabList`/`CarouselTab` -- see `component.rs`'s own doc),
+    // not the retired custom dot-picker's "Go to slide {n}".
+    await frame.getByRole("tab", { name: "Slide 7" }).click();
     await expect.poll(label).toBe("7 of 12");
     await expect(frame.locator("[data-position]")).toHaveCount(5);
     // Now a single Next from there still advances by exactly one, proving
@@ -2948,6 +3159,27 @@ test.describe("CarouselVirtualContent: a11y", () => {
     });
     await expectNoAxeViolations(page, "carousel: virtual_many variant", {
       include: "#component-preview-frame-virtual_many",
+    });
+  });
+
+  test("virtual_loop_rtl: seamless loop wraps under RTL with the swapped arrow keys too", async ({ page }) => {
+    // Cheap RTL coverage of the identical seamless-loop path (per-lane
+    // instruction: "add an RTL variant if cheap") -- not a full duplicate
+    // of every `virtual_loop` test above, just the one thing RTL could
+    // plausibly break: the key-swap composed with physical wraparound.
+    await goto(page, "virtual_loop_rtl");
+    const frame = demoFrame(page, "virtual_loop_rtl");
+    const next = frame.getByRole("button", { name: "Next slide" });
+    const label = () => frame.locator('[data-selected="true"]').getAttribute("aria-label");
+
+    await expect.poll(label).toBe("1 of 12");
+    // RTL: ArrowLeft is the swapped "next" key (Direction::resolve_horizontal).
+    await next.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(label).toBe("2 of 12");
+
+    await expectNoAxeViolations(page, "carousel: virtual_loop_rtl variant", {
+      include: "#component-preview-frame-virtual_loop_rtl",
     });
   });
 });
