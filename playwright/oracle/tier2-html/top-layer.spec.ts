@@ -169,16 +169,20 @@
  * accepting a flip that never should have happened in the common case.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/hovers triggers right
+// after navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 const gotoFixture = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /**
@@ -935,9 +939,10 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
   });
 
   test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
-    await page.goto(`${BASE_URL}/component/?name=color_picker&`, {
+    // dev-docs/backlog.md row 109: SSG lane -- `gotoHydrated`, see this
+    // file's own `gotoFixture` doc.
+    await gotoHydrated(page, `${BASE_URL}/component/?name=color_picker&`, {
       timeout: NAV_TIMEOUT,
-      waitUntil: "networkidle",
     });
 
     // Opened at scrollY=0 with a raw DOM click (bypassing Playwright's own
@@ -1240,44 +1245,22 @@ async function pinNearTop(page: Page, locator: import("@playwright/test").Locato
   // fixture's fixed right-edge triggers, which then intercept the click and
   // send Playwright into its scroll-and-retry loop.
   //
-  // `behavior: "instant"` on both this call and the `window.scrollTo` below
-  // (2026-09-18, this session's root-cause finding for the Rule 11 self-
-  // overlap regression): `preview/assets/main.css` added a global
-  // `html { scroll-behavior: smooth }` (commit daebe40, for legitimate,
-  // unrelated in-page TOC-link navigation) after this helper was written,
-  // and neither call originally specified a `behavior`, so both silently
-  // started ANIMATING over several hundred ms instead of jumping instantly
-  // -- `pinNearTop`'s entire documented contract (see this function's own
-  // opening doc) is to deliver the trigger at a settled, known position
-  // BEFORE `overlay.open()` runs, precisely so this rule's self-overlap
-  // check isn't confounded by in-flight scroll. Confirmed by execution
-  // (standalone Playwright script, this session): with the un-qualified
-  // calls, the trigger's `getBoundingClientRect().top` kept changing for
-  // 400-600ms *after* `pinNearTop` had already resolved and `overlay.open()`
-  // had been called (e.g. Combobox: 643 -> 541 -> 93 -> 78, settling only
-  // ~400ms later) -- `use_anchor_position_fallback`'s JS-fallback tracking
-  // (`primitives/src/top_layer.rs`) reacts to each scroll frame via its own
-  // rAF-throttled listener, but that is necessarily one step behind a
-  // continuous CSS-driven scroll animation, especially under real
-  // scheduling load (this sandbox's concurrent WASM/Chromium contention).
-  // The content briefly reflects an already-superseded trigger reading
-  // while this rule's assertion reads the trigger's CURRENT position
-  // immediately after open -- a real mismatch, but between two moments of
-  // the SAME still-settling trigger, not a placement-formula defect in the
-  // fallback itself (see the commit message for the full account, including
-  // why this is fixed here rather than in `top_layer.rs`: every Rule 11
-  // sub-case for all eight covered overlays calls this same helper before
-  // opening, and the exact numeric signature -- content positioned exactly
-  // where `place()`/the vertical clamp would put it for an EARLIER trigger
-  // reading, not the one Playwright reads back -- was identical across
-  // every failing case inspected). `behavior: "instant"` is the standard,
-  // spec-defined way to opt a single scroll call out of an ancestor's CSS
-  // `scroll-behavior: smooth` (CSSOM View's `ScrollOptions`) without
-  // touching that legitimate, unrelated site-wide feature. Scroll-tracking
-  // fidelity during a genuine, in-flight scroll is Rule 8's own explicit,
-  // separately-tracked job (and already carries its own known, documented
-  // limitation, `dev-docs/backlog.md` row 21) -- not this rule's.
-  await locator.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" }));
+  // Originally (2026-09-18) this call and the `window.scrollTo` below each
+  // passed their own `behavior: "instant"`, working around the site's
+  // global `html { scroll-behavior: smooth }` (`preview/assets/main.css`,
+  // commit daebe40) animating this helper's own positioning scroll for
+  // several hundred ms instead of landing it instantly -- `pinNearTop`'s
+  // entire contract (see this function's own opening doc) is to deliver
+  // the trigger at a settled, known position BEFORE `overlay.open()` runs.
+  // Simplified per dev-docs/backlog.md row 110: `../../fixtures.ts`
+  // (this repo's shared `test`/`expect`, which this file now imports)
+  // forces `scroll-behavior: auto` on `<html>` for every test in this
+  // suite, so an unqualified scroll -- one that does not name its own
+  // `behavior` -- is already instant without a per-call-site argument.
+  // Kept unqualified (not re-adding `behavior: "instant"` here) so this
+  // helper relies on the one shared construction instead of carrying its
+  // own copy of the same workaround.
+  await locator.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "center" }));
   const rect = await rectOfLocator(locator);
   // "Near the top" means just below the sticky navbar, not 24px from the
   // viewport edge: the preview's `.dx-preview-navbar` is `position: sticky;
@@ -1291,7 +1274,7 @@ async function pinNearTop(page: Page, locator: import("@playwright/test").Locato
     return nav ? nav.getBoundingClientRect().bottom : 0;
   });
   await page.evaluate(
-    ([top, offset]) => window.scrollTo({ top: window.scrollY + top - offset, left: 0, behavior: "instant" }),
+    ([top, offset]) => window.scrollTo({ top: window.scrollY + top - offset, left: 0 }),
     [rect.top, navBottom + 24] as const,
   );
 }
@@ -1799,7 +1782,9 @@ test.describe("Rule 11 — anchored-overlay self-overlap contract (2026-09-02 iO
 test.describe("Rule 12 — inline-axis shift: a center-aligned overlay wider than the room its trigger has on one side stays within the viewport horizontally (no CSS Anchor Positioning engine)", () => {
   test("ColorPicker popover (home page widget masonry) stays within the viewport horizontally", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    // dev-docs/backlog.md row 109: SSG lane -- `gotoHydrated`, see this
+    // file's own `gotoFixture` doc.
+    await gotoHydrated(page, `${BASE_URL}/?`, { timeout: NAV_TIMEOUT });
     await stripAnchorSupportsBlock(page);
 
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();

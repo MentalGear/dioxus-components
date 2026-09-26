@@ -147,20 +147,25 @@
  * regression guard, not an iOS/Safari measurement -- the same caveat every
  * other tier-2 oracle in this suite already carries.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import {
   installMainThreadObserver,
   assertResponsive,
   type GestureReport,
 } from "../../main-thread";
+import { gotoHydrated } from "../../hydration";
 
 const BASE_URL = "http://127.0.0.1:8080";
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app -- same budget every sibling oracle uses
 
 const url = (name: string, extra = "") => `${BASE_URL}/component/?name=${name}&${extra}`;
 
+// dev-docs/backlog.md row 109: every gesture this file measures is issued
+// right after navigating, on the SSG lane -- `gotoHydrated` so it can't
+// land before hydration attaches listeners.
 async function goto(page: Page, name: string, extra = ""): Promise<void> {
-  await page.goto(url(name, extra), { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+  await gotoHydrated(page, url(name, extra), { timeout: NAV_TIMEOUT });
 }
 
 // One worker, one gesture at a time is STRONGLY recommended for this file:

@@ -61,15 +61,19 @@
  * than adding a second, competing accessible-name mechanism here.
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/types into form fields
+// right after navigating, on the SSG lane -- `gotoHydrated` so those
+// interactions can't land before hydration attaches listeners.
 const gotoForm = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=form&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=form&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /** The label's own text node, scoped under its `for`, never the whole label

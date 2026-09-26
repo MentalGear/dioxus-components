@@ -98,7 +98,8 @@
  * literal casing onto the other.
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BASE_URL } from "../../base-url";

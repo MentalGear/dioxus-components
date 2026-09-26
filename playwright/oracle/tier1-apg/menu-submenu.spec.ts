@@ -120,12 +120,17 @@
  * unchanged, only how "the submenu" is *found* changes.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const BASE = `${BASE_URL}/component/?name=`;
+// dev-docs/backlog.md row 109: this suite clicks/keys into submenus right
+// after navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 const goto = (page: Page, name: string) =>
-  page.goto(`${BASE}${name}&`, { waitUntil: "networkidle", timeout: 20 * 60 * 1000 });
+  gotoHydrated(page, `${BASE}${name}&`, { timeout: 20 * 60 * 1000 });
 
 // `crate::menu_sub::SUBMENU_OPEN_INTENT_DELAY`/`SUBMENU_CLOSE_GRACE_DELAY`
 // are both 200ms (`primitives/src/menu_sub.rs`) -- generous margins below

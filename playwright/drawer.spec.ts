@@ -19,7 +19,7 @@
  *   `DISMISS_VELOCITY_PX_PER_MS` doc comments for the exact values these
  *   tests assume.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
 

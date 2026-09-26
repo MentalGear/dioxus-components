@@ -29,9 +29,14 @@
  * frame-id-per-variant naming, read in full this session).
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+// dev-docs/backlog.md row 109: this suite interacts (hover/click) right
+// after navigating, on the SSG lane -- `gotoHydrated` so that can't land
+// before hydration attaches listeners.
+import { gotoHydrated } from "./hydration";
 
 const URL = `${BASE_URL}/component/?name=radar_chart&`;
 
@@ -73,7 +78,7 @@ function vertexCount(d: string): number {
 test.describe("render + axe per variant", () => {
   for (const variant of VARIANTS) {
     test(`${variant}: renders an accessible radar chart`, async ({ page }) => {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       const svg = frame(page, variant).locator('svg[role="img"]').first();
       await expect(svg).toBeVisible();
       await expect(svg).toHaveAccessibleName(/.+/);
@@ -84,7 +89,7 @@ test.describe("render + axe per variant", () => {
     });
 
     test(`${variant}: has no automatically detectable a11y issues`, async ({ page }) => {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       await expect(frame(page, variant).locator('svg[role="img"]').first()).toBeVisible();
       await expectNoAxeViolations(page, `radar_chart: ${variant}`, {
         excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
@@ -95,7 +100,7 @@ test.describe("render + axe per variant", () => {
 
 test.describe("behavioural", () => {
   test("main: one radar path per series, each with 6 vertices (one per month)", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const paths = frame(page, "main").locator('g[data-series] path[data-slot="chart-radar-area"]');
     await expect(paths).toHaveCount(1); // shadcn's default demo: one "desktop" series
 
@@ -105,7 +110,7 @@ test.describe("behavioural", () => {
   });
 
   test("main: hovering a category's hit-sector opens the tooltip with that category's content", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const tooltip = frame(page, "main").locator('[data-slot="chart-tooltip"]');
     await expect(tooltip).toHaveAttribute("data-state", "closed");
 
@@ -123,7 +128,7 @@ test.describe("behavioural", () => {
   });
 
   test("multiple: two series, each a 6-vertex polygon", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const paths = frame(page, "multiple").locator('g[data-series] path[data-slot="chart-radar-area"]');
     await expect(paths).toHaveCount(2);
     for (const p of await paths.all()) {
@@ -141,7 +146,7 @@ test.describe("behavioural", () => {
   });
 
   test("grid_circle: grid rings are <circle> elements", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const grid = frame(page, "grid_circle").locator('g[data-slot="chart-grid"]');
     await expect(grid).toHaveCount(1);
     const circles = grid.locator("circle");
@@ -151,14 +156,14 @@ test.describe("behavioural", () => {
   });
 
   test("grid_circle_no_lines: circle rings, no spokes", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const grid = frame(page, "grid_circle_no_lines").locator('g[data-slot="chart-grid"]');
     await expect(grid.locator("circle")).not.toHaveCount(0);
     await expect(grid.locator('[data-slot="chart-grid-spoke"]')).toHaveCount(0);
   });
 
   test("main (polygon grid, default): grid rings are polygon <path> elements, with spokes", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const grid = frame(page, "main").locator('g[data-slot="chart-grid"]');
     await expect(grid).toHaveCount(1);
     await expect(grid.locator("path")).not.toHaveCount(0);
@@ -167,12 +172,12 @@ test.describe("behavioural", () => {
   });
 
   test("grid_none: no grid group at all", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     await expect(frame(page, "grid_none").locator('g[data-slot="chart-grid"]')).toHaveCount(0);
   });
 
   test("lines_only: series paths render with zero fill opacity", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const paths = frame(page, "lines_only").locator('path[data-slot="chart-radar-area"]');
     await expect(paths).not.toHaveCount(0);
     for (const p of await paths.all()) {
@@ -182,7 +187,7 @@ test.describe("behavioural", () => {
   });
 
   test("dots: one dot per category per series", async ({ page }) => {
-    await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const seriesPaths = frame(page, "dots").locator('g[data-series] path[data-slot="chart-radar-area"]');
     const seriesCount = await seriesPaths.count();
     expect(seriesCount).toBeGreaterThan(0);
@@ -193,7 +198,7 @@ test.describe("behavioural", () => {
 
   for (const variant of ["main", "multiple", "dots"] as const) {
     test(`${variant}: hidden table mirrors categories x series`, async ({ page }) => {
-      await page.goto(URL, { timeout: 20 * 60 * 1000, waitUntil: "networkidle" });
+      await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
       const table = frame(page, variant).locator('table[data-slot="chart-data"]');
       await expect(table).toHaveCount(1);
 

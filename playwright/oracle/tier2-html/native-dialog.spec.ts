@@ -76,22 +76,25 @@
  * this exact regression test, at the oracle layer rather than a spike.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../../fixtures";
+import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "../../axe";
 import { BASE_URL } from "../../base-url";
+import { gotoHydrated } from "../../hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: this suite clicks/taps triggers right after
+// navigating, on the SSG lane -- `gotoHydrated` so those interactions
+// can't land before hydration attaches listeners.
 const gotoTopLayer = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=top_layer&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=top_layer&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 const gotoDialog = (page: Page) =>
-  page.goto(`${BASE_URL}/component/?name=dialog&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=dialog&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /** Reports where focus actually landed, so a failure names the culprit. */
@@ -656,7 +659,10 @@ test.describe("Rule 8 — the opening-gesture false positive: a modal Popover's 
     const context = await browser.newContext({ hasTouch: true });
     const page = await context.newPage();
     try {
-      await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+      // dev-docs/backlog.md row 109: this test taps the trigger right after
+      // navigating, on the SSG lane -- `gotoHydrated` so that tap can't
+      // land before hydration attaches listeners.
+      await gotoHydrated(page, `${BASE_URL}/?`, { timeout: NAV_TIMEOUT });
       const trigger = page.getByRole("button", { name: "Show Popover" });
       await trigger.scrollIntoViewIfNeeded();
       await trigger.tap();
@@ -727,7 +733,12 @@ test.describe("Rule 8 — the opening-gesture false positive: a modal Popover's 
       };
     });
 
-    await page.goto(`${BASE_URL}/?`, { timeout: NAV_TIMEOUT, waitUntil: "networkidle" });
+    // dev-docs/backlog.md row 109: this test clicks the trigger right after
+    // navigating, on the SSG lane -- `gotoHydrated` so that click can't
+    // land before hydration attaches listeners. The `addInitScript` above
+    // still instruments this same navigation: `gotoHydrated` is just
+    // `page.goto` plus a wait, so init-script ordering is unchanged.
+    await gotoHydrated(page, `${BASE_URL}/?`, { timeout: NAV_TIMEOUT });
     const trigger = page.getByRole("button", { name: "Show Popover" });
     await trigger.scrollIntoViewIfNeeded();
     await trigger.click();

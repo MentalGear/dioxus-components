@@ -20,7 +20,8 @@
  * what actually disambiguates a role+name query across variants.
  */
 
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page, type Locator } from "@playwright/test";
 import { BASE_URL } from "./base-url";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { gotoHydrated } from "./hydration";
@@ -69,39 +70,23 @@ function demoFrame(
 }
 
 /**
- * Scroll `locator`'s element into view INSTANTLY (bypassing
- * `preview/assets/main.css`'s global `html { scroll-behavior: smooth }`
- * rule) before an action -- `.hover()` in particular -- that would
- * otherwise trigger Playwright's own actionability pre-check
- * (`scrollIntoViewIfNeeded`). An *unqualified* scroll's default `behavior:
- * "auto"` means "respect the scrolling box's own CSS `scroll-behavior`",
- * not "jump instantly" -- so on a page with that global rule, Playwright's
- * own pre-hover scroll animates smoothly instead of jumping, and (this
- * component's demo sits well down the long component-catalog page, so the
- * scroll distance is large) keeps moving the page for a couple hundred ms
- * *after* `.hover()` has already dispatched `mouseenter` and returned --
- * dragging the target out from under the now-stationary cursor and firing
- * a genuine, browser-native `mouseleave` a few hundred ms later. Calling
- * this first makes the element already in view, so that pre-check becomes
- * a no-op and no such scroll ever starts.
+ * Scroll `locator`'s element into view instantly, for tests that need a
+ * settled, known position before their own subsequent real-coordinate math
+ * (`page.mouse`-based drags below) -- NOT as a guard against Playwright's
+ * own pre-`.hover()`/`.focus()` actionability scroll any more: that class
+ * (dev-docs/backlog.md row 110 -- an unqualified scroll's default
+ * `behavior: "auto"` deferring to the site's global
+ * `html { scroll-behavior: smooth }`, `preview/assets/main.css`, and
+ * animating for a couple hundred ms after `.hover()` already fired,
+ * dragging the target out from under the cursor) is now handled once for
+ * every test by `./fixtures.ts`'s shared `test`/`expect`, which forces
+ * `scroll-behavior: auto` for the whole suite -- see the "hovering the
+ * carousel stops rotation..." test below, which used to call this
+ * defensively and no longer needs to.
  *
- * This is the same class `oracle/tier2-html/top-layer.spec.ts`'s own
- * `pinNearTop` helper exists for (2026-09-18, commit daebe40's global
- * smooth-scroll rule racing an unqualified scroll call) -- a second
- * instance, not a new class; see that helper's own doc for the general
- * shape. Found here by execution (this session): a scratch MutationObserver
- * + `getBoundingClientRect`/`scrollY` probe against the SSG build showed,
- * on every repro of "hovering the carousel stops rotation, and moving away
- * resumes it" flaking, `mouseenter` firing while the page was still
- * mid-scroll, then a genuine `mouseleave` ~250-300ms later as the
- * still-animating scroll dragged the carousel out from under the cursor,
- * then rotation resuming its normal ~1200ms cadence from a fresh cycle --
- * never a stale tick's tail settling late (which would have ruled out this
- * mechanism in favor of "before was read mid-transition"). Forcing
- * `html { scroll-behavior: auto }` for a scratch run took the repro rate
- * from ~3/10 to 0/15; this instant pre-scroll independently also took it
- * to 0/15 -- two different ways of removing the same in-flight scroll,
- * both eliminating the failure, is the confirmation.
+ * `oracle/tier2-html/top-layer.spec.ts`'s own `pinNearTop` helper was the
+ * other instance of that same class (2026-09-18, commit daebe40); it now
+ * relies on the same shared fixture too, per that helper's own doc.
  */
 async function scrollIntoViewInstant(locator: Locator): Promise<void> {
   await locator.evaluate((el) =>
@@ -117,22 +102,83 @@ async function scrollIntoViewInstant(locator: Locator): Promise<void> {
  * `primitives/src/carousel.rs`'s own `CAROUSEL_SCROLL_TRACKING_JS` uses
  * (`getBoundingClientRect`, never `scrollLeft`, so this works identically
  * under `dir="rtl"` with no sign-convention special-casing).
+ *
+ * The poll loop runs INSIDE the page (one `evaluate` call, a `requestAnimationFrame`
+ * loop), not as repeated Node-side `expect().toPass()` round trips
+ * (dev-docs/backlog.md row 112's construction: "sample in-page ... never
+ * via separate round trips"). Root-caused for the vertical variant's
+ * "ArrowDown/ArrowUp page the vertical carousel" test (row 112 instance 2,
+ * ~1/5 red under `--workers=2`, 5/5 green under `--workers=1`, never
+ * reproduced in an isolated repro of that one test): the *previous*
+ * version's `toPass({ timeout: 3000 })` re-issued a fresh CDP round trip
+ * (`content.boundingBox()` + `item.boundingBox()`) on every poll attempt,
+ * so the 3000ms budget had to cover both the scroll-snap settle itself AND
+ * however long each Node<->browser round trip took that attempt -- under
+ * two workers' worth of concurrent Chromium/CPU contention specifically
+ * (never under one), a slower round trip eats into the same fixed budget
+ * as a slower settle, coupling a real UI wait to Node-process/IPC
+ * scheduling latency that has nothing to do with whether the carousel
+ * actually settled in time. Driving the whole wait from a single
+ * `requestAnimationFrame` loop already running in the page removes that
+ * coupling entirely: the 3000ms deadline is measured against
+ * `performance.now()` in the SAME realm as the animation, with zero
+ * per-attempt IPC cost, so it reflects only genuine settle time.
  */
 async function expectSnappedToBoundary(content: Locator, item: Locator, orientation: "horizontal" | "vertical" = "horizontal") {
-  await expect(async () => {
-    const [containerBox, itemBox] = await Promise.all([content.boundingBox(), item.boundingBox()]);
-    expect(containerBox).not.toBeNull();
-    expect(itemBox).not.toBeNull();
-    const delta =
-      orientation === "horizontal"
-        ? Math.abs(containerBox!.x - itemBox!.x)
-        : Math.abs(containerBox!.y - itemBox!.y);
-    // A couple of CSS pixels of tolerance for sub-pixel rounding during a
-    // smooth-scroll settle -- not a loose bound: an unsettled scroll (still
-    // mid-animation, or landed on the wrong slide) misses by tens/hundreds
-    // of pixels, not 1-2.
-    expect(delta).toBeLessThanOrEqual(2);
-  }).toPass({ timeout: 3000 });
+  const contentHandle = await content.elementHandle();
+  const itemHandle = await item.elementHandle();
+  if (!contentHandle || !itemHandle) {
+    throw new Error("expectSnappedToBoundary: content or item resolved to no element");
+  }
+  const result = await content.page().evaluate(
+    ([contentEl, itemEl, orientation]) => {
+      return new Promise<{
+        ok: boolean;
+        delta: number;
+        containerBox: { x: number; y: number };
+        itemBox: { x: number; y: number };
+      }>((resolve) => {
+        const deadline = performance.now() + 3000;
+        const check = () => {
+          const containerRect = (contentEl as Element).getBoundingClientRect();
+          const itemRect = (itemEl as Element).getBoundingClientRect();
+          const delta =
+            orientation === "horizontal"
+              ? Math.abs(containerRect.x - itemRect.x)
+              : Math.abs(containerRect.y - itemRect.y);
+          // A couple of CSS pixels of tolerance for sub-pixel rounding
+          // during a smooth-scroll settle -- not a loose bound: an
+          // unsettled scroll (still mid-animation, or landed on the wrong
+          // slide) misses by tens/hundreds of pixels, not 1-2.
+          if (delta <= 2) {
+            resolve({
+              ok: true,
+              delta,
+              containerBox: { x: containerRect.x, y: containerRect.y },
+              itemBox: { x: itemRect.x, y: itemRect.y },
+            });
+            return;
+          }
+          if (performance.now() >= deadline) {
+            resolve({
+              ok: false,
+              delta,
+              containerBox: { x: containerRect.x, y: containerRect.y },
+              itemBox: { x: itemRect.x, y: itemRect.y },
+            });
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      });
+    },
+    [contentHandle, itemHandle, orientation] as const,
+  );
+  expect(
+    result.ok,
+    `expected ${orientation} delta <= 2, got ${result.delta} -- ${JSON.stringify(result)}`,
+  ).toBe(true);
 }
 
 /**
@@ -1982,16 +2028,13 @@ test.describe("Carousel: autoplay + rotation control", () => {
     const content = frame.locator(".dx-carousel-content");
     const rotation = frame.getByRole("button", { name: /automatic slide show/i });
 
-    // Defense-in-depth, matching the hover test's own fix below: `.focus()`
-    // was NOT observed to reproduce that test's race in this session's
-    // execution (`scrollIntoViewInstant`'s own doc) -- Playwright's
-    // `.focus()` does not require the element to be visible/stable the way
-    // `.hover()`/`.click()` do, so it does not appear to run the same
-    // pre-action `scrollIntoViewIfNeeded` -- but this test reads `before`
-    // in the exact same "immediately after pausing" shape, so the same
-    // cheap guard is applied here too rather than relying on that absence
-    // of evidence holding forever.
-    await scrollIntoViewInstant(content);
+    // No per-call-site guard needed here (or in the hover test below):
+    // `./fixtures.ts` (dev-docs/backlog.md row 110) forces
+    // `scroll-behavior: auto` on `<html>` for every test in this suite, so
+    // Playwright's own pre-`.focus()`/`.hover()` actionability scroll
+    // (an unqualified scroll, which defers to that ancestor CSS) is
+    // already instant -- it cannot animate out from under the cursor the
+    // way it used to before that shared fixture existed.
     await content.focus();
     // The rotation control's own label reflects the user's *intent*
     // (`playing`), unaffected by an ambient, temporary pause -- only the
@@ -2022,15 +2065,19 @@ test.describe("Carousel: autoplay + rotation control", () => {
     const content = frame.locator(".dx-carousel-content");
     const rotation = frame.getByRole("button", { name: /automatic slide show/i });
 
-    // `scrollIntoViewInstant` (this file's own doc on it, above): without
-    // this, Playwright's own pre-`.hover()` auto-scroll inherits the
-    // page's global smooth-scroll CSS and can still be animating when
-    // `mouseenter` fires, dragging the carousel out from under the cursor
-    // and firing a genuine `mouseleave` a few hundred ms later -- observed
-    // in this session as this exact test's flake (rotation legitimately,
-    // correctly resuming after that real `mouseleave`, not a component
-    // bug).
-    await scrollIntoViewInstant(content);
+    // This test used to call `scrollIntoViewInstant(content)` here as a
+    // per-call-site guard: without it, Playwright's own pre-`.hover()`
+    // auto-scroll inherited the page's global smooth-scroll CSS and could
+    // still be animating when `mouseenter` fired, dragging the carousel
+    // out from under the cursor and firing a genuine `mouseleave` a few
+    // hundred ms later -- observed in this session as this exact test's
+    // flake (rotation legitimately, correctly resuming after that real
+    // `mouseleave`, not a component bug). Simplified per
+    // dev-docs/backlog.md row 110: `./fixtures.ts`'s shared `test`/`expect`
+    // (which this file now imports) forces `scroll-behavior: auto` on
+    // `<html>` for every test in this suite, so that pre-`.hover()` scroll
+    // is already instant and cannot animate out from under the cursor --
+    // no per-call-site guard needed any more.
     await content.hover();
     // The button's own label is unaffected (reflects intent, not the
     // ambient pause) -- only the live region does. See the focus test's

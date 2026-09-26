@@ -30,15 +30,19 @@
  * of defect is invisible to it today.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
 
+// dev-docs/backlog.md row 109: every test here clicks a trigger and presses
+// Escape right after navigating, on the SSG lane -- `gotoHydrated` so those
+// interactions can't land before hydration attaches listeners.
 const open = (page: Page, name: string) =>
-  page.goto(`${BASE_URL}/component/?name=${name}&`, {
+  gotoHydrated(page, `${BASE_URL}/component/?name=${name}&`, {
     timeout: NAV_TIMEOUT,
-    waitUntil: "networkidle",
   });
 
 /** Reports where focus actually landed, so a failure names the culprit. */

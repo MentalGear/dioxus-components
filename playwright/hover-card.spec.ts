@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
 import { BASE_URL } from "./base-url";
