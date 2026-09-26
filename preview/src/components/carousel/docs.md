@@ -110,6 +110,33 @@ Carousel { aria_label: "Featured photos",
 
 `CarouselTabList` is `role="tablist"`; each `CarouselTab` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselTabList` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among tabs and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `tabs` variant.
 
+## Virtualised content
+
+`CarouselVirtualContent` is a data-driven, virtualised drop-in for `CarouselContent` + `CarouselItem`s -- use it in place of them (never alongside them) when your slides come from a `Vec<T>` rather than a fixed set of children:
+
+```rust
+Carousel { aria_label: "Featured photos", r#loop: true,
+    CarouselPrevious { /* ... */ }
+    CarouselNext { /* ... */ }
+    CarouselVirtualContent::<String> {
+        items: my_items,           // ReadSignal<Vec<T>>
+        radius: 2usize,            // default: slides kept mounted on each side
+        virtualize: None,          // default: auto -- virtualise only once items.len() > 2*radius+1
+        render_item: move |(index, item): (usize, String)| rsx! {
+            div { "{item}" }
+        },
+    }
+}
+```
+
+Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselTabList`/`CarouselTab` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
+
+**When to virtualise.** With `virtualize` left at its default (`None`), the DOM only ever holds `2 * radius + 1` slides once your data set is bigger than that window -- a smaller data set renders every slide (there's nothing to save). Pass `virtualize: Some(true)` to always window, even for a small data set, or `virtualize: Some(false)` to always render every slide regardless of size.
+
+**Seamless looping.** With `r#loop: true` and virtualisation active, paging past the last item slides physically forward one slide at a time instead of rewinding visibly across every intervening one the way the `CarouselItem`-based `looping` variant does -- see the `virtual_loop` variant. With `r#loop: false` (or virtualisation inactive), looping is the same rewind style as the plain children API. See the `virtual_many` variant for the large-data-set case: 200 items, `loop: false`, DOM never holding more than 5.
+
+**Trade-offs.** A virtualised window is a client-side enhancement layered on a fully compliant plain sequence, not a replacement for one: the server render (and a client's own pre-hydration first paint) always renders every item, in true order, with correct `"{n} of {m}"` labels -- so there is no SSR/no-JS gap. Once JS has mounted and virtualisation activates, though, slides outside the current window are not in the DOM at all, so a screen reader's browse-mode "read from here" and the browser's own find-in-page can only reach the currently-windowed slides, not the full data set -- the same cost every virtualised list (this crate's own `VirtualList` included) carries. If your data set is small enough that this doesn't matter, `virtualize: Some(false)` keeps every slide reachable at all times, at the cost of the DOM holding all of them.
+
 ## What v1 does not include yet
 
 - **The APG "grouped" picker style** (plain buttons, one per slide, all in page Tab order, current one `aria-disabled`) -- the pattern page's own least keyboard-friendly of its three styles, and shadcn doesn't have it either.

@@ -18,25 +18,37 @@
 //! CSS scroll-snap, not a ported physics engine and not a JS dependency
 //! (research §8.1/§2.2): [`CarouselContent`] is a native
 //! `overflow-{x,y}: auto; scroll-snap-type` track; [`CarouselItem`]s are
-//! `scroll-snap-align` children. Paging (buttons, keyboard) calls the
-//! target item's own `Element.scrollIntoView()` -- the browser computes
-//! the offset, so there is no manual pixel/offset math to get wrong, and
-//! (per research §2.2's RTL paragraph) no sign-flip step either: DOM
-//! order never changes, so "the next slide" is always "the next
-//! sibling," and `scrollIntoView` already resolves the correct physical
-//! position under `dir="rtl"`. A second, independent JS bridge
-//! (`use_carousel_scroll_tracking`, a private helper) keeps `CarouselContext`'s own `selected`
-//! correct after a *native* drag/wheel/trackpad scroll the caller's own
-//! buttons/keyboard never drove. A third (`use_carousel_drag`, also
-//! private -- see [`CarouselContent`]'s own "Pointer drag" doc) adds a
-//! mouse/pen drag-to-scroll gesture on top of the *same* track, moving it
-//! with plain `scrollBy` calls rather than a parallel transform-based
-//! engine; every `scrollBy` it issues is native scrolling as far as the
-//! browser (and the second bridge above) is concerned, so dragging is
-//! never a second source of truth for `selected`. Release settles the
-//! track with the same `scrollIntoView` paging mechanism buttons/keyboard
-//! already use, not a hand-rolled offset -- see [`CarouselContent`]'s own
-//! "Release settle" doc. All three are `document::eval` call sites, and
+//! `scroll-snap-align` children. Paging (buttons, keyboard) computes the
+//! physical pixel delta between the target item's own
+//! `getBoundingClientRect()` and the scroller's, per axis, and calls
+//! `scroller.scrollBy({ left | top: delta })` on the scroller itself --
+//! never `Element.scrollIntoView()` on the target (backlog row 91's dated
+//! addendum has the incident that replaced it: `scrollIntoView` walks and
+//! scrolls *every* scrollable ancestor between the target and the
+//! viewport, including the document, so autoplay/Next dragged the whole
+//! page back to the carousel whenever it was scrolled elsewhere --
+//! `scrollBy`, called on the scroller directly, only ever writes that one
+//! element's own scroll position). No manual RTL sign-flip step is needed
+//! either: `getBoundingClientRect`/`scrollBy`'s delta are both physical
+//! (per research §2.2's RTL paragraph and
+//! `dev-docs/research/carousel-overscroll-2026-09-23.md` §6 invariant 1),
+//! so "the next slide" resolving to the correct physical position under
+//! `dir="rtl"` falls out of the same physical-delta construction the drag
+//! gesture below already uses, rather than needing its own. A second,
+//! independent JS bridge (`use_carousel_scroll_tracking`, a private
+//! helper) keeps `CarouselContext`'s own `selected` correct after a
+//! *native* drag/wheel/trackpad scroll the caller's own buttons/keyboard
+//! never drove. A third (`use_carousel_drag`, also private -- see
+//! [`CarouselContent`]'s own "Pointer drag" doc) adds a mouse/pen
+//! drag-to-scroll gesture on top of the *same* track, moving it with
+//! plain `scrollBy` calls rather than a parallel transform-based engine;
+//! every `scrollBy` it issues is native scrolling as far as the browser
+//! (and the second bridge above) is concerned, so dragging is never a
+//! second source of truth for `selected`. Release settles the track with
+//! the same scroller-only `scrollBy`-by-delta paging mechanism
+//! buttons/keyboard already use, not a hand-rolled offset -- see
+//! [`CarouselContent`]'s own "Release settle" doc. All three are
+//! `document::eval` call sites, and
 //! all three no-op harmlessly off a real document (native/Blitz, or a
 //! plain `cargo test`), the same as every other un-gated `document::eval`
 //! helper in `crate::lib` (`use_outside_dismiss`, `use_form_reset_listener`,
@@ -70,7 +82,7 @@ use crate::{
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
     fold_style_attributes, has_own_accessible_name, merge_attributes, use_controlled,
-    use_effect_cleanup, use_id_or, use_unique_id,
+    use_effect_cleanup, use_id_or, use_previous, use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
@@ -83,8 +95,8 @@ use std::time::Duration;
 /// Matches [`crate::resizable::ResizableDirection`]'s own
 /// horizontal/vertical shape and `data-orientation` convention. Vertical
 /// support fell out of the horizontal construction for free (the same
-/// component, an axis-swapped CSS declaration and `scrollIntoView`
-/// option, and `ArrowUp`/`ArrowDown` in place of the RTL-aware
+/// component, an axis-swapped CSS declaration and scroll-delta axis, and
+/// `ArrowUp`/`ArrowDown` in place of the RTL-aware
 /// `ArrowLeft`/`ArrowRight` pair), so it ships in v1 rather than being
 /// deferred -- see the module doc's "Scope" section for what *is*
 /// deferred.
@@ -127,6 +139,21 @@ fn clamp_selected(index: usize, count: usize) -> usize {
     }
 }
 
+/// Defensive clamp for a `(start, end)` visible-range reported by a JS
+/// settle bridge -- guards against a reply that raced a shrinking `count`
+/// (an item unregistering between the geometry read and this signal
+/// write). Never lets either end point past the last valid index, and
+/// never lets `start` exceed `end` once clamped.
+fn clamp_visible_range(range: (usize, usize), count: usize) -> (usize, usize) {
+    if count == 0 {
+        return (0, 0);
+    }
+    let last = count - 1;
+    let start = range.0.min(last);
+    let end = range.1.min(last).max(start);
+    (start, end)
+}
+
 /// Whether a "previous" action is currently meaningful. v1 has no `loop`
 /// (research §8.2), so this is a real, reachable boundary -- `index == 0`
 /// -- not a cosmetic one.
@@ -162,7 +189,7 @@ fn prev_selected(selected: usize) -> usize {
 /// approved fast-follow decision (backlog row 91, `dev-docs/research/carousel-2026-09-19.md`
 /// §8.2): **rewind-style** looping. From the first slide, wraps to the
 /// last (`count - 1`) rather than saturating; the actual scroll is still a
-/// single [`CAROUSEL_SCROLL_INTO_VIEW_JS`] paging call to that far index
+/// single [`CAROUSEL_SCROLL_TO_JS`] paging call to that far index
 /// (a visible "rewind" across every intervening slide), not an
 /// embla-style cloned-node illusion -- clones would violate the overscroll
 /// port's own invariant 5 (`dev-docs/research/carousel-overscroll-2026-09-23.md`
@@ -193,6 +220,28 @@ fn step_next(selected: usize, count: usize, loop_enabled: bool) -> usize {
     }
 }
 
+/// The shortest signed step, in `[-(count/2), count/2]`, from data index
+/// `old` to data index `new` modulo `count` -- [`CarouselVirtualContent`]'s
+/// own seamless-loop paging math: the position nearest the current anchor
+/// that carries data index `new` is `anchor + shortest_signed_delta(old,
+/// new, count)`, for any `old`/`new` in `[0, count)`. `count == 0` (or
+/// `old == new`, which can't otherwise arise from two distinct valid data
+/// indices) returns `0` -- a caller-checked precondition
+/// (`old != new`, both `< count`) rather than a panic, so a defensive
+/// double-check costs nothing.
+fn shortest_signed_delta(old: usize, new: usize, count: usize) -> isize {
+    if count == 0 || old == new {
+        return 0;
+    }
+    let n = count as isize;
+    let raw = new as isize - old as isize;
+    let mut wrapped = ((raw % n) + n) % n;
+    if wrapped > n / 2 {
+        wrapped -= n;
+    }
+    wrapped
+}
+
 /// The default accessible name for a slide with no name of its own:
 /// `"{one-based index} of {count}"`. APG's own sanctioned exception to
 /// "don't encode position/size in an accessible name" -- `role="group"`
@@ -202,8 +251,8 @@ fn slide_label(index: usize, count: usize) -> String {
     format!("{} of {}", index + 1, count)
 }
 
-/// Whether [`Carousel`]'s own mount-time scroll-into-view effect (below,
-/// in its component body) should ask [`CAROUSEL_SCROLL_INTO_VIEW_JS`] for
+/// Whether [`Carousel`]'s own mount-time paging effect (below,
+/// in its component body) should ask [`CAROUSEL_SCROLL_TO_JS`] for
 /// an instant jump
 /// (`true`) rather than a smooth transition (`false`) on this run.
 ///
@@ -250,34 +299,153 @@ fn carousel_key_intent(
     }
 }
 
-/// Fire-and-forget: scroll the given slide element into view along the
-/// carousel's own axis only. `inline`/`block` are chosen so a horizontal
-/// carousel's `scrollIntoView` can never also nudge the page's *vertical*
-/// scroll position, and vice versa for a vertical one -- the standard
-/// technique for using `scrollIntoView` on one axis of a
-/// multi-directionally-scrollable page. `instant` forces `behavior:
-/// 'auto'` on the very first call (mount), so a non-zero `default_value`
-/// does not visibly animate in on page load; every later call additionally
-/// respects `prefers-reduced-motion` the same way. No response is read
-/// back -- [`CAROUSEL_SCROLL_TRACKING_JS`] is what keeps `selected` in
-/// sync with wherever the scroll position actually ends up.
-const CAROUSEL_SCROLL_INTO_VIEW_JS: &str = "\
-    const [id, orientation, instant] = await dioxus.recv();
+/// Fire-and-forget: scroll the carousel's own scroller element
+/// (`scrollerId`) by the physical pixel delta needed to align
+/// `targetId`'s slide with the scroller's own leading edge, along the
+/// carousel's own axis only -- `scroller.scrollBy({ left: delta })` (or
+/// `top` for [`CarouselOrientation::Vertical`]).
+///
+/// Replaced a `target.scrollIntoView()` call (the original v1/round5
+/// construction; see backlog row 91's dated addendum for the incident
+/// this replaced it over): `scrollIntoView` walks and scrolls *every*
+/// scrollable ancestor between the target and the viewport, including the
+/// document itself, in order to bring the target fully into view -- which
+/// is exactly the "autoplay/Next drags the whole page back to the
+/// carousel" bug the owner reported on the live site, not merely a
+/// coincidental side effect of it. `Element.scrollBy()`, called directly
+/// on the scroller, only ever writes that one element's own scroll
+/// position, so there is no ancestor for it to reach in the first place --
+/// this is a *by-construction* fix, not a guard against the symptom.
+///
+/// The delta is a `getBoundingClientRect()` difference -- a physical
+/// pixel value -- so, per invariant 1 of
+/// `dev-docs/research/carousel-overscroll-2026-09-23.md` §6, it needs no
+/// RTL sign-flip: `scrollBy`'s delta is always physical, the same
+/// property this module's own drag gesture (`CAROUSEL_DRAG_JS`'s
+/// `feedOverdrag`) already relies on for its own `scrollBy` calls. The
+/// `endDrag` release settle below duplicates this exact computation
+/// rather than importing it -- a fresh `document::eval` string is its own
+/// standalone script with no module system to import across (see
+/// [`CarouselContent`]'s own "Release settle" doc for the established
+/// precedent of duplicating rather than sharing JS this way).
+///
+/// `instant` forces `behavior: 'auto'` on the very first call (mount), so
+/// a non-zero `default_value` does not visibly animate in on page load;
+/// every later call additionally respects `prefers-reduced-motion` the
+/// same way. No response is read back -- [`CAROUSEL_SCROLL_TRACKING_JS`]
+/// is what keeps `selected` in sync with wherever the scroll position
+/// actually ends up.
+///
+/// `scroll-snap-type` is suspended for the duration of the scroll, then
+/// restored once it actually finishes -- the exact same construction
+/// [`CAROUSEL_DRAG_JS`]'s own release settle already uses, and for the
+/// identical reason (that constant's own "Release settle" doc has the
+/// full account): found live in this session, `scrollBy({ behavior:
+/// 'smooth' })` on a `scroll-snap-type: ... mandatory` container, left
+/// enabled, truncates a multi-slide jump at the FIRST intervening snap
+/// point rather than reaching the requested delta -- confirmed with a
+/// direct, Dioxus-independent repro (a bare `el.scrollBy({left: 672,
+/// behavior: 'smooth'})` on this exact element landed at `336`, one slide
+/// short, with snapping left enabled; the identical call reached `672`
+/// exactly with `scrollSnapType` set to `'none'` first). `scrollIntoView`
+/// (what this replaced) never had this failure mode, so it was never
+/// visible before this construction existed -- a single-slide step (the
+/// overwhelmingly common case) happens to truncate at the only snap point
+/// in its path anyway, which is also the correct destination, so it read
+/// as correct in isolation; a multi-slide jump (`loop`'s rewind
+/// wraparound, a `CarouselTab` activation more than one tab away,
+/// [`CarouselApi::scroll_to`] to a distant index) is what exposed it, via
+/// a pre-existing, previously-green `carousel.spec.ts` test
+/// (`clicking a tab activates its slide and moves the roving tab stop`,
+/// jumping tab 1 -> tab 3) going red the moment this construction landed
+/// without the fix below. Since a fresh `document::eval` call has no
+/// closure shared with any other call (unlike `CAROUSEL_DRAG_JS`'s single
+/// long-lived script), the "is a restore already pending" hand-off
+/// [`CAROUSEL_DRAG_JS`]'s `onPointerDown` keeps in a closure variable is
+/// instead stashed directly on the scroller element itself
+/// (`scroller.__dxCancelSnapRestore`) -- a plain DOM property survives
+/// across independent eval calls the same way the element's own
+/// `style.scrollSnapType` already does, so two paging calls in quick
+/// succession (before the first one's own scroll has finished) still
+/// cancel-and-replace rather than race a stale restore into firing mid-
+/// second-scroll. Reuses [`CAROUSEL_SNAP_RESTORE_FALLBACK_MS`] for the
+/// same non-`scrollend`-browser fallback [`CAROUSEL_DRAG_JS`] already
+/// needs it for.
+const CAROUSEL_SCROLL_TO_JS: &str = "\
+    const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
-    const el = document.getElementById(id);
-    if (el) {
-        el.scrollIntoView({
-            behavior,
-            inline: orientation === 'horizontal' ? 'start' : 'nearest',
-            block: orientation === 'horizontal' ? 'nearest' : 'start',
-        });
+    const scroller = document.getElementById(scrollerId);
+    const target = document.getElementById(targetId);
+    // A real drag (CAROUSEL_DRAG_JS) already owns the scroll position and
+    // `scroll-snap-type` for as long as `data-dragging` is set -- found
+    // live in this session: `use_carousel_scroll_tracking` reports a
+    // changing `selected` continuously WHILE a drag is still in progress
+    // (every incremental `feedOverdrag` scrollBy fires its own `scrollend`
+    // too), so this effect fires repeatedly mid-gesture regardless of this
+    // fix. The old `target.scrollIntoView()` tolerated that safely --
+    // already-near-enough was a harmless no-op (this effect's own Rust-side
+    // doc comment already documents this exact case). A `scrollBy`-by-delta
+    // is not equally forgiving: it competes with the drag's own direct-
+    // manipulation `scrollBy` calls for the same scroll position, and (mode
+    // B3's own already-measured failure, `CAROUSEL_DRAG_JS`'s 'Pointer
+    // drag' doc) its own scroll-snap-type restore firing mid-drag
+    // re-enables mandatory snapping before the gesture ends, which then
+    // fights every remaining `feedOverdrag` call and sends the drag flying
+    // several slides past where the pointer actually stopped -- reproduced
+    // live as every pointer-drag test in this file overshooting by exactly
+    // 2 slide-pitches. Skipping entirely while `data-dragging` is set
+    // defers this bridge to the drag's own release settle, which already
+    // performs the identical scroll-to-nearest-slide alignment once the
+    // gesture actually ends.
+    if (scroller && target && !scroller.hasAttribute('data-dragging')) {
+        const s = scroller.getBoundingClientRect();
+        const t = target.getBoundingClientRect();
+        const delta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+        // A genuine no-op (already aligned -- the mount settle when
+        // `default_value` needs no jump, or `use_carousel_scroll_tracking`
+        // reporting the position a native scroll already reached) must
+        // touch NOTHING, the same as this replaced `scrollIntoView` on an
+        // already-fully-visible element: `scrollBy({ left: 0 })` never
+        // fires `scrollend` (nothing scrolled), so suspending
+        // `scroll-snap-type` for a scroll that is never going to happen
+        // would leave it stuck at `none` forever -- found live in this
+        // session (the mount settle's own zero-delta call is the common
+        // case that hits this on every single carousel).
+        if (Math.abs(delta) < 1) {
+            return;
+        }
+        // Cancel a still-pending restore from a previous paging call, the
+        // same idiom CAROUSEL_DRAG_JS's own onPointerDown uses -- see this
+        // constant's own doc for why this is stashed on the element rather
+        // than a closure variable.
+        if (scroller.__dxCancelSnapRestore) {
+            scroller.__dxCancelSnapRestore();
+            scroller.__dxCancelSnapRestore = null;
+        }
+        scroller.style.scrollSnapType = 'none';
+        if (orientation === 'horizontal') {
+            scroller.scrollBy({ left: delta, behavior });
+        } else {
+            scroller.scrollBy({ top: delta, behavior });
+        }
+        const restoreSnap = () => {
+            scroller.style.scrollSnapType = orientation === 'horizontal' ? 'x mandatory' : 'y mandatory';
+            scroller.__dxCancelSnapRestore = null;
+        };
+        if ('onscrollend' in window) {
+            scroller.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
+            scroller.__dxCancelSnapRestore = () => scroller.removeEventListener('scrollend', restoreSnap);
+        } else {
+            const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
+            scroller.__dxCancelSnapRestore = () => clearTimeout(timer);
+        }
     }";
 
 /// Long-lived (mount-to-unmount): translate a [`CarouselContent`]
 /// element's *actual* scroll position into a slide index, so `selected`
 /// stays correct after a native drag/wheel/trackpad scroll -- one this
-/// crate never drove via [`CAROUSEL_SCROLL_INTO_VIEW_JS`] itself.
+/// crate never drove via [`CAROUSEL_SCROLL_TO_JS`] itself.
 ///
 /// Deliberately not an `IntersectionObserver` (the shape
 /// `dev-docs/research/carousel-2026-09-19.md` §2.2 sketches as the
@@ -310,28 +478,107 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         await dioxus.recv();
         return;
     }
-    let lastSent = null;
+    let lastNearest = null;
+    let lastNearestPos = null;
+    let lastVisStart = null;
+    let lastVisEnd = null;
     const settle = () => {
+        // Freeze rule (loop-a11y-guidance.md §7 / carousel-overscroll-2026-09-23.md
+        // §6): a live mouse/pen drag (`CAROUSEL_DRAG_JS`) fires its own
+        // 'scroll'/'scrollend' on every single incremental `scrollBy` it
+        // issues -- confirmed live (`CAROUSEL_SCROLL_TO_JS`'s own doc,
+        // 'A real drag already owns the scroll position' paragraph) -- so
+        // without this guard `selected` (and, now, the visible range this
+        // drives `inert` from) would change continuously mid-drag rather
+        // than only at rest. `data-dragging` is removed at the very start
+        // of `endDrag`, before its own release-settle `scrollBy` runs, so
+        // this never suppresses the genuine post-release settle -- only
+        // the mid-gesture noise. `CAROUSEL_DRAG_JS`'s own release settle
+        // reuses this exact geometry search for the identical reason (see
+        // that constant's own 'Release settle' doc) and is what a drag
+        // defers to instead.
+        if (container.hasAttribute('data-dragging')) {
+            return;
+        }
         const children = Array.from(container.children);
         if (children.length === 0) {
             return;
         }
         const containerRect = container.getBoundingClientRect();
         const containerStart = orientation === 'horizontal' ? containerRect.left : containerRect.top;
+        const containerEnd = orientation === 'horizontal' ? containerRect.right : containerRect.bottom;
         let nearest = 0;
+        let nearestPos = 0;
         let nearestDist = Infinity;
-        children.forEach((child, i) => {
+        // Which item indices are actually inside the viewport right now --
+        // an item counts as visible if its own midpoint falls within the
+        // container's rect (\"at least half the slide is in view\", not a
+        // stricter full-containment test, which would flicker a slide out
+        // right at a scroll-snap boundary's own sub-pixel settle, nor a
+        // looser any-overlap test, which would count a 1px sliver of a
+        // fully-clipped neighbour as \"visible\" for a multi-per-view
+        // layout with no peeking at all). Contiguous by construction (flex
+        // row/column, no reordering), so only the first/last matching
+        // index need to be kept.
+        //
+        // Every mapping from a DOM child to a slide reads `data-index`
+        // (the stable data index -- may repeat across children in a
+        // virtualised loop window smaller than the data set) and
+        // `data-position` (the unique logical slot -- equals `data-index`
+        // for the plain children API, so this one code path serves both;
+        // `CarouselVirtualContent`'s own doc has the fuller account) --
+        // never the child's own array position `i`. A bench regression
+        // this generalises against: a single leading non-slide DOM child
+        // sent an index-position-based version of this exact search into
+        // a runaway (`dev-docs/research/carousel-loop-2026-09-25/loop-libraries.md`).
+        let visStart = null;
+        let visEnd = null;
+        children.forEach((child) => {
+            const dataIndex = parseInt(child.dataset.index, 10);
+            const position = child.dataset.position !== undefined
+                ? parseInt(child.dataset.position, 10)
+                : dataIndex;
+            if (Number.isNaN(dataIndex)) {
+                return;
+            }
             const rect = child.getBoundingClientRect();
             const childStart = orientation === 'horizontal' ? rect.left : rect.top;
+            const childEnd = orientation === 'horizontal' ? rect.right : rect.bottom;
             const dist = Math.abs(childStart - containerStart);
             if (dist < nearestDist) {
                 nearestDist = dist;
-                nearest = i;
+                nearest = dataIndex;
+                nearestPos = position;
+            }
+            const center = (childStart + childEnd) / 2;
+            if (center >= containerStart && center <= containerEnd) {
+                if (visStart === null) {
+                    visStart = dataIndex;
+                }
+                visEnd = dataIndex;
             }
         });
-        if (nearest !== lastSent) {
-            lastSent = nearest;
-            dioxus.send(nearest);
+        if (visStart === null) {
+            visStart = nearest;
+            visEnd = nearest;
+        }
+        // One wire shape for both message kinds (`[tag, a, b]`) -- `recv`
+        // deserializes into a single fixed Rust tuple type regardless of
+        // which fired. For 'selected', `b` is the nearest slide's own
+        // logical POSITION (not its data index -- these disagree exactly
+        // when a virtualised loop window is smaller than the data set),
+        // consumed only by a caller that tracks an anchor position
+        // (`CarouselVirtualContent`); the plain children API ignores it,
+        // since position and data index are the same value there.
+        if (nearest !== lastNearest || nearestPos !== lastNearestPos) {
+            lastNearest = nearest;
+            lastNearestPos = nearestPos;
+            dioxus.send(['selected', nearest, nearestPos]);
+        }
+        if (visStart !== lastVisStart || visEnd !== lastVisEnd) {
+            lastVisStart = visStart;
+            lastVisEnd = visEnd;
+            dioxus.send(['visible', visStart, visEnd]);
         }
     };
     const supportsScrollEnd = 'onscrollend' in window;
@@ -347,27 +594,64 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     if (supportsScrollEnd) {
         container.addEventListener('scrollend', settle, { passive: true });
     }
+    // A resize of the scroller's own box re-settles too -- not just a
+    // scroll -- closing a real, measured mount-time race (this session):
+    // `CarouselContent`'s own layout depends on the themed wrapper's
+    // *external* stylesheet (`document::Link`, loaded asynchronously),
+    // which can still be in flight the instant this bridge attaches, so
+    // the very first geometry read can measure a temporarily wider box
+    // (found live: 544px before `.dx-carousel`'s own `padding-inline`
+    // reservation applied, 448px after) -- and for a `default_value == 0`
+    // carousel that never scrolls again on its own, that first, too-early
+    // read would otherwise never be corrected, permanently over-widening
+    // the visible range one slide's worth. `ResizeObserver`'s own first
+    // callback fires once for the box's *current* size the moment
+    // `observe()` is called (so this alone establishes the initial visible
+    // range even if the carousel never scrolls at all -- the mount case
+    // `CAROUSEL_SCROLL_TO_JS`'s own zero-delta settle used to special-case,
+    // now redundant and removed), and fires again on every subsequent
+    // genuine size change (that stylesheet finishing, a responsive
+    // breakpoint, a caller resizing the wrapper) -- a self-correcting
+    // construction for the whole class of 'the box was momentarily the
+    // wrong size when this measured it', not a fix for this one instance.
+    const resizeObserver = new ResizeObserver(() => settle());
+    resizeObserver.observe(container);
     await dioxus.recv();
     container.removeEventListener('scroll', onScroll);
     if (supportsScrollEnd) {
         container.removeEventListener('scrollend', settle);
     }
+    resizeObserver.disconnect();
     clearTimeout(debounceTimer);";
 
 /// Attach [`CAROUSEL_SCROLL_TRACKING_JS`] to the element with the given
 /// `id` for as long as the calling component stays mounted, forwarding
-/// every reported index to `set_selected`. Mirrors `crate::lib`'s
+/// every reported `('selected', data_index, position)` message to
+/// `set_selected` (and, if present, `on_position`) and every `('visible',
+/// start, end)` message to `visible_range` -- the a11y contract's own
+/// "visible" set (module doc, "Accessibility"; see [`CarouselItem`]'s own
+/// "Visible slides / `inert`" doc). Mirrors `crate::lib`'s
 /// `use_outside_dismiss`/`use_form_reset_listener` shape exactly: an
 /// initial `eval.send(..)` of the (id, orientation) the script's own
-/// `await dioxus.recv()` unpacks, a spawned task looping on
-/// `eval.recv()` for as long as the script keeps sending, and a cleanup
-/// closure that sends a teardown value so the script's own trailing
-/// `await dioxus.recv()` can resolve and remove its listeners before the
-/// element is gone.
+/// `await dioxus.recv()` unpacks, a spawned task looping on `eval.recv()`
+/// for as long as the script keeps sending, and a cleanup closure that
+/// sends a teardown value so the script's own trailing `await
+/// dioxus.recv()` can resolve and remove its listeners before the element
+/// is gone.
+///
+/// `on_position`, when `Some`, is called with the nearest slide's own
+/// logical POSITION (`data-position`, may differ from its data index) --
+/// used only by [`CarouselVirtualContent`] to keep its own anchor
+/// bookkeeping in sync with a native drag/wheel/trackpad settle (or with
+/// its own animated paging call finishing); `None` for the plain children
+/// API ([`CarouselContent`]), where position and data index always agree.
 fn use_carousel_scroll_tracking(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
     set_selected: Callback<usize>,
+    count: Memo<usize>,
+    mut visible_range: Signal<(usize, usize)>,
+    on_position: Option<Callback<isize>>,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
@@ -375,8 +659,18 @@ fn use_carousel_scroll_tracking(
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
         let _ = eval.send((id, orientation_str));
         spawn(async move {
-            while let Ok(index) = eval.recv::<usize>().await {
-                set_selected.call(index);
+            while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
+                if kind == "selected" {
+                    set_selected.call(a.max(0) as usize);
+                    if let Some(on_position) = on_position {
+                        on_position.call(b as isize);
+                    }
+                } else {
+                    let count_now = *count.peek();
+                    let a = a.max(0) as usize;
+                    let b = b.max(0) as usize;
+                    visible_range.set(clamp_visible_range((a, b), count_now));
+                }
             }
         });
         move || {
@@ -391,18 +685,23 @@ fn use_carousel_scroll_tracking(
 /// drag" doc for what this threshold is for.
 const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 
-/// How long, in milliseconds, [`CAROUSEL_DRAG_JS`]'s own release-time
-/// settle waits for a `scrollend` event before falling back to restoring
-/// `scroll-snap-type` unconditionally -- only reached on an engine without
-/// `scrollend` support (this module's own doc: Safari before v26.2).
-/// Comfortably longer than a `scrollIntoView({behavior: 'smooth'})`
-/// transition normally takes to finish, so the fallback essentially never
-/// fires *before* that transition has visibly completed.
+/// How long, in milliseconds, a suspended `scroll-snap-type` waits for a
+/// `scrollend` event before falling back to restoring it unconditionally
+/// -- only reached on an engine without `scrollend` support (this
+/// module's own doc: Safari before v26.2). Shared by both places that
+/// suspend `scroll-snap-type` for a discrete `scrollBy`:
+/// [`CAROUSEL_DRAG_JS`]'s own release-time settle, and
+/// [`CAROUSEL_SCROLL_TO_JS`]'s every-other-paging-path call (see that
+/// constant's own doc for why it needs the identical suspend/restore
+/// construction). Comfortably longer than a `scroller.scrollBy({behavior:
+/// 'smooth'})` transition normally takes to finish, so the fallback
+/// essentially never fires *before* that transition has visibly
+/// completed.
 const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 
 /// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
 /// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
-/// track [`CAROUSEL_SCROLL_INTO_VIEW_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
+/// track [`CAROUSEL_SCROLL_TO_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
 /// already use -- not a second, competing engine. See [`CarouselContent`]'s
 /// own "Pointer drag" doc for the construction and why each piece is
 /// shaped the way it is; the short version: every `scrollBy` this issues
@@ -556,8 +855,9 @@ const CAROUSEL_DRAG_JS: &str = "\
         rawOver = prev !== 0 && prev > 0 !== next > 0 ? 0 : next;
         applyBounce();
     }
-    // The rubber-band return, driven by us (never `scrollIntoView` --
-    // invariant 3) so it can be SUPERSEDED rather than merely cancelled: a
+    // The rubber-band return, driven by us (never the discrete-paging
+    // `scrollBy`-by-delta helper -- invariant 3) so it can be SUPERSEDED
+    // rather than merely cancelled: a
     // fresh drag starting mid-ease bumps `bounceToken` (see `onPointerDown`),
     // and the superseded loop below stops touching `rawOver` on its very
     // next frame instead of racing a new gesture's own `feedOverdrag`
@@ -685,7 +985,7 @@ const CAROUSEL_DRAG_JS: &str = "\
         // variant): dragging left from slide 1 hit the start boundary and
         // never moved (correct -- there is nothing before slide 1);
         // dragging right produced the identical `scrollLeft` change
-        // (`0 -> -153`) the Next button's own `scrollIntoView` produces.
+        // (`0 -> -153`) the Next button's own `scrollBy`-by-delta produces.
         //
         // Routed through `feedOverdrag` rather than a bare `scrollBy`
         // (mode B3 port, see this constant's own 'Edge rubber-band' doc
@@ -719,11 +1019,17 @@ const CAROUSEL_DRAG_JS: &str = "\
             // geometry `use_carousel_scroll_tracking`'s own settle()
             // already uses elsewhere on this identical element, since a
             // fresh `document::eval` string cannot import a shared JS
-            // helper -- and explicitly scroll it into view with
-            // `behavior: 'smooth'` (respecting reduced motion, the exact
-            // policy CAROUSEL_SCROLL_INTO_VIEW_JS already applies to
-            // every other paging path), rather than leaving the settle to
-            // however restoring `scroll-snap-type` happens to behave.
+            // helper -- and explicitly `scrollBy` this same element (`el`,
+            // the scroller itself -- never `nearest.scrollIntoView()`,
+            // which would also walk and scroll every scrollable ancestor,
+            // including the page) by the physical delta between `nearest`'s
+            // own leading edge and this element's, with `behavior: 'smooth'`
+            // (respecting reduced motion, the exact policy
+            // CAROUSEL_SCROLL_TO_JS already applies to every other paging
+            // path -- see that constant's own doc for why a scroller-only
+            // `scrollBy` replaced `scrollIntoView` everywhere in this
+            // module), rather than leaving the settle to however restoring
+            // `scroll-snap-type` happens to behave.
             const children = Array.from(el.children);
             let nearest = null;
             let nearestDist = Infinity;
@@ -746,31 +1052,50 @@ const CAROUSEL_DRAG_JS: &str = "\
                 cancelPendingSnapRestore = null;
             };
             if (nearest) {
-                // Deferred, not synchronous: setting scroll-snap-type
-                // back to mandatory on an already-stationary position is
-                // what made release never animate in the first place
-                // (measured -- see 'Release settle'). Waiting for this
-                // specific scroll to actually finish (`scrollend`,
-                // falling back to a timeout where unsupported -- the same
-                // feature detection `use_carousel_scroll_tracking` already
-                // uses) means scroll-snap-type is still 'none' for the
-                // whole smooth-scroll animation this call starts, so
-                // there is nothing stationary for the browser to
-                // instantly correct until that animation has already
-                // finished on its own.
                 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                if ('onscrollend' in window) {
-                    el.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
-                    cancelPendingSnapRestore = () => el.removeEventListener('scrollend', restoreSnap);
+                const settleBehavior = reduced ? 'auto' : 'smooth';
+                const s = el.getBoundingClientRect();
+                const t = nearest.getBoundingClientRect();
+                const settleDelta = orientation === 'horizontal' ? (t.left - s.left) : (t.top - s.top);
+                // `nearest` is already exactly where it should be (the
+                // drag released right on a boundary) -- `scrollBy({left:
+                // 0})` never fires `scrollend` (CAROUSEL_SCROLL_TO_JS's
+                // own doc has the same finding), and `scroll-snap-type` is
+                // ALREADY 'none' from this drag's own start, so unlike
+                // that constant's own zero-delta case (which can just
+                // touch nothing) restoring must happen synchronously here
+                // -- there is no scroll for a deferred listener/timeout to
+                // ever key off, and skipping it entirely would leave
+                // snapping suspended until the next gesture happens to
+                // trigger it.
+                if (Math.abs(settleDelta) < 1) {
+                    restoreSnap();
                 } else {
-                    const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
-                    cancelPendingSnapRestore = () => clearTimeout(timer);
+                    // Deferred, not synchronous: setting scroll-snap-type
+                    // back to mandatory on an already-stationary position is
+                    // what made release never animate in the first place
+                    // (measured -- see 'Release settle'). Waiting for this
+                    // specific scroll to actually finish (`scrollend`,
+                    // falling back to a timeout where unsupported -- the same
+                    // feature detection `use_carousel_scroll_tracking` already
+                    // uses) means scroll-snap-type is still 'none' for the
+                    // whole smooth-scroll animation this call starts, so
+                    // there is nothing stationary for the browser to
+                    // instantly correct until that animation has already
+                    // finished on its own.
+                    if ('onscrollend' in window) {
+                        el.addEventListener('scrollend', restoreSnap, { once: true, passive: true });
+                        cancelPendingSnapRestore = () => el.removeEventListener('scrollend', restoreSnap);
+                    } else {
+                        const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
+                        cancelPendingSnapRestore = () => clearTimeout(timer);
+                    }
+                    if (orientation === 'horizontal') {
+                        el.scrollBy({ left: settleDelta, behavior: settleBehavior });
+                    } else {
+                        el.scrollBy({ top: settleDelta, behavior: settleBehavior });
+                    }
                 }
-                nearest.scrollIntoView({
-                    behavior: reduced ? 'auto' : 'smooth',
-                    inline: orientation === 'horizontal' ? 'start' : 'nearest',
-                    block: orientation === 'horizontal' ? 'nearest' : 'start',
-                });
             } else {
                 // No children at all (shouldn't happen in practice) --
                 // fall back to the old unconditional-restore behavior
@@ -820,8 +1145,11 @@ const CAROUSEL_DRAG_JS: &str = "\
 /// initial `eval.send(..)`, teardown via a second send read by the
 /// script's own trailing `await dioxus.recv()`), one layer simpler since
 /// this bridge reports nothing back to Rust at all (see [`CAROUSEL_DRAG_JS`]'s
-/// own doc for why: every `scrollBy` it issues is picked up by
-/// [`use_carousel_scroll_tracking`]'s own listener on the same element).
+/// own doc for why: every `scrollBy` it issues -- including `endDrag`'s
+/// own release settle -- is picked up by [`use_carousel_scroll_tracking`]'s
+/// own listener on the same element, which is what recomputes both
+/// `selected` and the a11y contract's "visible" set once a real,
+/// `data-dragging`-free scroll/scrollend event follows the release).
 ///
 /// `enabled` is read with tracked syntax so toggling
 /// [`CarouselContentProps::draggable`] at runtime actually attaches/tears
@@ -1004,11 +1332,12 @@ const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
         // this one on the very next event.
         wheelInterruptFloor = Math.max(WHEEL_INTERRUPT_DELTA, wheelReleaseThreshold() * 3);
     }
-    // Driven by us, never `scrollIntoView` (invariant 3) -- and superseded
-    // rather than restarted (invariant 4) via `bounceToken`, the same
-    // construction `CAROUSEL_DRAG_JS`'s own `bounceHome` uses, for the
-    // identical reason: a stale in-flight ease must stop touching `rawOver`
-    // the moment a new gesture owns it, not race that gesture's writes.
+    // Driven by us, never the discrete-paging `scrollBy`-by-delta helper
+    // (invariant 3) -- and superseded rather than restarted (invariant 4)
+    // via `bounceToken`, the same construction `CAROUSEL_DRAG_JS`'s own
+    // `bounceHome` uses, for the identical reason: a stale in-flight ease
+    // must stop touching `rawOver` the moment a new gesture owns it, not
+    // race that gesture's writes.
     function bounceHome(done) {
         const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const from = rawOver;
@@ -1204,6 +1533,33 @@ struct CarouselContext {
     /// [`CarouselItem`] can switch its own role from `group` to
     /// `tabpanel` -- see that component's own "Tablist variant" doc.
     tablist_present: Signal<bool>,
+    /// `[start, end]` (inclusive) item indices actually inside
+    /// [`CarouselContent`]'s own viewport *at rest* -- the a11y contract's
+    /// own "visible" set (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+    /// §7, `loop-libraries.md`'s cross-library convergence table).
+    /// Defaults to `(0, 0)` -- deterministic across SSR and a client's own
+    /// pre-hydration first render, matching [`Self::selected`]'s own
+    /// forced-`0`-until-registration value (see [`CarouselItem`]'s own
+    /// "Visible slides / `inert`" doc for why this makes the two agree at
+    /// first render without either needing a special case). Updated only
+    /// by [`use_carousel_scroll_tracking`]'s own settle (on `scrollend`/the
+    /// debounced-`scroll` fallback, and on a `ResizeObserver` firing for
+    /// the scroller's own box -- see that constant's own doc for why a
+    /// resize matters here too) -- never mid-drag, mid-momentum, or
+    /// mid-smooth-page (the same "freeze" rule already applies to
+    /// [`Self::selected`]; a drag's own release settle reaches this
+    /// signal only indirectly, through the ordinary native
+    /// scroll/scrollend event its release `scrollBy` produces once
+    /// `data-dragging` is gone).
+    visible_range: Signal<(usize, usize)>,
+    /// The index of the [`CarouselItem`] that currently contains DOM
+    /// focus, if any -- maintained purely by each item's own
+    /// `onfocusin`/`onfocusout` (native, synchronous; no `document::eval`
+    /// involved). Read once, synchronously, by the focus-redirect effect
+    /// below whenever [`Self::selected`] changes, to decide whether the
+    /// slide that just lost "current" status (and is about to -- or just
+    /// did -- become `inert`) held focus at the moment of the transition.
+    focused_item: Signal<Option<usize>>,
 }
 
 /// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
@@ -1300,8 +1656,9 @@ pub struct CarouselProps {
     /// wrap around at the ends -- **rewind-style**, not an
     /// embla-style seamless illusion: from the last slide, Next goes to
     /// the first (and vice versa for Previous), via the same
-    /// `scrollIntoView` paging path every other transition already uses,
-    /// which visibly scrolls back across the intervening slides rather
+    /// scroller-only `scrollBy`-by-delta paging path every other
+    /// transition already uses, which visibly scrolls back across the
+    /// intervening slides rather
     /// than teleporting. No cloned edge slides are ever added -- they
     /// would violate the overscroll port's own invariant 5 (they'd enter
     /// the snap engine's candidate list, the "N of M" slide count, and
@@ -1458,6 +1815,8 @@ pub fn Carousel(props: CarouselProps) -> Element {
         rotating: autoplay_rotating,
     };
     let tablist_present = use_signal(|| false);
+    let visible_range: Signal<(usize, usize)> = use_signal(|| (0, 0));
+    let focused_item: Signal<Option<usize>> = use_signal(|| None);
 
     use_context_provider(|| CarouselContext {
         orientation,
@@ -1470,14 +1829,16 @@ pub fn Carousel(props: CarouselProps) -> Element {
         direction,
         autoplay,
         tablist_present,
+        visible_range,
+        focused_item,
     });
 
-    // Scroll the selected slide into view whenever it changes, regardless
-    // of source (buttons, keyboard, or `use_carousel_scroll_tracking`
-    // reporting a native scroll). In the last case the target slide is
-    // already at/near its snap point, so this is a harmless no-op --
-    // `scrollIntoView` never moves an element that is already fully in
-    // view. `is_first` (peeked, then set -- never tracked-read, so this
+    // Page the scroller to the selected slide whenever it changes,
+    // regardless of source (buttons, keyboard, or
+    // `use_carousel_scroll_tracking` reporting a native scroll). In the
+    // last case the target slide is already at/near its snap point, so
+    // the computed delta is ~0 and `scrollBy` is a harmless no-op.
+    // `is_first` (peeked, then set -- never tracked-read, so this
     // effect never subscribes to its own write, matching
     // `scripts/check-self-subscribing-effects.sh`'s construction) forces
     // an instant jump on mount so a non-zero `default_value` never
@@ -1537,9 +1898,116 @@ pub fn Carousel(props: CarouselProps) -> Element {
         let Some(id) = item_ids.peek().get(index).cloned() else {
             return;
         };
+        // Tracked (like `count()` above), for the identical reason: a
+        // scroller id that only arrives *after* this effect's first
+        // post-registration run must still re-run this effect once it
+        // does, rather than being silently missed the way an untracked
+        // `.peek()` would miss it. In practice this never actually races
+        // `has_items` becoming true -- `CarouselContent` publishes
+        // `content_id` from its own mount effect, which (unlike item
+        // registration) depends on nothing any child does, so it
+        // completes no later than the child `CarouselItem` registrations
+        // that make `has_items` true, within the same initial
+        // render/effect-flush wave this effect's own long comment above
+        // already establishes for item registration.
+        let scroller_id = content_id();
+        if scroller_id.is_empty() {
+            return;
+        }
         let orientation_str = orientation().as_str().to_string();
-        let eval = document::eval(CAROUSEL_SCROLL_INTO_VIEW_JS);
-        let _ = eval.send((id, orientation_str, first));
+        let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
+        let _ = eval.send((
+            scroller_id,
+            id,
+            orientation_str,
+            first,
+            CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+        ));
+    });
+
+    // Focus safety (module doc §3 / `loop-a11y-guidance.md` §7's "Focus
+    // handling on rotation"): whenever `selected` changes, the slide that
+    // was current a moment ago is about to (or, since the DOM patch that
+    // sets its `inert` attribute is already applied by the time this
+    // effect runs, may already) drop out of the visible/interactive set.
+    // Per the HTML spec, an element becoming `inert` while it contains the
+    // focused element unfocuses it and falls back to the document itself
+    // (`<body>`) -- exactly the fallback this must never be seen to do.
+    //
+    // `focused_item` (each `CarouselItem`'s own plain, synchronous
+    // `onfocusin`/`onfocusout`, no `document::eval` involved) is read here
+    // as a snapshot of "was a slide focused right before this transition,
+    // and if so which one" -- captured independently of whichever DOM
+    // mutation already ran, so it still answers correctly even though a
+    // `.peek()` of `document.activeElement` at this point could not (the
+    // browser's own auto-blur has already fired by the time any effect,
+    // this one included, gets to run -- effects only ever see the DOM
+    // *after* the patch that triggered them, the same ordering every other
+    // post-render `document::eval` in this module already relies on for
+    // reading fresh geometry).
+    //
+    // The redirect target is [`CarouselContent`]'s own scroller element
+    // (`content_id`) -- already unconditionally focusable
+    // (`tabindex="0"`), never `inert`, and explicitly sanctioned as a
+    // "stable control" by the contract ("the carousel's own focusable
+    // region/content element, *or* the Next/Previous button that caused
+    // the move"). A single, source-agnostic target rather than
+    // special-casing which button (if any) caused the move keeps this one
+    // effect correct for every transition source (buttons, the root
+    // keyboard handler, `CarouselTab`, `CarouselApi::scroll_to`, and a
+    // drag/wheel/trackpad settle that changes `selected` with no button
+    // involved at all) without threading "who caused this" through every
+    // one of them.
+    //
+    // Deliberately not gated more finely than "the previously-focused
+    // slide is not the new `selected`": knowing whether that slide
+    // *remains* inside the new multi-per-view visible window without
+    // actually performing the redirect would need the post-scroll geometry
+    // this effect cannot see yet (the visible-range settle above is still
+    // in flight at this exact point) -- so a focused slide other than the
+    // new current one is always treated as "about to need a fixup" even in
+    // the rare multi-per-view case where it happens to still be visible
+    // afterward. Safety over precision: an unnecessary refocus onto the
+    // scroller (still inside the carousel, still a sensible place for
+    // focus to be) is a far smaller cost than the alternative -- focus
+    // silently dropping to `<body>`.
+    let prev_selected = use_previous(selected.into());
+    use_effect(move || {
+        let new_selected = selected();
+        let old_selected = prev_selected();
+        if old_selected == new_selected {
+            return;
+        }
+        let Some(focused_idx) = *focused_item.peek() else {
+            return;
+        };
+        if focused_idx == new_selected {
+            return;
+        }
+        let target = content_id.peek().clone();
+        if target.is_empty() {
+            return;
+        }
+        // Unconditional, not gated on re-reading `document.activeElement`
+        // first: measured live (this session) that this effect's own
+        // `document::eval` dispatch can run *before* Dioxus's own DOM patch
+        // has applied the new `inert` attribute -- `document.activeElement`
+        // at that moment still reports the slide's own descendant, still
+        // genuinely focused, so a "only redirect if focus already looks
+        // lost" check silently no-ops here and then never gets a second
+        // chance once the patch (and the browser's own auto-blur-to-`body`
+        // it triggers) actually lands a moment later. `focused_item` is
+        // this component's own Rust-side judgment call, captured
+        // synchronously and independently of DOM-patch timing (each
+        // `CarouselItem`'s own `onfocusin`/`onfocusout`), so it is trusted
+        // outright: whichever slide held focus right before this
+        // transition is not the new current one, so a redirect is due
+        // regardless of whether the browser has already carried out its
+        // own fallback-to-`body` by the time this runs.
+        document::eval(&format!(
+            "var root = document.getElementById('{target}'); \
+             if (root) {{ root.focus({{ preventScroll: true }}); }}"
+        ));
     });
 
     let onkeydown = move |event: Event<KeyboardData>| {
@@ -1721,13 +2189,16 @@ pub struct CarouselContentProps {
 /// geometry `use_carousel_scroll_tracking`'s own `settle()` already uses
 /// on this same element (a fresh `document::eval` string cannot import a
 /// shared JS helper, so this is duplicated rather than called, but it is
-/// the same technique, not a different one) -- and explicitly scrolls it
-/// into view with `behavior: 'smooth'` (or `'auto'` under
-/// `prefers-reduced-motion: reduce`, the exact policy
-/// `CAROUSEL_SCROLL_INTO_VIEW_JS` already applies to every other paging
-/// path). This reuses that same `scrollIntoView` mechanism/options shape
-/// this crate already pages with everywhere else -- not a second,
-/// hand-rolled animation engine.
+/// the same technique, not a different one) -- and explicitly `scrollBy`s
+/// this element (the scroller itself, never `nearest.scrollIntoView()`)
+/// by the physical delta to that slide, with `behavior: 'smooth'` (or
+/// `'auto'` under `prefers-reduced-motion: reduce`, the exact policy
+/// [`CAROUSEL_SCROLL_TO_JS`] already applies to every other paging
+/// path). This reuses that same scroller-only `scrollBy`-by-delta
+/// mechanism this crate already pages with everywhere else -- not a
+/// second, hand-rolled animation engine, and (see that constant's own
+/// doc) not `scrollIntoView`, which would walk and scroll every
+/// scrollable ancestor including the page.
 ///
 /// This replaced simply restoring `scroll-snap-type` and trusting the
 /// browser's own re-snap to both choose the destination *and* animate the
@@ -1742,15 +2213,15 @@ pub struct CarouselContentProps {
 /// position that is already stationary is not treated by this engine
 /// (Chromium) as "a scrolling operation resuming through skipped snap
 /// points"; it is a synchronous, static re-evaluation, and nothing
-/// animates a style recalculation. Explicitly targeting the destination
-/// slide with its own `scrollIntoView({behavior: 'smooth'})` call sidesteps
+/// animates a style recalculation. Explicitly `scrollBy`-ing this element
+/// to the destination slide's delta with `behavior: 'smooth'` sidesteps
 /// that path entirely: it is a genuine, browser-animated scroll operation,
 /// the same kind "## scroll-snap-stop" below documents as actually
 /// constrained/animated by this engine.
 ///
 /// Restoring `scroll-snap-type` is **deferred**, not synchronous, for the
 /// same reason: doing it immediately, right after starting the
-/// `scrollIntoView` call, reintroduces the exact bug above the instant the
+/// `scrollBy` call, reintroduces the exact bug above the instant the
 /// browser notices the position is (still, momentarily) not yet at a snap
 /// point. So it waits for this specific scroll to actually finish
 /// (`scrollend`, falling back to a fixed timeout where that event is
@@ -1825,11 +2296,16 @@ pub struct CarouselContentProps {
 /// clip` -- around this element, so the element inside it is what
 /// translates while the clip boundary around it never moves.
 /// `overflow: clip`, not `overflow: hidden`: a `hidden` box is still a
-/// scroll container, so the paging path's `scrollIntoView` on a slide
-/// would scroll the *wrapper* too and permanently offset the content;
-/// `clip` establishes no scrollport at all, so there is nothing for
-/// `scrollIntoView` to move. See that wrapper's own doc comment, right
-/// above this component's `rsx!` body, for the full construction.
+/// scroll container, and this module's paging/drag-release-settle paths
+/// no longer risk scrolling it even so -- both now call `scrollBy()` on
+/// the scroller element directly rather than `scrollIntoView()` on a
+/// slide (see [`CAROUSEL_SCROLL_TO_JS`]'s own doc for why, and for the
+/// incident that made that a hard requirement rather than a nice-to-have)
+/// -- but `clip` establishes no scrollport at all regardless, so nothing
+/// here (or added later) can ever scroll this wrapper by accident, the
+/// same defense-in-depth reasoning as never giving it an `id`/ARIA for a
+/// stray selector to latch onto. See that wrapper's own doc comment,
+/// right above this component's `rsx!` body, for the full construction.
 ///
 /// **Hydration parity.** Neither bridge ever touches a Dioxus-rendered
 /// attribute: both mutate `element.style.transform` as a plain DOM write,
@@ -2004,7 +2480,14 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         ctx.content_id.set(id());
     });
 
-    use_carousel_scroll_tracking(id, ctx.orientation, ctx.set_selected);
+    use_carousel_scroll_tracking(
+        id,
+        ctx.orientation,
+        ctx.set_selected,
+        ctx.count,
+        ctx.visible_range,
+        None,
+    );
     use_carousel_drag(id, ctx.orientation, props.draggable);
     use_carousel_wheel_bounce(id, ctx.orientation);
 
@@ -2075,10 +2558,12 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         // moving the clip boundary along with it. `overflow: clip`, never
         // `overflow: hidden` -- `hidden` is still a scroll container (the
         // CSSOM View spec's own "scrolling box" definition keys off any
-        // `overflow` value other than `visible`/`clip`), so the paging
-        // path's `scrollIntoView` on a slide would scroll THIS element
-        // too and permanently offset the whole track; `clip` never
-        // creates a scrollport at all, so there is nothing for it to
+        // `overflow` value other than `visible`/`clip`); the paging and
+        // drag-release-settle paths never scroll THIS element either way
+        // (both call `scrollBy()` on the scroller below directly, never
+        // `scrollIntoView()` on a slide -- see `CAROUSEL_SCROLL_TO_JS`'s
+        // own doc), but `clip` never creates a scrollport at all, so
+        // nothing here or added later has anything to
         // scroll. Presentational only -- no `role`, no `id`, no ARIA, and
         // none of the caller's own `props.attributes` land here (every one
         // of those still goes on the scroller below, unchanged): this
@@ -2146,6 +2631,52 @@ pub struct CarouselItemProps {
 /// hydration; the label simply arrives, correctly, a moment later, the
 /// same already-shipped tradeoff `tabs.rs`'s `aria-controls` makes.
 ///
+/// ## Visible slides / `inert`
+///
+/// Every [`CarouselItem`] the a11y contract's own "visible" set does not
+/// include (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+/// §7, cross-checked against every a11y-layer-having carousel library's
+/// own converged construction in `loop-libraries.md`) renders `inert` --
+/// removed from both the Tab order and the accessibility tree in one
+/// attribute, the Chrome "make accessible carousels" recipe's own
+/// mechanism. "Visible" is the current slide (always, regardless of the
+/// bridges below -- a safety net, not the primary signal: never leaves
+/// the slide the rest of this component's own state calls "selected"
+/// stranded `inert` by a stale/lagging geometry read) unioned with
+/// [`CarouselContext::visible_range`], the `[start, end]` item indices
+/// [`use_carousel_scroll_tracking`]/[`use_carousel_drag`] last measured
+/// actually inside [`CarouselContent`]'s own viewport at rest -- which for
+/// a single-slide-per-view layout is always just the current slide again,
+/// and for a multi-per-view one (e.g. `flex-basis: 33%`) additionally
+/// covers however many full neighbours are genuinely on screen.
+///
+/// **First render / SSR is deterministic.** [`CarouselContext::selected`]
+/// is forced to `0` until every sibling has registered (this component's
+/// own "SSR stability" doc above), and [`CarouselContext::visible_range`]
+/// starts at its own matching default, `(0, 0)` -- so server and a
+/// client's own pre-hydration first render both render only index `0` as
+/// non-`inert`, agreeing without either needing a special case for the
+/// other. A multi-per-view layout's true visible count is not knowable
+/// from Rust-only state at all (it depends on `flex-basis`/gap CSS this
+/// component never reads) -- widening past that single slide is real, but
+/// always happens through a later effect's own signal write
+/// ([`use_carousel_scroll_tracking`]'s own `ResizeObserver`, whose first
+/// callback fires for the scroller's *current* box the moment it attaches
+/// -- reached even for an already-aligned `default_value == 0` mount that
+/// never scrolls on its own at all -- see that constant's own doc), never
+/// inside this component's own first render.
+///
+/// **Frozen while moving.** [`use_carousel_scroll_tracking`]'s own settle
+/// only ever writes `visible_range` at a genuine rest point -- on
+/// `scrollend` (or the debounced-`scroll` fallback) or a `ResizeObserver`
+/// firing, explicitly skipped for as long as `data-dragging` is set -- never
+/// mid-drag, mid-momentum, or mid-smooth-page (the same rule
+/// `dev-docs/research/carousel-overscroll-2026-09-23.md` §3/§6 already
+/// binds every other scroll-position write in this module to). A drag's own
+/// release settle reaches this only indirectly: `data-dragging` is removed
+/// before `endDrag`'s own settle `scrollBy` runs, so the resulting native
+/// scroll/scrollend event is what this bridge actually observes.
+///
 /// ## Styling
 ///
 /// The [`CarouselItem`] component defines the following data attribute
@@ -2176,6 +2707,51 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     let is_selected = selected == index();
     let has_name = has_own_accessible_name(&props.attributes);
     let default_label = (!has_name && count > 0).then(|| slide_label(index(), count));
+
+    // See this component's own "Visible slides / `inert`" doc above.
+    //
+    // `Option<&'static str>` (`None` when visible, never a bare `false`
+    // `bool`) is load-bearing, not a style preference: `dioxus-interpreter-js`
+    // 0.7.9's `set_attribute.ts` special-cases which HTML attributes are
+    // "boolean" (present/absent) via its own hardcoded `isBoolAttr`
+    // allowlist -- `disabled`/`hidden`/`checked`/etc. are on it, `inert` is
+    // not (confirmed live: a raw `inert: bool` here rendered
+    // `inert="false"` as a PRESENT attribute on the web target, which HTML
+    // boolean-attribute semantics read as inert regardless of the string
+    // value -- every slide came back inert, including the selected one).
+    // A `bool`-typed dynamic attribute always carries a value (true or
+    // false) as far as the vdom is concerned, so Dioxus can only ever emit
+    // a `set_attribute` mutation for it -- through exactly that buggy
+    // allowlist. An `Option`-typed one one that is genuinely absent when
+    // `None`, so Dioxus instead emits a `remove_attribute` mutation
+    // (`unified_bindings.rs`'s own `remove_attribute`, a plain
+    // `node.removeAttribute(field)` for any field with no special case),
+    // which never touches `isBoolAttr` at all -- and `Some("true")` still
+    // reaches `setAttributeDefault`, but `truthy("true")` is `true`, so the
+    // (buggy, allowlist-gated) removal branch is simply never reached
+    // either way. This sidesteps the whole allowlist rather than trying to
+    // special-case around it, and is the same `Option<&str>`-for-omission
+    // construction this component's own `default_label`/`CarouselPrevious`'s
+    // `aria_controls` already use for the identical "must be entirely
+    // absent, not merely falsy" reason -- see `dev-docs/backlog.md` row 91's
+    // dated addendum for the live repro this was found from.
+    let (visible_start, visible_end) = (ctx.visible_range)();
+    let in_visible_range = index() >= visible_start && index() <= visible_end;
+    let is_visible = is_selected || in_visible_range;
+    let inert: Option<&'static str> = (!is_visible).then_some("true");
+
+    // Plain, synchronous native focus tracking -- no `document::eval`
+    // involved (unlike almost everything else in this module): this is
+    // read back, synchronously, by `Carousel`'s own focus-redirect effect
+    // (see that effect's own doc for why a JS-side `document.activeElement`
+    // read cannot answer the same question after the fact).
+    let mut focused_item = ctx.focused_item;
+    let onfocusin = move |_| focused_item.set(Some(index()));
+    let onfocusout = move |_| {
+        if (focused_item)() == Some(index()) {
+            focused_item.set(None);
+        }
+    };
 
     // `role="tabpanel"` (in lieu of `group`) once a `CarouselTabList` has
     // registered -- the APG tabbed style, `carousel-2-tablist.html`'s own
@@ -2219,15 +2795,556 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
             aria_roledescription: "slide",
             style: style.clone(),
             "data-selected": is_selected,
+            // The stable data index and this child's logical position --
+            // see `use_carousel_scroll_tracking`'s own doc for why every
+            // JS bridge reads these rather than a child's array position.
+            // Equal here (the plain children API has no window), so this
+            // is the identical wire shape `CarouselVirtualContent` renders
+            // for a real virtualised window -- one code path serves both.
+            "data-index": index(),
+            "data-position": index(),
+            inert,
         }),
     ]);
 
     rsx! {
         div {
             id,
+            onfocusin,
+            onfocusout,
             ..attributes,
 
             {props.children}
+        }
+    }
+}
+
+/// The props for the [`CarouselVirtualContent`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
+    /// The ID of the carousel content element.
+    pub id: ReadSignal<Option<String>>,
+
+    /// The full data set, in true order. Rendered in full (no window, no
+    /// wrap) on the server and on the client's own first render -- see
+    /// this component's own "SSR / first render" doc -- narrowed to a
+    /// `radius`-wide window around the current slide in a post-mount
+    /// effect once virtualisation is active.
+    pub items: ReadSignal<Vec<T>>,
+
+    /// Renders one slide's content, given its stable data index and
+    /// value.
+    pub render_item: Callback<(usize, T), Element>,
+
+    /// Slides kept mounted on each side of the current one once
+    /// virtualisation is active -- the window is `2 * radius + 1` slides
+    /// wide. Defaults to `2`.
+    #[props(default = 2usize)]
+    pub radius: usize,
+
+    /// Whether to virtualise at all. `None` (the default) auto-decides:
+    /// virtualise only once `items.len() > 2 * radius + 1` (there is
+    /// something to save by not rendering every slide). `Some(false)`
+    /// always renders the full list (find-in-page/browse-mode reach every
+    /// slide, at the cost of the DOM holding all of them). `Some(true)`
+    /// always virtualises, even for a small data set.
+    #[props(default)]
+    pub virtualize: Option<bool>,
+
+    /// Whether a mouse/pen pointer drag on the track pages the carousel --
+    /// see [`CarouselContent`]'s own "Pointer drag" doc. Defaults to
+    /// `true`; touch is never affected either way.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub draggable: ReadSignal<bool>,
+
+    /// Additional attributes to apply to the carousel content element.
+    #[props(extends = GlobalAttributes)]
+    pub attributes: Vec<Attribute>,
+}
+
+/// # CarouselVirtualContent
+///
+/// A data-driven, virtualised drop-in for [`CarouselContent`] +
+/// [`CarouselItem`]s: used INSIDE the same [`Carousel`] root, in place of
+/// them, whenever the slides come from a plain `Vec<T>` rather than a
+/// fixed set of children (`dev-docs/backlog.md` row 91's dated addendum
+/// has the approved construction this implements).
+///
+/// Publishes its own count into [`CarouselContext`] the same way
+/// [`CarouselItem`]'s own registration effect does, so
+/// [`CarouselPrevious`]/[`CarouselNext`]/[`CarouselTabList`]/[`CarouselTab`]/
+/// [`CarouselAutoplay`]/[`CarouselRotationControl`]/the root's own arrow
+/// keys/[`use_carousel`] all keep working completely unchanged -- none of
+/// them know this component exists; every one of them only ever reads or
+/// writes [`CarouselContext`].
+///
+/// This must be used inside a [`Carousel`] component, in place of
+/// [`CarouselContent`] (never alongside it).
+///
+/// ## SSR / first render
+///
+/// Renders every item, in true data order (`position == data index`, no
+/// window, no wrap), on the server and on the client's own first render --
+/// identical markup both times, so hydration has nothing to reconcile.
+/// Virtualising (below) only ever begins in a post-mount effect,
+/// client-side -- the same "first client render == SSR" property
+/// [`CarouselItem`]'s own "SSR stability" doc already relies on for
+/// `selected`/`visible_range`.
+///
+/// ## Virtualisation
+///
+/// Once mounted, if `virtualize` resolves to `true` (explicit, or the
+/// auto default once `items.len() > 2 * radius + 1`), only a window of
+/// `2 * radius + 1` logical POSITIONS around an internal `anchor` renders,
+/// via [`crate::r#virtual::window`] (`wrap` = [`CarouselProps::r#loop`] AND
+/// at least two slides -- one slide never loops, per this component's own
+/// doc, "N=1 disables loop"). Each rendered slide carries both its stable
+/// `data-index` (`position.rem_euclid(N)`, may repeat across positions
+/// once `N < 2 * radius + 1`) and its own unique `data-position` (the
+/// value every slide is keyed and DOM-id'd by, so a position that survives
+/// an anchor move keeps its own DOM node -- and [`Self::render_item`]'s
+/// own component state along with it).
+///
+/// With virtualisation inactive (a small data set, or
+/// `virtualize: Some(false)`), [`CarouselProps::r#loop`] is the existing
+/// APG **rewind** style, completely unchanged -- `position == data index`
+/// throughout, and this component publishes a real per-data-index DOM id
+/// into [`CarouselContext::item_ids`] exactly like [`CarouselItem`] does,
+/// so [`Carousel`]'s own built-in mount/selected `scrollBy`-by-id paging
+/// effect (and drag, wheel bounce, scroll tracking) drive it without any
+/// bespoke code in this component at all.
+///
+/// ## Seamless loop
+///
+/// Only reached once virtualisation is active AND [`CarouselProps::r#loop`]
+/// is on: `position` is allowed to run arbitrarily far past `[0, N)`
+/// (mapped down to a data index only via `.rem_euclid(N)` for rendering),
+/// so paging forward past the last data index does not rewind visibly
+/// across every intervening slide the way the non-virtualised loop above
+/// does -- it keeps sliding physically forward, one already-mounted window
+/// slide at a time. [`CarouselContext::item_ids`] stays empty in this mode
+/// (a data index can label more than one position at once, so there is no
+/// single DOM id to publish per data index) -- the built-in paging effect
+/// therefore harmlessly no-ops, and this component owns the reaction to
+/// [`CarouselContext::selected`] changing itself:
+///
+/// - A change of exactly one data index -- [`CarouselPrevious`]/
+///   [`CarouselNext`]/the root's arrow keys/autoplay all step by exactly
+///   one -- resolves to the nearest matching POSITION (`anchor \u{b1} 1`)
+///   and is animated there with the very same scroller-only
+///   `scrollBy`-by-id helper ([`CAROUSEL_SCROLL_TO_JS`]) every other
+///   paging path in this module already uses. The target position is
+///   already a rendered window slide (`radius >= 1`), so this alone never
+///   touches the window.
+/// - A change to any other data index (a distant [`CarouselTab`] click, a
+///   controlled `value` jump) resolves to whichever POSITION nearest the
+///   current anchor carries that data index, sets `anchor` to it directly
+///   -- an instant re-render around the new centre, so it is simply the
+///   current slide the moment this runs, never a visible scroll across
+///   the intervening ones -- and instantly re-aligns the scroller to it.
+/// - Once a physical scroll genuinely settles (a real drag release, a
+///   wheel/trackpad gesture, or the animated paging call above finishing
+///   -- see [`use_carousel_scroll_tracking`]'s own doc for what "settles"
+///   means), the settle's own reported POSITION (not just its data index)
+///   becomes the new `anchor` directly, covering a native gesture that
+///   moved the track by more than one slide with no extra arithmetic.
+///
+/// Either way, `anchor` changing re-renders the window keyed by
+/// `position` (so every surviving slide keeps its DOM node across the
+/// move), and a dedicated effect immediately re-aligns the scroller to
+/// the new centre with one more instant [`CAROUSEL_SCROLL_TO_JS`] call --
+/// needed because the window's own far edge changing (one position
+/// dropped, one added) shifts every later flex sibling's physical layout
+/// offset by one slide's width, which a plain DOM patch does not
+/// otherwise compensate for.
+///
+/// **Deviation from the bench's own microtask-timed correction, recorded
+/// rather than silently substituted:** the bench prototype
+/// (`dev-docs/research/carousel-overscroll-bench.html`, `seamlessLoop()`)
+/// runs this same re-alignment from a `MutationObserver` callback -- a
+/// microtask, guaranteed to run before the browser paints the DOM patch
+/// that triggered it. This component instead runs it from a plain
+/// `use_effect`, scheduled after the triggering render has already
+/// committed; whether that is early enough to still land before paint on
+/// every engine is an empirical question this lane's own Playwright
+/// per-`requestAnimationFrame` sampling test is what actually answers, not
+/// an assumption -- see this lane's own report for the measured result,
+/// and upgrade to a `MutationObserver` if it is not.
+///
+/// ## Non-loop, virtualised
+///
+/// With virtualisation active but [`CarouselProps::r#loop`] off, the
+/// window still clamps at the ends (`wrap = false` -- position never
+/// leaves `[0, N)`, so it equals data index throughout), and the existing
+/// edge rubber-band bridges apply exactly as they do for the plain
+/// children API.
+///
+/// ## Dynamic `N`, and the degenerate counts
+///
+/// `N == 0` renders no slides at all (the scroller shell still mounts, an
+/// empty scroll region, matching [`CarouselContent`]'s own shape with zero
+/// children). `N == 1` disables looping regardless of
+/// [`CarouselProps::r#loop`] -- there is nothing to wrap to. A dynamic
+/// change in `N` reclamps [`CarouselContext::selected`] the same way it
+/// already does for the plain children API (`clamp_selected`); this
+/// component's own `anchor` degrades gracefully too, since
+/// `anchor.rem_euclid(N)` is well-defined for any `N > 0` regardless of
+/// how large `anchor` has drifted.
+#[component]
+pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
+    props: CarouselVirtualContentProps<T>,
+) -> Element {
+    let mut ctx: CarouselContext = use_context();
+    let uuid = use_unique_id();
+    let id = use_id_or(uuid, props.id);
+    let items = props.items;
+    let render_item = props.render_item;
+    let radius = props.radius.max(1);
+    let explicit_virtualize = props.virtualize;
+
+    use_effect(move || {
+        ctx.content_id.set(id());
+    });
+
+    let count = use_memo(move || items().len());
+
+    // SSR / first render always renders the full list -- see this
+    // component's own "SSR / first render" doc. `mounted` flips exactly
+    // once, client-side, in a post-mount effect.
+    let mut mounted = use_signal(|| false);
+    use_effect(move || {
+        mounted.set(true);
+    });
+
+    // Recomputed (not cached) inside every effect below that needs it, so
+    // each one tracks `count()`/`mounted()` directly rather than trusting
+    // that a fresh closure alone reruns it -- see this component's own
+    // lane report for why that distinction matters here.
+    let virtualize_active_now = move || {
+        let n = count();
+        n > 0 && mounted() && explicit_virtualize.unwrap_or_else(|| n > 2 * radius + 1)
+    };
+
+    let mut anchor = use_signal(|| (ctx.selected)() as isize);
+    // The position the next physical step should be computed relative to
+    // -- see the paging effect's own doc, "Load-bearing guard" and the
+    // dedicated doc just above it, for why this must be tracked
+    // separately from `anchor` (which only ever moves once a physical
+    // scroll has genuinely settled).
+    let mut intended = use_signal(|| (ctx.selected)() as isize);
+
+    // Publish `count` into the shared context, and either a real
+    // per-data-index id (small/non-virtualised -- the existing built-in
+    // paging effect just works, see "Virtualisation" doc) or an empty
+    // registry (seamless loop -- see "Seamless loop" doc for why this
+    // component owns paging itself in that mode instead).
+    use_effect(move || {
+        let scroller_id = id();
+        let n = count();
+        let active = virtualize_active_now();
+        let mut ids = ctx.item_ids.write();
+        ids.clear();
+        for i in 0..n {
+            ids.push(if active {
+                String::new()
+            } else {
+                format!("{scroller_id}-p{i}")
+            });
+        }
+    });
+
+    // A settle (native drag/wheel/trackpad, or one of this component's own
+    // animated paging calls below finishing) reports the slide it actually
+    // rested on -- `anchor` (drives the render window) and `intended`
+    // (the paging effect's own "what to compute the next step from")
+    // both snap to it together, so the two can never drift apart once a
+    // physical scroll has genuinely finished.
+    let on_settle_position = use_callback(move |position: isize| {
+        anchor.set(position);
+        intended.set(position);
+    });
+    use_carousel_scroll_tracking(
+        id,
+        ctx.orientation,
+        ctx.set_selected,
+        ctx.count,
+        ctx.visible_range,
+        Some(on_settle_position),
+    );
+    use_carousel_drag(id, ctx.orientation, props.draggable);
+    use_carousel_wheel_bounce(id, ctx.orientation);
+
+    // Translate a `selected` (data index) change into a physical move --
+    // see "Seamless loop" doc. A no-op whenever virtualisation is
+    // inactive: the built-in `Carousel`-level effect (real per-data-index
+    // ids, published above) already handles that case.
+    //
+    // **Two load-bearing fixes, both found live (this lane's own dx-serve
+    // verification against the real, running dev server -- not merely
+    // reasoned through):**
+    //
+    // 1. This must compute the next target from `intended` (the last
+    //    position THIS effect itself has already asked for), never from
+    //    `anchor` (the last position a physical scroll actually SETTLED
+    //    on). `anchor` only updates once `on_settle_position` above fires
+    //    -- which for an animated (not instant) step happens only after
+    //    the browser's own `scrollend` -- so a second `selected` change
+    //    arriving before the first step has finished animating (found
+    //    live: consecutive `CarouselAutoplay` ticks close enough together)
+    //    would otherwise still read the PRE-first-step anchor, compute the
+    //    same target the first step already asked for, and silently
+    //    swallow one entire step (measured: ticks 1..12 with `delay_ms:
+    //    1200` skipped index 6 outright, landing on 5 then 7). Reading
+    //    `intended` instead -- updated immediately, in the same tick this
+    //    effect runs, in both branches below -- means a rapid-fire second
+    //    change always computes relative to where the first one is
+    //    already headed, not where the scroller has physically gotten to
+    //    yet.
+    // 2. Skip entirely once `intended` already denotes `new_sel`: a settle
+    //    calls `ctx.set_selected` and `on_settle_position` together for
+    //    the SAME reported slide, so by the time this effect observes
+    //    that `selected` change, `intended` (like `anchor`) may already
+    //    agree with it. Recomputing a jump from `old_sel` regardless (an
+    //    earlier version of this effect did exactly that, before
+    //    `intended` existed at all) treated the settle's own report as a
+    //    fresh navigation request layered on the *previous* selected
+    //    value, landing on a second, wrong position and triggering
+    //    another settle -- an unbounded feedback loop, measured live: the
+    //    anchor drifted continuously in one direction for as long as the
+    //    page was left open, entirely without user interaction. Only a
+    //    change nothing has already reconciled (a button/key/autoplay/
+    //    tab/`scroll_to` call, none of which ever touch `intended`
+    //    themselves) reaches the jump logic below.
+    let prev_selected = use_previous(ctx.selected.into());
+    let orientation = ctx.orientation;
+    let content_id = ctx.content_id;
+    use_effect(move || {
+        let new_sel = (ctx.selected)();
+        let old_sel = prev_selected();
+        let n = count();
+        if !virtualize_active_now() || n == 0 || old_sel == new_sel {
+            return;
+        }
+        let cur_intended = *intended.peek();
+        if n > 0 && cur_intended.rem_euclid(n as isize) as usize == new_sel {
+            // `intended` already agrees with the new selected value -- see
+            // this effect's own doc, fix 2, for why this must be a no-op.
+            return;
+        }
+        let wrapped = shortest_signed_delta(old_sel, new_sel, n);
+        if wrapped == 0 {
+            return;
+        }
+        let target_position = cur_intended + wrapped;
+        let scroller_id = content_id.peek().clone();
+        if scroller_id.is_empty() {
+            return;
+        }
+        let orientation_str = orientation().as_str().to_string();
+        // **Third load-bearing fix, also found live.** Whether the target
+        // is "already a rendered window slide" must be measured against
+        // `anchor` (the last SETTLED position -- what the render window
+        // is actually keyed from), never against `intended`'s own step
+        // size. `intended` moves the instant this effect runs (fix 1,
+        // above), but the window only re-centres once a settle actually
+        // lands -- which, for an animated (non-instant) step, only
+        // happens after the browser's own `scrollend`, real wall-clock
+        // time later. A second (or third) `selected` change arriving
+        // before that -- measured live: two `CarouselNext` clicks a few
+        // hundred ms apart, comfortably human-paced, well inside a
+        // `radius: 2` window's own margin -- can walk `intended` further
+        // from `anchor` than `radius` even though each individual STEP is
+        // still exactly one. Using `wrapped` (the step size) here instead
+        // of this distance let that second step's own animated call
+        // target a position outside the still-`anchor`-centred window --
+        // an id with no element behind it -- so the `scrollBy` silently
+        // no-opped (`CAROUSEL_SCROLL_TO_JS`'s own null-target guard) and
+        // the click was lost outright, with the *original* (first) step's
+        // own scroll finishing normally afterward and its genuinely
+        // correct settle then overwriting `intended` back down to its own
+        // target -- confirmed live via a temporary trace: "old_sel=2
+        // new_sel=3" (the second click, computed correctly) followed
+        // moments later by "settle position=2" (the first click's own,
+        // late-arriving, entirely valid settle silently reverting the
+        // second one). Measuring against `anchor` instead means a target
+        // that has drifted outside the true rendered window takes the
+        // instant re-anchor branch below -- which needs no pre-rendered
+        // element at all -- rather than silently failing to reach an
+        // element that was never going to exist.
+        let cur_anchor = *anchor.peek();
+        if (target_position - cur_anchor).unsigned_abs() as usize <= radius {
+            // Already a rendered window slide -- animate the existing
+            // scroller-only paging helper to it. `intended` moves right
+            // away (fix 1); `anchor` (and the window it drives) only
+            // moves once `on_settle_position` reports this scroll has
+            // actually finished.
+            intended.set(target_position);
+            let target_id = format!("{scroller_id}-p{target_position}");
+            let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
+            let _ = eval.send((
+                scroller_id,
+                target_id,
+                orientation_str,
+                false,
+                CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+            ));
+        } else {
+            // Outside the current window (a distant jump, OR `intended`
+            // has drifted further from the last settle than `radius`
+            // allows) -- re-anchor both instantly; the alignment effect
+            // below does the matching instant scroll once this render has
+            // committed.
+            intended.set(target_position);
+            anchor.set(target_position);
+        }
+    });
+
+    // Re-align the scroller to `anchor`'s own slide -- covers the
+    // instant-jump branch above, every settle-driven move (paging, drag,
+    // wheel/trackpad) reported back by `use_carousel_scroll_tracking`,
+    // AND the one-time transition from full-list to windowed rendering
+    // (`virtualize_active` flipping `false` -> `true`): the window's own
+    // radius-worth of leading slides only exist once that flip happens,
+    // so the scroller's physical position (wherever it happened to rest
+    // showing the full list) needs the identical realignment even though
+    // `anchor`'s own numeric value does not change at that moment.
+    // `align_key` bundles both triggers into one comparison rather than
+    // two separate effects racing each other over the same scroller.
+    // Always instant: by the time this runs, the physical "this should
+    // feel like a slide" motion has already happened, either via the
+    // browser's own native scroll or via the animated
+    // `CAROUSEL_SCROLL_TO_JS` call above -- this call only ever
+    // compensates the window's own re-centring (or its own initial
+    // appearance), which must not itself be seen to animate.
+    let align_key = use_memo(move || (anchor(), virtualize_active_now()));
+    let prev_align_key = use_previous(align_key.into());
+    use_effect(move || {
+        let (a, active) = align_key();
+        let (pa, pactive) = prev_align_key();
+        if !active || (a == pa && active == pactive) {
+            return;
+        }
+        let scroller_id = content_id.peek().clone();
+        if scroller_id.is_empty() {
+            return;
+        }
+        let target_id = format!("{scroller_id}-p{a}");
+        let orientation_str = orientation().as_str().to_string();
+        let eval = document::eval(CAROUSEL_SCROLL_TO_JS);
+        let _ = eval.send((
+            scroller_id,
+            target_id,
+            orientation_str,
+            true,
+            CAROUSEL_SNAP_RESTORE_FALLBACK_MS,
+        ));
+    });
+
+    let n = count();
+    let virtualize_active = virtualize_active_now();
+    let loop_now = (ctx.loop_enabled)() && n >= 2;
+
+    let win: Vec<crate::r#virtual::WindowItem> = if n == 0 {
+        Vec::new()
+    } else if virtualize_active {
+        crate::r#virtual::window(n, anchor(), anchor(), radius, loop_now)
+    } else {
+        crate::r#virtual::window(n, 0, n as isize - 1, 0, false)
+    };
+
+    let selected = (ctx.selected)();
+    let (visible_start, visible_end) = (ctx.visible_range)();
+    let tablist_present = (ctx.tablist_present)();
+    let mut focused_item = ctx.focused_item;
+    let items_now = items();
+    let scroller_id_now = id();
+
+    let orientation_now = (ctx.orientation)();
+    let draggable = (props.draggable)();
+    let aria_live = (ctx.autoplay.present)().then(|| {
+        if (ctx.autoplay.rotating)() {
+            "off"
+        } else {
+            "polite"
+        }
+    });
+
+    let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let axis_style = match orientation_now {
+        CarouselOrientation::Horizontal => {
+            "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
+             scroll-snap-type:x mandatory;"
+        }
+        CarouselOrientation::Vertical => {
+            "display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;\
+             scroll-snap-type:y mandatory;"
+        }
+    };
+    let style = format!(
+        "{axis_style}{}",
+        caller_style.map(|s| format!(" {s}")).unwrap_or_default()
+    );
+
+    let attributes = merge_attributes(vec![
+        rest_attrs,
+        attributes!(div {
+            style: style.clone(),
+            tabindex: "0",
+            aria_live: aria_live,
+            "data-orientation": orientation_now.as_str(),
+            "data-draggable": draggable,
+        }),
+    ]);
+
+    let slides = win.into_iter().map(move |item| {
+        let data_index = item.data_index;
+        let position = item.position;
+        let is_selected = data_index == selected;
+        let in_visible_range = data_index >= visible_start && data_index <= visible_end;
+        let is_visible = is_selected || in_visible_range;
+        let inert: Option<&'static str> = (!is_visible).then_some("true");
+        let role = if tablist_present { "tabpanel" } else { "group" };
+        let label = slide_label(data_index, n);
+        let slide_id = format!("{scroller_id_now}-p{position}");
+        let value = items_now[data_index].clone();
+        let content = render_item.call((data_index, value));
+        rsx! {
+            div {
+                key: "{position}",
+                id: slide_id,
+                role,
+                aria_roledescription: "slide",
+                aria_label: label,
+                style: "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;",
+                "data-selected": is_selected,
+                "data-index": data_index,
+                "data-position": position,
+                inert,
+                onfocusin: move |_| focused_item.set(Some(data_index)),
+                onfocusout: move |_| {
+                    if (focused_item)() == Some(data_index) {
+                        focused_item.set(None);
+                    }
+                },
+                {content}
+            }
+        }
+    });
+
+    rsx! {
+        // Clipping viewport -- see `CarouselContent`'s own "Edge
+        // rubber-band" doc for the full construction; this wrapper is
+        // identical to that one's.
+        div {
+            "data-slot": "carousel-viewport",
+            style: "overflow: clip;",
+
+            div {
+                id,
+                ..attributes,
+
+                {slides}
+            }
         }
     }
 }
@@ -2958,6 +4075,27 @@ mod tests {
     }
 
     #[test]
+    fn clamp_visible_range_within_bounds_is_unchanged() {
+        assert_eq!(clamp_visible_range((0, 2), 5), (0, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_clamps_end_past_last_index() {
+        assert_eq!(clamp_visible_range((1, 99), 3), (1, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_clamps_start_past_last_index_too() {
+        assert_eq!(clamp_visible_range((50, 60), 3), (2, 2));
+    }
+
+    #[test]
+    fn clamp_visible_range_with_zero_count_is_zero() {
+        assert_eq!(clamp_visible_range((0, 0), 0), (0, 0));
+        assert_eq!(clamp_visible_range((4, 9), 0), (0, 0));
+    }
+
+    #[test]
     fn can_scroll_prev_false_at_first_slide() {
         assert!(!can_scroll_prev(0));
     }
@@ -3200,6 +4338,70 @@ mod tests {
             CarouselOrientation::Horizontal
         );
     }
+
+    #[test]
+    fn shortest_signed_delta_zero_count_is_zero() {
+        assert_eq!(shortest_signed_delta(0, 0, 0), 0);
+    }
+
+    #[test]
+    fn shortest_signed_delta_same_index_is_zero() {
+        assert_eq!(shortest_signed_delta(3, 3, 12), 0);
+    }
+
+    #[test]
+    fn shortest_signed_delta_forward_step_is_plus_one() {
+        assert_eq!(shortest_signed_delta(4, 5, 12), 1);
+    }
+
+    #[test]
+    fn shortest_signed_delta_backward_step_is_minus_one() {
+        assert_eq!(shortest_signed_delta(5, 4, 12), -1);
+    }
+
+    #[test]
+    fn shortest_signed_delta_wraps_forward_at_the_end() {
+        // step_next's own rewind wrap: last -> first is +1 in position
+        // space, not -(count - 1).
+        assert_eq!(shortest_signed_delta(11, 0, 12), 1);
+    }
+
+    #[test]
+    fn shortest_signed_delta_wraps_backward_at_the_start() {
+        assert_eq!(shortest_signed_delta(0, 11, 12), -1);
+    }
+
+    #[test]
+    fn shortest_signed_delta_picks_the_nearer_direction_for_a_distant_jump() {
+        // 12 slides, jumping from 1 to 7 (6 apart either way) -- either
+        // signed direction is equally short; the formula's own tie-break
+        // (`wrapped > n/2`, strict) keeps the positive/forward one rather
+        // than flipping to `-6`.
+        assert_eq!(shortest_signed_delta(1, 7, 12), 6);
+        // A jump that is unambiguously nearer forward.
+        assert_eq!(shortest_signed_delta(1, 4, 12), 3);
+        // ...and unambiguously nearer backward.
+        assert_eq!(shortest_signed_delta(1, 10, 12), -3);
+    }
+
+    #[test]
+    fn shortest_signed_delta_small_count_never_exceeds_half() {
+        for count in 2..8 {
+            for old in 0..count {
+                for new in 0..count {
+                    if old == new {
+                        continue;
+                    }
+                    let d = shortest_signed_delta(old, new, count);
+                    assert!(d != 0);
+                    assert!(d.unsigned_abs() as usize <= count / 2 + 1);
+                    // Applying it must land back on `new`, modulo `count`.
+                    let landed = ((old as isize + d).rem_euclid(count as isize)) as usize;
+                    assert_eq!(landed, new);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3312,6 +4514,50 @@ mod ssr_tests {
         let html = render(ThreeSlideCarousel);
         assert!(!html.contains("of 0"));
         assert!(!html.contains("1 of 3"));
+    }
+
+    #[test]
+    fn item_zero_is_not_inert_on_first_render_before_registration_effects_run() {
+        // Hydration parity (`CarouselItem`'s own "Visible slides / `inert`"
+        // doc): `selected`/`visible_range` are both forced to their
+        // deterministic default (`0`/`(0, 0)`) until every sibling's own
+        // registration effect has run, and (like the label test above)
+        // `rebuild_in_place` alone never runs effects at all -- so this is
+        // also exactly what a real SSR render (and a client's own
+        // pre-hydration first paint) produces regardless of how many
+        // slides actually exist. Slide 0's own opening `<div ... role="group"`
+        // tag (the first one in this fixture's DOM order) must never carry
+        // `inert` -- it is always the deterministic first-render "visible"
+        // slide.
+        let html = render(ThreeSlideCarousel);
+        let tag_start = html.find(r#"role="group""#).unwrap();
+        let open_start = html[..tag_start].rfind("<div").unwrap();
+        let open_end = html[open_start..].find('>').unwrap() + open_start;
+        assert!(!html[open_start..=open_end].contains("inert"));
+    }
+
+    #[test]
+    fn items_after_zero_are_inert_on_first_render_before_registration_effects_run() {
+        // The mirror of the test above: slides 1 and 2 are neither
+        // `selected` (forced to `0`) nor inside `visible_range` (forced to
+        // `(0, 0)`) on this same first render, so both must be `inert`
+        // -- the a11y contract's "only visible slides are reachable"
+        // (`dev-docs/research/carousel-loop-2026-09-25/loop-a11y-guidance.md`
+        // §7) already holding before a single effect has run, not
+        // merely once the client catches up.
+        let html = render(ThreeSlideCarousel);
+        let group_tags: Vec<&str> = html
+            .match_indices(r#"role="group""#)
+            .map(|(tag_start, _)| {
+                let open_start = html[..tag_start].rfind("<div").unwrap();
+                let open_end = html[open_start..].find('>').unwrap() + open_start;
+                &html[open_start..=open_end]
+            })
+            .collect();
+        assert_eq!(group_tags.len(), 3);
+        assert!(!group_tags[0].contains("inert"));
+        assert!(group_tags[1].contains("inert"));
+        assert!(group_tags[2].contains("inert"));
     }
 
     #[test]
@@ -3646,5 +4892,152 @@ mod ssr_tests {
         // Roving tabindex: only the selected tab is a page tab stop.
         assert!(html.contains(r#"tabindex="0""#));
         assert!(html.contains(r#"tabindex="-1""#));
+    }
+
+    // -- CarouselVirtualContent ------------------------------------------
+
+    fn string_items(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("Slide {i}")).collect()
+    }
+
+    #[component]
+    fn VirtualCarousel12Loop() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true,
+                CarouselPrevious { "Previous" }
+                CarouselNext { "Next" }
+                CarouselVirtualContent::<String> {
+                    items: string_items(12),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn VirtualCarouselN(n: usize) -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselVirtualContent::<String> {
+                    items: string_items(n),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn virtual_content_ssr_renders_every_item_in_order_before_any_effect_has_run() {
+        // First render (SSR, and a client's own pre-hydration paint) never
+        // windows -- see `CarouselVirtualContent`'s own "SSR / first
+        // render" doc. All 12 slides, in true order, must be present.
+        let html = render(VirtualCarousel12Loop);
+        for i in 0..12 {
+            assert!(
+                html.contains(&format!("Slide {i}")),
+                "missing Slide {i} in SSR output"
+            );
+        }
+        // "k of 12" labels are correct at first render too (unlike the
+        // plain children API, `CarouselVirtualContent` already knows `N`
+        // from `items.len()` without waiting for per-child registration
+        // effects).
+        assert!(html.contains(r#"aria-label="1 of 12""#));
+        assert!(html.contains(r#"aria-label="12 of 12""#));
+    }
+
+    #[test]
+    fn virtual_content_ssr_only_slide_zero_is_visible() {
+        let html = render(VirtualCarousel12Loop);
+        let group_tags: Vec<&str> = html
+            .match_indices(r#"role="group""#)
+            .map(|(tag_start, _)| {
+                let open_start = html[..tag_start].rfind("<div").unwrap();
+                let open_end = html[open_start..].find('>').unwrap() + open_start;
+                &html[open_start..=open_end]
+            })
+            .collect();
+        assert_eq!(group_tags.len(), 12);
+        assert!(!group_tags[0].contains("inert"));
+        for tag in &group_tags[1..] {
+            assert!(tag.contains("inert"));
+        }
+    }
+
+    #[test]
+    fn virtual_content_position_equals_data_index_before_any_window_is_active() {
+        let html = render(VirtualCarousel12Loop);
+        for i in 0..12 {
+            assert!(
+                html.contains(&format!(r#""data-index":{i}"#))
+                    || html.contains(&format!("data-index={i}"))
+            );
+        }
+    }
+
+    #[component]
+    fn VirtualCarouselZero() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselVirtualContent::<String> {
+                    items: Vec::<String>::new(),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn virtual_content_n_zero_renders_no_slides() {
+        let html = render(VirtualCarouselZero);
+        assert!(!html.contains(r#"role="group""#));
+    }
+
+    #[test]
+    fn virtual_content_n_one_renders_one_slide_labeled_1_of_1() {
+        let html = dioxus_ssr::render(&{
+            let mut dom =
+                VirtualDom::new_with_props(VirtualCarouselN, VirtualCarouselNProps { n: 1 });
+            dom.rebuild_in_place();
+            dom
+        });
+        assert!(html.contains(r#"aria-label="1 of 1""#));
+        assert_eq!(html.matches(r#"role="group""#).count(), 1);
+    }
+
+    #[test]
+    fn virtual_content_n_two_renders_two_distinct_slides() {
+        let mut dom = VirtualDom::new_with_props(VirtualCarouselN, VirtualCarouselNProps { n: 2 });
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        assert!(html.contains(r#"aria-label="1 of 2""#));
+        assert!(html.contains(r#"aria-label="2 of 2""#));
+    }
+
+    #[test]
+    fn virtual_content_n_three_renders_three_distinct_slides() {
+        let mut dom = VirtualDom::new_with_props(VirtualCarouselN, VirtualCarouselNProps { n: 3 });
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        assert!(html.contains(r#"aria-label="1 of 3""#));
+        assert!(html.contains(r#"aria-label="2 of 3""#));
+        assert!(html.contains(r#"aria-label="3 of 3""#));
+    }
+
+    #[test]
+    fn window_math_small_n_duplicates_data_index_with_unique_positions() {
+        // N=3 < 2R+1 (radius 2 -> window width 5): the shared window math
+        // (`primitives/src/virtual/window.rs`, read-only to this lane) is
+        // what `CarouselVirtualContent` reuses, and it already guarantees
+        // unique positions with a repeating data index -- pinned here
+        // against this component's own actual radius default (2) rather
+        // than only against that module's own generic tests.
+        let items = crate::r#virtual::window(3, 0, 0, 2, true);
+        let mut positions: Vec<isize> = items.iter().map(|i| i.position).collect();
+        positions.sort_unstable();
+        positions.dedup();
+        assert_eq!(positions.len(), items.len());
+        let data_indices: Vec<usize> = items.iter().map(|i| i.data_index).collect();
+        assert_eq!(data_indices, vec![1, 2, 0, 1, 2]);
     }
 }

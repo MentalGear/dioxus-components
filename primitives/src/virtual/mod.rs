@@ -9,8 +9,15 @@
 pub(crate) mod types;
 mod utils;
 mod virtualizer;
+mod window;
 
 pub(crate) use virtualizer::{
     compute_measurements, get_total_size, get_virtual_items, resize_item, set_scroll_offset,
     set_viewport_size, VirtualizerState, VirtualizerStateStoreExt,
 };
+// Not yet consumed within this lane: `default_range_extractor` reaches the module
+// directly (`super::window::window`). Re-exported here per the shared-window-math API
+// contract so the planned looping `CarouselVirtual` (a separate, concurrent lane) can
+// call `crate::r#virtual::window(..., wrap: true)` without reaching into a submodule.
+#[allow(unused_imports)]
+pub(crate) use window::{window, WindowItem};
