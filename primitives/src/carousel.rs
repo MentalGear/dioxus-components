@@ -158,6 +158,32 @@ fn item_gap_padding(orientation: CarouselOrientation) -> &'static str {
     }
 }
 
+/// # Sizes (whole slides by default, opt-in peek)
+///
+/// [`CarouselItem`]/[`CarouselVirtualContent`]'s own default `flex-basis`
+/// is `calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1))`
+/// -- `--dx-carousel-per-view` (an integer, default `1`) is how many WHOLE
+/// slides show at once, and `--dx-carousel-peek` (a percentage of one
+/// slide's own share of the track, default `0%`) is how much of the
+/// *next* slide additionally peeks into view, opt-in only. With both left
+/// at their defaults this is exactly `100%` -- byte-identical to the
+/// pre-this-feature hardcoded value, so every existing caller (anything
+/// that overrides `flex-basis` directly via an inline `style`, e.g. this
+/// package's own pre-shadcn-parity `multiple` variant) is unaffected: an
+/// inline `style`-supplied `flex-basis` still simply appears later in the
+/// same `style` attribute and wins, exactly as it always has (this
+/// module's own established "caller style always wins" construction,
+/// [`fold_style_attributes`]'s own call sites throughout this file).
+///
+/// Because the gap (see the "Gap model" doc above) already lives inside
+/// each item's own border-box as padding, this `calc()` never needs to
+/// subtract a gap term itself -- `N` whole slides' basis fractions already
+/// sum to exactly `100%` of the (gap-widened) content box regardless of
+/// `N`.
+fn item_basis_style() -> &'static str {
+    "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+}
+
 /// The mirror of [`item_gap_padding`], applied to [`CarouselContent`]'s own
 /// scroller element (see that function's own doc for the full construction):
 /// a negative margin on the identical edge/axis, so the FIRST item's own
@@ -2826,9 +2852,10 @@ pub fn CarouselItem(props: CarouselItemProps) -> Element {
     // and why this is a plain inline declaration rather than a stylesheet
     // gated by `@supports`.
     let gap_padding = item_gap_padding((ctx.orientation)());
+    let basis = item_basis_style();
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let style = format!(
-        "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
+        "{basis}scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{gap_padding}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3364,7 +3391,8 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         let value = items_now[data_index].clone();
         let content = render_item.call((data_index, value));
         let item_style = format!(
-            "flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+            "{}scroll-snap-align:start;scroll-snap-stop:always;min-width:0;min-height:0;{}",
+            item_basis_style(),
             item_gap_padding(orientation_now)
         );
         rsx! {
@@ -4825,6 +4853,50 @@ mod ssr_tests {
         let html = render(VerticalThreeSlideCarousel);
         assert!(html.contains("margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1)"));
         assert!(!html.contains("margin-inline-start:calc(var(--dx-carousel-gap"));
+    }
+
+    // -- Sizes: whole slides by default, opt-in peek --------------------
+
+    #[test]
+    fn item_basis_defaults_to_the_per_view_peek_calc() {
+        // `--dx-carousel-per-view`/`--dx-carousel-peek` default to `1`/`0%`
+        // in the calc's own fallback, which is byte-identical to the old
+        // hardcoded `flex:0 0 100%` -- see `item_basis_style`'s own doc.
+        let html = render(ThreeSlideCarousel);
+        assert!(html.contains(
+            "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+        ));
+        assert!(!html.contains("flex:0 0 100%;"));
+    }
+
+    #[test]
+    fn virtual_content_item_basis_uses_the_same_calc() {
+        let html = render(VirtualCarousel12Loop);
+        assert!(html.contains(
+            "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+        ));
+    }
+
+    #[component]
+    fn CarouselWithBasisOverride() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselContent {
+                    CarouselItem { index: 0usize, style: "flex-basis: 40%;", "One" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_inline_flex_basis_override_still_wins_over_the_new_default_calc() {
+        // The pre-existing "override flex-basis per item via inline style"
+        // escape hatch (docs.md's own "Sizing slides" section, predating
+        // this feature) must keep working unchanged: a caller-supplied
+        // `flex-basis` still simply appears later in the same `style`
+        // attribute and wins, the same as it always has.
+        let html = render(CarouselWithBasisOverride);
+        assert!(html.contains("flex-basis: 40%;"));
     }
 
     // -- `loop` -------------------------------------------------------

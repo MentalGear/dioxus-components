@@ -1,7 +1,7 @@
 /**
  * Carousel: smoke + a11y attributes + keyboard paging (LTR and RTL) +
  * end-of-range button state + scroll-snap landing, across every shipped
- * variant (main, multiple, indicators, vertical, rtl).
+ * variant (main, sizes, indicators, vertical, rtl).
  *
  * SCOPING: every variant of a "Normal"-kind component renders on the same
  * page at once (`ComponentVariantHighlight` in `preview/src/main.rs`), so
@@ -47,7 +47,9 @@ function demoFrame(
   page: Page,
   variant:
     | "main"
-    | "multiple"
+    | "sizes"
+    | "spacing"
+    | "peek"
     | "indicators"
     | "vertical"
     | "rtl"
@@ -359,7 +361,7 @@ function passesThroughAnIntermediateValue(samples: number[]): boolean {
   return samples.some((v) => v > lo + 1 && v < hi - 1);
 }
 
-for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
   test.describe(`Carousel (${variant} variant): smoke + a11y attributes`, () => {
     test(`region has role=region, aria-roledescription=carousel, and an accessible name that doesn't contain the word "carousel"`, async ({ page }) => {
       await goto(page, variant);
@@ -428,7 +430,7 @@ test.describe("Carousel: shadcn-parity geometry (size, shadow, outside placement
   const BUTTON_SIZE_PX = 28;
   const MIN_CLEAR_PX = 20 - 1; // 1px tolerance for sub-pixel layout rounding
 
-  for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+  for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
     test(`${variant}: Previous/Next are 28x28, shadow-less, 20px clear of the track`, async ({ page }) => {
       await goto(page, variant);
       const frame = demoFrame(page, variant);
@@ -512,7 +514,7 @@ test.describe("Carousel: arrows never overflow their frame (carousel-narrow regr
           GOTO_OPTS,
         );
 
-        for (const variant of ["main", "multiple", "indicators", "vertical", "rtl"] as const) {
+        for (const variant of ["main", "sizes", "indicators", "vertical", "rtl"] as const) {
           const frame = demoFrame(page, variant);
           const previous = frame.getByRole("button", { name: "Previous slide" });
           const next = frame.getByRole("button", { name: "Next slide" });
@@ -2353,21 +2355,22 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     });
   }
 
-  test("a multi-per-view layout widens the visible set to every slide actually in the viewport (multiple variant)", async ({ page }) => {
-    await goto(page, "multiple");
-    const frame = demoFrame(page, "multiple");
+  test("a multi-per-view layout widens the visible set to every slide actually in the viewport (sizes variant)", async ({ page }) => {
+    await goto(page, "sizes");
+    const frame = demoFrame(page, "sizes");
     const items = frame.locator(".dx-carousel-item");
     const count = await items.count();
 
-    // Measured live, not assumed -- exactly how many slides are fully (or
-    // "at least half") visible at once depends on this demo's own rendered
-    // `flex-basis: 40%` against however wide its wrapper renders (this
-    // file's own established "measure, don't hardcode" convention,
-    // `slidePitch`'s own doc). The only structural invariant asserted is
-    // that the non-inert set is a contiguous prefix starting at slide 0
-    // (this demo never scrolls on its own before this point) and is more
-    // than just the one selected slide -- proving the widening actually
-    // happened, not merely that the single-slide case still works.
+    // Measured live, not assumed -- exactly how many WHOLE slides are
+    // visible at once depends on `--dx-carousel-per-view` against however
+    // wide this demo's own responsive wrapper renders (this file's own
+    // established "measure, don't hardcode" convention, `slidePitch`'s own
+    // doc) -- 2 below the demo's own `lg` breakpoint, 3 above it. The only
+    // structural invariant asserted is that the non-inert set is a
+    // contiguous prefix starting at slide 0 (this demo never scrolls on
+    // its own before this point) and is more than just the one selected
+    // slide -- proving the widening actually happened, not merely that the
+    // single-slide case still works.
     const inertFlags: boolean[] = [];
     for (let i = 0; i < count; i++) {
       inertFlags.push(await items.nth(i).evaluate((el) => el.hasAttribute("inert")));
@@ -2377,13 +2380,47 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
     expect(inertFlags.slice(0, firstInert).every((v) => v === false)).toBe(true);
     expect(inertFlags.slice(firstInert).every((v) => v === true)).toBe(true);
 
-    const names = await axTreeGroupNames(page, "#component-preview-frame-multiple [role=region]");
+    const names = await axTreeGroupNames(page, "#component-preview-frame-sizes [role=region]");
     for (let i = 0; i < firstInert; i++) {
       expect(names).toContain(`${i + 1} of ${count}`);
     }
     for (let i = firstInert; i < count; i++) {
       expect(names).not.toContain(`${i + 1} of ${count}`);
     }
+  });
+
+  test("whole-slide geometry: each visible item's width is the viewport divided by --dx-carousel-per-view, within 1px, and slides land on boundaries (sizes variant)", async ({ page }) => {
+    // Root-cause regression test for the "~2.3 slides visible" incident
+    // (`dev-docs/research/shadcn-carousel-parity.md`) this construction
+    // closes: a real flex `gap` was additive to a percentage `flex-basis`,
+    // so N items never summed to exactly the viewport width. Pinned here
+    // against the live-rendered geometry, not just the CSS source, so a
+    // future regression in the calc (or in the gap model it depends on)
+    // is caught the same way the incident itself was found -- by
+    // measurement.
+    await goto(page, "sizes");
+    const frame = demoFrame(page, "sizes");
+    const viewport = frame.locator('[data-slot="carousel-viewport"]');
+    const items = frame.locator(".dx-carousel-item");
+
+    const viewportBox = await viewport.boundingBox();
+    expect(viewportBox).not.toBeNull();
+    const perView = await frame
+      .locator(".dx-carousel-demo-sizes")
+      .evaluate((el) => getComputedStyle(el).getPropertyValue("--dx-carousel-per-view").trim());
+    const n = Number(perView);
+    expect(n).toBeGreaterThanOrEqual(2);
+
+    for (let i = 0; i < n; i++) {
+      const box = await items.nth(i).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeCloseTo(viewportBox!.width / n, 0);
+    }
+    // The (n+1)-th slide (0-based index n) must not be even partially
+    // inside the viewport -- a whole-slide layout has no partial peek.
+    const nextBox = await items.nth(n).boundingBox();
+    expect(nextBox).not.toBeNull();
+    expect(nextBox!.x).toBeGreaterThanOrEqual(viewportBox!.x + viewportBox!.width - 1);
   });
 
   test("inert state is frozen while a drag is in progress -- it only updates on release/settle", async ({ page }) => {
@@ -2545,8 +2582,14 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
   });
 
   test("a drag starting on a partially-visible neighbour slide still pages the carousel (inert content is not a hit-test target)", async ({ page }) => {
-    await goto(page, "multiple");
-    const frame = demoFrame(page, "multiple");
+    // The old `multiple` variant (a bare `flex-basis: 40%` override) is
+    // retired -- `peek` is the new, explicitly opt-in home for a genuinely
+    // partially-visible neighbour slide (`--dx-carousel-peek: 20%`); the
+    // `sizes` variant that replaced `multiple` shows only WHOLE slides by
+    // design (that is the entire point of the shadcn-parity fix), so it no
+    // longer has a partially-visible neighbour to drag-start on at all.
+    await goto(page, "peek");
+    const frame = demoFrame(page, "peek");
     const content = frame.locator(".dx-carousel-content");
     const viewport = frame.locator('[data-slot="carousel-viewport"]');
     const items = frame.locator(".dx-carousel-item");

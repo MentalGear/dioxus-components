@@ -29,9 +29,13 @@ Carousel {
 
 Each `CarouselItem` defaults its own accessible name to `"{n} of {m}"` (APG's own sanctioned exception to "don't put position/size in an accessible name") unless you supply your own `aria-label`/`aria-labelledby`.
 
-## Sizing slides
+## Sizes
 
-How much of the track each slide occupies is a CSS decision, not a prop: `CarouselItem` defaults to `flex: 0 0 100%` (one full slide per view). Override it per item with an inline `style` (or `flex_basis`) to build a "peek"/multi-item-per-view layout -- see the `multiple` variant.
+How much of the track each slide occupies is a CSS decision, not a prop. `CarouselItem` defaults its own `flex-basis` to `calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1))` -- with both variables left at their defaults (`--dx-carousel-per-view: 1`, `--dx-carousel-peek: 0%`) this is exactly `100%`, i.e. one whole slide per view, matching shadcn's own default and every one of its demos.
+
+Set `--dx-carousel-per-view` (an integer) on a wrapper (or `CarouselContent` itself) to show that many WHOLE slides at once -- see the `sizes` variant, which mirrors shadcn's own `carousel-size.tsx`: 2 whole slides per view, 3 at a wider (`lg`) breakpoint, via a plain `@media` rule setting the variable. Because the gap already lives inside each item's own border-box (see "Spacing" above), `N` slides' basis fractions always sum to exactly `100%` regardless of `N` -- no overflow, no partial slide.
+
+Set `--dx-carousel-peek` (a percentage) to additionally show a sliver of the *next* slide -- opt-in only, off by default -- see the `peek` variant. You can still override `flex-basis` directly per item with an inline `style` (or `flex_basis`) for a fully custom layout; a caller-supplied `flex-basis` always wins over the default calc, the same "later in the same `style` attribute wins" rule this crate uses everywhere else.
 
 ## Spacing (the gap between slides)
 
