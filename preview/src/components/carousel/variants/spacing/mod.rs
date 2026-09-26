@@ -1,4 +1,5 @@
 use super::super::component::*;
+use crate::components::card::{Card, CardContent};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 
@@ -36,9 +37,11 @@ pub fn Demo() -> Element {
                         CarouselContent { style: "--dx-carousel-gap: {gap};",
                             for i in 0..4usize {
                                 CarouselItem { key: "{i}", index: i, style: "flex-basis: 50%;",
-                                    div {
-                                        style: "display: flex; align-items: center; justify-content: center; height: 6rem; border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); font-size: 1.5rem;",
-                                        "{i + 1}"
+                                    Card {
+                                        CardContent {
+                                            style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-3xl); font-weight: 600;",
+                                            "{i + 1}"
+                                        }
                                     }
                                 }
                             }

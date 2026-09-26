@@ -1,4 +1,5 @@
 use super::super::component::*;
+use crate::components::card::{Card, CardContent};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 use dioxus_primitives::direction::{Direction, DirectionProvider};
@@ -22,9 +23,11 @@ pub fn Demo() -> Element {
                     CarouselVirtualContent::<String> {
                         items,
                         render_item: move |(_idx, label): (usize, String)| rsx! {
-                            div {
-                                style: "display: flex; align-items: center; justify-content: center; height: 12rem; border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); font-size: 2rem;",
-                                "{label}"
+                            Card {
+                                CardContent {
+                                    style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-3xl); font-weight: 600;",
+                                    "{label}"
+                                }
                             }
                         },
                     }

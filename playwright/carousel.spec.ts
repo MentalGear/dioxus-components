@@ -2137,6 +2137,46 @@ test.describe("Carousel: indicators (tablist/dot-picker) variant", () => {
       include: "#component-preview-frame-indicators",
     });
   });
+
+  test("the active dot's opacity/width transition is present normally, and near-instant under prefers-reduced-motion", async ({
+    page,
+  }) => {
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
+    const firstTab = frame.getByRole("tab").nth(0);
+
+    const transitionDuration = await firstTab.evaluate(
+      (el) => getComputedStyle(el).transitionDuration,
+    );
+    // Two comma-separated durations (opacity, width) -- style.css's own
+    // `.dx-carousel-indicator` rule -- neither near-zero under the
+    // default (no reduced-motion) preference.
+    const durations = transitionDuration.split(",").map((s) => parseFloat(s));
+    expect(durations.length).toBeGreaterThanOrEqual(2);
+    for (const d of durations) {
+      expect(d).toBeGreaterThan(0.05);
+    }
+  });
+
+  test("the active dot's transition is near-instant under prefers-reduced-motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await goto(page, "indicators");
+    const frame = demoFrame(page, "indicators");
+    const firstTab = frame.getByRole("tab").nth(0);
+
+    // dx-components-theme.css's own shared reduced-motion layer forces
+    // `transition-duration` to `var(--dx-motion-duration-reduced)` (0.01ms)
+    // `!important` on any `[role="tab"]` -- this button qualifies without
+    // this component needing its own per-rule override (see
+    // `.dx-carousel-indicator`'s own style.css comment).
+    const transitionDuration = await firstTab.evaluate(
+      (el) => getComputedStyle(el).transitionDuration,
+    );
+    const durations = transitionDuration.split(",").map((s) => parseFloat(s));
+    for (const d of durations) {
+      expect(d).toBeLessThan(0.01);
+    }
+  });
 });
 
 /**
