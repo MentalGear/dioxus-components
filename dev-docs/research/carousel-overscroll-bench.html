@@ -154,6 +154,32 @@
     will-change: transform;
   }
   .track::-webkit-scrollbar { display: none; }
+  /* Main-track slides are split in two: the .slide keeps the snap geometry,
+     the .face inside it carries the paint. Looks identical in every mode;
+     only E's clip fix A moves the face (see the clip-fix toggle). */
+  #track .slide { background: none; border-color: transparent; display: block; place-items: normal; }
+  #track .slide > .face {
+    display: grid; place-items: center; block-size: 100%;
+    background: var(--sunken); border: 1px solid var(--line); border-radius: 8px;
+    box-sizing: border-box; margin: -1px;
+    translate: var(--e-shift, 0px) 0;
+  }
+  /* E clip fix B: the scroller is wider than the frame by --bleed on each
+     side, so its own clip box can move by up to --bleed without cutting
+     anything the frame shows. scroll-padding puts the snap port back on the
+     frame, and each slide is sized to the frame, not to the wider scroller. */
+  .viewport.efix-b #track { margin-inline: calc(-1 * var(--bleed, 0px)); scroll-padding-inline: var(--bleed, 0px); }
+  .viewport.efix-b #track .slide { flex-basis: calc(100% - 2 * var(--bleed, 0px)); }
+  .legend { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 14px; }
+  .legend p { margin: 0 0 8px; color: var(--ink-soft); font-size: 13px; }
+  .legend table { border-collapse: collapse; inline-size: 100%; font-size: 13px; }
+  .legend th, .legend td { text-align: start; vertical-align: top; padding: 4px 8px 4px 0; border-top: 1px solid var(--line); }
+  .legend th { font-family: var(--mono); white-space: nowrap; color: var(--ink); }
+  .legend td { color: var(--ink-soft); }
+  .legend .grp th, .legend .grp td { padding-top: 10px; font-weight: 600; color: var(--ink); border-top: 0; }
+  .efix { margin-top: 12px; }
+  .efix .choices { margin-top: 8px; }
+  .efix p { margin: 8px 0 0; color: var(--ink-soft); font-size: 13px; }
   .track.grab { cursor: grab; }
   .track.grabbing { cursor: grabbing; user-select: none; }
   .slide {
@@ -269,14 +295,38 @@
     <p class="eyebrow">Drag physics · scroll-snap</p>
     <h1>Carousel Overscroll Bench</h1>
     <p>Six ways to handle a drag or trackpad swipe past the first or last slide, on the same CSS scroll-snap engine our component uses. Drag each with the mouse and compare. The native control at the bottom has no JavaScript at all — on macOS it is the only one that can show real OS elasticity.</p>
+    <p class="revnote"><strong>Revision 40 — long scrolls in E, and D taking over after a native arrival.</strong> <em>E:</em> a long trackpad scroll runs to the end of the room and pins there, so the scroll position stops changing, but your fingers or the momentum are still sending wheel input. Rev 39 only watched scroll events, so it took that for “stuck” and pulled the slide home early (12 of your 20 stretches, all at the full 344px room, about 600ms in). Wheel input now counts as “still going”. <em>D:</em> after a native scroll carried you into slide 1, a new push at the edge was swallowed into that scroll’s momentum tail, because a re-push was only recognised after a band D had drawn itself. Your recording shows the new push as a dip then a rise (…−53, −49, then −13, −28, −67, −112). Momentum only falls, so once any stream has coasted, a rise of 1.3× (new knob) now starts a new gesture, and D takes over at the edge.</p>
+    <p class="revnote"><strong>Revision 39 — slow pushes at the ends.</strong> <em>D:</em> your slow pushes (5–16px per event, against 93–195px for your flicks) can never end in momentum, so after the lift there was only silence, and D waited for the cursor to move or for the 1500ms backstop. A slow push now releases after 250ms of silence (two new knobs); keep pushing and the band is grabbed back. <em>E:</em> E relied entirely on the browser’s own snap to release the room, and on a slow scroll the browser can come to rest inside the room without snapping. If the browser finishes scrolling, or goes still for 450ms, with the track still in the room, the page now brings it home itself. It only does this after the browser has stopped, so the two never fight. E now also records each stretch (how deep, how it ended), so if it still sticks I can see why.</p>
+    <p class="revnote"><strong>Revision 38 — approach E’s clip fixes, side by side.</strong> Approach E is unchanged from rev 35 (same room, curve and timings). Pick E, then a <em>clip fix</em> below the frame: <em>Fix 0</em> is rev 35, where the end slide gets cut off the further you push; <em>Fix 1</em> moves only the content inside the slides; <em>Fix 2</em> keeps rev 35 but makes the scroller wider than the frame; <em>Fix 3</em> uses whatever bounce your browser draws itself. The legend under “Approach” explains every letter and number. Your pick is remembered, and there is a vote for it under “Your verdict”.</p>
+    <p class="revnote"><strong>Revision 35 — the flick pause, and mode E.</strong> Your drag timelines showed every flick holding still for about 350ms after release: the scroller rounds each step, so a fraction of a pixel counted as edge stretch and ran the full spring-back before the slide could move. A refusal now counts only against a real edge. For the trackpad at the ends: between slides the browser snaps the instant you lift because the OS tells it the gesture phase, and a page is never told. New <em>mode E</em> lets the browser do the stretch in real room past the ends, so its own snap releases it at the moment you lift; this page only compresses what you see. Mode D now also records whether Firefox fires any <code>scrollend</code> at a clamped edge.</p>
+    <p class="revnote"><strong>Revision 34 — flicks, a real lift signal, and 15 slides.</strong> A quick mouse flick now moves one slide in its direction even when it covers less than half a slide (all modes; <em>flick velocity</em> knob, 0.4 px/ms). In D, the band no longer springs back on a timer while your fingers rest: the web exposes neither the trackpad’s touch state nor the scroll phase, but a two-finger scroll never moves the cursor, so the band releases on the first real cursor movement after the push (<em>lift</em> knob, 2 px) or on detected momentum, with a 1.5 s safety release for a lift followed by nothing. The main slider now has 15 slides.</p>
+    <p class="revnote"><strong>Revision 33 — D no longer lets go while your fingers are down.</strong> Your last session showed two faults of mine. The re-push rule fired during ordinary pushes (the deltas ramp 3 → 9 → 21 as a push starts), splitting one push into many gestures 11 times; it now applies only while a gesture is coasting, as in wheel-gestures. And a slow push that eased off looked like momentum, so the band sprang back under your fingers; momentum now needs 5 smoothly decaying events under a 0.96 ceiling, and if the deltas rise again after a release the band grabs back instead of ignoring you. A finger resting still sends no events at all, so the idle release now waits 400ms (was 90). Mouse drags now record their full scroll timeline, to pin down the drag that jumped from slide 1 to 5. The loop demo has 25 items.</p>
     <p class="revnote"><strong>Revision 32 — three lessons from Embla’s trackpad plugin in mode D.</strong> Embla’s core has no wheel handling at all; shadcn gets trackpad swipes only from the <code>embla-carousel-wheel-gestures</code> plugin, built on <code>xiel/wheel-gestures</code> (MIT). That plugin takes the input over entirely, which our native-scrolling design forbids, but its detection transfers: a sudden jump during momentum now starts a new gesture at once (<em>re-push</em> knob); deltas are paired before the decay test to smooth jitter; and a <em>momentum ceiling</em> (0.97) keeps a steady slow push from reading as coasting. Those make detection sturdier but barely change how far the band goes; replaying your last session, the band limit does that, so its default is now 0.5 × the width (your hardest flicks: 24–39% → 19–28%).</p>
-    <p class="revnote"><strong>Revision 31 — a seamless loop.</strong> The shipped carousel’s <code>loop</code> rewinds: from the last slide it scrolls back through every slide to the first. shadcn’s loop (Embla) is one endless strip in both directions. The new <em>Seamless loop</em> section below does that with virtual slides from data: 12 items, 5 slides in the page, the window shifting by one each time a move settles. It works for every input at once, including trackpad momentum, and it has no edge, so it needs no rubber-band at all.</p>
+    <p class="revnote"><strong>Revision 31 — a seamless loop.</strong> The shipped carousel’s <code>loop</code> rewinds: from the last slide it scrolls back through every slide to the first. shadcn’s loop (Embla) is one endless strip in both directions. The new <em>Seamless loop</em> section below does that with virtual slides from data: 12 items (now 25), 5 slides in the page, the window shifting by one each time a move settles. It works for every input at once, including trackpad momentum, and it has no edge, so it needs no rubber-band at all.</p>
     <p class="revnote"><strong>Revision 30 — D tuned from your first session.</strong> Your Firefox session showed the split working: both flicks from the middle into an edge drew 0px from D, leaving the bounce to Firefox. But the pushes D owns drew 204–465px, 25–58% of the 805px track, for two reasons. Firefox’s wheel deltas are pointer-accelerated (150–590px per event, about 1,500px before your fingers lifted), while WebKit’s curve expects finger travel; a new <strong>input gain</strong> knob (default 0.3) scales them. And the release test was fooled by jitter while your fingers were down, so it fired about 14 events late; it now waits for smooth geometric decay, which only momentum produces. The knob panel now shows how far your last owned push went.</p>
     <p class="revnote"><strong>Revision 29 — mode D, and a correction to the curve every mode used.</strong> Two findings from the shipped component on your trackpad. First, the band stacked on top of the platform’s own: you confirmed the browser already rubber-bands this scroller when momentum carries it into an edge (composited, so no script can see it), and B3 drew a second band over it. That double band is the overshoot. <strong>D draws a band only where the platform draws none</strong>: it decides once, at the start of each gesture, from where the scroller is resting. If the gesture starts away from the edge and scrolls into it, D draws nothing and leaves the bounce to the platform. If the gesture starts already resting at the edge, which the platform leaves dead, D owns the band. Second, the curve. Revision 17 called WebKit’s <code>(1 − 1/(x·c/d + 1))·d</code> “algebraically identical” to our <code>L·x/(x+L)</code> with <code>L = d/c</code>. It is not; they differ by a factor of <code>c</code>. WebKit’s starts at 0.55 px per px and tops out at the track width; ours started at 1:1 and approached 1.8× the width. D uses WebKit’s. B3 is unchanged so you can compare the two directly. D’s knobs are live below the trace, and whatever you settle on is saved with each gesture.</p>
   </header>
 
   <section>
     <h2>Approach</h2>
+    <div class="legend" id="legend">
+      <p><strong>How the labels work.</strong> Letters are <em>approaches</em>: what happens when you push past the first or last slide. Numbers are <em>clip fixes</em>, and exist only inside approach E. In chat the clip fixes were briefly called A/B/C; that clashed with approaches A/B/C, so they are now Fix 1/2/3.</p>
+      <table>
+        <tr class="grp"><th>Approach</th><td>what you get at the ends</td></tr>
+        <tr><th>A</th><td>Clamped: hard stop, nothing moves. What the component shipped before.</td></tr>
+        <tr><th>B</th><td>Dead space: fixed empty room past the ends that you can scroll into.</td></tr>
+        <tr><th>B2</th><td>Damped margin: that room appears only during a gesture.</td></tr>
+        <tr><th>B3</th><td>Edge transform: no room; the track is slid visually and springs back.</td></tr>
+        <tr><th>C</th><td>Damped transform: like B3, driven by the pointer; the first proposal.</td></tr>
+        <tr><th>D</th><td>Platform-aware band: draws a band only where the browser draws none. Has the knob panel.</td></tr>
+        <tr><th>E</th><td>Native room: the browser scrolls into real room past the ends and snaps back itself when you lift; the page only compresses what you see. <strong>The one you said feels right.</strong></td></tr>
+        <tr class="grp"><th>Clip fix (E only)</th><td>how E avoids cutting off the end slide while you push</td></tr>
+        <tr><th>Fix 0</th><td>Off: E exactly as in rev 35. The scroller is shifted and cuts off the end slide the further you push.</td></tr>
+        <tr><th>Fix 1</th><td>Move the slide content: scroller and slides stay put; only what is inside each slide shifts.</td></tr>
+        <tr><th>Fix 2</th><td>Wide scroller: rev 35 unchanged, but the scroller is wider than the frame, so the frame does the clipping.</td></tr>
+        <tr><th>Fix 3</th><td>Platform bounce: no room and no code; whatever bounce your browser draws itself (Safari, Firefox on macOS). Chromium stops hard.</td></tr>
+      </table>
+    </div>
     <div class="modes" id="modes">
       <button class="mode" data-mode="clamped" aria-pressed="true">
         <span class="k">A · shipping now</span>
@@ -303,6 +353,11 @@
         <span class="n">Damped transform</span>
         <span class="d">Track is translated past the edge, then springs back.</span>
       </button>
+      <button class="mode" data-mode="nativeroom" aria-pressed="false">
+        <span class="k">E · the platform decides</span>
+        <span class="n">Native room + resistance</span>
+        <span class="d">Real room past the ends that the browser scrolls into itself, so its own snap pulls back the moment you lift. We only compress what you see.</span>
+      </button>
       <button class="mode" data-mode="onewriter" aria-pressed="false">
         <span class="k">D · one writer per bounce</span>
         <span class="n">Platform-aware band</span>
@@ -314,11 +369,21 @@
       <div class="viewport">
         <span class="void-label" id="voidLabel">frame</span>
         <div class="track grab" id="track">
-          <div class="slide">1</div>
-          <div class="slide">2</div>
-          <div class="slide">3</div>
-          <div class="slide">4</div>
-          <div class="slide">5</div>
+          <div class="slide"><div class="face">1</div></div>
+          <div class="slide"><div class="face">2</div></div>
+          <div class="slide"><div class="face">3</div></div>
+          <div class="slide"><div class="face">4</div></div>
+          <div class="slide"><div class="face">5</div></div>
+          <div class="slide"><div class="face">6</div></div>
+          <div class="slide"><div class="face">7</div></div>
+          <div class="slide"><div class="face">8</div></div>
+          <div class="slide"><div class="face">9</div></div>
+          <div class="slide"><div class="face">10</div></div>
+          <div class="slide"><div class="face">11</div></div>
+          <div class="slide"><div class="face">12</div></div>
+          <div class="slide"><div class="face">13</div></div>
+          <div class="slide"><div class="face">14</div></div>
+          <div class="slide"><div class="face">15</div></div>
         </div>
       </div>
 
@@ -326,7 +391,7 @@
         <div class="stat"><span class="l">scrollLeft</span><span class="v" id="rScroll">0</span></div>
         <div class="stat"><span class="l">overscroll</span><span class="v" id="rOver">0</span></div>
         <div class="stat"><span class="l">scrollWidth</span><span class="v" id="rWidth">0</span></div>
-        <div class="stat"><span class="l">selected</span><span class="v" id="rSel">1 of 5</span></div>
+        <div class="stat"><span class="l">selected</span><span class="v" id="rSel">1 of 15</span></div>
       </div>
 
       <div class="trace">
@@ -339,6 +404,17 @@
       </div>
 
       <div class="note" id="modeNote"></div>
+
+      <div class="efix" id="efix" hidden>
+        <strong>Approach E · clip fix</strong> <span style="color:var(--ink-faint)">same engine and curve in all four, only what moves differs (see the legend above)</span>
+        <div class="choices" id="efixChoices">
+          <button class="choice" data-efix="off" aria-pressed="true">Fix 0 · off (rev 35)</button>
+          <button class="choice" data-efix="a" aria-pressed="false">Fix 1 · move the slide content</button>
+          <button class="choice" data-efix="b" aria-pressed="false">Fix 2 · wide scroller</button>
+          <button class="choice" data-efix="c" aria-pressed="false">Fix 3 · platform bounce</button>
+        </div>
+        <p id="efixNote"></p>
+      </div>
 
       <div class="tune" id="tune" hidden>
         <div class="tune-head">
@@ -353,10 +429,10 @@
 
   <section>
     <h2>Seamless loop · virtual slides from data</h2>
-    <p style="margin:0 0 12px;color:var(--ink-soft)">Twelve items of data, but only five slides are ever in the page: the one you see and two either side. After each move settles, the window shifts by one and the scroller re-centres in the same frame, so there is never an edge and never a jump back to the start. Swipe with two fingers or a finger, use the buttons or the arrow keys, or let it play: every input keeps going round in both directions. The shipped component instead rewinds from the last slide to the first.</p>
+    <p style="margin:0 0 12px;color:var(--ink-soft)">Twenty-five items of data, but only five slides are ever in the page: the one you see and two either side. After each move settles, the window shifts by one and the scroller re-centres in the same frame, so there is never an edge and never a jump back to the start. Swipe with two fingers or a finger, use the buttons or the arrow keys, or let it play: every input keeps going round in both directions. The shipped component instead rewinds from the last slide to the first.</p>
     <div class="bench">
       <div class="viewport">
-        <span class="void-label">frame · 5 slides in the DOM, 12 in the data</span>
+        <span class="void-label">frame · 5 slides in the DOM, 25 in the data</span>
         <div class="track" id="loopTrack" tabindex="0" role="region" aria-roledescription="carousel" aria-label="Seamless loop demo" style="cursor:default"></div>
       </div>
       <div class="loop-controls">
@@ -366,7 +442,7 @@
         <div class="loop-dots" id="loopDots" aria-hidden="true"></div>
       </div>
       <div class="readout">
-        <div class="stat"><span class="l">showing</span><span class="v" id="lShow">1 of 12</span></div>
+        <div class="stat"><span class="l">showing</span><span class="v" id="lShow">1 of 25</span></div>
         <div class="stat"><span class="l">DOM slides</span><span class="v" id="lDom">5</span></div>
         <div class="stat"><span class="l">re-centres</span><span class="v" id="lRecenters">0</span></div>
         <div class="stat"><span class="l">laps</span><span class="v" id="lLaps">0</span></div>
@@ -402,7 +478,19 @@
           <button class="choice" data-value="bounce">B3 · Edge transform</button>
           <button class="choice" data-value="transform">C · Transform</button>
           <button class="choice" data-value="onewriter">D · Platform-aware</button>
+          <button class="choice" data-value="nativeroom">E · Native room</button>
           <button class="choice" data-value="none">None of them</button>
+        </div>
+      </div>
+
+      <div class="ask">
+        <p class="q">Approach E: which clip fix looked and felt right?</p>
+        <div class="choices" data-vote="eClipFix">
+          <button class="choice" data-value="off">Fix 0 · off</button>
+          <button class="choice" data-value="a">Fix 1 · slide content</button>
+          <button class="choice" data-value="b">Fix 2 · wide scroller</button>
+          <button class="choice" data-value="c">Fix 3 · platform bounce</button>
+          <button class="choice" data-value="none">None</button>
         </div>
       </div>
 
@@ -637,7 +725,8 @@
   var dwellSince = Date.now();
   function tallyDwell() {
     var now = Date.now();
-    record.dwellMs[mode] = (record.dwellMs[mode] || 0) + (now - dwellSince);
+    var key = mode === "nativeroom" ? "nativeroom:" + eFix : mode;
+    record.dwellMs[key] = (record.dwellMs[key] || 0) + (now - dwellSince);
     dwellSince = now;
   }
 
@@ -684,6 +773,13 @@
       "<code>scrollLeft</code> stays pinned at the edge throughout \u2014 but unlike C that is not a disagreement, " +
       "because at a clamped edge it could not have changed anyway. The mouse path still owns the scroll position, " +
       "which is safe precisely because a mouse drag has no native scrolling to compete with.",
+    nativeroom:
+      "<strong>What to try:</strong> at slide 1 or the last slide, push further with two fingers, hold, then lift. " +
+      "The browser scrolls into real room past the edge, exactly as it scrolls between slides, and its own snapping pulls it back " +
+      "at the moment you lift, because the browser (unlike this page) knows when your fingers leave the pad. " +
+      "This code never writes the scroll position; it only reads how far into the room the browser went and moves the track back by part of it, " +
+      "so what you see follows WebKit’s resistance curve (0.55, limit 0.5 × width). Mouse drag uses the same room. " +
+      "Watch for one thing: a slight wobble during fast motion at the edge, because the browser moves the scroller a frame before this code can respond.",
     onewriter:
       "<strong>What to try:</strong> park on slide 1, pause, then push further left with two fingers: D draws the band, on WebKit’s curve, and springs it home when you lift. " +
       "Now start on slide 3 and flick hard towards slide 1: D draws nothing, and what you see at the edge is the platform’s own bounce, or no bounce in a browser that has none. " +
@@ -731,7 +827,7 @@
   function edgeGaps() {
     var slides = track.querySelectorAll(".slide");
     if (!slides.length) return { left: 0, right: 0 };
-    var c = track.getBoundingClientRect();
+    var c = portRect();
     var minL = Infinity, maxR = -Infinity;
     for (var i = 0; i < slides.length; i++) {
       var r = slides[i].getBoundingClientRect();
@@ -951,6 +1047,128 @@
   // B3. Content offset measured as slide-minus-track, which is invariant
   // under a transform ON the track (both rects move together) -- so this
   // reads true scroll progress even while the bounce transform is applied.
+  // ---- MODE E: native room + on-screen resistance --------------------------
+  // The browser gets real room past the first and last slide (margins on the
+  // end slides -- never spacer children) and scrolls into it itself, so its
+  // own mandatory snapping ends the stretch exactly when the gesture ends:
+  // the lift signal a page is never given. This code never writes the scroll
+  // position; it reads the depth (layout gap, transform-invariant) and
+  // translates the track back by (depth - visible), so the visible gap
+  // follows WebKit's curve: visible = x*c*d / (d + c*x).
+  var eVisible = 0, eRaf = 0;
+  // Stuck safety net. E relies on the browser's own snap to release the
+  // room when the fingers lift. If the browser finishes (scrollend) or goes
+  // still while the scroller rests inside the room, it did not snap, so the
+  // page brings it home itself -- a write made only after the browser has
+  // stopped scrolling, so it never fights it.
+  var E_STILL_MS = 450;          // backstop: no scroll AND no wheel input for this long
+  var E_END_MS = 150;            // after scrollend, unless more wheel input arrives
+  var eEp = null, eStillTimer = 0, eHoming = false;
+  function eDepthNow() {
+    var g = edgeGaps();
+    return g.left > 0.5 ? g.left : g.right < -0.5 ? g.right : 0;
+  }
+  function eEpisodeEnd(how) {
+    if (!eEp) return;
+    eEp.endedBy = how; eEp.ms = Math.round(performance.now() - eEp._t0);
+    eEp.endDepth = Math.round(eDepthNow());
+    delete eEp._t0;
+    (record.eEpisodes = record.eEpisodes || []).push(eEp);
+    if (record.eEpisodes.length > 20) record.eEpisodes.shift();
+    eEp = null;
+    flush();
+  }
+  function eHome(how) {
+    if (mode !== "nativeroom" || dragging || eHoming) return;
+    var depth = eDepthNow();
+    if (Math.abs(depth) < 1) return;
+    if (eEp) { eEp.stuck = how; eEp.stuckDepth = Math.round(depth); }
+    eHoming = true;
+    // depth > 0: a gap on the left, content pushed right -> scroll right.
+    track.scrollBy({ left: depth, behavior: reduce ? "instant" : "smooth" });
+  }
+  function eWatchScroll() {
+    if (mode !== "nativeroom" || eFix === "c") return;
+    var depth = eDepthNow();
+    if (Math.abs(depth) >= 1) {
+      if (!eEp) eEp = { t: new Date().toISOString(), _t0: performance.now(), fix: eFix,
+                        side: depth > 0 ? "start" : "end", maxDepth: 0, scrolls: 0 };
+      eEp.scrolls++;
+      if (Math.abs(depth) > eEp.maxDepth) eEp.maxDepth = Math.round(Math.abs(depth));
+      eArm("still", E_STILL_MS);
+    } else {
+      if (eStillTimer) { window.clearTimeout(eStillTimer); eStillTimer = 0; }
+      if (eEp) eEpisodeEnd(eHoming ? "page-home" : "browser-snap");
+      eHoming = false;
+    }
+  }
+  function eArm(how, ms) {
+    if (eStillTimer) window.clearTimeout(eStillTimer);
+    eStillTimer = window.setTimeout(function () { eStillTimer = 0; eHome(how); }, ms);
+  }
+  // Rev 39 counted only scroll events as "still going". A long trackpad
+  // scroll runs to the end of the room and pins there: the scroll position
+  // stops changing, so scroll events stop, while the fingers or the momentum
+  // are still sending WHEEL events. Your recording: 12 of 20 stretches were
+  // pulled home by the still timer at the full 344px room, ~600ms in. Wheel
+  // events now count as "still going" too, so the backstop only fires once
+  // the input itself has gone quiet.
+  track.addEventListener("wheel", function () {
+    if (mode !== "nativeroom" || eFix === "c" || !eEp || eHoming) return;
+    eArm("still", E_STILL_MS);
+  }, { passive: true });
+  // scrollend no longer homes at once: at the pinned end of the room it can
+  // arrive while momentum is still coming in. It arms a short timer that the
+  // next wheel event cancels.
+  track.addEventListener("scrollend", function () {
+    if (mode !== "nativeroom" || eFix === "c" || eHoming) return;
+    if (Math.abs(eDepthNow()) >= 1) eArm("scrollend", E_END_MS);
+  });
+  // Clip fix: "off" translates the scroller (rev 35, clips the end slide by
+  // the scroll depth); "a" translates the faces inside the slides; "b" keeps
+  // translating the scroller but makes it --bleed wider than the frame on
+  // each side; "c" adds no room and no transform (the platform's own bounce).
+  var eFix = "off";
+  try { var ef = localStorage.getItem("bench-efix"); if (/^(off|a|b|c)$/.test(ef || "")) eFix = ef; } catch (e) {}
+  function eBleed() {
+    if (mode !== "nativeroom" || eFix !== "b") return 0;
+    // Must cover the largest shift, depth - curve(depth) at depth = room:
+    // 0.6w - 0.199w = 0.401w. 0.42w leaves a margin.
+    return Math.ceil((track.parentElement.clientWidth || 320) * 0.42);
+  }
+  // The snap port -- the frame the user sees -- whatever the scroller's size.
+  function portRect() {
+    var c = track.getBoundingClientRect(), b = eBleed();
+    return { left: c.left + b, right: c.right - b };
+  }
+  function portWidth() { return (track.clientWidth - 2 * eBleed()) || 320; }
+  function eRoom() { return Math.round(portWidth() * 0.6); }
+  function eCurve(x) {
+    var d = portWidth() * 0.5, c = 0.55, ax = Math.abs(x);
+    var v = ax * c * d / (d + c * ax);
+    return x < 0 ? -v : v;
+  }
+  function eCompensate() {
+    if (mode !== "nativeroom" || eFix === "c") return;
+    var g = edgeGaps();
+    var depth = g.left > 0.5 ? g.left : g.right < -0.5 ? g.right : 0;
+    var vis = eCurve(depth);
+    eVisible = vis;
+    var shift = depth ? vis - depth : 0;   // move the track (or, fix A, the faces) back towards the edge
+    var on = Math.abs(shift) > 0.05;
+    if (eFix === "a") {
+      if (on) track.style.setProperty("--e-shift", shift.toFixed(2) + "px");
+      else track.style.removeProperty("--e-shift");
+    } else {
+      track.style.transform = on ? "translateX(" + shift.toFixed(2) + "px)" : "";
+    }
+    // Keep following every frame while there is depth (scroll events are
+    // coalesced; the snap-back animation must be tracked smoothly too).
+    if (depth && !eRaf) {
+      eRaf = window.requestAnimationFrame(function () { eRaf = 0; eCompensate(); pushSample(); report(); });
+    }
+  }
+
   function trackContentOffset() {
     var s = track.querySelector(".slide");
     if (!s) return 0;
@@ -983,6 +1201,16 @@
     track.scrollBy({ left: -cd, behavior: "instant" });
     var moved = trackContentOffset() - before;
     var refused = cd - moved;
+    // The scroller rounds each step, so mid-track a fraction of a pixel is
+    // always "refused". That is not overdrag: only count a refusal when the
+    // content is actually against an edge (read from layout gaps, invariant
+    // 2). Revision 34's timeline showed the cost: 0.5-1px of phantom band
+    // ran the full 340ms spring-back and held every flick still that long.
+    if (!rawOver) {
+      var gEdge = edgeGaps();
+      var atEdge = cd > 0 ? gEdge.left >= -0.5 : gEdge.right <= 0.5;
+      if (!atEdge || Math.abs(refused) < 1) refused = 0;
+    }
     if (refused || rawOver) {
       rawOver += refused;
       if ((rawOver > 0) !== (rawOver + refused > 0) && Math.abs(rawOver) < 0.5) rawOver = 0;
@@ -999,7 +1227,7 @@
     // cancels it through bounceSettling.
     if (bounceHoming) { done && done(); return; }
     var from = rawOver;
-    if (!from || reduce) { rawOver = 0; applyBounce(); done && done(); return; }
+    if (Math.abs(from) < 1 || reduce) { rawOver = 0; applyBounce(); done && done(); return; }
     bounceHoming = true;
     var t0 = performance.now(), DUR = 340;
     (function step() {
@@ -1057,7 +1285,15 @@
   }
 
   function applyMode() {
-    var pad = mode === "deadspace" ? PAD : 0;   // B2 adds its room per-gesture, not up front
+    var vp = track.parentElement;
+    vp.classList.toggle("efix-b", mode === "nativeroom" && eFix === "b");
+    if (eBleed()) vp.style.setProperty("--bleed", eBleed() + "px"); else vp.style.removeProperty("--bleed");
+    efixEl.hidden = mode !== "nativeroom";
+    efixNote.textContent = EFIX_NOTES[eFix];
+    // Fix B's margin includes the bleed, so the depth reachable past the
+    // frame edge -- and so the feel -- is the same as the other fixes.
+    var pad = mode === "deadspace" ? PAD
+      : mode === "nativeroom" ? (eFix === "c" ? 0 : eRoom() + eBleed()) : 0;   // B2 adds its room per-gesture
     rawOver = 0; over = 0; padLive = pad;
     cancelUnpad();
     if (wheelTimer) { window.clearTimeout(wheelTimer); wheelTimer = 0; }
@@ -1071,6 +1307,9 @@
       slides[slides.length - 1].style.marginInlineEnd = pad + "px";
     }
     track.style.transform = "";
+    track.style.removeProperty("--e-shift");
+    if (eStillTimer) { window.clearTimeout(eStillTimer); eStillTimer = 0; }
+    eEp = null; eHoming = false;
     bounceSettling = false; bounceHoming = false; burstLog = null;
     if (typeof ow !== "undefined") {
       owCancelHome(); ow.raw = 0; ow.lastAt = 0; ow.released = false; owVisible = 0;
@@ -1081,12 +1320,13 @@
     voidLabel.textContent = mode === "deadspace" ? "frame · dead space at both ends"
       : mode === "damped" ? "frame · room appears only while dragging"
       : mode === "bounce" ? "frame · no room past the edge, the track moves instead"
-      : mode === "onewriter" ? "frame · band drawn only where the platform draws none" : "frame";
+      : mode === "onewriter" ? "frame · band drawn only where the platform draws none"
+      : mode === "nativeroom" ? "frame · real room past the ends, compressed on screen" : "frame";
     modeNote.innerHTML = NOTES[mode];
     traceHint.textContent = mode === "clamped" ? "expect a flat line at the edges" : "";
     samples = [];
     // Keep slide 1 aligned when the leading spacer appears or disappears.
-    track.scrollLeft = pad;
+    track.scrollLeft = pad - eBleed();
     report();
   }
 
@@ -1096,6 +1336,7 @@
     if (mode === "transform") return over;
     if (mode === "bounce") return Math.abs(rubberSigned(rawOver));
     if (mode === "onewriter") return Math.max(Math.abs(rubberSigned(rawOver)), Math.abs(owVisible));
+    if (mode === "nativeroom") return Math.abs(eVisible);
     if (mode === "damped") {
       // Measured from layout, never inferred from a scroll coordinate, so
       // it reads the same during the drag and during the spring-back -- and
@@ -1111,7 +1352,7 @@
 
   function selectedIndex() {
     var slides = track.querySelectorAll(".slide");
-    var box = track.getBoundingClientRect();
+    var box = portRect();
     var best = 0, bestD = Infinity;
     for (var i = 0; i < slides.length; i++) {
       var r = slides[i].getBoundingClientRect();
@@ -1127,7 +1368,7 @@
     rOver.textContent = o;
     rOver.className = "v" + (o > 0 ? " hot" : "");
     rWidth.textContent = Math.round(track.scrollWidth);
-    rSel.textContent = (selectedIndex() + 1) + " of 5";
+    rSel.textContent = (selectedIndex() + 1) + " of " + track.querySelectorAll(".slide").length;
     rSel.className = "v ok";
   }
 
@@ -1156,7 +1397,7 @@
   // Offset, in physical px, between a slide's leading edge and the
   // container's. Zero means that slide is exactly at rest.
   function slideOffset(el) {
-    return el.getBoundingClientRect().left - track.getBoundingClientRect().left;
+    return el.getBoundingClientRect().left - portRect().left;
   }
 
   function alignExactly(el) {
@@ -1168,7 +1409,8 @@
 
   function settle() {
     var slides = track.querySelectorAll(".slide");
-    var target = slides[selectedIndex()];
+    var target = slides[flickTarget !== null ? flickTarget : selectedIndex()];
+    flickTarget = null;
     if (!target) { restoreSnap(); return; }
     var myToken = ++settleToken;   // a newer gesture can abort this animation
 
@@ -1244,21 +1486,31 @@
       hint: "Measured rest after a burst is 64–78 ms, so the default sits just above it." },
     { k: "smooth", label: "Momentum = each event ≥ this × the last", min: 0.6, max: 0.98, step: 0.01, def: 0.8, fmt: 2,
       hint: "Momentum decays smoothly (your trackpad: ~0.95 per event); a hand jitters. Below this ratio counts as jitter, not momentum." },
-    { k: "ratioMax", label: "Momentum ceiling (× the last)", min: 0.9, max: 1, step: 0.005, def: 0.97, fmt: 3,
+    { k: "ratioMax", label: "Momentum ceiling (× the last)", min: 0.9, max: 1, step: 0.005, def: 0.96, fmt: 3,
       hint: "A delta above this fraction of the last is a hand still pushing, not coasting. wheel-gestures uses 0.96." },
     { k: "repress", label: "Re-push = delta jumps above (× the last)", min: 1.3, max: 4, step: 0.1, def: 2, fmt: 1,
       hint: "A sudden jump during momentum starts a new gesture at once, instead of waiting for the idle gap. From wheel-gestures." },
-    { k: "runs", label: "Smooth-decay events before release", min: 1, max: 6, step: 1, def: 3, fmt: 0,
+    { k: "coastRise", label: "Re-push after coasting = delta rises above (× the last)", min: 1.05, max: 3, step: 0.05, def: 1.3, fmt: 2,
+      hint: "Once a stream has coasted (momentum), a rise this big is new fingers. Momentum only falls. Your re-push at slide 1 rose 1.6×, 1.97×, 1.39× per event, never 2× at once." },
+    { k: "runs", label: "Smooth-decay events before release", min: 1, max: 10, step: 1, def: 5, fmt: 0,
       hint: "Consecutive smoothly-decaying events that mean the fingers have lifted." },
-    { k: "idle", label: "Release when the stream stops (ms)", min: 30, max: 300, step: 5, def: 90, fmt: 0,
-      hint: "Backstop for a slow push that just stops, with no decline to detect." },
+    { k: "idle", label: "Safety release after silence (ms)", min: 200, max: 5000, step: 50, def: 1500, fmt: 0,
+      hint: "Fingers resting still send nothing, so a lift is normally detected by the cursor moving (next knob) or by momentum. This only covers a lift followed by no movement at all." },
+    { k: "slowIdle", label: "Slow push: release after silence (ms)", min: 80, max: 1500, step: 10, def: 250, fmt: 0,
+      hint: "A slow push has no momentum tail, so after the lift there is only silence. Your slow pushes peaked at 5–16px per event and waited for the cursor or the 1500ms backstop. Keep pushing after this fires and the band is grabbed back." },
+    { k: "slowPeak", label: "Slow push = peak step below (px)", min: 5, max: 120, step: 1, def: 40, fmt: 0,
+      hint: "Your slow pushes peaked at 5–16px per event, your real flicks at 93–195px. Below this, a lift cannot produce momentum to detect." },
+    { k: "liftPx", label: "Lift = cursor moves at least (px)", min: 1, max: 20, step: 1, def: 2, fmt: 0,
+      hint: "A two-finger scroll never moves the cursor; after lifting, the next cursor movement is a finger. Small moves browsers synthesise for hover are ignored." },
+    { k: "flick", label: "Mouse flick velocity (px/ms)", min: 0.1, max: 2, step: 0.05, def: 0.4, fmt: 2,
+      hint: "A mouse drag released faster than this moves one slide in its direction, even if it covered less than half a slide. All modes." },
     { k: "home", label: "Spring-back duration (ms)", min: 120, max: 800, step: 10, def: 340, fmt: 0,
       hint: "Ease-out cubic, like the mouse release." },
     { k: "cap", label: "Hard cap (× track width)", min: 0.05, max: 1, step: 0.01, def: 1, fmt: 2,
       hint: "Safety ceiling on the drawn band. 1.0 means off." }
   ];
   var knob = {};
-  var KNOB_STORE = "bench-ow-knobs-v4";
+  var KNOB_STORE = "bench-ow-knobs-v8";
   (function loadKnobs() {
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(KNOB_STORE) || "null"); } catch (e) { saved = null; }
@@ -1277,6 +1529,17 @@
 
   var knobsEl = document.getElementById("knobs");
   var tuneEl = document.getElementById("tune");
+  var efixEl = document.getElementById("efix"), efixNote = document.getElementById("efixNote");
+  (function () {
+    var all = document.querySelectorAll("[data-efix]");
+    for (var i = 0; i < all.length; i++) all[i].setAttribute("aria-pressed", String(all[i].dataset.efix === eFix));
+  })();
+  var EFIX_NOTES = {
+    off: "Fix 0 · off. Rev 35 as you tried it: the scroller itself is shifted, and a scroller carries its own clip box, so the end slide is cut off by the whole scroll depth.",
+    a: "Fix 1 · move the slide content. The scroller and the slides stay put (so do the clip box and the snap points); only the content inside each slide is shifted.",
+    b: "Fix 2 · wide scroller. The scroller is shifted as in rev 35, but it is 42% wider than the frame on each side, so its moving clip box never reaches what the frame shows. The frame does the clipping.",
+    c: "Fix 3 · platform bounce. No room past the ends and no code: whatever your browser does at a scroll container's end. Safari and Firefox on macOS draw their own bounce; Chromium stops hard. Mouse drag stops hard here."
+  };
   var tuneLive = document.getElementById("tuneLive");
   var knobInputs = {};
   function fmtKnob(kd, v) { return kd.fmt ? v.toFixed(kd.fmt) : String(Math.round(v)); }
@@ -1346,10 +1609,16 @@
     return v < 0 ? -x : x;
   }
 
+  track.addEventListener("scrollend", function () {
+    if (mode === "onewriter" && burstLog && burstLog.owned) {
+      (burstLog.scrollEnds = burstLog.scrollEnds || []).push(Math.round(performance.now() - (burstLog._t0 || 0)));
+    }
+  });
   var ow = { lastAt: 0, startLeft: false, startRight: false, owned: null, raw: 0,
              peak: 0, lastAbs: Infinity, lowRun: 0, released: false, wheelSum: 0, drawnMax: 0,
              prevRaw: 0, lastPair: Infinity, rawLast: 0,
-             homeToken: 0, homing: false, idleTimer: 0 };
+             homeToken: 0, homing: false, idleTimer: 0,
+             coasting: false, coastRun: 0, coastPrev: 0 };
   var owVisible = 0;
 
   function owApply(v) {
@@ -1402,7 +1671,21 @@
     // arriving: a re-push during live momentum. (wheel-gestures' own rule,
     // xiel/wheel-gestures@4c0592b src/wheel-gestures/wheel-gestures.ts:100-111,
     // MIT: a delta > max(2, lastAbs * 2) ends the gesture.)
-    var repush = ow.lastAt && ow.rawLast > 0 && ad > Math.max(2, ow.rawLast * knob.repress);
+    // Only while the previous gesture is coasting: during the onset of an
+    // ordinary push the deltas ramp up fast (3, 9, 21...) and must not count.
+    // Coasting is tracked for EVERY stream, owned or not. Rev 39 only let a
+    // re-push end a gesture D had owned and released, so a native scroll
+    // arriving from another slide (never owned) swallowed the next push at
+    // the edge into its own momentum tail, and D never took over. Your
+    // recording: ...-57, -53, -49 (momentum) then -13, -28, -67, -112 (a new
+    // push: a dip, then a rise). Momentum only ever falls, so once a stream
+    // has coasted, any clear rise is fingers pushing again.
+    var fallOk = ow.coastPrev > 0 && ad <= ow.coastPrev * knob.ratioMax && ad >= ow.coastPrev * knob.smooth;
+    ow.coastRun = fallOk ? ow.coastRun + 1 : 0;
+    if (ow.coastRun >= knob.runs) ow.coasting = true;
+    ow.coastPrev = ad;
+    var rise = ow.coasting ? knob.coastRise : knob.repress;
+    var repush = ow.lastAt && (ow.released || ow.coasting) && ow.rawLast > 0 && ad > Math.max(2, ow.rawLast * rise);
     ow.rawLast = ad;
     if (now - ow.lastAt > knob.gap || repush) {
       if (repush && burstLog) burstLog.endedByRepush = true;
@@ -1414,7 +1697,11 @@
       ow.startRight = g0.right <= 0.5;
       ow.owned = null; ow.peak = 0; ow.lastAbs = Infinity; ow.lowRun = 0; ow.released = false;
       ow.wheelSum = 0; ow.drawnMax = 0; ow.prevRaw = 0; ow.lastPair = Infinity;
-      if (ow.homing) owCancelHome();
+      ow.coasting = false; ow.coastRun = 0; ow.coastPrev = ad;
+      // Resuming while the band springs home: continue from where it is now.
+      // owHome() zeroes ow.raw up front, so without this the band would jump
+      // to the edge -- common now that a slow push releases after 250ms.
+      if (ow.homing) { owCancelHome(); ow.raw = webkitRubberInverse(owVisible); }
       record.wheel.bursts++;
       burstBegin(e.deltaMode);
       burstLog.startedAtEdge = ow.startLeft ? "left" : ow.startRight ? "right" : "none";
@@ -1429,7 +1716,18 @@
       if (burstLog) burstLog.owned = ow.owned;
     }
 
+    if (ow.owned && ow.released && atLimit && ow.lastAbs !== Infinity && ad > ow.lastAbs * 1.15) {
+      // The deltas are RISING again after a release: the fingers never
+      // lifted (a slow push that eased off looked like decay). Grab the band
+      // back from wherever the spring-back has got to instead of ignoring
+      // the rest of the push.
+      owCancelHome();
+      ow.raw = webkitRubberInverse(owVisible);
+      ow.released = false; ow.lowRun = 0; ow.peak = ad; ow.lastPair = Infinity; ow.prevRaw = 0;
+      if (burstLog) burstLog.reengaged = (burstLog.reengaged || 0) + 1;
+    }
     if (!ow.owned || ow.released) {                 // the platform's bounce, or a spent tail
+      if (ow.released) ow.lastAbs = ad;
       burstSample(d);
       return;
     }
@@ -1475,15 +1773,38 @@
     burstSample(d);
     pushSample(); report();
 
+    // A slow push cannot end in momentum, so silence is the only lift signal
+    // it will ever give: release it after a short silence, not the long
+    // backstop. If the fingers were only resting, the next push re-engages.
+    var slow = ow.peak < knob.slowPeak;
     if (ow.idleTimer) window.clearTimeout(ow.idleTimer);
     ow.idleTimer = window.setTimeout(function () {
       ow.idleTimer = 0;
-      if (!ow.released) { owFinishOwned("idle"); ow.released = true; owHome(); }
-    }, knob.idle);
+      if (!ow.released) { owFinishOwned(slow ? "slow-silence" : "idle"); ow.released = true; owHome(); }
+    }, slow ? knob.slowIdle : knob.idle);
   }, { passive: true });
 
   renderKnobs();
   window.addEventListener("resize", describeCurve);
+
+  // The web exposes neither the trackpad's touch state nor the scroll
+  // phase, so a finger resting still and a finger lifted look the same.
+  // But a two-finger scroll never moves the cursor, and after lifting the
+  // next thing that moves it is a finger: a real cursor movement is the
+  // lift signal. Browsers send small synthetic moves on scroll to update
+  // hover, at the same coordinates, so require an actual displacement.
+  var liftX = null, liftY = null;
+  window.addEventListener("pointermove", function (e) {
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    if (liftX === null) { liftX = e.clientX; liftY = e.clientY; return; }
+    var moved = Math.abs(e.clientX - liftX) + Math.abs(e.clientY - liftY);
+    liftX = e.clientX; liftY = e.clientY;
+    if (mode !== "onewriter" || !ow.owned || ow.released || !owVisible) return;
+    if (moved >= knob.liftPx) {
+      owFinishOwned("cursor-moved");
+      ow.released = true; owHome();
+    }
+  }, { passive: true });
 
   var gesture = null;
 
@@ -1506,12 +1827,26 @@
       peakOverscroll: 0,
       peakRawOver: 0,      // B2: raw finger travel past the edge, before damping
       hitBoundary: false,
-      dragPx: 0
+      dragPx: 0,
+      // Timeline, for the "drag jumped from slide 1 to 5" report: what the
+      // scroller, snap state and transform did from pointerdown to rest.
+      timeline: []
     };
+    var tl0 = performance.now(), tlGesture = gesture;
+    (function sampleTl() {
+      if (!tlGesture || tlGesture.timeline.length >= 120) return;
+      tlGesture.timeline.push([Math.round(performance.now() - tl0), Math.round(track.scrollLeft),
+        track.style.scrollSnapType || "-", track.style.transform ? track.style.transform.replace(/[^0-9.-]/g, "") : "0",
+        selectedIndex()]);
+      if (performance.now() - tl0 < 3000) window.requestAnimationFrame(sampleTl);
+    })();
   });
 
+  var velSamples = [];   // [t, x] of recent pointer moves, for the flick test
   window.addEventListener("pointermove", function (e) {
     if (!armed) return;
+    velSamples.push([performance.now(), e.clientX]);
+    if (velSamples.length > 12) velSamples.shift();
     var dx = e.clientX - lastX;
     if (!dragging) {
       if (Math.abs(e.clientX - startX) < THRESHOLD) return;
@@ -1584,9 +1919,37 @@
     }, 950);
   }
 
+  // Release velocity over the last ~100ms of movement (px/ms, + = pointer
+  // moved right). A pointer that stopped before letting go has no flick.
+  function releaseVelocity() {
+    var now = performance.now();
+    var recent = velSamples.filter(function (s) { return now - s[0] <= 100; });
+    if (recent.length < 2) return 0;
+    var a = recent[0], b = recent[recent.length - 1];
+    return b[0] > a[0] ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
+  }
+  var flickTarget = null;   // slide index a flick asks the next settle() for
+
   window.addEventListener("pointerup", function () {
     if (!armed) return;
     armed = false;
+    if (dragging) {
+      // A fast release moves one slide in its direction, measured from the
+      // slide the drag started on -- unless the drag itself already got
+      // further (then the nearest slide wins, as before). Pointer moving
+      // left = content moving left = the next slide.
+      var v = releaseVelocity();
+      flickTarget = null;
+      if (gesture && Math.abs(v) >= knob.flick) {
+        var n = track.querySelectorAll(".slide").length;
+        var from = gesture.indexStart, near = selectedIndex();
+        var want = Math.max(0, Math.min(n - 1, from + (v < 0 ? 1 : -1)));
+        if ((v < 0 && near < want) || (v > 0 && near > want)) flickTarget = want;
+        gesture.flickVelocity = Math.round(v * 100) / 100;
+        gesture.flickTarget = flickTarget;
+      }
+    }
+    velSamples = [];
     if (!dragging) { gesture = null; return; }
     dragging = false;
     track.classList.remove("grabbing");
@@ -1812,8 +2175,21 @@
     }, WHEEL_IDLE_MS);
   }, { passive: true });
 
-  track.addEventListener("scroll", function () { if (!dragging) report(); }, { passive: true });
+  track.addEventListener("scroll", function () { eCompensate(); if (!dragging) eWatchScroll(); if (!dragging) report(); }, { passive: true });
   window.addEventListener("resize", report);
+
+  document.getElementById("efixChoices").addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-efix]");
+    if (!btn) return;
+    var all = this.querySelectorAll("[data-efix]");
+    for (var i = 0; i < all.length; i++) all[i].setAttribute("aria-pressed", String(all[i] === btn));
+    tallyDwell();
+    eFix = btn.dataset.efix;
+    try { localStorage.setItem("bench-efix", eFix); } catch (err) {}
+    applyMode();
+    flush();
+  });
+  window.addEventListener("resize", function () { if (mode === "nativeroom") applyMode(); });
 
   document.getElementById("modes").addEventListener("click", function (e) {
     var btn = e.target.closest(".mode");
@@ -1947,8 +2323,8 @@
   (function seamlessLoop() {
     var loopTrack = document.getElementById("loopTrack");
     if (!loopTrack) return;
-    var N = 12, R = 2;
-    var HUES = [0, 30, 55, 95, 140, 175, 200, 225, 255, 285, 315, 340];
+    var N = 25, R = 2;
+    var HUES = []; for (var h = 0; h < 25; h++) HUES.push(Math.round(h * 360 / 25));
     var current = 0, recenters = 0, laps = 0, playing = false, playTimer = 0;
     var hovered = false, focused = false, settleTimer = 0;
     var lShow = document.getElementById("lShow"), lDom = document.getElementById("lDom");
