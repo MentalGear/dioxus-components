@@ -1,0 +1,247 @@
+{
+ "about": "Real MacBook trackpad wheel recordings (Firefox 156, macOS) curated from the owner's carousel-overscroll bench telemetry (sessions recorded 2026-09-28 on bench rev 33-40), plus two clearly-marked SYNTHETIC recordings. Replayed by playwright/wheel-replay.ts.",
+ "timing": "The telemetry has NO per-event timestamps: each burst stores only its ordered deltas (first 80), its event count and one total duration `ms` (first event to the moment the NEXT gesture began, so it includes any trailing silence). Events are therefore spaced UNIFORMLY at `intervalMs` = ms/events where that is consistent with a 60Hz stream (<= 20ms, or the burst was ended by a re-push so there is no trailing silence); otherwise 17ms is used (the median ms/events of the 17 re-push-ended bursts is 17.8ms; Firefox delivers wheel events once per frame). Real inter-event jitter is lost. `t` = ms since the first event.",
+ "sign": "dx < 0 at the start edge and dx > 0 at the end edge (bench convention: cd = -d). Real recordings store the single signed delta the bench used (deltaX if non-zero else deltaY); it is replayed as dx with dy 0, the horizontal two-finger swipe a trackpad sends. deltaMode is 0 (pixels) for all real data.",
+ "fields": "arrivalIndex: (native kinds) event index at which the browser's own momentum scroll is assumed to reach the edge; the real index was not recorded, so it is a documented approximation. repushIndex: index of the first event of the dip-then-rise re-push. edge: the edge the recording pushes toward. recorded: what the bench itself logged for the source burst.",
+ "recordings": [
+  {
+   "id": "owned-push-flick",
+   "source": "1a521d6ae4564599b9da510994c6d521#4",
+   "kind": "owned-push",
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 18.81,
+   "recorded": {"events": 78, "ms": 1467, "peak": 74, "startedAtEdge": "left", "owned": true, "benchRelease": "smooth-decay", "benchMaxOverPx": 123, "benchBandPctOfTrack": 21},
+   "note": "78-event flick at rest at the start edge; bench D owned it, drew a 123px band (21% of the track) and released by smooth decay. Ramp, a jittery plateau (35-74), then a clean geometric tail; the tail is what release detection keys on.",
+   "events": [
+    {"t":0,"dx":-1,"dy":0}, {"t":19,"dx":-5,"dy":0}, {"t":38,"dx":-17,"dy":0}, {"t":56,"dx":-30,"dy":0}, {"t":75,"dx":-39,"dy":0}, {"t":94,"dx":-56,"dy":0},
+    {"t":113,"dx":-74,"dy":0}, {"t":132,"dx":-62,"dy":0}, {"t":150,"dx":-64,"dy":0}, {"t":169,"dx":-61,"dy":0}, {"t":188,"dx":-58,"dy":0}, {"t":207,"dx":-43,"dy":0},
+    {"t":226,"dx":-36,"dy":0}, {"t":245,"dx":-48,"dy":0}, {"t":263,"dx":-35,"dy":0}, {"t":282,"dx":-33,"dy":0}, {"t":301,"dx":-28,"dy":0}, {"t":320,"dx":-32,"dy":0},
+    {"t":339,"dx":-32,"dy":0}, {"t":357,"dx":-45,"dy":0}, {"t":376,"dx":-50,"dy":0}, {"t":395,"dx":-51,"dy":0}, {"t":414,"dx":-50,"dy":0}, {"t":433,"dx":-49,"dy":0},
+    {"t":451,"dx":-47,"dy":0}, {"t":470,"dx":-50,"dy":0}, {"t":489,"dx":-47,"dy":0}, {"t":508,"dx":-43,"dy":0}, {"t":527,"dx":-40,"dy":0}, {"t":545,"dx":-37,"dy":0},
+    {"t":564,"dx":-34,"dy":0}, {"t":583,"dx":-31,"dy":0}, {"t":602,"dx":-28,"dy":0}, {"t":621,"dx":-26,"dy":0}, {"t":640,"dx":-24,"dy":0}, {"t":658,"dx":-22,"dy":0},
+    {"t":677,"dx":-20,"dy":0}, {"t":696,"dx":-18,"dy":0}, {"t":715,"dx":-16,"dy":0}, {"t":734,"dx":-15,"dy":0}, {"t":752,"dx":-14,"dy":0}, {"t":771,"dx":-13,"dy":0},
+    {"t":790,"dx":-12,"dy":0}, {"t":809,"dx":-11,"dy":0}, {"t":828,"dx":-9,"dy":0}, {"t":846,"dx":-9,"dy":0}, {"t":865,"dx":-8,"dy":0}, {"t":884,"dx":-7,"dy":0},
+    {"t":903,"dx":-7,"dy":0}, {"t":922,"dx":-6,"dy":0}, {"t":940,"dx":-6,"dy":0}, {"t":959,"dx":-5,"dy":0}, {"t":978,"dx":-5,"dy":0}, {"t":997,"dx":-5,"dy":0},
+    {"t":1016,"dx":-4,"dy":0}, {"t":1035,"dx":-4,"dy":0}, {"t":1053,"dx":-4,"dy":0}, {"t":1072,"dx":-4,"dy":0}, {"t":1091,"dx":-3,"dy":0}, {"t":1110,"dx":-3,"dy":0},
+    {"t":1129,"dx":-3,"dy":0}, {"t":1147,"dx":-3,"dy":0}, {"t":1166,"dx":-3,"dy":0}, {"t":1185,"dx":-2,"dy":0}, {"t":1204,"dx":-2,"dy":0}, {"t":1223,"dx":-2,"dy":0},
+    {"t":1241,"dx":-2,"dy":0}, {"t":1260,"dx":-2,"dy":0}, {"t":1279,"dx":-2,"dy":0}, {"t":1298,"dx":-1,"dy":0}, {"t":1317,"dx":-1,"dy":0}, {"t":1336,"dx":-1,"dy":0},
+    {"t":1354,"dx":-1,"dy":0}, {"t":1373,"dx":-1,"dy":0}, {"t":1392,"dx":-1,"dy":0}, {"t":1411,"dx":-1,"dy":0}, {"t":1430,"dx":-1,"dy":0}, {"t":1448,"dx":-1,"dy":0}
+   ]
+  },
+  {
+   "id": "owned-push-hard",
+   "source": "1a521d6ae4564599b9da510994c6d521#1",
+   "kind": "owned-push",
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 17.0,
+   "recorded": {"events": 48, "ms": 816, "peak": 131, "startedAtEdge": "left", "owned": true, "benchRelease": "smooth-decay", "benchMaxOverPx": 131, "benchBandPctOfTrack": 23},
+   "note": "48-event hard flick (peak 131/event) at the start edge: the largest owned band in the set that is a complete burst (131px, 23%); fast attack (-1,-9,-30,-69,-113,-129) then smooth decay. Stresses the band bound.",
+   "events": [
+    {"t":0,"dx":-1,"dy":0}, {"t":17,"dx":-9,"dy":0}, {"t":34,"dx":-30,"dy":0}, {"t":51,"dx":-69,"dy":0}, {"t":68,"dx":-113,"dy":0}, {"t":85,"dx":-129,"dy":0},
+    {"t":102,"dx":-93,"dy":0}, {"t":119,"dx":-74,"dy":0}, {"t":136,"dx":-127,"dy":0}, {"t":153,"dx":-131,"dy":0}, {"t":170,"dx":-130,"dy":0}, {"t":187,"dx":-124,"dy":0},
+    {"t":204,"dx":-118,"dy":0}, {"t":221,"dx":-113,"dy":0}, {"t":238,"dx":-106,"dy":0}, {"t":255,"dx":-101,"dy":0}, {"t":272,"dx":-96,"dy":0}, {"t":289,"dx":-92,"dy":0},
+    {"t":306,"dx":-87,"dy":0}, {"t":323,"dx":-82,"dy":0}, {"t":340,"dx":-77,"dy":0}, {"t":357,"dx":-74,"dy":0}, {"t":374,"dx":-68,"dy":0}, {"t":391,"dx":-64,"dy":0},
+    {"t":408,"dx":-59,"dy":0}, {"t":425,"dx":-55,"dy":0}, {"t":442,"dx":-51,"dy":0}, {"t":459,"dx":-47,"dy":0}, {"t":476,"dx":-45,"dy":0}, {"t":493,"dx":-41,"dy":0},
+    {"t":510,"dx":-37,"dy":0}, {"t":527,"dx":-35,"dy":0}, {"t":544,"dx":-32,"dy":0}, {"t":561,"dx":-29,"dy":0}, {"t":578,"dx":-26,"dy":0}, {"t":595,"dx":-24,"dy":0},
+    {"t":612,"dx":-22,"dy":0}, {"t":629,"dx":-20,"dy":0}, {"t":646,"dx":-19,"dy":0}, {"t":663,"dx":-17,"dy":0}, {"t":680,"dx":-16,"dy":0}, {"t":697,"dx":-14,"dy":0},
+    {"t":714,"dx":-13,"dy":0}, {"t":731,"dx":-12,"dy":0}, {"t":748,"dx":-11,"dy":0}, {"t":765,"dx":-10,"dy":0}, {"t":782,"dx":1,"dy":0}, {"t":799,"dx":1,"dy":0}
+   ]
+  },
+  {
+   "id": "slow-push-a",
+   "source": "c6bd0a4f2d42426fa065e1083faf018f#2",
+   "kind": "slow-push",
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 17,
+   "recorded": {"events": 41, "ms": 1671, "peak": 16, "startedAtEdge": "left", "owned": true, "benchRelease": "slow-silence", "benchMaxOverPx": 25, "benchBandPctOfTrack": 4},
+   "note": "Small-step push (peak 16/event) at the start edge; the bench released it by 'slow-silence' (no decay to detect). Ends on a long -1/-2 plateau.",
+   "events": [
+    {"t":0,"dx":-3,"dy":0}, {"t":17,"dx":-3,"dy":0}, {"t":34,"dx":-4,"dy":0}, {"t":51,"dx":-3,"dy":0}, {"t":68,"dx":-10,"dy":0}, {"t":85,"dx":-7,"dy":0},
+    {"t":102,"dx":-16,"dy":0}, {"t":119,"dx":-13,"dy":0}, {"t":136,"dx":-13,"dy":0}, {"t":153,"dx":-10,"dy":0}, {"t":170,"dx":-9,"dy":0}, {"t":187,"dx":-9,"dy":0},
+    {"t":204,"dx":-9,"dy":0}, {"t":221,"dx":-7,"dy":0}, {"t":238,"dx":-4,"dy":0}, {"t":255,"dx":-5,"dy":0}, {"t":272,"dx":-3,"dy":0}, {"t":289,"dx":-3,"dy":0},
+    {"t":306,"dx":-2,"dy":0}, {"t":323,"dx":-2,"dy":0}, {"t":340,"dx":-2,"dy":0}, {"t":357,"dx":-2,"dy":0}, {"t":374,"dx":-2,"dy":0}, {"t":391,"dx":-2,"dy":0},
+    {"t":408,"dx":-2,"dy":0}, {"t":425,"dx":-2,"dy":0}, {"t":442,"dx":-1,"dy":0}, {"t":459,"dx":-1,"dy":0}, {"t":476,"dx":-1,"dy":0}, {"t":493,"dx":-1,"dy":0},
+    {"t":510,"dx":-1,"dy":0}, {"t":527,"dx":-1,"dy":0}, {"t":544,"dx":-1,"dy":0}, {"t":561,"dx":-1,"dy":0}, {"t":578,"dx":-1,"dy":0}, {"t":595,"dx":-1,"dy":0},
+    {"t":612,"dx":-2,"dy":0}, {"t":629,"dx":-1,"dy":0}, {"t":646,"dx":-1,"dy":0}, {"t":663,"dx":-1,"dy":0}, {"t":680,"dx":-1,"dy":0}
+   ]
+  },
+  {
+   "id": "slow-push-b",
+   "source": "1b6230756ebd4d81add32f632094a48e#4",
+   "kind": "slow-push",
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 17,
+   "recorded": {"events": 77, "ms": 1733, "peak": 12, "startedAtEdge": "left", "owned": true, "benchRelease": "smooth-decay", "benchMaxOverPx": 16, "benchBandPctOfTrack": 2},
+   "note": "77-event very slow push (peak 12/event) with a hump: the deltas rise again mid-push (-5 to -12) then ease off. The bench drew a 16px band and released by smooth decay.",
+   "events": [
+    {"t":0,"dx":-3,"dy":0}, {"t":17,"dx":-4,"dy":0}, {"t":34,"dx":-6,"dy":0}, {"t":51,"dx":-8,"dy":0}, {"t":68,"dx":-9,"dy":0}, {"t":85,"dx":-10,"dy":0},
+    {"t":102,"dx":-8,"dy":0}, {"t":119,"dx":-9,"dy":0}, {"t":136,"dx":-9,"dy":0}, {"t":153,"dx":-9,"dy":0}, {"t":170,"dx":-9,"dy":0}, {"t":187,"dx":-7,"dy":0},
+    {"t":204,"dx":-7,"dy":0}, {"t":221,"dx":-6,"dy":0}, {"t":238,"dx":-6,"dy":0}, {"t":255,"dx":-6,"dy":0}, {"t":272,"dx":-5,"dy":0}, {"t":289,"dx":-5,"dy":0},
+    {"t":306,"dx":-5,"dy":0}, {"t":323,"dx":-6,"dy":0}, {"t":340,"dx":-6,"dy":0}, {"t":357,"dx":-6,"dy":0}, {"t":374,"dx":-7,"dy":0}, {"t":391,"dx":-8,"dy":0},
+    {"t":408,"dx":-9,"dy":0}, {"t":425,"dx":-10,"dy":0}, {"t":442,"dx":-10,"dy":0}, {"t":459,"dx":-12,"dy":0}, {"t":476,"dx":-12,"dy":0}, {"t":493,"dx":-11,"dy":0},
+    {"t":510,"dx":-12,"dy":0}, {"t":527,"dx":-11,"dy":0}, {"t":544,"dx":-12,"dy":0}, {"t":561,"dx":-11,"dy":0}, {"t":578,"dx":-9,"dy":0}, {"t":595,"dx":-11,"dy":0},
+    {"t":612,"dx":-11,"dy":0}, {"t":629,"dx":-8,"dy":0}, {"t":646,"dx":-10,"dy":0}, {"t":663,"dx":-10,"dy":0}, {"t":680,"dx":-9,"dy":0}, {"t":697,"dx":-8,"dy":0},
+    {"t":714,"dx":-8,"dy":0}, {"t":731,"dx":-8,"dy":0}, {"t":748,"dx":-7,"dy":0}, {"t":765,"dx":-7,"dy":0}, {"t":782,"dx":-6,"dy":0}, {"t":799,"dx":-6,"dy":0},
+    {"t":816,"dx":-5,"dy":0}, {"t":833,"dx":-5,"dy":0}, {"t":850,"dx":-3,"dy":0}, {"t":867,"dx":-5,"dy":0}, {"t":884,"dx":-3,"dy":0}, {"t":901,"dx":-3,"dy":0},
+    {"t":918,"dx":-3,"dy":0}, {"t":935,"dx":-3,"dy":0}, {"t":952,"dx":-2,"dy":0}, {"t":969,"dx":-2,"dy":0}, {"t":986,"dx":-2,"dy":0}, {"t":1003,"dx":-2,"dy":0},
+    {"t":1020,"dx":-2,"dy":0}, {"t":1037,"dx":-2,"dy":0}, {"t":1054,"dx":-2,"dy":0}, {"t":1071,"dx":-1,"dy":0}, {"t":1088,"dx":-1,"dy":0}, {"t":1105,"dx":-1,"dy":0},
+    {"t":1122,"dx":-1,"dy":0}, {"t":1139,"dx":-2,"dy":0}, {"t":1156,"dx":-2,"dy":0}, {"t":1173,"dx":-2,"dy":0}, {"t":1190,"dx":-2,"dy":0}, {"t":1207,"dx":-2,"dy":0},
+    {"t":1224,"dx":-2,"dy":0}, {"t":1241,"dx":-2,"dy":0}, {"t":1258,"dx":-2,"dy":0}, {"t":1275,"dx":-2,"dy":0}, {"t":1292,"dx":-2,"dy":0}
+   ]
+  },
+  {
+   "id": "native-arrival-a",
+   "source": "1b6230756ebd4d81add32f632094a48e#0",
+   "kind": "native-arrival",
+   "startsAt": "mid-track",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 17,
+   "arrivalIndex": 4,
+   "recorded": {"events": 43, "ms": 917, "peak": 86, "startedAtEdge": "none", "owned": false, "benchRelease": "gap", "benchMaxOverPx": 0, "benchBandPctOfTrack": null},
+   "note": "Burst that begins away from the edge already at speed (-40,-42,-60,-45,-79,-86) and decays cleanly (43 events). Bench: startedAtEdge none, reached the edge, owned=false, band 0px, left to the platform. Never followed by a re-push.",
+   "events": [
+    {"t":0,"dx":-40,"dy":0}, {"t":17,"dx":-42,"dy":0}, {"t":34,"dx":-60,"dy":0}, {"t":51,"dx":-45,"dy":0}, {"t":68,"dx":-79,"dy":0}, {"t":85,"dx":-86,"dy":0},
+    {"t":102,"dx":-85,"dy":0}, {"t":119,"dx":-83,"dy":0}, {"t":136,"dx":-80,"dy":0}, {"t":153,"dx":-76,"dy":0}, {"t":170,"dx":-77,"dy":0}, {"t":187,"dx":-74,"dy":0},
+    {"t":204,"dx":-68,"dy":0}, {"t":221,"dx":-64,"dy":0}, {"t":238,"dx":-60,"dy":0}, {"t":255,"dx":-55,"dy":0}, {"t":272,"dx":-51,"dy":0}, {"t":289,"dx":-47,"dy":0},
+    {"t":306,"dx":-45,"dy":0}, {"t":323,"dx":-41,"dy":0}, {"t":340,"dx":-38,"dy":0}, {"t":357,"dx":-35,"dy":0}, {"t":374,"dx":-32,"dy":0}, {"t":391,"dx":-29,"dy":0},
+    {"t":408,"dx":-27,"dy":0}, {"t":425,"dx":-24,"dy":0}, {"t":442,"dx":-22,"dy":0}, {"t":459,"dx":-20,"dy":0}, {"t":476,"dx":-19,"dy":0}, {"t":493,"dx":-17,"dy":0},
+    {"t":510,"dx":-16,"dy":0}, {"t":527,"dx":-14,"dy":0}, {"t":544,"dx":-13,"dy":0}, {"t":561,"dx":-12,"dy":0}, {"t":578,"dx":-11,"dy":0}, {"t":595,"dx":-10,"dy":0},
+    {"t":612,"dx":-9,"dy":0}, {"t":629,"dx":-8,"dy":0}, {"t":646,"dx":-8,"dy":0}, {"t":663,"dx":-7,"dy":0}, {"t":680,"dx":-7,"dy":0}, {"t":697,"dx":-6,"dy":0},
+    {"t":714,"dx":-5,"dy":0}
+   ]
+  },
+  {
+   "id": "native-arrival-b",
+   "source": "61f081ad54c64daaba9ab283f5e92ca2#14",
+   "kind": "native-arrival",
+   "startsAt": "mid-track",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 19.2,
+   "arrivalIndex": 14,
+   "recorded": {"events": 65, "ms": 1248, "peak": 48, "startedAtEdge": "none", "owned": false, "benchRelease": "gap", "benchMaxOverPx": 27, "benchBandPctOfTrack": null},
+   "note": "65-event ramp (-1,-3,-11 ... -48) then a long smooth decay; started away from the edge, bench owned=false, no re-push.",
+   "events": [
+    {"t":0,"dx":-1,"dy":0}, {"t":19,"dx":-3,"dy":0}, {"t":38,"dx":-11,"dy":0}, {"t":58,"dx":-14,"dy":0}, {"t":77,"dx":-27,"dy":0}, {"t":96,"dx":-32,"dy":0},
+    {"t":115,"dx":-30,"dy":0}, {"t":134,"dx":-41,"dy":0}, {"t":154,"dx":-45,"dy":0}, {"t":173,"dx":-47,"dy":0}, {"t":192,"dx":-47,"dy":0}, {"t":211,"dx":-46,"dy":0},
+    {"t":230,"dx":-44,"dy":0}, {"t":250,"dx":-48,"dy":0}, {"t":269,"dx":-45,"dy":0}, {"t":288,"dx":-41,"dy":0}, {"t":307,"dx":-38,"dy":0}, {"t":326,"dx":-35,"dy":0},
+    {"t":346,"dx":-32,"dy":0}, {"t":365,"dx":-30,"dy":0}, {"t":384,"dx":-27,"dy":0}, {"t":403,"dx":-24,"dy":0}, {"t":422,"dx":-22,"dy":0}, {"t":442,"dx":-20,"dy":0},
+    {"t":461,"dx":-19,"dy":0}, {"t":480,"dx":-17,"dy":0}, {"t":499,"dx":-16,"dy":0}, {"t":518,"dx":-14,"dy":0}, {"t":538,"dx":-13,"dy":0}, {"t":557,"dx":-12,"dy":0},
+    {"t":576,"dx":-11,"dy":0}, {"t":595,"dx":-10,"dy":0}, {"t":614,"dx":-9,"dy":0}, {"t":634,"dx":-8,"dy":0}, {"t":653,"dx":-8,"dy":0}, {"t":672,"dx":-7,"dy":0},
+    {"t":691,"dx":-7,"dy":0}, {"t":710,"dx":-6,"dy":0}, {"t":730,"dx":-6,"dy":0}, {"t":749,"dx":-5,"dy":0}, {"t":768,"dx":-5,"dy":0}, {"t":787,"dx":-5,"dy":0},
+    {"t":806,"dx":-4,"dy":0}, {"t":826,"dx":-4,"dy":0}, {"t":845,"dx":-4,"dy":0}, {"t":864,"dx":-4,"dy":0}, {"t":883,"dx":-3,"dy":0}, {"t":902,"dx":-3,"dy":0},
+    {"t":922,"dx":-3,"dy":0}, {"t":941,"dx":-3,"dy":0}, {"t":960,"dx":-2,"dy":0}, {"t":979,"dx":-2,"dy":0}, {"t":998,"dx":-2,"dy":0}, {"t":1018,"dx":-2,"dy":0},
+    {"t":1037,"dx":-2,"dy":0}, {"t":1056,"dx":-2,"dy":0}, {"t":1075,"dx":-1,"dy":0}, {"t":1094,"dx":-1,"dy":0}, {"t":1114,"dx":-1,"dy":0}, {"t":1133,"dx":-1,"dy":0},
+    {"t":1152,"dx":-1,"dy":0}, {"t":1171,"dx":-1,"dy":0}, {"t":1190,"dx":-1,"dy":0}, {"t":1210,"dx":-1,"dy":0}, {"t":1229,"dx":-1,"dy":0}
+   ]
+  },
+  {
+   "id": "native-arrival-repush-start",
+   "source": "1a521d6ae4564599b9da510994c6d521#11",
+   "kind": "native-arrival-repush",
+   "startsAt": "mid-track",
+   "edge": "start",
+   "deltaMode": 0,
+   "intervalMs": 19.67,
+   "trimmedFrom": "first 45 of 160 events (deltas were only logged for the first 80)",
+   "arrivalIndex": 6,
+   "repushIndex": 23,
+   "recorded": {"events": 160, "ms": 3147, "peak": 287, "startedAtEdge": "none", "owned": false, "benchRelease": "gap", "benchMaxOverPx": 0, "benchBandPctOfTrack": null},
+   "note": "The 160-event unowned burst named in the bench rev 40 note: momentum decays ...-61,-57,-53,-49 then a dip-then-rise re-push -13,-28,-67,-112,-133,-160 at index 23 (fingers pushing again while the previous momentum was still arriving). Trimmed before the burst's SECOND re-push (index 45).",
+   "events": [
+    {"t":0,"dx":-4,"dy":0}, {"t":20,"dx":-32,"dy":0}, {"t":39,"dx":-99,"dy":0}, {"t":59,"dx":-100,"dy":0}, {"t":79,"dx":-126,"dy":0}, {"t":98,"dx":-130,"dy":0},
+    {"t":118,"dx":-126,"dy":0}, {"t":138,"dx":-121,"dy":0}, {"t":157,"dx":-115,"dy":0}, {"t":177,"dx":-110,"dy":0}, {"t":197,"dx":-103,"dy":0}, {"t":216,"dx":-99,"dy":0},
+    {"t":236,"dx":-93,"dy":0}, {"t":256,"dx":-89,"dy":0}, {"t":275,"dx":-84,"dy":0}, {"t":295,"dx":-79,"dy":0}, {"t":315,"dx":-75,"dy":0}, {"t":334,"dx":-70,"dy":0},
+    {"t":354,"dx":-66,"dy":0}, {"t":374,"dx":-61,"dy":0}, {"t":393,"dx":-57,"dy":0}, {"t":413,"dx":-53,"dy":0}, {"t":433,"dx":-49,"dy":0}, {"t":452,"dx":-13,"dy":0},
+    {"t":472,"dx":-28,"dy":0}, {"t":492,"dx":-67,"dy":0}, {"t":511,"dx":-112,"dy":0}, {"t":531,"dx":-133,"dy":0}, {"t":551,"dx":-160,"dy":0}, {"t":570,"dx":-159,"dy":0},
+    {"t":590,"dx":-152,"dy":0}, {"t":610,"dx":-143,"dy":0}, {"t":629,"dx":-137,"dy":0}, {"t":649,"dx":-129,"dy":0}, {"t":669,"dx":-119,"dy":0}, {"t":688,"dx":-114,"dy":0},
+    {"t":708,"dx":-109,"dy":0}, {"t":728,"dx":-104,"dy":0}, {"t":747,"dx":-98,"dy":0}, {"t":767,"dx":-94,"dy":0}, {"t":787,"dx":-90,"dy":0}, {"t":806,"dx":-85,"dy":0},
+    {"t":826,"dx":-81,"dy":0}, {"t":846,"dx":-76,"dy":0}, {"t":865,"dx":-72,"dy":0}
+   ]
+  },
+  {
+   "id": "native-arrival-repush-end",
+   "source": "1a521d6ae4564599b9da510994c6d521#0",
+   "kind": "native-arrival-repush",
+   "startsAt": "mid-track",
+   "edge": "end",
+   "deltaMode": 0,
+   "intervalMs": 19.78,
+   "trimmedFrom": "first 45 of 176 events (deltas were only logged for the first 80)",
+   "arrivalIndex": 6,
+   "repushIndex": 21,
+   "recorded": {"events": 176, "ms": 3481, "peak": 481, "startedAtEdge": "none", "owned": false, "benchRelease": "gap", "benchMaxOverPx": 0, "benchBandPctOfTrack": null},
+   "note": "Same shape at the END edge (dx > 0): 176-event unowned burst, momentum 104..49 then a dip to 8 and a rise 20,37,45,...63 at index 21. Trimmed before the burst's second re-push (index 45).",
+   "events": [
+    {"t":0,"dx":1,"dy":0}, {"t":20,"dx":15,"dy":0}, {"t":40,"dx":57,"dy":0}, {"t":59,"dx":85,"dy":0}, {"t":79,"dx":68,"dy":0}, {"t":99,"dx":98,"dy":0},
+    {"t":119,"dx":104,"dy":0}, {"t":138,"dx":102,"dy":0}, {"t":158,"dx":100,"dy":0}, {"t":178,"dx":95,"dy":0}, {"t":198,"dx":91,"dy":0}, {"t":218,"dx":90,"dy":0},
+    {"t":237,"dx":85,"dy":0}, {"t":257,"dx":81,"dy":0}, {"t":277,"dx":76,"dy":0}, {"t":297,"dx":70,"dy":0}, {"t":316,"dx":66,"dy":0}, {"t":336,"dx":62,"dy":0},
+    {"t":356,"dx":57,"dy":0}, {"t":376,"dx":53,"dy":0}, {"t":396,"dx":49,"dy":0}, {"t":415,"dx":8,"dy":0}, {"t":435,"dx":20,"dy":0}, {"t":455,"dx":37,"dy":0},
+    {"t":475,"dx":45,"dy":0}, {"t":494,"dx":34,"dy":0}, {"t":514,"dx":53,"dy":0}, {"t":534,"dx":61,"dy":0}, {"t":554,"dx":63,"dy":0}, {"t":574,"dx":61,"dy":0},
+    {"t":593,"dx":60,"dy":0}, {"t":613,"dx":57,"dy":0}, {"t":633,"dx":59,"dy":0}, {"t":653,"dx":56,"dy":0}, {"t":673,"dx":53,"dy":0}, {"t":692,"dx":49,"dy":0},
+    {"t":712,"dx":45,"dy":0}, {"t":732,"dx":41,"dy":0}, {"t":752,"dx":39,"dy":0}, {"t":771,"dx":36,"dy":0}, {"t":791,"dx":32,"dy":0}, {"t":811,"dx":30,"dy":0},
+    {"t":831,"dx":28,"dy":0}, {"t":851,"dx":24,"dy":0}, {"t":870,"dx":22,"dy":0}
+   ]
+  },
+  {
+   "id": "end-edge",
+   "source": "61f081ad54c64daaba9ab283f5e92ca2#8",
+   "kind": "end-edge",
+   "startsAt": "end-edge",
+   "edge": "end",
+   "deltaMode": 0,
+   "intervalMs": 16.63,
+   "recorded": {"events": 63, "ms": 1048, "peak": 266, "startedAtEdge": "right", "owned": true, "benchRelease": "smooth-decay", "benchMaxOverPx": 159, "benchBandPctOfTrack": 28},
+   "note": "63-event push at the END (right) edge, dx > 0: peak 266/event, bench owned it, 159px band (28%), smooth-decay release. The only complete end-edge owned burst with a decay tail.",
+   "events": [
+    {"t":0,"dx":1,"dy":0}, {"t":17,"dx":5,"dy":0}, {"t":33,"dx":34,"dy":0}, {"t":50,"dx":112,"dy":0}, {"t":67,"dx":204,"dy":0}, {"t":83,"dx":246,"dy":0},
+    {"t":100,"dx":246,"dy":0}, {"t":116,"dx":266,"dy":0}, {"t":133,"dx":243,"dy":0}, {"t":150,"dx":224,"dy":0}, {"t":166,"dx":210,"dy":0}, {"t":183,"dx":197,"dy":0},
+    {"t":200,"dx":186,"dy":0}, {"t":216,"dx":166,"dy":0}, {"t":233,"dx":158,"dy":0}, {"t":249,"dx":153,"dy":0}, {"t":266,"dx":147,"dy":0}, {"t":283,"dx":142,"dy":0},
+    {"t":299,"dx":137,"dy":0}, {"t":316,"dx":132,"dy":0}, {"t":333,"dx":127,"dy":0}, {"t":349,"dx":121,"dy":0}, {"t":366,"dx":117,"dy":0}, {"t":382,"dx":112,"dy":0},
+    {"t":399,"dx":108,"dy":0}, {"t":416,"dx":102,"dy":0}, {"t":432,"dx":99,"dy":0}, {"t":449,"dx":94,"dy":0}, {"t":466,"dx":89,"dy":0}, {"t":482,"dx":84,"dy":0},
+    {"t":499,"dx":81,"dy":0}, {"t":516,"dx":75,"dy":0}, {"t":532,"dx":70,"dy":0}, {"t":549,"dx":66,"dy":0}, {"t":565,"dx":62,"dy":0}, {"t":582,"dx":57,"dy":0},
+    {"t":599,"dx":53,"dy":0}, {"t":615,"dx":49,"dy":0}, {"t":632,"dx":45,"dy":0}, {"t":649,"dx":43,"dy":0}, {"t":665,"dx":39,"dy":0}, {"t":682,"dx":36,"dy":0},
+    {"t":698,"dx":33,"dy":0}, {"t":715,"dx":30,"dy":0}, {"t":732,"dx":28,"dy":0}, {"t":748,"dx":26,"dy":0}, {"t":765,"dx":24,"dy":0}, {"t":782,"dx":21,"dy":0},
+    {"t":798,"dx":19,"dy":0}, {"t":815,"dx":17,"dy":0}, {"t":832,"dx":16,"dy":0}, {"t":848,"dx":14,"dy":0}, {"t":865,"dx":13,"dy":0}, {"t":881,"dx":13,"dy":0},
+    {"t":898,"dx":11,"dy":0}, {"t":915,"dx":10,"dy":0}, {"t":931,"dx":9,"dy":0}, {"t":948,"dx":9,"dy":0}, {"t":965,"dx":8,"dy":0}, {"t":981,"dx":7,"dy":0},
+    {"t":998,"dx":7,"dy":0}, {"t":1014,"dx":1,"dy":0}, {"t":1031,"dx":1,"dy":0}
+   ]
+  },
+  {
+   "id": "notched-synthetic",
+   "source": "SYNTHETIC",
+   "kind": "notched",
+   "synthetic": true,
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 1,
+   "note": "SYNTHETIC, no real data: a notched mouse wheel (Firefox deltaMode 1, 3 lines per click, horizontal via shift), four identical clicks 120ms apart at the start edge. Contract: identical line steps are discrete clicks, not a trackpad gesture, so any band must release within ~300ms of the last click.",
+   "events": [
+    {"t":0,"dx":-3,"dy":0}, {"t":120,"dx":-3,"dy":0}, {"t":240,"dx":-3,"dy":0}, {"t":360,"dx":-3,"dy":0}
+   ]
+  },
+  {
+   "id": "vertical-only-synthetic",
+   "source": "SYNTHETIC",
+   "kind": "vertical-only",
+   "synthetic": true,
+   "startsAt": "start-edge",
+   "edge": "start",
+   "deltaMode": 0,
+   "note": "SYNTHETIC, no real data: page-scroll-up over a horizontal carousel (dx 0, dy -100 x 8 at 60Hz, deltaMode 0). The sign is chosen so a horizontal engine that reads dy when dx is 0 would draw a band at the start edge. Contract: NO band; the page keeps scrolling.",
+   "events": [
+    {"t":0,"dx":0,"dy":-100}, {"t":17,"dx":0,"dy":-100}, {"t":34,"dx":0,"dy":-100}, {"t":51,"dx":0,"dy":-100}, {"t":68,"dx":0,"dy":-100}, {"t":85,"dx":0,"dy":-100},
+    {"t":102,"dx":0,"dy":-100}, {"t":119,"dx":0,"dy":-100}
+   ]
+  }
+ ]
+}
