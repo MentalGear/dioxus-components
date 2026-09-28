@@ -999,7 +999,7 @@ const CAROUSEL_DRAG_JS: &str = "\
     // A mouse/pen drag has no native scrolling behind it, so THE RULE
     // (research doc §3) permits this path to keep owning the scroll
     // position the way it already did before this port -- unlike the
-    // wheel bridge (`CAROUSEL_WHEEL_BOUNCE_JS`, attached separately to
+    // wheel bridge (`CAROUSEL_WHEEL_BAND_JS`, mode D, attached separately to
     // this same element), which never may, because a wheel/trackpad
     // gesture has a compositor and a snap engine also trying to write it.
     let rawOver = 0; // signed content displacement the scroller refused, physical px
@@ -1446,308 +1446,591 @@ fn use_carousel_drag(
 }
 
 /// Long-lived (mount-to-unmount): the wheel/trackpad half of the edge
-/// rubber-band (mode B3), attached to [`CarouselContent`]'s own element
-/// alongside [`CAROUSEL_DRAG_JS`] -- a **separate** `document::eval`, not
-/// folded into that one, because the two obey different rules and must
-/// not share a JS closure that could let one's state leak into the
-/// other's: a mouse/pen drag has no native scrolling behind it, so
-/// [`CAROUSEL_DRAG_JS`] may keep issuing `scrollBy` (THE RULE,
+/// rubber-band -- **mode D, "platform-aware band"** -- attached to
+/// [`CarouselContent`]'s own element alongside [`CAROUSEL_DRAG_JS`], as a
+/// **separate** `document::eval`, not folded into that one, because the two
+/// obey different rules and must not share a JS closure that could let one's
+/// state leak into the other's: a mouse/pen drag has no native scrolling
+/// behind it, so [`CAROUSEL_DRAG_JS`] may keep issuing `scrollBy` (THE RULE,
 /// dev-docs/research/carousel-overscroll-2026-09-23.md §3), while a
-/// wheel/trackpad gesture on this same element has a compositor and a
-/// snap engine also trying to write its scroll position, so this script
-/// may **never** call `scrollBy`, `scrollLeft`/`scrollTop`, `preventDefault`,
-/// or touch `scroll-snap-type` -- the whole reason ~20 bench revisions of
-/// exactly that glitched (research doc §2/§5). The numbered invariants
-/// cited below are that doc's own §6.
+/// wheel/trackpad gesture on this same element has a compositor and a snap
+/// engine also trying to write its scroll position, so this script may
+/// **never** call `scrollBy`, `scrollLeft`/`scrollTop`, `preventDefault`, or
+/// touch `scroll-snap-type`. The band is a `transform` on this element and
+/// nothing else; `transform` is `''` (identity) whenever no band is drawn.
 ///
-/// The edge is read directly from layout (`edgeGaps`, invariant 2) rather
-/// than from a scroll coordinate, so this needs no [`Direction`]/RTL
-/// branch either -- `getBoundingClientRect` is already a physical,
-/// direction-agnostic rectangle. `passive: true` throughout: this script
-/// makes no decision that ever needs to block the browser's own native
-/// scroll, since it only ever *observes* geometry and writes its own
-/// `transform`, never the scroll position.
-const CAROUSEL_WHEEL_BOUNCE_JS: &str = "\
-    const [id, orientation] = await dioxus.recv();
+/// **What D is, and why it replaced B3.** Ported from the owner's bench
+/// (`bench-rev40.html`, `mode === "onewriter"`), which the owner tested on
+/// real hardware (MacBook trackpad, Firefox 156) over many revisions and
+/// chose. B3 drew its band whenever the scroller was clamped at an edge, so a
+/// flick from slide 3 that arrived at slide 1 with momentum got B3's band
+/// drawn *on top of* the platform's own overscroll -- a double bounce. D
+/// decides **ownership once per gesture, from where the scroller RESTS when
+/// the gesture starts**: only a gesture that begins at rest at an edge, and
+/// pushes into that same edge, gets D's band. A gesture that arrives at the
+/// edge from elsewhere is the platform's (native bounce, or none in a browser
+/// that has none) and D draws nothing.
+///
+/// Release (a wheel has no `pointerup`), in the order the bench found them:
+/// 1. **smooth decay** -- fingers lifted, the stream turns into momentum,
+///    which falls geometrically; a run of `RUNS` paired events each falling
+///    to between `SMOOTH` and `RATIO_MAX` of the last means "lifted";
+/// 2. **cursor moved** -- a two-finger scroll never moves the cursor, so a
+///    real mouse-pointer displacement of `LIFT_PX` or more is a finger;
+/// 3. **slow-push silence** -- a push whose peak step stayed under
+///    `SLOW_PEAK_PX` can never end in momentum, so `SLOW_IDLE_MS` of
+///    silence releases it;
+/// 4. **notched silence** (component addition, not in the bench) -- a
+///    notched mouse wheel has no momentum tail and its steps are above
+///    `SLOW_PEAK_PX`, so neither test above could fire; `NOTCH_IDLE_MS` of
+///    silence releases it;
+/// 5. **idle backstop** -- `IDLE_MS` of silence, for anything else;
+/// 6. **reversed** -- the stream turned away from the edge.
+///
+/// A new gesture begins after `GAP_MS` of silence, or at once on a *re-push*:
+/// a delta that jumps above `REPRESS` x the last one after a release, or
+/// above `COAST_RISE` x the last one once the stream has coasted (momentum
+/// only ever falls, so a rise is new fingers -- bench rev 40, the owner's
+/// recorded `..., -57, -53, -49, -13, -28, -67, -112` at slide 1). A push
+/// that resumes after a release, while the band is still springing home,
+/// continues from wherever the spring-back had got to
+/// (`webkitRubberInverse`), never from zero.
+///
+/// **Deliberate differences from the bench** (all owner-approved):
+/// - *Axis gating.* The bench fell back to `deltaY` when `deltaX` was 0; here
+///   a horizontal carousel reacts only to horizontal intent
+///   (`|deltaX| > |deltaY|`, or Shift+wheel reported as `deltaY` with
+///   `shiftKey`), so ordinary vertical page scrolling over a horizontal
+///   carousel resting at slide 1 never draws a band. Vertical orientation
+///   reacts only to `|deltaY| > |deltaX|`.
+/// - *Notched mouse wheels* release after `NOTCH_IDLE_MS` (item 4 above).
+///   Notched = `deltaMode` 1/2, or `deltaMode` 0 with a step of at least
+///   `NOTCH_MIN_PX` that repeats the previous step exactly (or a whole
+///   multiple of a step already identified as a notch -- a browser may
+///   coalesce two notches into one event). Classified per event, so a
+///   trackpad stream that happens to repeat one value is back on the
+///   trackpad paths at its very next, different, delta.
+/// - *Vertical orientation and RTL* (the bench is horizontal LTR only): all
+///   geometry is physical (`getBoundingClientRect` deltas, `translateX` or
+///   `translateY`), so nothing here branches on direction.
+/// - *A leftover band never outlives a gesture that is not drawing it.* In
+///   the bench, a new gesture that did not own the edge could freeze a
+///   spring-back mid-flight; here a band left over from an earlier gesture
+///   springs home as soon as a new gesture turns out not to own it.
+/// - *Telemetry* only behind `localStorage['dx-carousel-debug'] === '1'`,
+///   read once at mount (see "Debug telemetry" below). The bench's knob
+///   panel is gone; its defaults (the owner's tuned values) are the named
+///   constants below.
+///
+/// **Debug telemetry.** With the flag set, each gesture pushes one record
+/// (live -- it is updated in place until the gesture ends) onto
+/// `window.__dxCarouselWheel`, capped at `DEBUG_CAP` records: `{ id,
+/// orientation, deltaMode, startedAtEdge, owned, notched, deltas,
+/// releasedBy, peakBand, events, t0, lastEventAt, releasedAt, reengaged,
+/// endedByRepush }` (times in ms from `t0`, deltas capped at
+/// `DEBUG_DELTAS_CAP`). Without the flag nothing is allocated or pushed.
+///
+/// **Known open item (pending a real-device check).** Safari (and possibly
+/// Firefox on some platforms) rubber-bands a scroll container even when a
+/// gesture starts at rest at its edge, so D's band could stack on the
+/// platform's own there (a double bounce). Not testable headlessly and
+/// never solved by UA sniffing; the intended fix is to skip D's band where
+/// the platform is observed to draw its own at a resting edge.
+///
+/// `enabled` false (a [`CarouselVirtualContent`] seamless loop, which has no
+/// edges) attaches no listeners at all: the script only waits for teardown. `prefers-reduced-motion: reduce` draws no
+/// band (checked fresh per event, not cached at mount), matching the
+/// pointer path's own reading of that preference.
+const CAROUSEL_WHEEL_BAND_JS: &str = "\
+    const [id, orientation, enabled] = await dioxus.recv();
     const el = document.getElementById(id);
-    if (!el) {
+    if (!el || !enabled) {
         await dioxus.recv();
         return;
     }
+    const horizontal = orientation === 'horizontal';
 
+    // ---- Mode D's constants: the owner's tuned bench defaults (rev 40
+    // KNOB_DEFS), plus the component's own notched-wheel additions. ----
+    // Wheel deltas are pointer-accelerated; the curve expects finger
+    // travel (Firefox sent 150-590px per event on the owner's trackpad).
+    const GAIN = 0.3;
+    // WebKit's rubber-band slope at the start of the band. Lower is stiffer.
     const RUBBER_C = 0.55;
-    // Fallbacks only, until the device's own quantum is learned below --
-    // invariant 8: every pixel threshold here is derived from that
-    // quantum once it is known, never a bare guess.
-    const WHEEL_RELEASE_DELTA = 1.6;
-    const WHEEL_FLOOR_MULT = 2;
-    const WHEEL_PLATEAU_MULT = 3;
-    const WHEEL_PLATEAU_MAX = 4;
-    const WHEEL_RELEASE_FRACTION = 0.12;
-    const WHEEL_RELEASE_MAX = 10;
-    const WHEEL_RELEASE_RUNS = 2;
-    const WHEEL_INTERRUPT_DELTA = 6;
-    // Backstop only -- measured rest after the last wheel event on real
-    // hardware is 64-78ms (research doc §4); this is twice that, so it
-    // essentially never fires before the decay/plateau tests above already
-    // have.
-    const WHEEL_IDLE_MS = 90;
+    // Where the curve flattens out, x the axis size. WebKit approaches
+    // 1.0; 0.5 kept the owner's hardest flicks under ~28% of the width.
+    const LIMIT = 0.5;
+    // New gesture after this much silence. Measured rest after a real
+    // burst is 64-78ms, so this sits just above it.
+    const GAP_MS = 100;
+    // Momentum = each (paired) event falls to at least this x the last;
+    // below it is a hand jittering, not coasting (measured ~0.95/event).
+    const SMOOTH = 0.8;
+    // ...and to at most this x the last; above it is a hand still pushing
+    // steadily (wheel-gestures' own 0.96).
+    const RATIO_MAX = 0.96;
+    // Re-push after a release = a delta above this x the last one.
+    const REPRESS = 2;
+    // Re-push once a stream has coasted = a delta above this x the last one
+    // (the owner's re-push at slide 1 rose 1.6x, 1.97x, 1.39x per event).
+    const COAST_RISE = 1.3;
+    // Consecutive smoothly-decaying events that mean the fingers lifted
+    // (also how many make a stream count as coasting).
+    const RUNS = 5;
+    // Safety release after silence: fingers resting still send nothing,
+    // and a lift is normally caught by momentum or the cursor moving.
+    const IDLE_MS = 1500;
+    // A slow push has no momentum tail, so after the lift there is only
+    // silence; release it after this much. Pushing again grabs it back.
+    const SLOW_IDLE_MS = 250;
+    // Slow push = peak step below this (the owner's slow pushes peaked at
+    // 5-16px per event, real flicks at 93-195px).
+    const SLOW_PEAK_PX = 40;
+    // Lift = the mouse cursor moves at least this far; smaller moves are
+    // the hover updates browsers synthesise at the same coordinates.
+    const LIFT_PX = 2;
+    // Spring-back duration, ease-out cubic, like the pointer release.
+    const HOME_MS = 340;
+    // Hard cap on the drawn band, x the axis size. 1 = off.
+    const CAP = 1;
+    // Component addition: a notched mouse wheel has no momentum tail and
+    // its 48-120px steps are above SLOW_PEAK_PX, so neither the decay test
+    // nor the slow-push silence could release it and it would sit at the
+    // band for the whole IDLE_MS backstop. Notches from a steadily turning
+    // wheel arrive every ~16-100ms, so this is comfortably past the gap
+    // between two of them and well short of the backstop.
+    const NOTCH_IDLE_MS = 140;
+    // A deltaMode-0 step only counts as a notch at or above this. Below
+    // it the slow-push release already applies, and the owner's Firefox
+    // trackpad data has equal consecutive steps under it far more often.
+    const NOTCH_MIN_PX = SLOW_PEAK_PX;
+    // Re-engage after a release when the deltas rise again by this much:
+    // the fingers never lifted (a slow push that eased off looked like
+    // decay). The bench's own literal.
+    const REENGAGE_RISE = 1.15;
+    // Decay only counts once the peak is clearly above the device's own
+    // smallest step (learned below), so a slow flat push is left to the
+    // silence release. Fallback until the device has spoken.
+    const PLATEAU_MULT = 3;
+    const PLATEAU_FALLBACK_PX = 4;
+    // deltaMode 1 (lines) -> px, the common browser line height.
+    const LINE_PX = 16;
+    const DEBUG_CAP = 50;
+    const DEBUG_DELTAS_CAP = 80;
 
-    let rawOver = 0;
-    let bounceHoming = false;
-    let bounceToken = 0;
-    let bounceSettling = false;
-    let wheelTimer = 0;
-    let wheelLowRun = 0;
-    let wheelPeakDelta = 0;
-    let wheelLastAbs = Infinity;
-    let wheelInterruptFloor = WHEEL_INTERRUPT_DELTA;
+    let dbg = false;
+    try {
+        dbg = window.localStorage.getItem('dx-carousel-debug') === '1';
+    } catch (err) {}
+    let rec = null;
+
+    const ow = {
+        lastAt: 0,
+        startMin: false, // gesture began at rest at the physical left/top edge
+        startMax: false, // ...at the physical right/bottom edge
+        owned: null,
+        raw: 0,
+        peak: 0,
+        lastAbs: Infinity,
+        lowRun: 0,
+        released: false,
+        prevRaw: 0,
+        lastPair: Infinity,
+        rawLast: 0,
+        homeToken: 0,
+        homing: false,
+        idleTimer: 0,
+        coasting: false,
+        coastRun: 0,
+        coastPrev: 0,
+        notched: false, // the latest event of this gesture was a notch
+    };
+    let visible = 0; // the band currently drawn, signed physical px
     let deviceMinDelta = Infinity; // learned: the smallest step this hardware sends
+    let notchStep = 0; // the notch size, once identified
+    let prevNotchAbs = 0;
 
     function axisSize() {
-        // See `CAROUSEL_DRAG_JS`'s own identical helper's doc: the
-        // clipping viewport wrapper's own size, not `el`'s (the gap
-        // model's negative-margin compensation widens `el`'s own
-        // clientWidth/clientHeight by the gap, which is not the track's
-        // true visual size).
+        // See `CAROUSEL_DRAG_JS`'s own identical helper's doc: the clipping
+        // viewport wrapper's own size, not `el`'s (the gap model's
+        // negative-margin compensation widens `el` by the gap).
         const track = el.parentElement;
-        const size = orientation === 'horizontal'
+        const size = horizontal
             ? (track ? track.clientWidth : el.clientWidth)
             : (track ? track.clientHeight : el.clientHeight);
         return size || 320;
     }
-    // Apple's own published rubber-band curve, `f(x) = x*c*d / (d + c*x)`
-    // (research doc §4: `b(x) = (1 - 1/(x*c/d + 1))*d`, algebraically the
-    // same function) -- slope `c` (0.55) at `x = 0`, asymptote `d`
-    // (`axisSize()`) as `x` grows. **Correction, 2026-09-25**: this used to
-    // be `L*x/(x+L)` with `L = d/c`, which is a DIFFERENT curve, not an
-    // algebraic rewrite of the same one -- it has slope 1 (not `c`) at
-    // `x = 0` and asymptotes at `d/c` (~1.8*d), not `d`. That mistranscription
-    // is why a fast trackpad flick could push the track roughly twice as
-    // far as native's own feel calls for; see the dated correction in
-    // `dev-docs/research/carousel-overscroll-2026-09-23.md` §9 and
-    // `dev-docs/backlog.md` row 102's own addendum for the full algebra.
-    function rubber(x) {
-        const d = axisSize();
-        return (x * RUBBER_C * d) / (d + RUBBER_C * x);
+    // WebKit's rubber-band curve, b(x) = x*c*d / (d + c*x): slope c at 0,
+    // asymptote d = LIMIT x the axis size.
+    function webkitRubber(x) {
+        const w = axisSize();
+        const d = w * LIMIT;
+        const ax = Math.abs(x);
+        let v = (ax * RUBBER_C * d) / (d + RUBBER_C * ax);
+        v = Math.min(v, w * CAP);
+        return x < 0 ? -v : v;
     }
-    function rubberSigned(x) {
-        return x < 0 ? -rubber(-x) : rubber(x);
+    // Inverse (ignoring the cap), so a push that resumes while the band
+    // springs home continues from wherever it had got to, never jumping.
+    function webkitRubberInverse(v) {
+        const d = axisSize() * LIMIT;
+        const av = Math.min(Math.abs(v), d * 0.999);
+        const x = (av * d) / (RUBBER_C * (d - av));
+        return v < 0 ? -x : x;
     }
-    function applyBounce() {
-        if (!rawOver) {
-            el.style.transform = '';
-            return;
-        }
-        const depth = rubberSigned(rawOver).toFixed(2);
-        el.style.transform =
-            orientation === 'horizontal' ? `translateX(${depth}px)` : `translateY(${depth}px)`;
-    }
-    // Invariant 2: the edge is read synchronously from layout, in the same
-    // turn as the decision -- never inferred by comparing this event's
-    // request against a measurement taken a frame later (that phase
-    // mismatch against the compositor is what produced 198-212px of false
-    // overdrag mid-range on the bench, research doc §6).
+    // Physical, direction-agnostic: min = left/top, max = right/bottom.
+    // `min >= 0` means no content left beyond the min edge; `max <= 0`, none
+    // beyond the max edge. Measured against `el`'s own rect, which carries
+    // the same transform as its children, so the band cancels out.
     function edgeGaps() {
         const children = el.children;
         if (!children.length) {
-            return { start: 0, end: 0 };
+            return { min: 0, max: 0 };
         }
         const c = el.getBoundingClientRect();
-        let minStart = Infinity;
-        let maxEnd = -Infinity;
+        let lo = Infinity;
+        let hi = -Infinity;
         for (let i = 0; i < children.length; i++) {
             const r = children[i].getBoundingClientRect();
-            const s = orientation === 'horizontal' ? r.left : r.top;
-            const e = orientation === 'horizontal' ? r.right : r.bottom;
-            if (s < minStart) minStart = s;
-            if (e > maxEnd) maxEnd = e;
+            const s = horizontal ? r.left : r.top;
+            const e = horizontal ? r.right : r.bottom;
+            if (s < lo) lo = s;
+            if (e > hi) hi = e;
         }
-        const cs = orientation === 'horizontal' ? c.left : c.top;
-        const ce = orientation === 'horizontal' ? c.right : c.bottom;
-        return { start: minStart - cs, end: maxEnd - ce };
-    }
-    function noteDeviceDelta(ad) {
-        if (ad > 0 && ad < deviceMinDelta) {
-            deviceMinDelta = ad;
-        }
-    }
-    function deviceFloor() {
-        return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_FLOOR_MULT : WHEEL_RELEASE_DELTA;
+        return {
+            min: lo - (horizontal ? c.left : c.top),
+            max: hi - (horizontal ? c.right : c.bottom),
+        };
     }
     function plateauCeiling() {
-        return isFinite(deviceMinDelta) ? deviceMinDelta * WHEEL_PLATEAU_MULT : WHEEL_PLATEAU_MAX;
+        return isFinite(deviceMinDelta) ? deviceMinDelta * PLATEAU_MULT : PLATEAU_FALLBACK_PX;
     }
-    function wheelReleaseThreshold() {
-        return Math.min(WHEEL_RELEASE_MAX, Math.max(deviceFloor(), wheelPeakDelta * WHEEL_RELEASE_FRACTION));
+    // The delta along this carousel's own axis, or 0 when the event is not
+    // this carousel's to react to (vertical intent over a horizontal one).
+    function axisDelta(e) {
+        const dx = e.deltaX;
+        const dy = e.deltaY;
+        if (horizontal) {
+            if (Math.abs(dx) > Math.abs(dy)) return dx;
+            if (e.shiftKey && dx === 0) return dy; // Shift+wheel, reported as deltaY
+            return 0;
+        }
+        if (e.shiftKey && dx === 0) return 0; // Shift+wheel means horizontal intent
+        return Math.abs(dy) > Math.abs(dx) ? dy : 0;
     }
-    // A wheel has no `pointerup`; its release is inferred from velocity
-    // DECAY, not from the event stream going silent (a trackpad's momentum
-    // tail keeps firing events long after the fingers lift). A PLATEAU
-    // (small and not rising) also counts as spent, so a hand still pushing
-    // gently at a low, flat delta is not mistaken for one still building.
-    function wheelSpent(d) {
-        const ad = Math.abs(d);
-        if (ad > wheelPeakDelta) wheelPeakDelta = ad;
-        noteDeviceDelta(ad);
-        const spent = ad <= wheelReleaseThreshold() || (ad <= plateauCeiling() && ad <= wheelLastAbs);
-        wheelLastAbs = ad;
-        return spent;
+    function isNotch(e, ad) {
+        if (e.deltaMode !== 0) {
+            return true;
+        }
+        let notch = false;
+        if (ad < NOTCH_MIN_PX) {
+            notchStep = 0;
+        } else if (notchStep && Math.round(ad / notchStep) >= 1
+            && Math.abs(ad - Math.round(ad / notchStep) * notchStep) < 0.5) {
+            notch = true;
+        } else if (Math.abs(ad - prevNotchAbs) < 0.5) {
+            notchStep = ad;
+            notch = true;
+        } else {
+            notchStep = 0;
+        }
+        prevNotchAbs = ad;
+        return notch;
     }
-    function armInterruptFloor() {
-        // The interrupt floor MUST stay strictly above the release
-        // threshold that was just used to release, or a delta between the
-        // two would both trigger a new release and immediately re-trigger
-        // this one on the very next event.
-        wheelInterruptFloor = Math.max(WHEEL_INTERRUPT_DELTA, wheelReleaseThreshold() * 3);
+
+    function recBegin(e) {
+        if (!dbg) return;
+        rec = {
+            id,
+            orientation,
+            deltaMode: e.deltaMode,
+            startedAtEdge: ow.startMin ? (horizontal ? 'left' : 'top')
+                : ow.startMax ? (horizontal ? 'right' : 'bottom') : 'none',
+            owned: null,
+            notched: false,
+            deltas: [],
+            releasedBy: null,
+            peakBand: 0,
+            events: 0,
+            t0: performance.now(),
+            lastEventAt: 0,
+            releasedAt: null,
+            reengaged: 0,
+            endedByRepush: false,
+        };
+        const log = (window.__dxCarouselWheel = window.__dxCarouselWheel || []);
+        log.push(rec);
+        if (log.length > DEBUG_CAP) log.shift();
     }
-    // Driven by us, never the discrete-paging `scrollBy`-by-delta helper
-    // (invariant 3) -- and superseded rather than restarted (invariant 4)
-    // via `bounceToken`, the same construction `CAROUSEL_DRAG_JS`'s own
-    // `bounceHome` uses, for the identical reason: a stale in-flight ease
-    // must stop touching `rawOver` the moment a new gesture owns it, not
-    // race that gesture's writes.
-    function bounceHome(done) {
-        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const from = rawOver;
-        if (!from || reduce) {
-            rawOver = 0;
-            applyBounce();
-            bounceHoming = false;
-            done && done();
+    function recSample(d) {
+        if (!rec) return;
+        rec.events++;
+        rec.lastEventAt = Math.round(performance.now() - rec.t0);
+        if (rec.deltas.length < DEBUG_DELTAS_CAP) rec.deltas.push(Math.round(d * 10) / 10);
+        if (ow.notched) rec.notched = true;
+        rec.owned = ow.owned;
+        const b = Math.round(Math.abs(visible) * 10) / 10;
+        if (b > rec.peakBand) rec.peakBand = b;
+    }
+    function recRelease(how) {
+        if (!rec || rec.releasedBy) return;
+        rec.releasedBy = how;
+        rec.releasedAt = Math.round(performance.now() - rec.t0);
+    }
+
+    function apply(v) {
+        visible = v;
+        if (Math.abs(v) > 0.05) {
+            const px = v.toFixed(2);
+            el.style.transform = horizontal ? `translateX(${px}px)` : `translateY(${px}px)`;
+        } else {
+            el.style.transform = '';
+        }
+    }
+    function clearIdle() {
+        if (ow.idleTimer) {
+            window.clearTimeout(ow.idleTimer);
+            ow.idleTimer = 0;
+        }
+    }
+    function cancelHome() {
+        if (!ow.homing) return;
+        ow.homeToken++;
+        ow.homing = false;
+    }
+    // Ease-out cubic spring-back from wherever the band is. Never restarted
+    // while one is in flight; superseded (token) by a push that resumes.
+    function home() {
+        clearIdle();
+        ow.raw = 0;
+        if (ow.homing) return;
+        const from = visible;
+        if (Math.abs(from) < 0.5 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            apply(0);
             return;
         }
-        bounceHoming = true;
-        const myToken = ++bounceToken;
+        ow.homing = true;
+        const token = ++ow.homeToken;
         const t0 = performance.now();
-        const DUR = 340;
         (function step() {
-            if (myToken !== bounceToken) {
-                return;
-            }
-            const t = Math.min(1, (performance.now() - t0) / DUR);
-            const k = 1 - Math.pow(1 - t, 3);
-            rawOver = from * (1 - k);
-            applyBounce();
+            if (token !== ow.homeToken) return;
+            const t = Math.min(1, (performance.now() - t0) / HOME_MS);
+            apply(from * Math.pow(1 - t, 3));
             if (t < 1) {
                 window.requestAnimationFrame(step);
             } else {
-                rawOver = 0;
-                applyBounce();
-                bounceHoming = false;
-                done && done();
+                apply(0);
+                ow.homing = false;
             }
         })();
     }
-    function release(how) {
-        if (wheelTimer) {
-            window.clearTimeout(wheelTimer);
-            wheelTimer = 0;
-        }
-        armInterruptFloor();
-        wheelLowRun = 0;
-        wheelPeakDelta = 0;
-        wheelLastAbs = Infinity;
-        if (rawOver) {
-            bounceSettling = true;
-            // No scroll-based settle here (unlike the pointer-drag path):
-            // this scroller never left its snap point in the first place --
-            // only the transform ever moved -- so there is nothing to
-            // realign to a slide, only the transform to bring home.
-            bounceHome(() => {
-                bounceSettling = false;
-            });
-        }
+    function releaseOwned(how) {
+        recRelease(how);
+        ow.released = true;
+        home();
     }
 
-    // THE RULE, restated for this listener specifically: no `preventDefault`,
-    // no `scrollBy`, no `scrollLeft`/`scrollTop` read or write, no
-    // `scroll-snap-type` write, ever, in this function. Past a genuinely
-    // clamped edge the scroller cannot move, so its state is stable and
-    // uncontested while this animates the transform; the shortfall between
-    // what the gesture asked for and what the scroller actually did IS the
-    // overdrag, and it is read from `edgeGaps()`, never from attempting a
-    // write and measuring the refusal (that trick is only safe on the
-    // pointer-drag path above, which owns the scroll position).
+    // THE RULE, restated for this listener: no `preventDefault`, no
+    // `scrollBy`, no scroll-position read or write, no `scroll-snap-type`
+    // write, ever. `passive: true`: this only observes geometry and writes
+    // its own `transform`.
     const onWheel = (e) => {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            if (rawOver) {
-                rawOver = 0;
-                applyBounce();
+            if (visible || ow.homing) {
+                cancelHome();
+                clearIdle();
+                ow.raw = 0;
+                apply(0);
             }
             return;
         }
-        const raw = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-        const d = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * axisSize() : raw;
-        const cd = -d; // desired physical content displacement, + = toward the end
+        const raw = axisDelta(e);
+        if (!raw) return;
+        const d = e.deltaMode === 1 ? raw * LINE_PX : e.deltaMode === 2 ? raw * axisSize() : raw;
+        const cd = -d; // desired physical content displacement, + = toward right/bottom
+        const ad = Math.abs(d);
+        const now = performance.now();
+        if (ad > 0 && ad < deviceMinDelta) deviceMinDelta = ad;
+        const notch = isNotch(e, ad);
 
-        if (bounceSettling) {
-            if (Math.abs(d) < wheelInterruptFloor) {
-                return;
-            }
-            bounceSettling = false;
-            bounceToken++; // supersede the in-flight ease -- this gesture owns rawOver now
+        // Coasting is tracked for EVERY stream, owned or not (bench rev 40):
+        // a native scroll that carried the user into the edge must not
+        // swallow the next push into its own momentum tail.
+        const fallOk = ow.coastPrev > 0 && ad <= ow.coastPrev * RATIO_MAX && ad >= ow.coastPrev * SMOOTH;
+        ow.coastRun = fallOk ? ow.coastRun + 1 : 0;
+        if (ow.coastRun >= RUNS) ow.coasting = true;
+        ow.coastPrev = ad;
+        const rise = ow.coasting ? COAST_RISE : REPRESS;
+        const repush = ow.lastAt && (ow.released || ow.coasting) && ow.rawLast > 0
+            && ad > Math.max(2, ow.rawLast * rise);
+        ow.rawLast = ad;
+        // `!ow.lastAt`: the very first event always starts one, however
+        // soon after the page's time origin it arrives.
+        if (!ow.lastAt || now - ow.lastAt > GAP_MS || repush) {
+            if (rec && repush && now - ow.lastAt <= GAP_MS) rec.endedByRepush = true;
+            // A new gesture. Where the scroller RESTS decides ownership, read
+            // BEFORE this event scrolls it (a wheel event is dispatched ahead
+            // of its own default scroll).
+            const g0 = edgeGaps();
+            ow.startMin = g0.min >= -0.5;
+            ow.startMax = g0.max <= 0.5;
+            ow.owned = null;
+            ow.peak = 0;
+            ow.lastAbs = Infinity;
+            ow.lowRun = 0;
+            ow.released = false;
+            ow.prevRaw = 0;
+            ow.lastPair = Infinity;
+            ow.coasting = false;
+            ow.coastRun = 0;
+            ow.coastPrev = ad;
+            // A previous gesture's pending silence release belongs to that
+            // gesture; this one re-arms its own on its first drawn event.
+            clearIdle();
+            recBegin(e);
         }
+        ow.lastAt = now;
+        ow.notched = notch;
 
         const g = edgeGaps();
-        const atLimit = cd > 0 ? g.start >= -0.5 : g.end <= 0.5;
-
-        if (atLimit) {
-            rawOver += cd;
-            applyBounce();
+        const atLimit = cd > 0 ? g.min >= -0.5 : g.max <= 0.5;
+        if (atLimit && ow.owned === null) {
+            ow.owned = cd > 0 ? ow.startMin : ow.startMax;
         }
 
-        if (!atLimit && rawOver !== 0 && !bounceHoming) {
-            // Reversed away from the edge: let the browser scroll
-            // unimpeded and spring the band home, never unwind it by hand
-            // at the same time (that would move the content twice as fast
-            // as the gesture).
-            release('reversed');
+        if (ow.owned && ow.released && atLimit && ow.lastAbs !== Infinity && ad > ow.lastAbs * REENGAGE_RISE) {
+            // Rising again after a release: the fingers never lifted. Grab
+            // the band back from wherever the spring-back has got to.
+            cancelHome();
+            ow.raw = webkitRubberInverse(visible);
+            ow.released = false;
+            ow.lowRun = 0;
+            ow.peak = ad;
+            ow.lastPair = Infinity;
+            ow.prevRaw = 0;
+            if (rec) {
+                rec.reengaged++;
+                rec.releasedBy = null;
+                rec.releasedAt = null;
+            }
+        }
+        if (!ow.owned || ow.released) {
+            // The platform's bounce, or a spent tail. A band left over from
+            // an earlier gesture never outlives one that is not drawing it.
+            if (!ow.owned && visible && !ow.homing) {
+                recRelease('superseded');
+                home();
+            }
+            if (ow.released) ow.lastAbs = ad;
+            recSample(d);
+            return;
+        }
+        if (!atLimit) {
+            releaseOwned('reversed');
+            recSample(d);
             return;
         }
 
-        if (rawOver !== 0 && wheelSpent(d)) {
-            if (++wheelLowRun >= WHEEL_RELEASE_RUNS) {
-                release('decay');
-                return;
-            }
-        } else {
-            wheelLowRun = 0;
-            wheelSpent(d);
+        // Fingers lifted -> SMOOTH geometric decay. Paired events damp a
+        // hand's jitter; each pair must fall, but by a bounded ratio.
+        const pair = ow.prevRaw ? (ad + ow.prevRaw) / 2 : ad;
+        ow.prevRaw = ad;
+        const smoothFall = ow.lastPair !== Infinity && pair <= ow.lastPair * RATIO_MAX
+            && pair >= ow.lastPair * SMOOTH;
+        if (ad > ow.peak) ow.peak = ad;
+        if (ow.peak > plateauCeiling() && smoothFall) ow.lowRun++;
+        else ow.lowRun = 0;
+        ow.lastPair = pair;
+        ow.lastAbs = ad;
+        if (ow.lowRun >= RUNS) {
+            releaseOwned('smooth-decay');
+            recSample(d);
+            return;
         }
-        if (wheelTimer) {
-            window.clearTimeout(wheelTimer);
+
+        if (ow.homing) {
+            cancelHome();
+            ow.raw = webkitRubberInverse(visible);
         }
-        wheelTimer = window.setTimeout(() => {
-            wheelTimer = 0;
-            release('idle');
-        }, WHEEL_IDLE_MS);
+        ow.raw += cd * GAIN;
+        apply(webkitRubber(ow.raw));
+        recSample(d);
+
+        // Silence is the only lift signal a slow push or a notched wheel
+        // will ever give; everything else waits for decay, the cursor, or
+        // the backstop. Pushing again after a release re-engages.
+        const how = ow.notched ? 'notch-silence' : ow.peak < SLOW_PEAK_PX ? 'slow-silence' : 'idle';
+        const ms = ow.notched ? NOTCH_IDLE_MS : ow.peak < SLOW_PEAK_PX ? SLOW_IDLE_MS : IDLE_MS;
+        clearIdle();
+        ow.idleTimer = window.setTimeout(() => {
+            ow.idleTimer = 0;
+            if (!ow.released) releaseOwned(how);
+        }, ms);
+    };
+
+    // The web exposes neither the trackpad's touch state nor the scroll
+    // phase, but a two-finger scroll never moves the cursor: after a lift
+    // the next thing that moves it is a finger. Require a real
+    // displacement -- browsers synthesise same-coordinate moves on scroll.
+    let liftX = null;
+    let liftY = null;
+    const onPointerMove = (e) => {
+        if (e.pointerType && e.pointerType !== 'mouse') return;
+        if (liftX === null) {
+            liftX = e.clientX;
+            liftY = e.clientY;
+            return;
+        }
+        const moved = Math.abs(e.clientX - liftX) + Math.abs(e.clientY - liftY);
+        liftX = e.clientX;
+        liftY = e.clientY;
+        if (!ow.owned || ow.released || !visible) return;
+        if (moved >= LIFT_PX) releaseOwned('cursor-moved');
+    };
+    // A mouse/pen press hands the element's transform to `CAROUSEL_DRAG_JS`:
+    // drop any wheel band first, so the two never both own it.
+    const onPointerDown = (e) => {
+        if (e.pointerType === 'touch' || e.button !== 0) return;
+        if (!visible && !ow.homing) return;
+        recRelease('pointerdown');
+        cancelHome();
+        clearIdle();
+        ow.raw = 0;
+        ow.released = true;
+        apply(0);
     };
 
     el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('pointerdown', onPointerDown, { passive: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
     await dioxus.recv();
     el.removeEventListener('wheel', onWheel);
-    if (rawOver) {
-        rawOver = 0;
+    el.removeEventListener('pointerdown', onPointerDown);
+    window.removeEventListener('pointermove', onPointerMove);
+    cancelHome();
+    clearIdle();
+    if (visible) {
+        visible = 0;
         el.style.transform = '';
     }";
 
-/// Attach [`CAROUSEL_WHEEL_BOUNCE_JS`] to the element with the given `id`
-/// for as long as the calling component stays mounted -- mirrors
-/// [`use_carousel_drag`]'s own shape exactly, one layer simpler still
-/// (nothing here is ever disableable the way [`CarouselContentProps::draggable`]
-/// disables the pointer-drag gesture: a wheel/trackpad user has no
-/// equivalent opt-out today, and the edge bounce is purely cosmetic
-/// feedback on top of scrolling that already happens regardless).
-fn use_carousel_wheel_bounce(
+/// Attach [`CAROUSEL_WHEEL_BAND_JS`] to the element with the given `id` for
+/// as long as the calling component stays mounted -- mirrors
+/// [`use_carousel_drag`]'s own shape. `enabled` is read inside the effect,
+/// so a signal it reads (a virtualised seamless loop turning on or off)
+/// re-attaches the bridge with the new value: a seamless loop has no edges,
+/// so no band. A wheel/trackpad user has no other opt-out today; the band is
+/// purely cosmetic feedback on top of scrolling that happens regardless.
+fn use_carousel_wheel_band(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
+    enabled: impl Fn() -> bool + Copy + 'static,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
-        let eval = document::eval(CAROUSEL_WHEEL_BOUNCE_JS);
-        let _ = eval.send((id, orientation_str));
+        let eval = document::eval(CAROUSEL_WHEEL_BAND_JS);
+        let _ = eval.send((id, orientation_str, enabled()));
         move || {
             let _ = eval.send(true);
         }
@@ -1969,7 +2252,7 @@ pub struct CarouselProps {
     /// mode -- they would violate the overscroll port's own invariant 5
     /// (they'd enter the snap engine's candidate list, the "N of M" slide
     /// count, and `:nth-child` styling). Dragging or wheeling past a
-    /// physical edge still rubber-bands (mode B3) regardless of this flag
+    /// physical edge still rubber-bands (drag: mode B3, wheel: mode D) regardless of this flag
     /// -- there is no wrap on a drag/wheel gesture, only on Previous/Next/
     /// the root keyboard. Defaults to `false` (matches shadcn's own
     /// `opts={{ loop: false }}` default). Approved fast-follow decision,
@@ -2584,7 +2867,7 @@ pub struct CarouselContentProps {
 /// see "## scroll-snap-stop" below, "Known limitation," which still
 /// applies, now for a restated reason.
 ///
-/// ## Edge rubber-band (mode B3)
+/// ## Edge rubber-band (pointer: mode B3; wheel/trackpad: mode D)
 ///
 /// Dragging (mouse/pen) or scrolling (wheel/trackpad) past either end now
 /// produces a damped elastic bounce, ported from a closed design (five
@@ -2593,6 +2876,17 @@ pub struct CarouselContentProps {
 /// here. The full mechanism, its measurements, and the eight binding port
 /// invariants live in that doc's §3-§6; this section records only the
 /// shape of the port and what stays true of it.
+///
+/// The two halves are separate bridges on the same element. The pointer
+/// half (`CAROUSEL_DRAG_JS`) is mode B3, unchanged. The wheel/trackpad half
+/// (`CAROUSEL_WHEEL_BAND_JS`) is **mode D, the "platform-aware band"**,
+/// which replaced B3's wheel path after the owner chose it on real hardware:
+/// it draws its band only for a gesture that *starts at rest* at an edge and
+/// pushes into it, so a fling that arrives at the edge with momentum is left
+/// to the platform's own overscroll instead of getting a second band stacked
+/// on top. See that constant's own doc for the engine, its constants, its
+/// deliberate differences from the bench, the debug telemetry flag, and the
+/// open Safari double-bounce item.
 ///
 /// **THE RULE this is built on:** at any moment during a wheel/trackpad
 /// gesture on a scroll-snap container, the scroll position has three
@@ -2604,7 +2898,7 @@ pub struct CarouselContentProps {
 /// position and never disables snapping mid-gesture; the overdrag is
 /// expressed purely as a `transform` on [`CarouselContent`]'s own element,
 /// which the browser never writes and therefore never contests
-/// (`CAROUSEL_WHEEL_BOUNCE_JS`, above). A mouse/pen drag has no native
+/// (`CAROUSEL_WHEEL_BAND_JS`, above). A mouse/pen drag has no native
 /// scrolling behind it, so that same rule permits `CAROUSEL_DRAG_JS`'s own
 /// pointer path to keep owning the scroll position exactly as it already
 /// did before this port (`feedOverdrag`, which asks the scroller for the
@@ -2694,15 +2988,21 @@ pub struct CarouselContentProps {
 /// layered on scrolling that already happens regardless, so "no bounce" is
 /// the correct reading of that preference, not a faster one.
 ///
+/// **Where the wheel band applies.** Every physical edge: the plain
+/// children API (including `LoopMode::Rewind`, whose ends are still
+/// physical) and a non-looping [`CarouselVirtualContent`]. A virtualised
+/// *seamless* loop has no edges, so its wheel bridge attaches no listeners.
+///
 /// **What this does not close.** [`CarouselPrevious`]/[`CarouselNext`]
 /// remain genuinely `disabled` at the ends regardless (module doc,
 /// "Accessibility") -- the bounce is additional physical feedback for a
 /// drag/scroll gesture, not a replacement for that signal. Headless
-/// synthetic wheel events (`playwright/carousel.spec.ts`'s own "edge
-/// rubber-band" tests, via `page.mouse.wheel`) can exercise the edge-limit
-/// branch and the spring-back, but cannot reproduce a real trackpad's
-/// momentum/decay feel -- that remains a real-hardware check, as it was
-/// for the bench itself (research doc's own header).
+/// wheel events (`playwright/carousel.spec.ts`'s own "wheel/trackpad edge
+/// band" tests, dispatched in-page with real timing and sampled in-page)
+/// exercise ownership, every release path and the spring-back with
+/// recorded-shape delta sequences, but cannot reproduce a real trackpad's
+/// compositor momentum or feel -- that remains a real-hardware check, as it
+/// was for the bench itself (research doc's own header).
 ///
 /// ## scroll-snap-stop
 ///
@@ -2863,7 +3163,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         None,
     );
     use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
-    use_carousel_wheel_bounce(id, ctx.orientation);
+    use_carousel_wheel_band(id, ctx.orientation, || true);
 
     let orientation = (ctx.orientation)();
     let draggable = (props.draggable)();
@@ -3467,7 +3767,11 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         Some(on_settle_position),
     );
     use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
-    use_carousel_wheel_bounce(id, ctx.orientation);
+    // A seamless loop has no edges (its window re-anchors on every settle),
+    // so no wheel band there; a non-looping virtualised list keeps its real
+    // ends, and its band, exactly like the plain children API.
+    let seamless_loop = ctx.virtualized_loop_active;
+    use_carousel_wheel_band(id, ctx.orientation, move || !seamless_loop());
 
     // Translate a `selected` (data index) change into a physical move --
     // see "Seamless loop" doc. A no-op whenever virtualisation is
@@ -3969,7 +4273,7 @@ pub fn use_carousel() -> CarouselApi {
 /// branched on inside a script -- [`CarouselAutoplay`] needs the answer to
 /// decide whether to start its own timer at all, a decision that lives in
 /// Rust. Mirrors the reduced-motion checks already inline inside
-/// `CAROUSEL_DRAG_JS`/`CAROUSEL_WHEEL_BOUNCE_JS`, just surfaced instead of
+/// `CAROUSEL_DRAG_JS`/`CAROUSEL_WHEEL_BAND_JS`, just surfaced instead of
 /// only ever consulted in place.
 const CAROUSEL_REDUCED_MOTION_JS: &str =
     "dioxus.send(window.matchMedia('(prefers-reduced-motion: reduce)').matches);";
