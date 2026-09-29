@@ -2398,10 +2398,16 @@ test.describe("Carousel: autoplay + rotation control", () => {
   test("autoplay advances the slide on its own", async ({ page }) => {
     await goto(page, "autoplay");
     const frame = demoFrame(page, "autoplay");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
-
-    await expect(slide(1)).toHaveAttribute("data-selected", "true");
-    await expect(slide(2)).toHaveAttribute("data-selected", "true", { timeout: 3000 });
+    // Relative, not absolute: under parallel load, hydration can take longer
+    // than one autoplay interval, so the carousel may already have left
+    // slide 1 by the time the page is ready (2 of 10 runs at --workers=4
+    // failed an up-front "slide 1 is selected" check). Whatever slide is
+    // selected now, a different one must become selected on its own.
+    const selectedLabel = () =>
+      frame.locator('[role="group"][aria-roledescription="slide"][data-selected="true"]').first().getAttribute("aria-label");
+    await expect.poll(selectedLabel).not.toBeNull();
+    const before = await selectedLabel();
+    await expect.poll(selectedLabel, { timeout: 3000 }).not.toBe(before);
   });
 
   test("keyboard focus entering the carousel stops rotation, and it does not resume on its own", async ({ page }) => {

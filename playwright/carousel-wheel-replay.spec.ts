@@ -51,6 +51,7 @@ import {
   peakAbsSince,
   valueAt,
   settledAfter,
+  releaseStartAfter,
   summarize,
   TRANSLATE_X_EXPR,
   type WheelRecording,
@@ -368,9 +369,16 @@ test.describe("Carousel wheel replay: component (intended contract)", () => {
       const r = await replayWheel(content, rec);
       const summary = summarize(r);
       expect(peakAbs(r), summary).toBeLessThanOrEqual(0.5 * width);
+      // "Releases" = the spring-back STARTS (the port's NOTCH_IDLE_MS is 140);
+      // being fully home also includes the 340ms spring-back animation itself,
+      // so that is bounded separately. The failure this guards against is the
+      // old 1.5s hold, not the animation's own length.
+      const start = releaseStartAfter(r);
+      expect(start, `release started (${summary})`).not.toBeNull();
+      expect(start!, summary).toBeLessThanOrEqual(300);
       const settled = settledAfter(r);
-      expect(settled, `released (${summary})`).not.toBeNull();
-      expect(settled!, summary).toBeLessThanOrEqual(300);
+      expect(settled, `home (${summary})`).not.toBeNull();
+      expect(settled!, summary).toBeLessThanOrEqual(700);
     });
   }
 

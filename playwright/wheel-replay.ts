@@ -279,6 +279,22 @@ export function settledAfter(r: ReplayResult, eps = 0.5, key = "band"): number |
   return Math.max(0, after[lastAbove + 1].t);
 }
 
+/**
+ * Milliseconds after the last event at which the band starts coming home:
+ * the first sample whose |band| has dropped more than `drop` px below its
+ * value at the last event. Distinct from `settledAfter`, which also includes
+ * the spring-back animation itself. `0` when there was no band at the last
+ * event; `null` when it never started to fall inside the sampled window.
+ */
+export function releaseStartAfter(r: ReplayResult, drop = 1, key = "band"): number | null {
+  const after = r.samples.filter((s) => s.t >= 0);
+  if (after.length === 0) return null;
+  const atLast = Math.abs(after[0][key]);
+  if (atLast <= drop) return 0;
+  const falling = after.find((s) => Math.abs(s[key]) < atLast - drop);
+  return falling ? Math.max(0, falling.t) : null;
+}
+
 /** One-line human summary, used in failure messages and annotations. */
 export function summarize(r: ReplayResult, key = "band"): string {
   const settled = settledAfter(r, 0.5, key);
