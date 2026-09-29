@@ -1200,29 +1200,20 @@ test.describe("Carousel: the disabled-state opacity change actually fades", () =
 });
 
 /**
- * Edge rubber-band (mode B3), backlog row 102 -- port of the closed design
- * in `dev-docs/research/carousel-overscroll-2026-09-23.md`. See
- * `primitives/src/carousel.rs`'s own `CarouselContent` doc, "Edge
- * rubber-band (mode B3)" section, for the construction these tests hold
- * to: a `transform` on `.dx-carousel-content` only, never a scroll-position
- * write on the wheel path, never a spacer child, and never a change to
- * `selected`.
+ * Edge rubber-band, pointer half (mode B3), backlog row 102 -- port of the
+ * closed design in `dev-docs/research/carousel-overscroll-2026-09-23.md`.
+ * See `primitives/src/carousel.rs`'s own `CarouselContent` doc, "Edge
+ * rubber-band" section, for the construction these tests hold to: a
+ * `transform` on `.dx-carousel-content` only, never a spacer child, and
+ * never a change to `selected`. The wheel/trackpad half is mode D now; its
+ * tests are the next describe block.
  *
  * RED-FIRST: written and run against the pre-port `carousel.rs` (mode A,
  * plain clamping) before any of this file's own port landed -- every test
  * below failed (`readContentTransform` always returned `""`, since nothing
  * ever wrote `style.transform`). All pass against the ported code.
- *
- * A note on the wheel tests specifically: `page.mouse.wheel` fires
- * synthetic, discrete `wheel` events with no compositor momentum behind
- * them at all -- it can drive the same edge-detection/transform/spring-back
- * code path a real trackpad gesture does, but it cannot reproduce a real
- * trackpad's momentum, deceleration curve, or "feel." Headless Chromium has
- * no way to fake that honestly; the owner still needs to feel-test this on
- * real hardware (a real mouse drag and a real trackpad, both directions,
- * both axes) before calling the feel itself settled.
  */
-test.describe("Carousel: edge rubber-band (mode B3)", () => {
+test.describe("Carousel: edge rubber-band, pointer (mode B3)", () => {
   test("pointer overdrag past the first slide produces a bounded, nonzero transform that returns to identity on release", async ({
     page,
   }) => {
@@ -1368,52 +1359,568 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
     expect(await readContentTransform(content)).toBe("");
   });
+});
 
-  test("wheel overdrag at the start boundary produces a transform that settles back to identity, without paging", async ({
+/**
+ * Wheel/trackpad edge band (mode D, the "platform-aware band") --
+ * `primitives/src/carousel.rs`'s `CAROUSEL_WHEEL_BAND_JS`, ported from the
+ * owner's bench (`bench-rev40.html`, `mode === "onewriter"`). It replaced
+ * B3's wheel path; the pointer half above is still B3.
+ *
+ * D's contract, which every test below holds it to:
+ * - the band is a `transform` on `.dx-carousel-content` (the scroller) and
+ *   `""` at rest -- the same element and reader (`readContentTransform`)
+ *   the B3 tests used, never a scroll-position write;
+ * - ownership is decided once per gesture from where the scroller RESTS
+ *   when the gesture starts: only a gesture that starts at rest at an edge
+ *   and pushes into it gets a band (bounded by `LIMIT` = 0.5 x the axis);
+ * - release: smooth momentum decay, cursor movement, slow-push silence
+ *   (250ms), notched-wheel silence (140ms), reversal, or the 1500ms
+ *   backstop; then an ease-out spring-back (340ms) to `""`;
+ * - only this carousel's own axis counts.
+ *
+ * SAMPLING (backlog row 112's construction): every sequence is dispatched
+ * IN-PAGE with real inter-event timing (`playWheel`), and the transform is
+ * sampled in-page on every animation frame and right after every event --
+ * an animated value is never read across a CDP round trip. Synthetic
+ * `WheelEvent`s are untrusted, so they never scroll the scroller itself;
+ * where a test needs the platform's own scroll (a fling arriving at slide 1)
+ * it moves the scroller in-page, instantly, standing in for the compositor.
+ * The telemetry this reads (`window.__dxCarouselWheel`) is D's own
+ * debug-flag output (`localStorage["dx-carousel-debug"] === "1"`), enabled
+ * per test by `enableWheelDebug`. Real-hardware feel remains the owner's
+ * own check; these pin the logic with recorded-shape sequences.
+ */
+
+/** Delta magnitudes (px) shaped like the owner's recordings; each test
+ * applies the sign that pushes into the edge under test. */
+const WHEEL = {
+  // A trackpad push: a ramp, then fingers lift and momentum decays.
+  rampAndDecay: [3, 9, 21, 35, 50, 60, 62, 58, 54, 50, 46, 43, 40, 37, 34, 31, 29, 27, 25, 23, 21, 19, 18, 16, 15, 14, 13],
+  // Rising, never repeating, peak >= 40px: the band holds (no decay, no
+  // silence release shorter than the 1500ms backstop).
+  hold: [10, 25, 45, 60, 70, 75, 78, 80, 83],
+  // A native fling's momentum tail (~0.93 per event: "coasting").
+  momentum: [95, 88, 82, 76, 70, 65, 61, 57, 53, 49],
+  // The owner's recorded re-push after coasting into slide 1 (bench rev 40
+  // note): a dip, then a rise.
+  repush: [13, 28, 67, 112, 133, 160],
+  // A slow push: every step under 40px (the owner's were 5-16px).
+  slow: [5, 8, 12, 14, 12, 13, 12, 14, 12],
+};
+
+type WheelPlay = {
+  /** Signed deltas, one event each. */
+  deltas: readonly number[];
+  axis?: "x" | "y";
+  deltaMode?: number;
+  shiftKey?: boolean;
+  /** Real time between events (ms). */
+  dtMs?: number;
+  /** Keep sampling this long after the last event (ms). */
+  tailMs?: number;
+  /** After this many events, move the scroller (instantly) so its first
+   * slide rests at the physical start edge -- the platform's own momentum
+   * scroll carrying the track into slide 1. */
+  arriveAtStartAfter?: number;
+};
+type WheelRun = {
+  /** Band (signed px) sampled every animation frame, `t` in ms from the first event. */
+  samples: { t: number; v: number }[];
+  /** Band right after each event. */
+  afterEvent: number[];
+  eventTimes: number[];
+  axisSize: number;
+  finalTransform: string;
+};
+
+async function playWheel(content: Locator, play: WheelPlay): Promise<WheelRun> {
+  return content.evaluate(async (node, p) => {
+    const el = node as HTMLElement;
+    const axis = p.axis ?? "x";
+    const parse = (s: string) => {
+      const m = s.match(/translate[XY]\(([-\d.]+)px\)/);
+      return m ? Number.parseFloat(m[1]) : 0;
+    };
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const samples: { t: number; v: number }[] = [];
+    const afterEvent: number[] = [];
+    const eventTimes: number[] = [];
+    const t0 = performance.now();
+    let running = true;
+    const tick = () => {
+      samples.push({ t: performance.now() - t0, v: parse(el.style.transform) });
+      if (running) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    for (let i = 0; i < p.deltas.length; i++) {
+      const d = p.deltas[i];
+      el.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaX: axis === "x" ? d : 0,
+          deltaY: axis === "y" ? d : 0,
+          deltaMode: p.deltaMode ?? 0,
+          shiftKey: p.shiftKey ?? false,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      const t = performance.now() - t0;
+      eventTimes.push(t);
+      afterEvent.push(parse(el.style.transform));
+      samples.push({ t, v: afterEvent[i] });
+      if (p.arriveAtStartAfter === i + 1) {
+        const horizontal = el.getAttribute("data-orientation") !== "vertical";
+        const c = el.getBoundingClientRect();
+        let lo = Infinity;
+        for (const child of Array.from(el.children)) {
+          const r = child.getBoundingClientRect();
+          lo = Math.min(lo, horizontal ? r.left : r.top);
+        }
+        const delta = lo - (horizontal ? c.left : c.top);
+        el.scrollBy({ left: horizontal ? delta : 0, top: horizontal ? 0 : delta, behavior: "instant" });
+      }
+      if (i < p.deltas.length - 1) await sleep(p.dtMs ?? 16);
+    }
+    await sleep(p.tailMs ?? 0);
+    running = false;
+    const track = el.parentElement as HTMLElement;
+    const horizontal = el.getAttribute("data-orientation") !== "vertical";
+    return {
+      samples,
+      afterEvent,
+      eventTimes,
+      axisSize: horizontal ? track.clientWidth : track.clientHeight,
+      finalTransform: el.style.transform,
+    };
+  }, play);
+}
+
+/** Turn on D's debug telemetry for the next navigation (read once at mount). */
+async function enableWheelDebug(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("dx-carousel-debug", "1");
+    } catch {
+      // A storage-less context simply records nothing; tests that need it fail loudly.
+    }
+  });
+}
+
+type WheelRecord = {
+  id: string;
+  startedAtEdge: string;
+  owned: boolean | null;
+  notched: boolean;
+  deltas: number[];
+  releasedBy: string | null;
+  peakBand: number;
+  lastEventAt: number;
+  releasedAt: number | null;
+  endedByRepush: boolean;
+};
+
+/** D's telemetry records for this scroller only (every variant shares the page). */
+async function wheelRecords(content: Locator): Promise<WheelRecord[]> {
+  return content.evaluate((el) => {
+    const log = (window as unknown as { __dxCarouselWheel?: WheelRecord[] }).__dxCarouselWheel ?? [];
+    return JSON.parse(JSON.stringify(log.filter((r) => r.id === el.id)));
+  });
+}
+
+/** Waits (polling a static end state, not sampling an animation) for the band to be gone. */
+async function expectBandGone(content: Locator, timeout = 3000): Promise<void> {
+  await expect.poll(() => readContentTransform(content), { timeout }).toBe("");
+}
+
+function maxAbsBand(run: WheelRun): number {
+  return Math.max(0, ...run.samples.map((s) => Math.abs(s.v)));
+}
+
+/** In-page rAF sampler around real (CDP) input, for the tests that must use
+ * trusted events -- same "sample in-page" construction as `playWheel`. */
+async function sampleBandDuring(content: Locator, action: () => Promise<void>, tailMs = 0): Promise<number[]> {
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const w = window as unknown as { __dxBandSamples: number[]; __dxBandRun: boolean };
+    w.__dxBandSamples = [];
+    w.__dxBandRun = true;
+    const tick = () => {
+      const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+      w.__dxBandSamples.push(m ? Number.parseFloat(m[1]) : 0);
+      if (w.__dxBandRun) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await action();
+  if (tailMs) await content.page().waitForTimeout(tailMs);
+  return content.evaluate(() => {
+    const w = window as unknown as { __dxBandSamples: number[]; __dxBandRun: boolean };
+    w.__dxBandRun = false;
+    return w.__dxBandSamples;
+  });
+}
+
+const neg = (xs: number[]) => xs.map((x) => -x);
+
+test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () => {
+  test("an owned push at rest at the start edge draws a band bounded by 0.5 x the axis, then springs back to identity", async ({
     page,
   }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    expect(await readContentTransform(content)).toBe("");
+
+    // Negative deltaX at slide 1 asks for more "previous" than exists.
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 900 });
+    const peak = maxAbsBand(run);
+    expect(peak, "an owned push must draw a band").toBeGreaterThan(5);
+    expect(Math.min(...run.afterEvent), "pushing right, the band translates right").toBeGreaterThanOrEqual(0);
+    expect(peak).toBeLessThanOrEqual(run.axisSize * 0.5 + 0.5);
+    expect(run.finalTransform, "springs back to identity after the release").toBe("");
+
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.startedAtEdge).toBe("left");
+    expect(rec.owned).toBe(true);
+    expect(rec.releasedBy, "the momentum tail is what released it").toBe("smooth-decay");
+    // THE RULE: the band never moved `selected`.
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("an owned push at the end edge draws a band in the other direction and springs back", async ({ page }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    const next = frame.getByRole("button", { name: "Next slide" });
+    for (let i = 0; i < 4; i++) {
+      await next.click();
+      await expectSnappedToBoundary(content, slide(i + 2));
+    }
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+
+    const run = await playWheel(content, { deltas: WHEEL.rampAndDecay, tailMs: 900 });
+    expect(Math.min(...run.samples.map((s) => s.v)), "pushing left past the end, the band translates left").toBeLessThan(-5);
+    expect(maxAbsBand(run)).toBeLessThanOrEqual(run.axisSize * 0.5 + 0.5);
+    expect(run.finalTransform).toBe("");
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.startedAtEdge).toBe("right");
+    expect(rec.owned).toBe(true);
+    await expect(slide(5)).toHaveAttribute("data-selected", "true");
+  });
+
+  /**
+   * Replaces B3's "a sustained constant wheel stream ... grows sub-linearly"
+   * test. A perfectly constant stream is now, correctly, a notched wheel
+   * (see the notched test below) and releases after 140ms, so the same two
+   * curve properties are checked on a sustained push whose steps vary the
+   * way a real hand's do: the band stays under the asymptote (`LIMIT` x the
+   * axis -- 0.5 now, tighter than B3's 1.0), and doubling the input less
+   * than doubles the depth (WebKit's concave curve). Assertions unchanged
+   * in kind; the bound is tighter, not looser.
+   */
+  test("a sustained hard push stays within 0.5 x the axis and grows sub-linearly", async ({ page }) => {
+    await enableWheelDebug(page);
     await goto(page, "main");
     const frame = demoFrame(page, "main");
     const content = frame.locator(".dx-carousel-content");
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
 
-    await content.hover();
-    // `deltaX`, not `deltaY`: measured live against this exact server that
-    // a plain vertical wheel delta on a HORIZONTALLY-scrolling container
-    // does not scroll it at all in headless Chromium (no vertical overflow
-    // to redirect) -- the event reaches the element (confirmed by a direct
-    // listener probe) but `scrollLeft` never moves, so the page scrolls
-    // instead and the next synthetic event lands somewhere else entirely.
-    // `deltaX` is also the physically correct simulated gesture for a real
-    // trackpad's horizontal two-finger swipe. Negative at slide 1 (the
-    // start) asks for more "previous" than exists. Several events in quick
-    // succession, matching a real burst, so the accumulated overdrag is
-    // comfortably measurable.
-    for (let i = 0; i < 6; i++) {
-      await page.mouse.wheel(-120, 0);
-    }
-
-    await expect(async () => {
-      const transform = await readContentTransform(content);
-      const depth = parseTranslatePx(transform);
-      expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
-      expect(depth!).toBeGreaterThan(0);
-    }).toPass({ timeout: 2000 });
-
-    // Settles back on its own once the burst goes idle (no pointerup for a
-    // wheel gesture) -- bounded well above the idle backstop (90ms) plus
-    // the spring-back's own duration (340ms).
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 3000 });
-
-    // The wheel path never wrote the scroll position at all (THE RULE) --
-    // `selected` is unchanged.
+    const sustained = Array.from({ length: 20 }, (_, i) => -(150 + (i % 3) * 7));
+    // Momentum all the way down, as a real tail runs (~0.93 per event, to a
+    // few px): D's decay test only counts once the peak is above 3 x the
+    // smallest step this device has sent, and a page that has only ever
+    // seen 100px+ steps has not learned its quantum yet.
+    const tail = Array.from({ length: 34 }, (_, i) => -Math.max(3, Math.round(140 * 0.93 ** i)));
+    const run = await playWheel(content, { deltas: [...sustained, ...tail], tailMs: 900 });
+    const depth10 = Math.abs(run.afterEvent[9]);
+    const depth20 = Math.abs(run.afterEvent[19]);
+    expect(depth10).toBeGreaterThan(0);
+    expect(depth20, "still pushing should still grow the depth").toBeGreaterThan(depth10);
+    expect(depth20, "doubling the input should not double the depth (sub-linear curve)").toBeLessThan(depth10 * 2);
+    expect(maxAbsBand(run)).toBeLessThanOrEqual(run.axisSize * 0.5 + 0.5);
+    expect(run.finalTransform).toBe("");
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.releasedBy).toBe("smooth-decay");
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("wheel overdrag at the end boundary produces a transform that settles back to identity, without paging", async ({
+  test("a fling that arrives at slide 1 from another slide with momentum draws NO band (the platform's edge)", async ({
+    page,
+  }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expectSnappedToBoundary(content, slide(2));
+
+    // Starts at slide 2 (not at rest at an edge); the "platform" carries the
+    // track into slide 1 after four events and the tail keeps arriving there.
+    const run = await playWheel(content, { deltas: neg(WHEEL.momentum), arriveAtStartAfter: 4, tailMs: 300 });
+    expect(maxAbsBand(run), "D never draws on a gesture that did not start at rest at the edge").toBe(0);
+    expect(run.finalTransform).toBe("");
+    const recs = await wheelRecords(content);
+    expect(recs.length).toBeGreaterThan(0);
+    const [rec] = recs.slice(-1);
+    expect(rec.startedAtEdge).toBe("none");
+    expect(rec.owned).toBe(false);
+  });
+
+  test("after coasting into slide 1, the owner's dip-then-rise re-push starts a new, owned gesture and draws a band", async ({
+    page,
+  }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expectSnappedToBoundary(content, slide(2));
+
+    // ..., -57, -53, -49 (momentum), then -13, -28, -67, -112, -133, -160
+    // (new fingers) -- one continuous stream, never a GAP_MS silence, so only
+    // the coast-then-rise rule (bench rev 40) can split it.
+    const deltas = neg([...WHEEL.momentum, ...WHEEL.repush]);
+    const run = await playWheel(content, { deltas, arriveAtStartAfter: 4, tailMs: 50 });
+    const nMomentum = WHEEL.momentum.length;
+    const tRepush = run.eventTimes[nMomentum];
+    const before = run.samples.filter((s) => s.t < tRepush);
+    expect(Math.max(0, ...before.map((s) => Math.abs(s.v))), "no band during the platform's own arrival").toBe(0);
+    expect(Math.max(...run.afterEvent.slice(nMomentum)), "the re-push is owned: D draws its band").toBeGreaterThan(5);
+
+    const recs = await wheelRecords(content);
+    const owned = recs.filter((r) => r.owned === true);
+    expect(owned.length).toBe(1);
+    expect(owned[0].startedAtEdge).toBe("left");
+    // The record before it is the arrival, ended by the re-push rule (not a gap).
+    const i = recs.indexOf(owned[0]);
+    expect(recs[i - 1].owned).toBe(false);
+    expect(recs[i - 1].endedByRepush).toBe(true);
+    await expectBandGone(content);
+  });
+
+  test("a slow push (steps under 16px) holds the band, then releases ~250ms after its last event", async ({ page }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+
+    const run = await playWheel(content, { deltas: neg(WHEEL.slow), tailMs: 1100 });
+    const last = run.eventTimes[run.eventTimes.length - 1];
+    const held = run.afterEvent[run.afterEvent.length - 1];
+    expect(held).toBeGreaterThan(0);
+    // No release inside the first 200ms of silence: the band stays exactly put.
+    const early = run.samples.filter((s) => s.t > last && s.t < last + 200);
+    expect(early.length).toBeGreaterThan(0);
+    for (const s of early) expect(s.v).toBeCloseTo(held, 5);
+    expect(run.finalTransform, "released and home well before the 1500ms backstop").toBe("");
+
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.releasedBy).toBe("slow-silence");
+    const silence = (rec.releasedAt ?? 0) - rec.lastEventAt;
+    expect(silence).toBeGreaterThanOrEqual(230);
+    expect(silence).toBeLessThan(700);
+  });
+
+  for (const [label, play] of [
+    ["deltaMode 1 (lines)", { deltas: [-3, -3, -3, -3], deltaMode: 1, dtMs: 40 }],
+    ["deltaMode 0, repeated identical 120px steps", { deltas: [-120, -120, -120, -120], dtMs: 40 }],
+  ] as const) {
+    test(`a notched mouse wheel -- ${label} -- releases fast, not after the 1500ms backstop`, async ({ page }) => {
+      await enableWheelDebug(page);
+      await goto(page, "main");
+      const frame = demoFrame(page, "main");
+      const content = frame.locator(".dx-carousel-content");
+
+      const run = await playWheel(content, { ...play, tailMs: 900 });
+      expect(maxAbsBand(run)).toBeGreaterThan(0);
+      expect(run.finalTransform, "home within ~140ms + the 340ms spring-back").toBe("");
+      const [rec] = (await wheelRecords(content)).slice(-1);
+      expect(rec.owned).toBe(true);
+      expect(rec.notched).toBe(true);
+      expect(rec.releasedBy).toBe("notch-silence");
+      const silence = (rec.releasedAt ?? 0) - rec.lastEventAt;
+      expect(silence).toBeGreaterThanOrEqual(120);
+      expect(silence, "faster than even the slow-push release").toBeLessThan(250);
+    });
+  }
+
+  test("a cursor movement after the push counts as the fingers lifting and releases the band", async ({ page }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const box = await content.boundingBox();
+    if (!box) throw new Error("content has no bounding box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    const run = await playWheel(content, { deltas: neg(WHEEL.hold) });
+    expect(run.finalTransform, "the band is held (no silence release this short)").not.toBe("");
+    await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2);
+    await expectBandGone(content, 1200);
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.releasedBy).toBe("cursor-moved");
+  });
+
+  test("vertical wheel input over a horizontal carousel at slide 1 draws no band, and still scrolls the page", async ({
+    page,
+  }) => {
+    await enableWheelDebug(page);
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+
+    for (const sign of [-1, 1]) {
+      const run = await playWheel(content, { deltas: WHEEL.rampAndDecay.map((x) => sign * x), axis: "y", tailMs: 100 });
+      expect(maxAbsBand(run), `deltaY ${sign < 0 ? "up" : "down"} is not this carousel's axis`).toBe(0);
+    }
+    // Ignored entirely: not even a gesture record.
+    expect(await wheelRecords(content)).toEqual([]);
+
+    // Real (trusted) vertical wheel over the carousel scrolls the page.
+    await content.hover();
+    const before = await page.evaluate(() => window.scrollY);
+    const samples = await sampleBandDuring(content, async () => {
+      await page.mouse.wheel(0, 200);
+      await page.mouse.wheel(0, 200);
+    }, 300);
+    expect(Math.max(0, ...samples.map(Math.abs))).toBe(0);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+  });
+
+  test("Shift+wheel (reported as deltaY with shiftKey) counts as horizontal intent", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), axis: "y", shiftKey: true, tailMs: 900 });
+    expect(maxAbsBand(run)).toBeGreaterThan(5);
+    expect(run.finalTransform).toBe("");
+  });
+
+  test("vertical orientation: an owned push at the top draws a translateY band and ignores horizontal input", async ({
+    page,
+  }) => {
+    await enableWheelDebug(page);
+    await goto(page, "vertical");
+    const frame = demoFrame(page, "vertical");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    const sideways = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), axis: "x", tailMs: 100 });
+    expect(maxAbsBand(sideways), "deltaX is not a vertical carousel's axis").toBe(0);
+
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), axis: "y", tailMs: 900 });
+    expect(Math.min(...run.afterEvent), "pushing down at the top, the band translates down").toBeGreaterThanOrEqual(0);
+    expect(maxAbsBand(run)).toBeGreaterThan(5);
+    expect(maxAbsBand(run)).toBeLessThanOrEqual(run.axisSize * 0.5 + 0.5);
+    expect(run.finalTransform).toBe("");
+    const recs = await wheelRecords(content);
+    expect(recs.map((r) => r.startedAtEdge)).toContain("top");
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("RTL: an owned push at slide 1 (the physical right edge) draws a leftward band", async ({ page }) => {
+    await enableWheelDebug(page);
+    await goto(page, "rtl");
+    const frame = demoFrame(page, "rtl");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 4` });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
+    // Under RTL, slide 1 rests at the physical RIGHT; positive deltaX pushes
+    // past it. All geometry is physical, so nothing here is mirrored by hand.
+    const run = await playWheel(content, { deltas: WHEEL.rampAndDecay, tailMs: 900 });
+    expect(Math.max(...run.afterEvent), "the band translates left").toBeLessThanOrEqual(0);
+    expect(maxAbsBand(run)).toBeGreaterThan(5);
+    expect(maxAbsBand(run)).toBeLessThanOrEqual(run.axisSize * 0.5 + 0.5);
+    expect(run.finalTransform).toBe("");
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.startedAtEdge).toBe("right");
+    expect(rec.owned).toBe(true);
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+  });
+
+  test("loop_mode Rewind keeps its physical edges, so the wheel band still applies", async ({ page }) => {
+    await goto(page, "rewind");
+    const frame = demoFrame(page, "rewind");
+    const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
+    const content = region.locator(".dx-carousel-content");
+    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 900 });
+    expect(maxAbsBand(run)).toBeGreaterThan(5);
+    expect(run.finalTransform).toBe("");
+    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
+  });
+
+  test("a CarouselVirtualContent seamless loop has no edges, so no band even at its window's physical start", async ({
+    page,
+  }) => {
+    await enableWheelDebug(page);
+    await goto(page, "virtual_loop");
+    const frame = demoFrame(page, "virtual_loop");
+    const content = frame.locator(".dx-carousel-content");
+    await expect.poll(() => frame.locator('[data-selected="true"]').getAttribute("aria-label")).toBe("1 of 12");
+
+    // Jump to the window's own physical start and push into it in the same
+    // task, before any re-anchor can run: an enabled bridge would own this.
+    const result = await content.evaluate((node) => {
+      const el = node as HTMLElement;
+      // Physical min over every rendered slide (the window is keyed by
+      // position, so DOM order alone says nothing about which is leftmost).
+      const startGap = () => {
+        let lo = Infinity;
+        for (const child of Array.from(el.children)) lo = Math.min(lo, child.getBoundingClientRect().left);
+        return lo - el.getBoundingClientRect().left;
+      };
+      // Test setup only: snapping (with `scroll-snap-stop: always`) holds
+      // this scroller on its current slide against an instant jump, so
+      // suspend it just for the placement, and restore it after.
+      const snap = el.style.scrollSnapType;
+      el.style.scrollSnapType = "none";
+      el.scrollBy({ left: startGap(), behavior: "instant" });
+      const gap = startGap();
+      for (let i = 0; i < 8; i++) {
+        el.dispatchEvent(new WheelEvent("wheel", { deltaX: -(20 + i * 5), bubbles: true, cancelable: true }));
+      }
+      const transform = el.style.transform;
+      el.style.scrollSnapType = snap;
+      return { gap, transform };
+    });
+    expect(Math.abs(result.gap), `the scroller really was at its window's start (gap ${result.gap}px)`).toBeLessThan(1);
+    expect(result.transform).toBe("");
+    expect(await wheelRecords(content), "the wheel bridge is not attached at all").toEqual([]);
+  });
+
+  test("prefers-reduced-motion: reduce draws no wheel band", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 100 });
+    expect(maxAbsBand(run)).toBe(0);
+    expect(run.finalTransform).toBe("");
+  });
+
+  test("telemetry is off unless the debug flag is set: nothing is recorded", async ({ page }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 100 });
+    expect(maxAbsBand(run), "the band itself still works").toBeGreaterThan(5);
+    expect(await page.evaluate(() => (window as unknown as { __dxCarouselWheel?: unknown }).__dxCarouselWheel)).toBeUndefined();
+  });
+
+  test("real (trusted) wheel input at the start and end edges draws a band that springs back, without paging", async ({
     page,
   }) => {
     await goto(page, "main");
@@ -1422,138 +1929,28 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
     const next = frame.getByRole("button", { name: "Next slide" });
 
+    // `deltaX`: a plain vertical delta on a horizontal carousel is not its
+    // axis (see the vertical-input test above). 120px identical steps are a
+    // notched wheel, so each burst releases fast.
+    await content.hover();
+    const start = await sampleBandDuring(content, async () => {
+      for (let i = 0; i < 6; i++) await page.mouse.wheel(-120, 0);
+    });
+    expect(Math.max(...start), "a band at the start edge").toBeGreaterThan(0);
+    await expectBandGone(content);
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+
     for (let i = 0; i < 4; i++) {
       await next.click();
       await expectSnappedToBoundary(content, slide(i + 2));
     }
-    await expect(slide(5)).toHaveAttribute("data-selected", "true");
-
     await content.hover();
-    // `deltaX` -- see the start-boundary test's own comment above.
-    for (let i = 0; i < 6; i++) {
-      await page.mouse.wheel(120, 0);
-    }
-
-    await expect(async () => {
-      const transform = await readContentTransform(content);
-      const depth = parseTranslatePx(transform);
-      expect(depth, `expected a nonzero translateX, got "${transform}"`).not.toBeNull();
-      expect(depth!).toBeLessThan(0);
-    }).toPass({ timeout: 2000 });
-
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 3000 });
-
+    const end = await sampleBandDuring(content, async () => {
+      for (let i = 0; i < 6; i++) await page.mouse.wheel(120, 0);
+    });
+    expect(Math.min(...end), "a band at the end edge").toBeLessThan(0);
+    await expectBandGone(content);
     await expect(slide(5)).toHaveAttribute("data-selected", "true");
-  });
-
-  /**
-   * The wheel path's rubber-band curve, `x*c*d/(d+c*x)` (Apple's own
-   * formula, `c = 0.55`, `d = axisSize()` -- `primitives/src/carousel.rs`'s
-   * `CAROUSEL_WHEEL_BOUNCE_JS`'s own `rubber(x)`, corrected 2026-09-25; see
-   * that constant's own doc and `dev-docs/research/carousel-overscroll-2026-09-23.md`
-   * §9's dated entry for the earlier, mis-transcribed curve this replaces).
-   * Two properties fall directly out of that formula's own shape and hold
-   * for ANY sustained (non-decaying) push, independent of the exact axis
-   * size measured live below: the depth never exceeds the asymptote `d`,
-   * and the curve is strictly concave, so doubling the total raw input
-   * strictly less than doubles the visible depth. This test only exercises
-   * a sustained, constant-magnitude stream -- no momentum/decay behavior is
-   * asserted here (that is deliberately out of scope for this lane; see
-   * this lane's own report).
-   */
-  test("a sustained constant wheel stream at the start boundary stays within the axis size and grows sub-linearly", async ({
-    page,
-  }) => {
-    await goto(page, "main");
-    const frame = demoFrame(page, "main");
-    const content = frame.locator(".dx-carousel-content");
-    const viewport = viewportLocator(frame);
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
-    await expect(slide(1)).toHaveAttribute("data-selected", "true");
-
-    await content.hover();
-    const box = await viewport.boundingBox();
-    if (!box) {
-      throw new Error("viewport has no bounding box");
-    }
-    const axisSize = box.width;
-
-    // `deltaX` -- see the start-boundary test's own comment above.
-    // Negative at slide 1 (the start) asks for more "previous" than
-    // exists, same direction as the earlier wheel tests in this block.
-    //
-    // Both bursts -- and both transform reads -- happen inside ONE
-    // synchronous in-page loop, never as two separate `page.mouse.wheel()`
-    // round trips (a real CDP round trip per call) with a
-    // `readContentTransform()` `page.evaluate()` await in between (what
-    // this test used to do). That gap is a race, not a rounding error:
-    // `CAROUSEL_WHEEL_BOUNCE_JS`'s release-on-decay heuristic
-    // (`wheelSpent`, `primitives/src/carousel.rs`) treats ANY constant,
-    // non-rising delta stream as "spent" after just two events -- its
-    // plateau branch accepts a delta merely EQUAL to the previous one,
-    // which a perfectly uniform synthetic burst always is -- and starts a
-    // 340ms spring-back (`bounceHome`) right there, mid-burst. A real
-    // hand never sends perfectly identical deltas, so this rarely bites
-    // live traffic, but it fires on every event this test sends. Reading
-    // `depth1`/`depth2` across a real async gap therefore samples an
-    // animation that is already mid-flight back toward zero, at whatever
-    // arbitrary point wall-clock timing happened to interrupt it -- found
-    // live via an in-page `MutationObserver` trace: the exact same
-    // release/spring-back/interrupt cycle fires on this repo's own `main`
-    // branch too (pre-existing, not a lane regression), it just happened
-    // to sample a losing phase of that cycle after this lane's other,
-    // unrelated changes shifted per-frame timing slightly -- a coincidence
-    // the assertion below should never have been exposed to either way.
-    // Dispatching the wheel events as native `WheelEvent`s directly
-    // in-page, back to back with no `await` between them, keeps the
-    // entire 20-event sequence (and both reads) inside one synchronous JS
-    // turn: `release()`/`bounceHome()` still fires (a flat stream is still
-    // classified as spent), but its spring-back tween's first step always
-    // runs at `t ≈ 0` (no real time has elapsed), and any
-    // `requestAnimationFrame` it schedules is superseded by the very next
-    // dispatch before the browser ever gets a chance to paint one -- so
-    // the release fires without ever visibly unwinding progress, and the
-    // accumulated overdrag grows exactly as the curve's own math promises
-    // (this test's own header doc). This is what "sample in-page" means
-    // here: not a workaround for a slow test, but the only sampling
-    // method that is not itself racing a live animation.
-    const burst = (n1: number, n2: number) =>
-      content.evaluate(
-        (el, { n1, n2 }) => {
-          const fire = () => {
-            el.dispatchEvent(
-              new WheelEvent("wheel", { deltaX: -80, deltaY: 0, bubbles: true, cancelable: true }),
-            );
-          };
-          for (let i = 0; i < n1; i++) fire();
-          const t1 = (el as HTMLElement).style.transform;
-          for (let i = 0; i < n2; i++) fire();
-          const t2 = (el as HTMLElement).style.transform;
-          return [t1, t2] as const;
-        },
-        { n1, n2 },
-      );
-
-    const [transform1, transform2] = await burst(10, 10);
-    const depth1 = Math.abs(parseTranslatePx(transform1) ?? 0);
-    expect(depth1, "expected a nonzero bounce after the first burst").toBeGreaterThan(0);
-    expect(depth1).toBeLessThanOrEqual(axisSize + 1);
-
-    // Doubling the total raw input (20 events total, same magnitude each,
-    // so this is still one sustained push, never decaying).
-    const depth2 = Math.abs(parseTranslatePx(transform2) ?? 0);
-    expect(depth2).toBeLessThanOrEqual(axisSize + 1);
-    expect(depth2, "still pushing should still grow the depth").toBeGreaterThan(depth1);
-    expect(depth2, "doubling the input should not double the depth (sub-linear curve)").toBeLessThan(depth1 * 2);
-
-    // Settles back on its own once the burst goes idle.
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 3000 });
-
-    await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
   test("a mid-range wheel scroll produces no lingering transform and still pages correctly (regression guard)", async ({
@@ -1565,7 +1962,6 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
 
     await content.hover();
-    // `deltaX` -- see the start-boundary test's own comment above.
     const pitch = await slidePitch(slide(1));
     for (let i = 0; i < 8; i++) {
       await page.mouse.wheel(pitch / 6, 0);
@@ -1573,9 +1969,7 @@ test.describe("Carousel: edge rubber-band (mode B3)", () => {
 
     await expectSnappedToBoundary(content, slide(2));
     await expect(slide(2)).toHaveAttribute("data-selected", "true");
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 2000 });
+    await expectBandGone(content, 2000);
   });
 });
 
@@ -1752,6 +2146,12 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
     }).toPass({ timeout: 2000 });
   });
 
+  // Both wheel tests drive a push that HOLDS its band (rising, never
+  // repeating, peak >= 40px: only the 1500ms backstop or a cursor move
+  // releases it -- see the mode D describe block's own header), so the
+  // static held band is what `paintsAt` probes; nothing animated is read
+  // across a round trip. The page's mouse is never moved during the probe
+  // (a cursor move is D's "fingers lifted" signal).
   test("a wheel overdrag at the start boundary never paints a slide past the viewport's edge", async ({ page }) => {
     await goto(page, "main");
     const frame = demoFrame(page, "main");
@@ -1760,18 +2160,10 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
     const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
 
-    await content.hover();
-    // `deltaX` -- see the "edge rubber-band" describe block's identical
-    // wheel test above for why.
-    for (let i = 0; i < 6; i++) {
-      await page.mouse.wheel(-120, 0);
-    }
-
-    await expect(async () => {
-      const depth = parseTranslatePx(await readContentTransform(content));
-      expect(depth, "expected a nonzero translateX").not.toBeNull();
-      expect(depth!).toBeGreaterThan(0);
-    }).toPass({ timeout: 2000 });
+    const run = await playWheel(content, { deltas: neg(WHEEL.hold) });
+    const depth = parseTranslatePx(run.finalTransform);
+    expect(depth, "expected a held, nonzero translateX").not.toBeNull();
+    expect(depth!).toBeGreaterThan(0);
 
     const box = await viewport.boundingBox();
     if (!box) {
@@ -1781,9 +2173,7 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
     const y = box.y + box.height * 0.2;
     expect(await paintsAt(content, x, y), "a slide painted past the viewport's own right edge").toBe(false);
 
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 3000 });
+    await expectBandGone(content, 3000);
   });
 
   test("a wheel overdrag at the end boundary never paints a slide past the viewport's edge", async ({ page }) => {
@@ -1800,16 +2190,10 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
     }
     await expect(slide(5)).toHaveAttribute("data-selected", "true");
 
-    await content.hover();
-    for (let i = 0; i < 6; i++) {
-      await page.mouse.wheel(120, 0);
-    }
-
-    await expect(async () => {
-      const depth = parseTranslatePx(await readContentTransform(content));
-      expect(depth, "expected a nonzero translateX").not.toBeNull();
-      expect(depth!).toBeLessThan(0);
-    }).toPass({ timeout: 2000 });
+    const run = await playWheel(content, { deltas: WHEEL.hold });
+    const depth = parseTranslatePx(run.finalTransform);
+    expect(depth, "expected a held, nonzero translateX").not.toBeNull();
+    expect(depth!).toBeLessThan(0);
 
     const box = await viewport.boundingBox();
     if (!box) {
@@ -1819,9 +2203,7 @@ test.describe("Carousel: clipping viewport (edge overdrag never paints outside t
     const y = box.y + box.height * 0.2;
     expect(await paintsAt(content, x, y), "a slide painted past the viewport's own left edge").toBe(false);
 
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 3000 });
+    await expectBandGone(content, 3000);
   });
 });
 
@@ -2016,10 +2398,16 @@ test.describe("Carousel: autoplay + rotation control", () => {
   test("autoplay advances the slide on its own", async ({ page }) => {
     await goto(page, "autoplay");
     const frame = demoFrame(page, "autoplay");
-    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
-
-    await expect(slide(1)).toHaveAttribute("data-selected", "true");
-    await expect(slide(2)).toHaveAttribute("data-selected", "true", { timeout: 3000 });
+    // Relative, not absolute: under parallel load, hydration can take longer
+    // than one autoplay interval, so the carousel may already have left
+    // slide 1 by the time the page is ready (2 of 10 runs at --workers=4
+    // failed an up-front "slide 1 is selected" check). Whatever slide is
+    // selected now, a different one must become selected on its own.
+    const selectedLabel = () =>
+      frame.locator('[role="group"][aria-roledescription="slide"][data-selected="true"]').first().getAttribute("aria-label");
+    await expect.poll(selectedLabel).not.toBeNull();
+    const before = await selectedLabel();
+    await expect.poll(selectedLabel, { timeout: 3000 }).not.toBe(before);
   });
 
   test("keyboard focus entering the carousel stops rotation, and it does not resume on its own", async ({ page }) => {

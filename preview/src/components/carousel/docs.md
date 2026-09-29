@@ -73,7 +73,39 @@ Click-and-drag anywhere on the track pages the carousel with the mouse or a pen,
 
 Set `draggable: false` on `CarouselContent` to opt a particular carousel out of the gesture entirely (it defaults to `true`).
 
-Dragging past the first or last slide does not bounce back elastically -- a deliberate choice, not a gap: the disabled Previous/Next buttons already signal the boundary, elastic overscroll doesn't exist for a programmatic drag like this one, and it's a macOS/iOS compositor feature to begin with -- a native scroll-snap track doesn't rubber-band on Linux or Windows either, dragged or not.
+Dragging past the first or last slide rubber-bands: the track follows the pointer with increasing resistance (WebKit's own curve) and springs back when you let go. It is purely visual -- a `transform` on the track, never a change of slide -- and the disabled Previous/Next buttons still signal the boundary. `prefers-reduced-motion: reduce` turns it off.
+
+## Wheel and trackpad at the ends ("platform-aware band")
+
+Scrolling with a wheel or trackpad is the browser's own native scroll; the carousel never writes the scroll position during one. At the first or last slide it may add an elastic band of its own -- again only a `transform` on the track -- following one rule: **it draws the band only for a gesture that *starts* at rest at that end and pushes into it.** A fling from slide 3 that arrives at slide 1 with momentum is the platform's to finish (its own bounce, or none in a browser that has none), so the carousel draws nothing there and never stacks a second bounce on top. Pause at slide 1 and push again, and the band is the carousel's.
+
+- **Only this carousel's own axis.** A horizontal carousel reacts only to horizontal input (`|deltaX| > |deltaY|`, or Shift+wheel), so scrolling the page vertically over a carousel sitting at slide 1 scrolls the page and draws no band. A vertical carousel reacts only to vertical input. RTL needs nothing special: every measurement is physical.
+- **Release.** A wheel has no "pointer up", so the band springs home (ease-out cubic, 340ms) when the input says the fingers have lifted: the deltas turn into smoothly decaying momentum; the mouse cursor moves; a slow push (steps under 40px) goes quiet for 250ms; a notched mouse wheel goes quiet for 140ms; the push reverses; or, as a backstop, 1500ms of silence. Pushing again while it springs home picks the band up from where it is.
+- **Not drawn** under `prefers-reduced-motion: reduce`, nor for a `CarouselVirtualContent` seamless loop (it has no ends). `loop_mode: Rewind` still has physical ends, so it keeps the band.
+
+The tuning is the owner-tested bench's (`bench-rev40.html`, mode D), as named constants in `primitives/src/carousel.rs` (`CAROUSEL_WHEEL_BAND_JS`):
+
+| Constant | Value | What it does |
+|---|---|---|
+| `GAIN` | 0.3 | Wheel delta to finger travel (wheel deltas are pointer-accelerated). |
+| `RUBBER_C` | 0.55 | WebKit's resistance: the band's slope at the edge. |
+| `LIMIT` | 0.5 | Where the curve flattens, x the track's size. The band never exceeds this. |
+| `GAP_MS` | 100 | Silence that starts a new gesture (real bursts rest 64-78ms). |
+| `SMOOTH` / `RATIO_MAX` | 0.8 / 0.96 | Momentum = each event falls to between these fractions of the last. |
+| `RUNS` | 5 | Smoothly falling events that mean "lifted" (and that make a stream "coasting"). |
+| `REPRESS` / `COAST_RISE` | 2 / 1.3 | A rise this big (after a release / once coasting) is a new push. |
+| `IDLE_MS` | 1500 | Backstop release after silence. |
+| `SLOW_IDLE_MS` / `SLOW_PEAK_PX` | 250 / 40 | A push that never stepped 40px or more releases after 250ms of silence. |
+| `NOTCH_IDLE_MS` / `NOTCH_MIN_PX` | 140 / 40 | A notched mouse wheel releases after 140ms of silence. |
+| `LIFT_PX` | 2 | Cursor movement that counts as a lift. |
+| `HOME_MS` | 340 | Spring-back duration. |
+| `CAP` | 1 | Hard ceiling, x the track's size (1 = off). |
+
+A **notched** wheel is one reporting `deltaMode` 1 (lines) or 2 (pages), or `deltaMode` 0 with a step of 40px or more that exactly repeats the previous one (or is a whole multiple of an already-identified notch). The very first notch, before any repeat, cannot be told apart from a trackpad and waits for the cursor to move or for the backstop.
+
+**Debug telemetry.** Set `localStorage.setItem("dx-carousel-debug", "1")` and reload: each wheel gesture then pushes a record onto `window.__dxCarouselWheel` (the last 50 are kept) with its deltas, where it started (`startedAtEdge`), whether the carousel owned it (`owned`), whether it was notched, the release reason (`releasedBy`: `smooth-decay`, `cursor-moved`, `slow-silence`, `notch-silence`, `idle`, `reversed`, `superseded`, `pointerdown`), the peak band in px, and timings. Without the flag nothing is recorded.
+
+**Known open item -- pending a real-device check.** Safari (and possibly Firefox on some platforms) rubber-bands a scroll container even when the gesture starts at rest at its end. There, the carousel's band could stack on the platform's own (a double bounce). This cannot be tested headlessly and will not be solved by user-agent sniffing; the intended fix is to skip the carousel's band wherever the platform is observed to draw its own at a resting edge. Until that check has been done on real Safari/Firefox hardware, treat the wheel band there as unverified.
 
 ## Direction / RTL
 
