@@ -902,6 +902,32 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     await expect(button).toHaveAttribute("data-clicked", "false");
   });
 
+  /**
+   * A drag that ends clamped against an edge comes to rest exactly on a slide,
+   * so its release needs no settle scroll -- and every `scrollend` during the
+   * drag is dropped while `data-dragging` is set. Before the tracking bridge
+   * treated the end of a drag as the end of a scroll, nothing reported where
+   * it rested: dragging from slide 2 hard past slide 1 left `selected` on
+   * slide 2 with slide 1 showing (measured on this build before the fix:
+   * "2 of 5" at scrollLeft 0).
+   */
+  test("a drag from slide 2 hard past the first slide selects slide 1 (the drag's end reports where it rested)", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+
+    await dragBy(page, content, (await slidePitch(slide(2))) * 2.5, 0, 20);
+    await expectSnappedToBoundary(content, slide(1));
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expect(frame.getByRole("button", { name: "Previous slide" })).toBeDisabled();
+  });
+
   test("a short movement below the threshold does not page", async ({ page }) => {
     await goto(page, "main");
     const frame = demoFrame(page, "main");
@@ -2341,7 +2367,15 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
+  /**
+   * Rewritten for the owner's true-end rule (the drag band now follows the
+   * wheel band's shared `dxIsTrueEnd` predicate): this test used to be titled
+   * "dragging past a physical edge still rubber-bands under loop" -- though it
+   * only ever asserted that the transform ended at identity, never that a
+   * band appeared. A looping carousel has no true end, so the drag clamps at
+   * the physical edge with no band at all, and still never wraps.
+   */
+  test("dragging past a looping carousel's physical edge never rubber-bands and never wraps", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
     const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
@@ -2349,13 +2383,15 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
     const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
-    // A large rightward drag from slide 1 (nothing before it) should
-    // rubber-band, not wrap to slide 5 -- `loop`/`loop_mode` only govern
-    // Previous/Next/the root keyboard (this crate's own module doc).
-    await dragBy(page, content, 250, 0);
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 2000 });
+    // A large rightward drag from slide 1 (nothing before it): no band, no
+    // wrap to slide 5 -- `loop`/`loop_mode` only govern Previous/Next/the
+    // root keyboard (this crate's own module doc). Sampled in-page every
+    // frame for the whole drag (row 112), not read once after it.
+    const samples = await sampleBandDuring(content, async () => {
+      await dragBy(page, content, 250, 0);
+    }, 300);
+    expect(Math.max(0, ...samples.map(Math.abs)), "no band at a looping carousel's edge").toBe(0);
+    expect(await readContentTransform(content)).toBe("");
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
