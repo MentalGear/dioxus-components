@@ -338,6 +338,19 @@ fn content_gap_margin(orientation: CarouselOrientation) -> &'static str {
     }
 }
 
+/// The `gap` prop ([`CarouselContentProps::gap`],
+/// [`CarouselVirtualContentProps::gap`]) as the inline declaration it
+/// renders: `--dx-carousel-gap:<value>;`, or nothing for `None`/blank. Kept
+/// separate from [`content_gap_margin`]/[`item_gap_padding`] on purpose: it
+/// only sets the variable those already read, so the axis handling stays in
+/// one place.
+fn content_gap_var(gap: Option<&str>) -> String {
+    match gap.map(str::trim) {
+        Some(value) if !value.is_empty() => format!("--dx-carousel-gap:{value};"),
+        _ => String::new(),
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -2891,6 +2904,24 @@ pub struct CarouselContentProps {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub draggable: ReadSignal<bool>,
 
+    /// The space between slides, as any CSS length or variable (e.g.
+    /// `"1rem"`, `"var(--dx-space-4)"`). When set, it is written as
+    /// `--dx-carousel-gap:<value>;` on this element's own inline style, and
+    /// the existing orientation-aware gap model applies it on the scroll
+    /// axis: each slide's leading-edge padding plus this element's matching
+    /// negative margin (`padding-inline-start`/`margin-inline-start`
+    /// horizontally, `padding-block-start`/`margin-block-start` vertically).
+    ///
+    /// shadcn has no `gap` prop -- its carousel spaces slides with utility
+    /// classes (`-ml-N`/`pl-N`, `-mt-N`/`pt-N` when vertical). This prop is a
+    /// typed convenience over that same padding + negative-margin technique,
+    /// nothing more: the `--dx-carousel-gap` custom property remains the
+    /// override hook (a caller's own inline `style` setting it still wins, as
+    /// it comes later in the same attribute), and `None` (the default)
+    /// renders nothing, leaving any stylesheet value in force.
+    #[props(default, into)]
+    pub gap: Option<String>,
+
     /// Additional attributes to apply to the carousel content element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -3358,6 +3389,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation);
+    let gap_var = content_gap_var(props.gap.as_deref());
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -3369,7 +3401,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{}",
+        "{axis_style}{gap_margin}{gap_var}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3703,6 +3735,24 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
     /// `true`; touch is never affected either way.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub draggable: ReadSignal<bool>,
+
+    /// The space between slides, as any CSS length or variable (e.g.
+    /// `"1rem"`, `"var(--dx-space-4)"`). When set, it is written as
+    /// `--dx-carousel-gap:<value>;` on this element's own inline style, and
+    /// the existing orientation-aware gap model applies it on the scroll
+    /// axis: each slide's leading-edge padding plus this element's matching
+    /// negative margin (`padding-inline-start`/`margin-inline-start`
+    /// horizontally, `padding-block-start`/`margin-block-start` vertically).
+    ///
+    /// shadcn has no `gap` prop -- its carousel spaces slides with utility
+    /// classes (`-ml-N`/`pl-N`, `-mt-N`/`pt-N` when vertical). This prop is a
+    /// typed convenience over that same padding + negative-margin technique,
+    /// nothing more: the `--dx-carousel-gap` custom property remains the
+    /// override hook (a caller's own inline `style` setting it still wins, as
+    /// it comes later in the same attribute), and `None` (the default)
+    /// renders nothing, leaving any stylesheet value in force.
+    #[props(default, into)]
+    pub gap: Option<String>,
 
     /// Additional attributes to apply to the carousel content element.
     #[props(extends = GlobalAttributes)]
@@ -4160,6 +4210,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation_now);
+    let gap_var = content_gap_var(props.gap.as_deref());
     let axis_style = match orientation_now {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -4171,7 +4222,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{}",
+        "{axis_style}{gap_margin}{gap_var}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -5393,6 +5444,12 @@ mod ssr_tests {
         dioxus_ssr::render(&dom)
     }
 
+    fn render_props<P: Clone + 'static>(component: fn(P) -> Element, props: P) -> String {
+        let mut dom = VirtualDom::new_with_props(component, props);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
     /// The opening tag of the `occurrence`-th (0-based) `<button>` in
     /// `html`, in document order. Deliberately not "find the text
     /// 'Previous'/'Next' and walk backward to the nearest `<button`" --
@@ -5748,6 +5805,127 @@ mod ssr_tests {
         assert!(html.contains(
             "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
         ));
+    }
+
+    // -- `gap` prop ------------------------------------------------------
+
+    #[component]
+    fn GapCarousel(vertical: bool, gap: Option<String>) -> Element {
+        let orientation = if vertical {
+            CarouselOrientation::Vertical
+        } else {
+            CarouselOrientation::Horizontal
+        };
+        rsx! {
+            Carousel { aria_label: "Featured photos", orientation,
+                CarouselContent { gap,
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn GapVirtualCarousel(gap: Option<String>) -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselVirtualContent::<String> {
+                    items: string_items(3),
+                    gap,
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gap_prop_sets_the_variable_the_horizontal_gap_model_reads() {
+        let html = render_props(
+            GapCarousel,
+            GapCarouselProps {
+                vertical: false,
+                gap: Some("var(--dx-space-2)".into()),
+            },
+        );
+        assert!(html.contains(
+            "margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1);--dx-carousel-gap:var(--dx-space-2);"
+        ));
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px);"));
+    }
+
+    #[test]
+    fn gap_prop_sets_the_variable_the_vertical_gap_model_reads() {
+        let html = render_props(
+            GapCarousel,
+            GapCarouselProps {
+                vertical: true,
+                gap: Some("12px".into()),
+            },
+        );
+        assert!(html.contains(
+            "margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1);--dx-carousel-gap:12px;"
+        ));
+        assert!(html.contains("padding-block-start:var(--dx-carousel-gap, 0px);"));
+    }
+
+    #[test]
+    fn gap_prop_on_virtual_content_sets_the_same_variable() {
+        let html = render_props(
+            GapVirtualCarousel,
+            GapVirtualCarouselProps {
+                gap: Some("1rem".into()),
+            },
+        );
+        assert!(html.contains("--dx-carousel-gap:1rem;"));
+    }
+
+    #[test]
+    fn gap_prop_none_renders_no_variable() {
+        for html in [
+            render_props(
+                GapCarousel,
+                GapCarouselProps {
+                    vertical: false,
+                    gap: None,
+                },
+            ),
+            render_props(
+                GapCarousel,
+                GapCarouselProps {
+                    vertical: true,
+                    gap: None,
+                },
+            ),
+            render_props(GapVirtualCarousel, GapVirtualCarouselProps { gap: None }),
+        ] {
+            assert!(!html.contains("--dx-carousel-gap:"));
+        }
+    }
+
+    #[component]
+    fn GapAndCallerStyleCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselContent { gap: "4px", style: "--dx-carousel-gap:9px;",
+                    CarouselItem { index: 0usize, "One" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn caller_style_still_overrides_the_gap_prop() {
+        // The caller's own inline style comes later in the same attribute,
+        // so a caller-set `--dx-carousel-gap` wins over the prop -- and it
+        // is one merged `style` attribute, never two.
+        let html = render(GapAndCallerStyleCarousel);
+        let prop_at = html.find("--dx-carousel-gap:4px;").unwrap();
+        let caller_at = html.find("--dx-carousel-gap:9px;").unwrap();
+        assert!(prop_at < caller_at);
+        let tag_start = html[..prop_at].rfind('<').unwrap();
+        let tag = &html[tag_start..html[tag_start..].find('>').unwrap() + tag_start];
+        assert_eq!(tag.matches(" style=").count(), 1, "{tag}");
     }
 
     #[test]
