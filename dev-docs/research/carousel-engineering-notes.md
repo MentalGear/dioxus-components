@@ -1,0 +1,215 @@
+# Carousel engineering notes
+
+Maintainer-facing material that used to live in `preview/src/components/carousel/docs.md`
+(the user-facing docs page). It was moved here verbatim, unedited, when that page was cleaned up
+into a user-facing reference (commit `docs(carousel): rewrite the doc page for users`), so nothing
+was lost: rationale essays (why the gap is padding and not a flex `gap`, why `loop_mode` defaults
+to `Seamless`, why `Rewind` jumps instantly), the wheel-band tuning constants table and release
+rules, the drag-settle path, the `CarouselIndicators` vs `Tabs` note, and the v1 scope list.
+
+Related: [`carousel-2026-09-19.md`](./carousel-2026-09-19.md),
+[`carousel-overscroll-2026-09-23.md`](./carousel-overscroll-2026-09-23.md),
+[`carousel-loop-2026-09-25/`](./carousel-loop-2026-09-25).
+
+Note: some section references below ("see Spacing above", "see Sizes below") point at sections of
+the old page, which now live only in this file.
+
+---
+
+The Carousel component is a slideshow of slides the user pages through with Previous/Next buttons, `ArrowLeft`/`ArrowRight` (or `ArrowUp`/`ArrowDown` when vertical), or by dragging/scrolling the track directly. It implements the [WAI-ARIA Carousel pattern](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/)'s "basic" (prev/next, no picker) style.
+
+## Component Structure
+
+```rust
+// CarouselPrevious/CarouselNext are positioned with CSS (absolutely, so
+// DOM order doesn't affect where they appear), but come BEFORE
+// CarouselContent in markup so they precede the slide content in the
+// page's Tab order -- matching the APG reference implementation exactly.
+Carousel {
+    // An accessible name is required (aria-label or aria-labelledby) and
+    // must not contain the word "carousel" -- the region's own
+    // aria-roledescription already says that.
+    aria_label: "Featured photos",
+
+    CarouselPrevious { /* an icon or "Previous" */ }
+    CarouselNext { /* an icon or "Next" */ }
+
+    // The scroll-snap track.
+    CarouselContent {
+        // Each slide gets a 0-based index, contiguous from 0 -- the same
+        // convention Tabs' TabTrigger/TabContent use for their own index.
+        CarouselItem { index: 0usize, /* slide 1 content */ }
+        CarouselItem { index: 1usize, /* slide 2 content */ }
+        CarouselItem { index: 2usize, /* slide 3 content */ }
+    }
+}
+```
+
+Each `CarouselItem` defaults its own accessible name to `"{n} of {m}"` (APG's own sanctioned exception to "don't put position/size in an accessible name") unless you supply your own `aria-label`/`aria-labelledby`.
+
+## Sizes
+
+How much of the track each slide occupies is a CSS decision, not a prop. `CarouselItem` defaults its own `flex-basis` to `calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1))` -- with both variables left at their defaults (`--dx-carousel-per-view: 1`, `--dx-carousel-peek: 0%`) this is exactly `100%`, i.e. one whole slide per view, matching shadcn's own default and every one of its demos.
+
+Set `--dx-carousel-per-view` (an integer) on a wrapper (or `CarouselContent` itself) to show that many WHOLE slides at once -- see the `sizes` variant, which mirrors shadcn's own `carousel-size.tsx`: 2 whole slides per view, 3 at a wider (`lg`) breakpoint, via a plain `@media` rule setting the variable. Because the gap already lives inside each item's own border-box (see "Spacing" above), `N` slides' basis fractions always sum to exactly `100%` regardless of `N` -- no overflow, no partial slide.
+
+Set `--dx-carousel-peek` (a percentage) to additionally show a sliver of the *next* slide -- opt-in only, off by default -- see the `peek` variant. You can still override `flex-basis` directly per item with an inline `style` (or `flex_basis`) for a fully custom layout; a caller-supplied `flex-basis` always wins over the default calc, the same "later in the same `style` attribute wins" rule this crate uses everywhere else.
+
+## Spacing (the gap between slides)
+
+The gap between slides is a `--dx-carousel-gap` custom property, read by `CarouselItem` (a leading-edge `padding-inline-start`/`padding-block-start`) and `CarouselContent` (the exactly-compensating negative `margin-inline-start`/`margin-block-start`) -- the standard shadcn/Tailwind `-ml-4`/`pl-4` idiom, not a real flex `gap`. This matters, not just for parity: a real `gap` is *additive* to a percentage `flex-basis`, so `N` items at `flex-basis: calc(100%/N)` plus `(N-1)` real gaps overflow the track by exactly `(N-1) * gap` -- with the gap living inside each item's own border-box instead, `N` basis fractions always sum to exactly 100% regardless of `N`, so a multi-per-view layout (see "Sizes" below) never needs to subtract a gap term at all.
+
+`.dx-carousel-content` sets `--dx-carousel-gap: var(--dx-space-4)` (16px) by default -- override it per instance with an inline `style="--dx-carousel-gap: var(--dx-space-2);"` on `CarouselContent`. See the `spacing` variant for shadcn's own four presets (`--dx-space-1` through `--dx-space-4`, i.e. `-ml-1/pl-1` ... `-ml-4/pl-4`).
+
+## Align
+
+`align: CarouselAlign::Start | Center | End` (default `Start`, matching shadcn's own `opts={{ align: "start" }}`) controls where each slide rests against the scrollport -- its leading edge, its midpoint, or its trailing edge. This sets `scroll-snap-align` on every slide, and every place this component computes "where a slide rests" (the explicit Previous/Next/keyboard paging call, and the "which slide is nearest" search a native scroll or a drag release settles to) anchors on the same point, so the rest position stays consistent regardless of how the user got there. With no leftover space in the track (whole slides, no peek) the three look identical; `align` only visibly differs once there is a fractional remainder to place -- see the `align` variant, which pairs it with `--dx-carousel-per-view: 2` and `--dx-carousel-peek: 20%` to make the difference visible.
+
+## Orientation
+
+`orientation: CarouselOrientation::Vertical` pages with `ArrowUp`/`ArrowDown` instead of `ArrowLeft`/`ArrowRight`, and scrolls on the block axis. A vertical carousel needs an explicit height on `CarouselContent` (e.g. `style: "height: 20rem;"`) -- there is nothing else to derive one from, the same way `ScrollArea` needs an explicit `height`.
+
+## A custom picker (dot indicators, etc.)
+
+`use_carousel()` returns a read-only `CarouselApi` (`selected`, `count`, `can_scroll_prev`, `can_scroll_next`) plus `scroll_to(index)`, for building any picker UI alongside or instead of `CarouselPrevious`/`CarouselNext`. See the `api` demo's own composition:
+
+```rust
+let api = use_carousel();
+rsx! {
+    for i in 0..api.count {
+        button {
+            "data-active": i == api.selected,
+            onclick: move |_| api.scroll_to(i),
+        }
+    }
+}
+```
+
+## Pointer drag
+
+Click-and-drag anywhere on the track pages the carousel with the mouse or a pen, the same way shadcn/embla-style carousels do -- touch is never affected either way, since it already scrolls the track natively. A drag has to move a few pixels before it takes over, so a plain click on a link or button placed inside a `CarouselItem` still works as a click; a real drag suppresses the synthetic click that would otherwise follow it. Releasing scrolls smoothly to the nearest slide through the same `scrollIntoView` paging path `CarouselPrevious`/`CarouselNext` already use -- not the browser's own scroll-snap re-settling on its own, which (measured) never animated -- and it still lands instantly if the OS/browser reports `prefers-reduced-motion: reduce`, matching every other transition in this component. That settle is picked up by the same bridge (`use_carousel_scroll_tracking`) that already keeps `selected` correct after a native trackpad/touch scroll or a `CarouselPrevious`/`CarouselNext` click, so the Previous/Next buttons' disabled state, the "N of M" slide labels, and a custom picker built on `use_carousel()` all stay correct after a drag too. See `dev-docs/research/carousel-2026-09-19.md` §6 for the full engineering rationale.
+
+Set `draggable: false` on `CarouselContent` to opt a particular carousel out of the gesture entirely (it defaults to `true`).
+
+Dragging past the first or last slide rubber-bands: the track follows the pointer with increasing resistance (WebKit's own curve) and springs back when you let go. It is purely visual -- a `transform` on the track, never a change of slide -- and the disabled Previous/Next buttons still signal the boundary. `prefers-reduced-motion: reduce` turns it off.
+
+## Wheel and trackpad at the ends ("platform-aware band")
+
+Scrolling with a wheel or trackpad is the browser's own native scroll; the carousel never writes the scroll position during one. At the first or last slide it may add an elastic band of its own -- again only a `transform` on the track -- following one rule: **it draws the band only for a gesture that *starts* at rest at that end and pushes into it.** A fling from slide 3 that arrives at slide 1 with momentum is the platform's to finish (its own bounce, or none in a browser that has none), so the carousel draws nothing there and never stacks a second bounce on top. Pause at slide 1 and push again, and the band is the carousel's.
+
+- **Only this carousel's own axis.** A horizontal carousel reacts only to horizontal input (`|deltaX| > |deltaY|`, or Shift+wheel), so scrolling the page vertically over a carousel sitting at slide 1 scrolls the page and draws no band. A vertical carousel reacts only to vertical input. RTL needs nothing special: every measurement is physical.
+- **Release.** A wheel has no "pointer up", so the band springs home (ease-out cubic, 340ms) when the input says the fingers have lifted: the deltas turn into smoothly decaying momentum; the mouse cursor moves; a slow push (steps under 40px) goes quiet for 250ms; a notched mouse wheel goes quiet for 140ms; the push reverses; or, as a backstop, 1500ms of silence. Pushing again while it springs home picks the band up from where it is.
+- **Not drawn** under `prefers-reduced-motion: reduce`, nor for a `CarouselVirtualContent` seamless loop (it has no ends). `loop_mode: Rewind` still has physical ends, so it keeps the band.
+
+The tuning is the owner-tested bench's (`bench-rev40.html`, mode D), as named constants in `primitives/src/carousel.rs` (`CAROUSEL_WHEEL_BAND_JS`):
+
+| Constant | Value | What it does |
+|---|---|---|
+| `GAIN` | 0.3 | Wheel delta to finger travel (wheel deltas are pointer-accelerated). |
+| `RUBBER_C` | 0.55 | WebKit's resistance: the band's slope at the edge. |
+| `LIMIT` | 0.5 | Where the curve flattens, x the track's size. The band never exceeds this. |
+| `GAP_MS` | 100 | Silence that starts a new gesture (real bursts rest 64-78ms). |
+| `SMOOTH` / `RATIO_MAX` | 0.8 / 0.96 | Momentum = each event falls to between these fractions of the last. |
+| `RUNS` | 5 | Smoothly falling events that mean "lifted" (and that make a stream "coasting"). |
+| `REPRESS` / `COAST_RISE` | 2 / 1.3 | A rise this big (after a release / once coasting) is a new push. |
+| `IDLE_MS` | 1500 | Backstop release after silence. |
+| `SLOW_IDLE_MS` / `SLOW_PEAK_PX` | 250 / 40 | A push that never stepped 40px or more releases after 250ms of silence. |
+| `NOTCH_IDLE_MS` / `NOTCH_MIN_PX` | 140 / 40 | A notched mouse wheel releases after 140ms of silence. |
+| `LIFT_PX` | 2 | Cursor movement that counts as a lift. |
+| `HOME_MS` | 340 | Spring-back duration. |
+| `CAP` | 1 | Hard ceiling, x the track's size (1 = off). |
+
+A **notched** wheel is one reporting `deltaMode` 1 (lines) or 2 (pages), or `deltaMode` 0 with a step of 40px or more that exactly repeats the previous one (or is a whole multiple of an already-identified notch). The very first notch, before any repeat, cannot be told apart from a trackpad and waits for the cursor to move or for the backstop.
+
+**Debug telemetry.** Set `localStorage.setItem("dx-carousel-debug", "1")` and reload: each wheel gesture then pushes a record onto `window.__dxCarouselWheel` (the last 50 are kept) with its deltas, where it started (`startedAtEdge`), whether the carousel owned it (`owned`), whether it was notched, the release reason (`releasedBy`: `smooth-decay`, `cursor-moved`, `slow-silence`, `notch-silence`, `idle`, `reversed`, `superseded`, `pointerdown`), the peak band in px, and timings. Without the flag nothing is recorded.
+
+**Known open item -- pending a real-device check.** Safari (and possibly Firefox on some platforms) rubber-bands a scroll container even when the gesture starts at rest at its end. There, the carousel's band could stack on the platform's own (a double bounce). This cannot be tested headlessly and will not be solved by user-agent sniffing; the intended fix is to skip the carousel's band wherever the platform is observed to draw its own at a resting edge. Until that check has been done on real Safari/Firefox hardware, treat the wheel band there as unverified.
+
+## Direction / RTL
+
+`Carousel` accepts a `dir: Option<Direction>` prop (defaulting to the nearest `DirectionProvider`, or LTR). Under RTL, the root's `ArrowLeft`/`ArrowRight` paging swaps: `ArrowLeft` moves to the *next* slide, `ArrowRight` to the *previous* one (matching Radix's shared `RovingFocusGroup` convention, the same one `Tabs` follows). Scrolling itself needs no such swap at all -- slide order in the DOM never changes, and the browser's own `scrollIntoView` already resolves the correct physical position under `dir="rtl"`. `CarouselPrevious`/`CarouselNext` also reposition correctly on their own (`inset-inline-start`/`-end`), and any chevron-style icon placed inside either one is automatically mirrored (`transform: scaleX(-1)`, horizontal orientation only) so a caller who uses the same icon regardless of direction still gets one pointing the right way. See the `rtl` variant.
+
+Pointer drag mirrors the same way the keyboard does: dragging is direct manipulation (the track tracks the pointer), so the physical direction that reveals the next slide flips under RTL -- swipe-left-for-next in LTR, swipe-right-for-next in RTL, the same split a right-to-left photo gallery or story viewer already has.
+
+## Looping
+
+`Carousel { r#loop: true }` makes Previous/Next (and the root's own `ArrowLeft`/`ArrowRight`) wrap around at the ends -- but whether that actually does anything, and what it looks like, is `loop_mode`'s decision:
+
+- **`CarouselVirtualContent`, windowed** (the default once your data set is bigger than the render window -- see "Virtualised content" below): `loop` is *always* the seamless illusion, regardless of `loop_mode` -- paging past the last item slides physically forward one already-mounted slide at a time, never a visible rewind. See the `virtual_loop` variant.
+- **Everything else** (the plain children API, or `CarouselVirtualContent` with `virtualize: Some(false)` / a data set too small to window) has no seamless illusion available to it, so `loop_mode` decides:
+  - `LoopMode::Seamless` (the **default**) -- `r#loop: true` alone does nothing here: `CarouselPrevious`/`CarouselNext` stay genuinely `disabled` at the real ends, exactly as if `loop` were off. Deliberate, not an oversight: a single prop that defaults to "the good version, where one exists" should never silently downgrade to a visibly worse fallback (a multi-second rewind scroll through an entire data set) a caller never asked for.
+  - `LoopMode::Rewind` -- the explicit opt-in: from the last slide, Next goes to the first (and vice versa for Previous), via the same scroller-only `scrollBy`-by-delta paging path every other transition already uses. Unlike every other transition, though, this one jumps **instantly** rather than animating -- matching the APG reference implementation's own basic-style example -- since animating a visible scroll back across an entire (possibly large) data set just to wrap once would be a multi-second wait, not a paging transition. `CarouselPrevious`/`CarouselNext` are never `disabled` under this mode. See the `rewind` variant.
+
+No cloned edge slides are ever added under either mode (they would show up in the "N of M" count and `:nth-child` styling). Dragging or wheeling past a physical edge still rubber-bands regardless of `loop`/`loop_mode` -- there is no wrap on a drag/wheel gesture, only on Previous/Next/the root keyboard. Both default to `false`/`Seamless`.
+
+## Autoplay / rotation control
+
+The APG "auto-rotating" carousel style: add a `CarouselAutoplay` (no visible output -- it just drives the timer) alongside a `CarouselRotationControl` (a real, labeled `<button>`):
+
+```rust
+Carousel { aria_label: "Featured photos",
+    CarouselRotationControl { /* an icon */ }   // FIRST -- must precede everything else focusable
+    CarouselAutoplay { delay_ms: 4000u64 }
+    CarouselPrevious { /* ... */ }
+    CarouselNext { /* ... */ }
+    CarouselContent { /* CarouselItems */ }
+}
+```
+
+`CarouselRotationControl`'s accessible name toggles between `"Start automatic slide show"`/`"Stop automatic slide show"` -- deliberately no `aria-pressed`, matching APG's own contract that the changing label *is* the state. `CarouselContent` grows an `aria-live` attribute once a `CarouselAutoplay` is present: `"off"` while rotating, `"polite"` once stopped (absent entirely without autoplay, exactly like before this feature existed).
+
+Rotation pauses while keyboard focus is anywhere inside the carousel, or while hovering it. Un-hovering resumes it (unless focus is *also* currently holding it paused); losing focus does **not** auto-resume -- only clicking `CarouselRotationControl` again does (matching the vendored tabbed reference's own accessibility-features prose). `prefers-reduced-motion: reduce` always forces rotation off at mount, checked once client-side, regardless of any `default_playing` you pass.
+
+`CarouselAutoplayProps` mirrors `embla-carousel-autoplay`'s own options: `delay_ms` (default 4000), `stop_on_interaction` (default `true` -- Previous/Next/keyboard/a `CarouselIndicator`/a picker's `scroll_to` all stop rotation for good until the button is clicked again; a native pointer-drag or wheel scroll does **not** count as "interaction" in this v1), `stop_on_mouse_enter` (default `true`), `default_playing` (default `true`).
+
+Ticking pages through the same path `CarouselNext` uses, so `loop` applies: without `loop`, rotation simply stops once it reaches the last slide (rather than ticking forever against a no-op the way `embla-carousel-autoplay`'s own documented behavior does); with `loop`, it rewinds and keeps going. See the `autoplay` variant.
+
+## Indicators
+
+The APG "tabbed" carousel style: a `CarouselIndicators` of `CarouselIndicator` pickers in place of (or alongside) `CarouselPrevious`/`CarouselNext`:
+
+```rust
+Carousel { aria_label: "Featured photos",
+    CarouselIndicators {
+        for i in 0..count {
+            CarouselIndicator { key: "{i}", index: i }
+        }
+    }
+    CarouselContent { /* CarouselItems, same indices */ }
+}
+```
+
+`CarouselIndicators` (renamed from `CarouselTabList`; `CarouselIndicator` from `CarouselTab` -- pre-1.0 fork rename, no deprecated alias) is `role="tablist"`; each `CarouselIndicator` is `role="tab"` with a roving `tabindex`, `aria-selected`, and `aria-controls` pointing at its matching `CarouselItem` (which switches its own role from `group` to `tabpanel` once a `CarouselIndicators` is present -- `aria-roledescription="slide"` stays either way). `ArrowLeft`/`ArrowRight` (RTL-aware)/`Home`/`End` move focus among the dots and **immediately** activate the newly-focused slide (no `Enter`/click needed -- APG's automatic-activation contract), and always wrap at the ends (independent of `Carousel`'s own `loop`, which governs Previous/Next/the root keyboard instead). See the `indicators` variant.
+
+**`CarouselIndicators` vs. `Tabs`.** Reach for `Tabs` (`crate::components::tabs`) instead when each "page" is a genuinely separate panel that *hides* the others (only the active one is ever visible or scrollable) -- a settings page's sections, for instance. Reach for `CarouselIndicators` when every "page" is a slide in the *same* horizontally/vertically scrolling track, and the dots are just a shortcut for a position a user could also reach by paging or dragging -- that scroll-snap track, and the fact that neighbouring slides are physically adjacent and (depending on `--dx-carousel-per-view`/`--dx-carousel-peek`) sometimes partially visible at once, is what `Tabs` has no equivalent for at all.
+
+## Virtualised content
+
+`CarouselVirtualContent` is a data-driven, virtualised drop-in for `CarouselContent` + `CarouselItem`s -- use it in place of them (never alongside them) when your slides come from a `Vec<T>` rather than a fixed set of children:
+
+```rust
+Carousel { aria_label: "Featured photos", r#loop: true,
+    CarouselPrevious { /* ... */ }
+    CarouselNext { /* ... */ }
+    CarouselVirtualContent::<String> {
+        items: my_items,           // ReadSignal<Vec<T>>
+        radius: 2usize,            // default: slides kept mounted on each side
+        virtualize: None,          // default: auto -- virtualise only once items.len() > 2*radius+1
+        render_item: move |(index, item): (usize, String)| rsx! {
+            div { "{item}" }
+        },
+    }
+}
+```
+
+Everything else about `Carousel` -- `CarouselPrevious`/`CarouselNext`, a `CarouselIndicators`/`CarouselIndicator` picker, `CarouselAutoplay`, the root's own arrow keys, `use_carousel()` -- works completely unchanged; none of them know whether they're driving a fixed set of `CarouselItem`s or `CarouselVirtualContent`.
+
+**When to virtualise.** With `virtualize` left at its default (`None`), the DOM only ever holds `2 * radius + 1` slides once your data set is bigger than that window -- a smaller data set renders every slide (there's nothing to save). Pass `virtualize: Some(true)` to always window, even for a small data set, or `virtualize: Some(false)` to always render every slide regardless of size.
+
+**Seamless looping.** With `r#loop: true` and virtualisation active, paging past the last item slides physically forward one slide at a time instead of rewinding visibly across every intervening one -- unaffected by `loop_mode` entirely, see the `virtual_loop` variant (and its RTL counterpart, `virtual_loop_rtl`). With virtualisation inactive, looping follows `loop_mode` exactly like the plain children API -- see "Looping" above. See the `virtual_many` variant for the large-data-set case: 200 items, `loop: false`, DOM never holding more than 5.
+
+**Trade-offs.** A virtualised window is a client-side enhancement layered on a fully compliant plain sequence, not a replacement for one: the server render (and a client's own pre-hydration first paint) always renders every item, in true order, with correct `"{n} of {m}"` labels -- so there is no SSR/no-JS gap. Once JS has mounted and virtualisation activates, though, slides outside the current window are not in the DOM at all, so a screen reader's browse-mode "read from here" and the browser's own find-in-page can only reach the currently-windowed slides, not the full data set -- the same cost every virtualised list (this crate's own `VirtualList` included) carries. If your data set is small enough that this doesn't matter, `virtualize: Some(false)` keeps every slide reachable at all times, at the cost of the DOM holding all of them.
+
+## What v1 does not include yet
+
+- **The APG "grouped" picker style** (plain buttons, one per slide, all in page Tab order, current one `aria-disabled`) -- the pattern page's own least keyboard-friendly of its three styles, and shadcn doesn't have it either.
