@@ -1502,6 +1502,38 @@ fn ManualComponentInstallation(component: HighlightedCode, style: CssHighlight) 
     }
 }
 
+/// Display title for a variant's `h3` on a component page, derived from the
+/// variant's identifier: underscores become spaces and a known acronym is
+/// upper-cased, so `rtl` reads "RTL" rather than "Rtl". An acronym that
+/// *qualifies* another variant name goes in parentheses, so
+/// `virtual_loop_rtl` reads "virtual loop (RTL)". (`.dx-component-variant-title`
+/// then title-cases the words via CSS `text-transform: capitalize`, which
+/// leaves an already upper-case acronym alone.)
+fn variant_title(name: &str) -> String {
+    const ACRONYMS: &[&str] = &["api", "ltr", "otp", "rtl", "ssr", "ui", "url"];
+    let words: Vec<&str> = name.split('_').filter(|w| !w.is_empty()).collect();
+    let is_acronym = |w: &str| ACRONYMS.contains(&w);
+    let render = |w: &str| {
+        if is_acronym(w) {
+            w.to_uppercase()
+        } else {
+            w.to_string()
+        }
+    };
+    match words.as_slice() {
+        [rest @ .., last] if !rest.is_empty() && is_acronym(last) => format!(
+            "{} ({})",
+            rest.iter().map(|w| render(w)).collect::<Vec<_>>().join(" "),
+            render(last)
+        ),
+        _ => words
+            .iter()
+            .map(|w| render(w))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
 #[component]
 fn ComponentVariantHighlight(
     variant: ComponentVariantDemoData,
@@ -1541,7 +1573,7 @@ fn ComponentVariantHighlight(
     };
     rsx! {
         if !main_variant {
-            h3 { class: "dx-component-variant-title", "{name}" }
+            h3 { class: "dx-component-variant-title", "{variant_title(name)}" }
         }
         Tabs {
             default_value: "Demo",
@@ -1633,7 +1665,7 @@ fn BlockComponentVariantHighlight(
 
     rsx! {
         if !main_variant {
-            h3 { class: "dx-component-variant-title", "{name}" }
+            h3 { class: "dx-component-variant-title", "{variant_title(name)}" }
         }
         Tabs {
             default_value: "Preview",
@@ -2944,3 +2976,18 @@ const THEME_CSS: CssHighlight = CssHighlight {
 const THEME_CSS: CssHighlight = CssHighlight {
     asset: asset!("/assets/dx-components-theme.css"),
 };
+
+#[cfg(test)]
+mod variant_title_tests {
+    use super::variant_title;
+
+    #[test]
+    fn variant_titles_are_readable() {
+        assert_eq!(variant_title("rtl"), "RTL");
+        assert_eq!(variant_title("api"), "API");
+        assert_eq!(variant_title("virtual_loop_rtl"), "virtual loop (RTL)");
+        assert_eq!(variant_title("virtual_many"), "virtual many");
+        assert_eq!(variant_title("multi_month"), "multi month");
+        assert_eq!(variant_title("sizes"), "sizes");
+    }
+}
