@@ -338,6 +338,19 @@ fn content_gap_margin(orientation: CarouselOrientation) -> &'static str {
     }
 }
 
+/// The `gap` prop ([`CarouselContentProps::gap`],
+/// [`CarouselVirtualContentProps::gap`]) as the inline declaration it
+/// renders: `--dx-carousel-gap:<value>;`, or nothing for `None`/blank. Kept
+/// separate from [`content_gap_margin`]/[`item_gap_padding`] on purpose: it
+/// only sets the variable those already read, so the axis handling stays in
+/// one place.
+fn content_gap_var(gap: Option<&str>) -> String {
+    match gap.map(str::trim) {
+        Some(value) if !value.is_empty() => format!("--dx-carousel-gap:{value};"),
+        _ => String::new(),
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -1694,7 +1707,7 @@ fn use_carousel_drag(
 /// **Debug telemetry.** With the flag set, each gesture pushes one record
 /// (live -- it is updated in place until the gesture ends) onto
 /// `window.__dxCarouselWheel`, capped at `DEBUG_CAP` records: `{ id,
-/// orientation, deltaMode, startedAtEdge, owned, notched, deltas,
+/// orientation, deltaMode, startedAtEdge, falseEnd, owned, notched, deltas,
 /// releasedBy, peakBand, events, t0, lastEventAt, releasedAt, reengaged,
 /// endedByRepush }` (times in ms from `t0`, deltas capped at
 /// `DEBUG_DELTAS_CAP`). Without the flag nothing is allocated or pushed.
@@ -1706,14 +1719,23 @@ fn use_carousel_drag(
 /// never solved by UA sniffing; the intended fix is to skip D's band where
 /// the platform is observed to draw its own at a resting edge.
 ///
-/// `enabled` false (a [`CarouselVirtualContent`] seamless loop, which has no
-/// edges) attaches no listeners at all: the script only waits for teardown. `prefers-reduced-motion: reduce` draws no
-/// band (checked fresh per event, not cached at mount), matching the
-/// pointer path's own reading of that preference.
+/// **Only at a true end of the data** (the owner's approved rule). Whether
+/// an edge may be owned is decided by ONE predicate in the script,
+/// `isTrueEnd(side)`, at gesture start alongside the at-rest test, from
+/// rendered markup: never for a looping carousel (`data-loop="true"` --
+/// any `LoopMode`, plain or virtual), and otherwise only when the slide at
+/// that physical edge (by rect, so RTL and vertical need nothing extra) has
+/// `data-index` 0 or `data-slide-count - 1`. So a non-looping
+/// [`CarouselVirtualContent`] bands at its real first/last item but not at
+/// its rendered slice's edge mid-list, and plain non-looping content is
+/// unchanged. The telemetry's `falseEnd` names an edge the gesture started
+/// at rest against that was refused this way. `prefers-reduced-motion:
+/// reduce` draws no band (checked fresh per event, not cached at mount),
+/// matching the pointer path's own reading of that preference.
 const CAROUSEL_WHEEL_BAND_JS: &str = "\
-    const [id, orientation, enabled] = await dioxus.recv();
+    const [id, orientation] = await dioxus.recv();
     const el = document.getElementById(id);
-    if (!el || !enabled) {
+    if (!el) {
         await dioxus.recv();
         return;
     }
@@ -1813,6 +1835,7 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
         coastRun: 0,
         coastPrev: 0,
         notched: false, // the latest event of this gesture was a notch
+        falseEnd: null, // resting at an edge that is not a true end (`isTrueEnd`)
     };
     let visible = 0; // the band currently drawn, signed physical px
     let deviceMinDelta = Infinity; // learned: the smallest step this hardware sends
@@ -1871,6 +1894,35 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
             max: hi - (horizontal ? c.right : c.bottom),
         };
     }
+    // THE one home of 'may the band engage at this edge?' (the owner's
+    // approved rule): only at a TRUE end of the data. Read per gesture from
+    // rendered markup, never from a Rust signal: `data-loop` and
+    // `data-slide-count` on this element, and the `data-index` of the slide
+    // sitting at that physical edge (found by rect, so RTL and vertical need
+    // no branch). A looping carousel (any `LoopMode`, plain or virtual) has
+    // no true end; a virtual window resting at its rendered slice's edge
+    // mid-list (e.g. items 40-44 of 100) is not one either -- the browser
+    // clamps there and the window re-centres once idle. Plain, non-looping
+    // content always has index 0 / count - 1 at its two ends, so it is
+    // unchanged.
+    function isTrueEnd(side) {
+        if (el.dataset.loop === 'true') return false;
+        const count = parseInt(el.dataset.slideCount, 10);
+        if (!(count > 0)) return false;
+        let pick = null;
+        let best = side === 'min' ? Infinity : -Infinity;
+        for (const child of el.children) {
+            if (child.dataset.index === undefined) continue;
+            const r = child.getBoundingClientRect();
+            const v = side === 'min' ? (horizontal ? r.left : r.top) : (horizontal ? r.right : r.bottom);
+            if (side === 'min' ? v < best : v > best) {
+                best = v;
+                pick = child;
+            }
+        }
+        const index = pick ? parseInt(pick.dataset.index, 10) : NaN;
+        return index === 0 || index === count - 1;
+    }
     function plateauCeiling() {
         return isFinite(deviceMinDelta) ? deviceMinDelta * PLATEAU_MULT : PLATEAU_FALLBACK_PX;
     }
@@ -1915,6 +1967,7 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
             deltaMode: e.deltaMode,
             startedAtEdge: ow.startMin ? (horizontal ? 'left' : 'top')
                 : ow.startMax ? (horizontal ? 'right' : 'bottom') : 'none',
+            falseEnd: ow.falseEnd,
             owned: null,
             notched: false,
             deltas: [],
@@ -2041,8 +2094,12 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
             // BEFORE this event scrolls it (a wheel event is dispatched ahead
             // of its own default scroll).
             const g0 = edgeGaps();
-            ow.startMin = g0.min >= -0.5;
-            ow.startMax = g0.max <= 0.5;
+            const restMin = g0.min >= -0.5;
+            const restMax = g0.max <= 0.5;
+            ow.startMin = restMin && isTrueEnd('min');
+            ow.startMax = restMax && isTrueEnd('max');
+            ow.falseEnd = (restMin && !ow.startMin) ? (horizontal ? 'left' : 'top')
+                : (restMax && !ow.startMax) ? (horizontal ? 'right' : 'bottom') : null;
             ow.owned = null;
             ow.peak = 0;
             ow.lastAbs = Infinity;
@@ -2185,21 +2242,21 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
 
 /// Attach [`CAROUSEL_WHEEL_BAND_JS`] to the element with the given `id` for
 /// as long as the calling component stays mounted -- mirrors
-/// [`use_carousel_drag`]'s own shape. `enabled` is read inside the effect,
-/// so a signal it reads (a virtualised seamless loop turning on or off)
-/// re-attaches the bridge with the new value: a seamless loop has no edges,
-/// so no band. A wheel/trackpad user has no other opt-out today; the band is
-/// purely cosmetic feedback on top of scrolling that happens regardless.
+/// [`use_carousel_drag`]'s own shape. Always attached: where the band may
+/// engage is decided per gesture inside the script (`isTrueEnd`), from the
+/// `data-loop`/`data-slide-count`/`data-index` markup, so the rule has one
+/// home instead of a per-component `enabled` gate. A wheel/trackpad user has
+/// no other opt-out today; the band is purely cosmetic feedback on top of
+/// scrolling that happens regardless.
 fn use_carousel_wheel_band(
     id: impl Readable<Target = String> + Copy + 'static,
     orientation: ReadSignal<CarouselOrientation>,
-    enabled: impl Fn() -> bool + Copy + 'static,
 ) {
     crate::use_effect_with_cleanup(move || {
         let id = id.cloned();
         let orientation_str = orientation().as_str().to_string();
         let eval = document::eval(CAROUSEL_WHEEL_BAND_JS);
-        let _ = eval.send((id, orientation_str, enabled()));
+        let _ = eval.send((id, orientation_str));
         move || {
             let _ = eval.send(true);
         }
@@ -2891,6 +2948,24 @@ pub struct CarouselContentProps {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub draggable: ReadSignal<bool>,
 
+    /// The space between slides, as any CSS length or variable (e.g.
+    /// `"1rem"`, `"var(--dx-space-4)"`). When set, it is written as
+    /// `--dx-carousel-gap:<value>;` on this element's own inline style, and
+    /// the existing orientation-aware gap model applies it on the scroll
+    /// axis: each slide's leading-edge padding plus this element's matching
+    /// negative margin (`padding-inline-start`/`margin-inline-start`
+    /// horizontally, `padding-block-start`/`margin-block-start` vertically).
+    ///
+    /// shadcn has no `gap` prop -- its carousel spaces slides with utility
+    /// classes (`-ml-N`/`pl-N`, `-mt-N`/`pt-N` when vertical). This prop is a
+    /// typed convenience over that same padding + negative-margin technique,
+    /// nothing more: the `--dx-carousel-gap` custom property remains the
+    /// override hook (a caller's own inline `style` setting it still wins, as
+    /// it comes later in the same attribute), and `None` (the default)
+    /// renders nothing, leaving any stylesheet value in force.
+    #[props(default, into)]
+    pub gap: Option<String>,
+
     /// Additional attributes to apply to the carousel content element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -3157,10 +3232,14 @@ pub struct CarouselContentProps {
 /// layered on scrolling that already happens regardless, so "no bounce" is
 /// the correct reading of that preference, not a faster one.
 ///
-/// **Where the wheel band applies.** Every physical edge: the plain
-/// children API (including `LoopMode::Rewind`, whose ends are still
-/// physical) and a non-looping [`CarouselVirtualContent`]. A virtualised
-/// *seamless* loop has no edges, so its wheel bridge attaches no listeners.
+/// **Where the wheel band applies: only at a true end of the data.** Never on
+/// a looping carousel (`r#loop` on, any [`LoopMode`], plain or virtual);
+/// on a non-looping [`CarouselVirtualContent`] only when its real first or
+/// last item is the rendered slide at that edge (not at its window's slice
+/// edge mid-list); plain non-looping content at both ends, as before. One
+/// predicate, `isTrueEnd` in `CAROUSEL_WHEEL_BAND_JS`, reads it per gesture
+/// from `data-loop`/`data-slide-count` on this element and each slide's
+/// `data-index`. The pointer (mouse/pen) band is unchanged.
 ///
 /// **What this does not close.** [`CarouselPrevious`]/[`CarouselNext`]
 /// remain genuinely `disabled` at the ends regardless (module doc,
@@ -3332,7 +3411,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         None,
     );
     use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
-    use_carousel_wheel_band(id, ctx.orientation, || true);
+    use_carousel_wheel_band(id, ctx.orientation);
 
     let orientation = (ctx.orientation)();
     let draggable = (props.draggable)();
@@ -3358,6 +3437,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation);
+    let gap_var = content_gap_var(props.gap.as_deref());
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -3369,7 +3449,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{}",
+        "{axis_style}{gap_margin}{gap_var}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -3391,6 +3471,13 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
             aria_live: aria_live,
             "data-orientation": orientation.as_str(),
             "data-draggable": draggable,
+            // Read per gesture by the wheel band's `isTrueEnd` (the band only
+            // engages at a true end of the data -- see "Edge rubber-band").
+            // Both come from props/registration state, never an effect-only
+            // value: SSR and the hydrating first render agree (count is 0 in
+            // both until the items register, like their "N of M" labels).
+            "data-loop": (ctx.loop_enabled)(),
+            "data-slide-count": (ctx.count)(),
         }),
     ]);
 
@@ -3704,6 +3791,24 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub draggable: ReadSignal<bool>,
 
+    /// The space between slides, as any CSS length or variable (e.g.
+    /// `"1rem"`, `"var(--dx-space-4)"`). When set, it is written as
+    /// `--dx-carousel-gap:<value>;` on this element's own inline style, and
+    /// the existing orientation-aware gap model applies it on the scroll
+    /// axis: each slide's leading-edge padding plus this element's matching
+    /// negative margin (`padding-inline-start`/`margin-inline-start`
+    /// horizontally, `padding-block-start`/`margin-block-start` vertically).
+    ///
+    /// shadcn has no `gap` prop -- its carousel spaces slides with utility
+    /// classes (`-ml-N`/`pl-N`, `-mt-N`/`pt-N` when vertical). This prop is a
+    /// typed convenience over that same padding + negative-margin technique,
+    /// nothing more: the `--dx-carousel-gap` custom property remains the
+    /// override hook (a caller's own inline `style` setting it still wins, as
+    /// it comes later in the same attribute), and `None` (the default)
+    /// renders nothing, leaving any stylesheet value in force.
+    #[props(default, into)]
+    pub gap: Option<String>,
+
     /// Additional attributes to apply to the carousel content element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -3936,11 +4041,10 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         Some(on_settle_position),
     );
     use_carousel_drag(id, ctx.orientation, ctx.align, props.draggable);
-    // A seamless loop has no edges (its window re-anchors on every settle),
-    // so no wheel band there; a non-looping virtualised list keeps its real
-    // ends, and its band, exactly like the plain children API.
-    let seamless_loop = ctx.virtualized_loop_active;
-    use_carousel_wheel_band(id, ctx.orientation, move || !seamless_loop());
+    // Where the band may engage (only a true end of the data, never a loop,
+    // never this window's slice edge mid-list) is `isTrueEnd` in the script,
+    // read from the `data-loop`/`data-slide-count` rendered below.
+    use_carousel_wheel_band(id, ctx.orientation);
 
     // Translate a `selected` (data index) change into a physical move --
     // see "Seamless loop" doc. A no-op whenever virtualisation is
@@ -4160,6 +4264,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
 
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation_now);
+    let gap_var = content_gap_var(props.gap.as_deref());
     let axis_style = match orientation_now {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -4171,7 +4276,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{}",
+        "{axis_style}{gap_margin}{gap_var}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -4183,6 +4288,11 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
             aria_live: aria_live,
             "data-orientation": orientation_now.as_str(),
             "data-draggable": draggable,
+            // Read per gesture by the wheel band's `isTrueEnd` (the band only
+            // engages at a true end of the data). `n` is `items().len()`, known
+            // from props on the very first render, so SSR and hydration agree.
+            "data-loop": (ctx.loop_enabled)(),
+            "data-slide-count": n,
         }),
     ]);
 
@@ -5393,6 +5503,12 @@ mod ssr_tests {
         dioxus_ssr::render(&dom)
     }
 
+    fn render_props<P: Clone + 'static>(component: fn(P) -> Element, props: P) -> String {
+        let mut dom = VirtualDom::new_with_props(component, props);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
     /// The opening tag of the `occurrence`-th (0-based) `<button>` in
     /// `html`, in document order. Deliberately not "find the text
     /// 'Previous'/'Next' and walk backward to the nearest `<button`" --
@@ -5748,6 +5864,172 @@ mod ssr_tests {
         assert!(html.contains(
             "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
         ));
+    }
+
+    // -- wheel band: true-end markup (`isTrueEnd`) ------------------------
+
+    #[component]
+    fn VirtualCarouselNoLoop() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselVirtualContent::<String> {
+                    items: string_items(100),
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn LoopingPlainCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true, loop_mode: LoopMode::Rewind,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn content_renders_the_loop_flag_and_data_count_the_wheel_band_reads() {
+        // Virtual: the total data count, from props, on the very first render.
+        let looped = render(VirtualCarousel12Loop);
+        assert!(looped.contains("data-loop=true"));
+        assert!(looped.contains("data-slide-count=12"));
+        let not_looped = render(VirtualCarouselNoLoop);
+        assert!(not_looped.contains("data-loop=false"));
+        assert!(not_looped.contains("data-slide-count=100"));
+        // Plain: any loop mode counts as looping; the count is the registered
+        // slide count, 0 until the items' own effects register them (the same
+        // SSR-stable rule their "N of M" labels follow), so SSR and the
+        // hydrating first render agree.
+        assert!(render(LoopingPlainCarousel).contains("data-loop=true"));
+        let plain = render(ThreeSlideCarousel);
+        assert!(plain.contains("data-loop=false"));
+        assert!(plain.contains("data-slide-count=0"));
+    }
+
+    // -- `gap` prop ------------------------------------------------------
+
+    #[component]
+    fn GapCarousel(vertical: bool, gap: Option<String>) -> Element {
+        let orientation = if vertical {
+            CarouselOrientation::Vertical
+        } else {
+            CarouselOrientation::Horizontal
+        };
+        rsx! {
+            Carousel { aria_label: "Featured photos", orientation,
+                CarouselContent { gap,
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn GapVirtualCarousel(gap: Option<String>) -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselVirtualContent::<String> {
+                    items: string_items(3),
+                    gap,
+                    render_item: move |(_idx, value): (usize, String)| rsx! { span { "{value}" } },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gap_prop_sets_the_variable_the_horizontal_gap_model_reads() {
+        let html = render_props(
+            GapCarousel,
+            GapCarouselProps {
+                vertical: false,
+                gap: Some("var(--dx-space-2)".into()),
+            },
+        );
+        assert!(html.contains(
+            "margin-inline-start:calc(var(--dx-carousel-gap, 0px) * -1);--dx-carousel-gap:var(--dx-space-2);"
+        ));
+        assert!(html.contains("padding-inline-start:var(--dx-carousel-gap, 0px);"));
+    }
+
+    #[test]
+    fn gap_prop_sets_the_variable_the_vertical_gap_model_reads() {
+        let html = render_props(
+            GapCarousel,
+            GapCarouselProps {
+                vertical: true,
+                gap: Some("12px".into()),
+            },
+        );
+        assert!(html.contains(
+            "margin-block-start:calc(var(--dx-carousel-gap, 0px) * -1);--dx-carousel-gap:12px;"
+        ));
+        assert!(html.contains("padding-block-start:var(--dx-carousel-gap, 0px);"));
+    }
+
+    #[test]
+    fn gap_prop_on_virtual_content_sets_the_same_variable() {
+        let html = render_props(
+            GapVirtualCarousel,
+            GapVirtualCarouselProps {
+                gap: Some("1rem".into()),
+            },
+        );
+        assert!(html.contains("--dx-carousel-gap:1rem;"));
+    }
+
+    #[test]
+    fn gap_prop_none_renders_no_variable() {
+        for html in [
+            render_props(
+                GapCarousel,
+                GapCarouselProps {
+                    vertical: false,
+                    gap: None,
+                },
+            ),
+            render_props(
+                GapCarousel,
+                GapCarouselProps {
+                    vertical: true,
+                    gap: None,
+                },
+            ),
+            render_props(GapVirtualCarousel, GapVirtualCarouselProps { gap: None }),
+        ] {
+            assert!(!html.contains("--dx-carousel-gap:"));
+        }
+    }
+
+    #[component]
+    fn GapAndCallerStyleCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos",
+                CarouselContent { gap: "4px", style: "--dx-carousel-gap:9px;",
+                    CarouselItem { index: 0usize, "One" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn caller_style_still_overrides_the_gap_prop() {
+        // The caller's own inline style comes later in the same attribute,
+        // so a caller-set `--dx-carousel-gap` wins over the prop -- and it
+        // is one merged `style` attribute, never two.
+        let html = render(GapAndCallerStyleCarousel);
+        let prop_at = html.find("--dx-carousel-gap:4px;").unwrap();
+        let caller_at = html.find("--dx-carousel-gap:9px;").unwrap();
+        assert!(prop_at < caller_at);
+        let tag_start = html[..prop_at].rfind('<').unwrap();
+        let tag = &html[tag_start..html[tag_start..].find('>').unwrap() + tag_start];
+        assert_eq!(tag.matches(" style=").count(), 1, "{tag}");
     }
 
     #[test]

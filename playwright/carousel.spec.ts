@@ -1510,6 +1510,8 @@ async function enableWheelDebug(page: Page): Promise<void> {
 type WheelRecord = {
   id: string;
   startedAtEdge: string;
+  /** The edge the gesture started at rest against, when `isTrueEnd` refused it. */
+  falseEnd: string | null;
   owned: boolean | null;
   notched: boolean;
   deltas: number[];
@@ -1850,19 +1852,48 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("loop_mode Rewind keeps its physical edges, so the wheel band still applies", async ({ page }) => {
+  /**
+   * The owner's approved rule: the band only engages at a TRUE end of the
+   * data (`isTrueEnd` in `CAROUSEL_WHEEL_BAND_JS`), and a looping carousel
+   * has none -- including `LoopMode::Rewind`, whose ends are physical but
+   * wrap. This used to assert the opposite (Rewind bands like any physical
+   * edge); the rule changed, so the assertion did.
+   */
+  test("loop_mode Rewind never bands, at its first, middle or last slide", async ({ page }) => {
+    await enableWheelDebug(page);
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
     const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
     const content = region.locator(".dx-carousel-content");
-    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
-    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 900 });
-    expect(maxAbsBand(run)).toBeGreaterThan(5);
-    expect(run.finalTransform).toBe("");
-    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
+    const next = region.getByRole("button", { name: "Next slide" });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    expect(await content.getAttribute("data-loop")).toBe("true");
+
+    // Slide 1 (rest at the physical start), slide 3 (middle), slide 5 (end).
+    let current = 1;
+    for (const [n, pushes] of [
+      [1, [-1]],
+      [3, [-1, 1]],
+      [5, [1]],
+    ] as const) {
+      while (current < n) {
+        await next.click();
+        current += 1;
+        await expectSnappedToBoundary(content, slide(current));
+      }
+      for (const sign of pushes) {
+        const run = await playWheel(content, { deltas: WHEEL.rampAndDecay.map((x) => sign * x), tailMs: 400 });
+        expect(maxAbsBand(run), `slide ${n}, push ${sign}`).toBe(0);
+      }
+    }
+    // The pushes at slides 1 and 5 really started at rest against an edge,
+    // and were refused as not a true end -- not merely never at an edge.
+    const refused = (await wheelRecords(content)).map((r) => r.falseEnd).filter(Boolean);
+    expect(refused).toEqual(expect.arrayContaining(["left", "right"]));
   });
 
-  test("a CarouselVirtualContent seamless loop has no edges, so no band even at its window's physical start", async ({
+  test("a CarouselVirtualContent seamless loop has no true end, so no band even at its window's physical start", async ({
     page,
   }) => {
     await enableWheelDebug(page);
@@ -1872,7 +1903,8 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     await expect.poll(() => frame.locator('[data-selected="true"]').getAttribute("aria-label")).toBe("1 of 12");
 
     // Jump to the window's own physical start and push into it in the same
-    // task, before any re-anchor can run: an enabled bridge would own this.
+    // task, before any re-anchor can run: the bridge is attached, and it is
+    // `isTrueEnd` (a looping carousel has no true end) that refuses it.
     const result = await content.evaluate((node) => {
       const el = node as HTMLElement;
       // Physical min over every rendered slide (the window is keyed by
@@ -1898,7 +1930,9 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     });
     expect(Math.abs(result.gap), `the scroller really was at its window's start (gap ${result.gap}px)`).toBeLessThan(1);
     expect(result.transform).toBe("");
-    expect(await wheelRecords(content), "the wheel bridge is not attached at all").toEqual([]);
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.falseEnd, "at rest against the window's start, refused as not a true end").toBe("left");
+    expect(rec.owned).not.toBe(true);
   });
 
   test("prefers-reduced-motion: reduce draws no wheel band", async ({ page }) => {
