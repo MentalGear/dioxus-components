@@ -295,8 +295,30 @@ fn item_gap_padding(orientation: CarouselOrientation) -> &'static str {
 /// subtract a gap term itself -- `N` whole slides' basis fractions already
 /// sum to exactly `100%` of the (gap-widened) content box regardless of
 /// `N`.
+///
+/// **`box-sizing: border-box` is declared here, inline, because that
+/// sentence is only true under it.** Under the default `content-box` the gap
+/// padding is added *on top of* the basis, so every slide is one gap wider
+/// than the snapport. Found from the owner's real-trackpad report ("trackpad
+/// custom scroll end snap interferes with looping/virtual slider"): the
+/// box-sizing used to come only from the themed `.dx-carousel-item` class,
+/// which [`CarouselVirtualContent`]'s own slides (rendered by this
+/// primitive, with no class) never carried, so they measured 352px in a
+/// 336px snapport. A snap area larger than the snapport makes every
+/// position inside it a valid rest position (CSS Scroll Snap: snap areas
+/// larger than the snapport), so the browser stopped snapping those slides
+/// at all -- a wheel/trackpad gesture came to rest up to one gap off a slide
+/// boundary, and the virtual window's own re-align then "snapped" the
+/// leftover itself, as a visible instant `scrollBy` at scroll end
+/// (`playwright/carousel-virtual-wheel.spec.ts`). Declaring it on the one
+/// style every slide renderer shares ([`CarouselItem`] and
+/// [`CarouselVirtualContent`] alike) makes the invariant hold by
+/// construction, with or without any theme stylesheet -- this module's "works
+/// with zero theme CSS" rule for layout-critical properties. A caller's own
+/// inline `box-sizing` still wins (it comes later in the same `style`
+/// attribute).
 fn item_basis_style() -> &'static str {
-    "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+    "box-sizing:border-box;flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
 }
 
 /// The mirror of [`item_gap_padding`], applied to [`CarouselContent`]'s own
@@ -5579,6 +5601,15 @@ mod ssr_tests {
         assert!(html.contains(
             "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
         ));
+    }
+
+    #[test]
+    fn every_slide_renderer_declares_border_box_so_the_gap_padding_stays_inside_the_basis() {
+        // `item_basis_style`'s own doc: without it, a slide is one gap wider
+        // than the snapport and the browser stops snapping it.
+        for html in [render(ThreeSlideCarousel), render(VirtualCarousel12Loop)] {
+            assert!(html.contains("box-sizing:border-box;flex:0 0 calc("));
+        }
     }
 
     // -- `align` ---------------------------------------------------------
