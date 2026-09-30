@@ -54,9 +54,11 @@ use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 /// bottom card ran past the clip viewport. `border-box` makes the Card
 /// exactly the slide's usable size; `CardContent` then takes the Card's
 /// remaining height with `flex: 1` (the Card is a flex column) instead of a
-/// second, again-overflowing `height: 100%`. The gap is set to
-/// `--dx-space-1` (4px) to match shadcn's own vertical demo (`-mt-1` on the
-/// content, `pt-1` on each item) rather than the horizontal demos' 16px.
+/// second, again-overflowing `height: 100%`. The gap is the default
+/// spacing (`--dx-space-4`, 16px), the same as the horizontal demos, so the
+/// space between the two visible cards reads the same on both axes (an
+/// earlier 4px gap, copied from shadcn's `-mt-1`/`pt-1`, was filled by the
+/// Card's own shadow and looked like no gap at all).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -66,7 +68,7 @@ pub fn Demo() -> Element {
                 orientation: CarouselOrientation::Vertical,
                 CarouselPrevious { ChevronUp {} }
                 CarouselNext { ChevronDown {} }
-                CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2; --dx-carousel-gap: var(--dx-space-1);",
+                CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2;",
                     for i in 0..4usize {
                         CarouselItem { key: "{i}", index: i,
                             Card { style: "height: 100%; box-sizing: border-box;",
