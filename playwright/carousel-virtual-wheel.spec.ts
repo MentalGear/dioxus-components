@@ -46,8 +46,9 @@ import { test, expect } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import { BASE_URL } from "./base-url";
 import { gotoHydrated } from "./hydration";
+import { replayWheel, recordingsOfKind, TRANSLATE_X_EXPR } from "./wheel-replay";
 
-type Variant = "virtual_loop" | "virtual_loop_rtl" | "virtual_many" | "main" | "rewind";
+type Variant = "virtual_loop" | "virtual_loop_rtl" | "virtual_many" | "main" | "rewind" | "rtl" | "vertical";
 
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
 
@@ -226,7 +227,7 @@ function during<T extends { t: number } | number>(xs: T[], from: number, to: num
 
 const VIRTUAL: Variant[] = ["virtual_loop", "virtual_loop_rtl", "virtual_many"];
 /** +1 scrolls toward the next slide (physical direction flips under RTL). */
-const FORWARD: Record<Variant, number> = { virtual_loop: 1, virtual_loop_rtl: -1, virtual_many: 1, main: 1, rewind: 1 };
+const FORWARD: Record<Variant, number> = { virtual_loop: 1, virtual_loop_rtl: -1, virtual_many: 1, main: 1, rewind: 1, rtl: -1, vertical: 1 };
 
 test.describe("Carousel virtual content: every slide is exactly one snapport wide (no oversized snap areas)", () => {
   for (const variant of VIRTUAL) {
@@ -333,5 +334,564 @@ test.describe("Carousel: scroll-end reactions wait until the browser is truly id
     const end = rec.frames[rec.frames.length - 1];
     expect(end.sel).toBe("2 of 5");
     expect(end.off).toBeLessThan(1);
+  });
+});
+
+/*
+ * The wheel band only engages at a TRUE end of the data -- the owner's
+ * approved rule, one predicate (`isTrueEnd`) in `CAROUSEL_WHEEL_BAND_JS`,
+ * read per gesture from `data-loop`/`data-slide-count` on the scroller and
+ * the `data-index` of the slide at that physical edge:
+ * - any looping carousel (`r#loop`, any `LoopMode`, plain or virtual): never;
+ * - virtual, non-looping: only when its real first/last item is the slide at
+ *   the edge the scroller rests at -- never at the rendered slice's edge
+ *   mid-list (the browser clamps there; the window re-centres once idle);
+ * - plain, non-looping: unchanged (both ends; carousel.spec.ts's own mode-D
+ *   block, e.g. "real (trusted) wheel input at the start and end edges").
+ *
+ * HOLDING A SLICE EDGE. A virtual window only rests at its slice's edge
+ * mid-list while input is still arriving -- once idle, it re-centres. The
+ * tests below reproduce that state deliberately: an in-page keep-alive
+ * stream of VERTICAL synthetic wheel events (off-axis, so the band ignores
+ * them entirely, but the browser-idle gate counts every wheel event) keeps
+ * the window from re-centring while the scroller is placed at the slice edge
+ * and pushed with trusted input.
+ */
+
+
+/** A trackpad-shaped push: ramp, then decay (px per event). */
+const PUSH = [3, 9, 21, 35, 50, 60, 62, 58, 54, 50, 46, 43, 40, 37, 34, 31, 28, 25];
+
+async function enableWheelDebug(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("dx-carousel-debug", "1");
+    } catch {
+      // No storage: the telemetry assertions below then fail loudly.
+    }
+  });
+}
+
+type BandRecord = { id: string; startedAtEdge: string; falseEnd: string | null; owned: boolean | null };
+
+async function bandRecords(content: Locator): Promise<BandRecord[]> {
+  return content.evaluate((el) => {
+    const log = (window as unknown as { __dxCarouselWheel?: BandRecord[] }).__dxCarouselWheel ?? [];
+    return JSON.parse(JSON.stringify(log.filter((r) => r.id === el.id)));
+  });
+}
+
+/** Trusted wheel push (one real event per step) while sampling |band| in-page every frame; returns the max. */
+async function trustedPush(page: Page, content: Locator, sign: number): Promise<number> {
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const w = window as unknown as { __dxBandMax: number; __dxBandOn: boolean };
+    w.__dxBandMax = 0;
+    w.__dxBandOn = true;
+    const tick = () => {
+      const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+      w.__dxBandMax = Math.max(w.__dxBandMax, m ? Math.abs(Number.parseFloat(m[1])) : 0);
+      if (w.__dxBandOn) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  for (const d of PUSH) {
+    await page.mouse.wheel(sign * d, 0);
+    await page.waitForTimeout(12);
+  }
+  return content.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 250));
+    const w = window as unknown as { __dxBandMax: number; __dxBandOn: boolean };
+    w.__dxBandOn = false;
+    return w.__dxBandMax;
+  });
+}
+
+/** Start/stop the off-axis keep-alive stream (see this block's header). */
+async function holdInputOpen(content: Locator): Promise<void> {
+  await content.evaluate((node) => {
+    const w = window as unknown as { __dxKeepAlive?: number };
+    const tick = () => node.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, bubbles: true, cancelable: true }));
+    // The first event goes out NOW: an interval's first tick is 16ms away,
+    // and a placement inside that window would find input quiet and let the
+    // window re-centre (found live -- it did, 2ms after the placement).
+    tick();
+    w.__dxKeepAlive = window.setInterval(tick, 16);
+  });
+}
+async function releaseInput(content: Locator): Promise<void> {
+  await content.evaluate((node) => {
+    const w = window as unknown as { __dxKeepAlive?: number; __dxSnapSaved?: string };
+    window.clearInterval(w.__dxKeepAlive);
+    // Snapping was suspended by `placeAtSliceEdge`; give it back now.
+    if (w.__dxSnapSaved !== undefined) {
+      (node as HTMLElement).style.scrollSnapType = w.__dxSnapSaved;
+      delete w.__dxSnapSaved;
+    }
+  });
+}
+
+/** Still at rest against the slice's `side` edge (sub-0.5px, as the band's own rest test)? */
+async function expectStillAtEdge(content: Locator, side: "min" | "max"): Promise<void> {
+  const gap = await content.evaluate((node, side) => {
+    const el = node as HTMLElement;
+    const c = el.getBoundingClientRect();
+    const xs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+    return side === "min" ? Math.min(...xs.map((r) => r.left)) - c.left : Math.max(...xs.map((r) => r.right)) - c.right;
+  }, side);
+  expect(Math.abs(gap), `still at rest against the slice's ${side} edge right before the push (gap ${gap})`).toBeLessThan(0.5);
+}
+
+/**
+ * Put the scroller at rest against its rendered slice's physical `side` edge
+ * (instantly). Test setup only: snapping (with `scroll-snap-stop: always`)
+ * holds the scroller against a multi-slide instant jump, so it is suspended
+ * for the placement AND kept suspended until `releaseInput` -- restoring it
+ * straight away lets Chrome re-snap to the previously snapped slide (found
+ * live: the scroller moved back 672px with no write of ours, before the
+ * push). The push itself happens at a clamped edge, where snapping has no
+ * say. Returns the `data-index` of the slide now sitting at that edge.
+ */
+async function placeAtSliceEdge(content: Locator, side: "min" | "max"): Promise<number> {
+  const r = await content.evaluate((node, side) => {
+    const el = node as HTMLElement;
+    const measure = () => {
+      const c = el.getBoundingClientRect();
+      let pick: HTMLElement | null = null;
+      let best = side === "min" ? Infinity : -Infinity;
+      for (const child of Array.from(el.children) as HTMLElement[]) {
+        const rr = child.getBoundingClientRect();
+        const v = side === "min" ? rr.left : rr.right;
+        if (side === "min" ? v < best : v > best) {
+          best = v;
+          pick = child;
+        }
+      }
+      return { gap: best - (side === "min" ? c.left : c.right), index: Number(pick?.dataset.index) };
+    };
+    const w = window as unknown as { __dxSnapSaved?: string };
+    // Input must be "still arriving" at the very moment of the jump.
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, bubbles: true, cancelable: true }));
+    if (w.__dxSnapSaved === undefined) w.__dxSnapSaved = el.style.scrollSnapType;
+    el.style.scrollSnapType = "none";
+    el.scrollBy({ left: measure().gap, behavior: "instant" });
+    return measure();
+  }, side);
+  expect(Math.abs(r.gap), `at rest against the slice's ${side} edge (gap ${r.gap})`).toBeLessThan(0.5);
+  return r.index;
+}
+
+/** Page with Next under reduced motion (instant) until `label` is selected, then restore motion. */
+async function pageTo(page: Page, frame: Locator, label: string): Promise<void> {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const next = frame.getByRole("button", { name: "Next slide" }).first();
+  await next.evaluate(async (btn, label) => {
+    const root = btn.closest("[aria-roledescription='carousel']") as HTMLElement;
+    // Slides are role=group, or role=tabpanel when the demo has indicators.
+    const selected = () =>
+      root.querySelector(':is([role="group"], [role="tabpanel"])[data-selected="true"]')?.getAttribute("aria-label");
+    for (let i = 0; i < 400 && selected() !== label; i++) {
+      const before = selected();
+      (btn as HTMLButtonElement).click();
+      const t0 = performance.now();
+      while (selected() === before && performance.now() - t0 < 2000) await new Promise((r) => requestAnimationFrame(r));
+    }
+  }, label);
+  await expect(frame.locator(':is([role="group"], [role="tabpanel"])[data-selected="true"]').first()).toHaveAttribute(
+    "aria-label",
+    label,
+  );
+  // Let the instant re-align and the settle land before the next step.
+  await page.waitForTimeout(300);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+}
+
+test.describe("Carousel wheel band: only at a true end of the data", () => {
+  test("virtual_many at its real first item (start) bands on a trusted push", async ({ page }) => {
+    await enableWheelDebug(page);
+    const { content } = await open(page, "virtual_many");
+    expect(await content.getAttribute("data-loop")).toBe("false");
+    expect(await content.getAttribute("data-slide-count")).toBe("200");
+    expect(await trustedPush(page, content, -1)).toBeGreaterThan(5);
+    const [rec] = (await bandRecords(content)).slice(-1);
+    expect(rec.startedAtEdge).toBe("left");
+    expect(rec.owned).toBe(true);
+  });
+
+  test("virtual_many at its real last item (end) bands on a trusted push", async ({ page }) => {
+    test.setTimeout(180_000);
+    await enableWheelDebug(page);
+    const { frame, content } = await open(page, "virtual_many");
+    await pageTo(page, frame, "200 of 200");
+    await holdInputOpen(content);
+    const edgeIndex = await placeAtSliceEdge(content, "max");
+    expect(edgeIndex, "the real last item is the slide at the edge").toBe(199);
+    await page.waitForTimeout(150);
+    await expectStillAtEdge(content, "max");
+    expect(await trustedPush(page, content, 1)).toBeGreaterThan(5);
+    await releaseInput(content);
+    const [rec] = (await bandRecords(content)).slice(-1);
+    expect(rec.startedAtEdge).toBe("right");
+    expect(rec.owned).toBe(true);
+  });
+
+  test("virtual_many resting mid-list at its rendered slice's edge does NOT band; the window re-centres once idle", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await enableWheelDebug(page);
+    const { frame, content } = await open(page, "virtual_many");
+    await pageTo(page, frame, "50 of 200");
+    for (const [side, sign, name] of [
+      ["min", -1, "left"],
+      ["max", 1, "right"],
+    ] as const) {
+      await holdInputOpen(content);
+      const edgeIndex = await placeAtSliceEdge(content, side);
+      expect(edgeIndex, "mid-list: the edge slide is neither the first nor the last item").toBeGreaterThan(0);
+      expect(edgeIndex).toBeLessThan(199);
+      await page.waitForTimeout(150); // a fresh gesture (> GAP_MS since any on-axis input)
+      await expectStillAtEdge(content, side);
+      expect(await trustedPush(page, content, sign), `pushing into the slice's ${side} edge`).toBe(0);
+      const recs = await bandRecords(content);
+      const [rec] = recs.slice(-1);
+      expect(rec.falseEnd, `the gesture started at rest against that edge and was refused: ${JSON.stringify(recs.slice(-4))}`).toBe(name);
+      expect(rec.owned).not.toBe(true);
+      await releaseInput(content);
+      // Once idle, the window re-centres: the scroller is no longer at the slice edge.
+      await expect
+        .poll(() =>
+          content.evaluate((node, side) => {
+            const el = node as HTMLElement;
+            const c = el.getBoundingClientRect();
+            const xs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+            return side === "min"
+              ? Math.min(...xs.map((r) => r.left)) - c.left
+              : c.right - Math.max(...xs.map((r) => r.right));
+          }, side),
+        )
+        .toBeLessThan(-1);
+    }
+  });
+
+  for (const variant of ["rewind", "virtual_loop", "virtual_loop_rtl"] as const) {
+    test(`${variant}: a looping carousel never bands -- start, middle and end, at both slice edges`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await enableWheelDebug(page);
+      const { frame, content } = await open(page, variant);
+      expect(await content.getAttribute("data-loop")).toBe("true");
+      const n = variant === "rewind" ? 5 : 12;
+      for (const label of [`1 of ${n}`, `${Math.ceil(n / 2)} of ${n}`, `${n} of ${n}`]) {
+        await pageTo(page, frame, label);
+        for (const [side, sign] of [
+          ["min", -1],
+          ["max", 1],
+        ] as const) {
+          // Rewind renders every slide, so its physical edges are its only
+          // edges; the virtual loops' slice edges are held open as above.
+          await holdInputOpen(content);
+          await placeAtSliceEdge(content, side);
+          await page.waitForTimeout(150);
+          await expectStillAtEdge(content, side);
+          expect(await trustedPush(page, content, sign), `${label}, pushing into the ${side} edge`).toBe(0);
+          await releaseInput(content);
+          await page.waitForTimeout(250);
+        }
+      }
+      const refused = (await bandRecords(content)).filter((r) => r.falseEnd);
+      expect(refused.length, "pushes really started at rest against an edge").toBeGreaterThan(0);
+      expect((await bandRecords(content)).some((r) => r.owned === true)).toBe(false);
+    });
+  }
+
+  test("RTL and vertical: the predicate reads the physical edge slide's data-index (true end bands; a rewritten mid-list index does not)", async ({
+    page,
+  }) => {
+    for (const [variant, axis, side] of [
+      ["rtl", "x", "max"],
+      ["vertical", "y", "min"],
+    ] as const) {
+      await page.goto("about:blank");
+      const { content } = await open(page, variant);
+      // Slide 1 rests at the physical right under RTL, at the top when vertical.
+      const push = (sign: number) =>
+        content.evaluate(async (node, { axis, sign }) => {
+          const el = node as HTMLElement;
+          let max = 0;
+          // A push, then its momentum tail (so it releases by smooth decay).
+          for (const d of [3, 9, 21, 35, 50, 60, 62, 58, 54, 50, 46, 43, 40, 37, 34, 31, 29, 27, 25, 23, 21, 19, 18, 16]) {
+            el.dispatchEvent(
+              new WheelEvent("wheel", { deltaX: axis === "x" ? sign * d : 0, deltaY: axis === "y" ? sign * d : 0, bubbles: true }),
+            );
+            const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+            max = Math.max(max, m ? Math.abs(Number.parseFloat(m[1])) : 0);
+            await new Promise((r) => setTimeout(r, 16));
+          }
+          // Released and home before the next push, so no leftover is measured.
+          const t0 = performance.now();
+          while (el.style.transform !== "" && performance.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 50));
+          return max;
+        }, { axis, sign });
+      const sign = side === "max" ? 1 : -1;
+      expect(await push(sign), `${variant}: slide 1 is a true end`).toBeGreaterThan(5);
+      // Rewrite the rendered markup so the same edge slide reads as item 41
+      // of 100 -- exactly what a virtual slice edge mid-list looks like.
+      await content.evaluate((node, side) => {
+        const el = node as HTMLElement;
+        const kids = Array.from(el.children) as HTMLElement[];
+        const key = (r: DOMRect) => (side === "max" ? r.right + r.bottom : -(r.left + r.top));
+        const edge = kids.reduce((a, b) => (key(b.getBoundingClientRect()) > key(a.getBoundingClientRect()) ? b : a));
+        edge.dataset.index = "40";
+        el.dataset.slideCount = "100";
+      }, side);
+      await page.waitForTimeout(200);
+      expect(await push(sign), `${variant}: a mid-list index at the same edge`).toBe(0);
+    }
+  });
+
+  test("recorded owned-push replays: band at virtual_many's real start, none on the loop demos", async ({ page }) => {
+    const [rec] = recordingsOfKind("owned-push");
+    for (const [variant, expectBand] of [
+      ["virtual_many", true],
+      ["virtual_loop", false],
+      ["rewind", false],
+    ] as const) {
+      await page.goto("about:blank");
+      const { content } = await open(page, variant);
+      const r = await replayWheel(content, rec, {
+        sample: { band: TRANSLATE_X_EXPR },
+        settleMs: 400,
+        jump: { atIndex: 0, scrollLeft: "start" },
+      });
+      const max = Math.max(0, ...r.samples.map((s) => Math.abs(s.band)));
+      if (expectBand) expect(max, variant).toBeGreaterThan(5);
+      else expect(max, variant).toBe(0);
+    }
+  });
+});
+
+/*
+ * The mouse/pen drag rubber-band follows the SAME true-end rule as the wheel
+ * band, through the same shared predicate (`carousel_true_end_js!` in
+ * `primitives/src/carousel.rs`, spliced into both bridges). A drag decides
+ * once per edge per gesture, the first time it overdrags past that edge; a
+ * refused edge behaves like a drag that simply cannot pass it (the scroller
+ * clamps, no transform, the slide settles normally, and a virtual window
+ * re-centres once idle).
+ */
+
+type DragResult = { band: number; gapAtHold: number };
+
+/**
+ * Real mouse drag from the track's centre, pushing content INTO the physical
+ * `side` edge (`min` = left/top, `max` = right/bottom) by `distance` px, with
+ * |band| sampled in-page every frame and the edge gap measured while the
+ * button is still held; then release.
+ */
+async function dragIntoEdge(
+  page: Page,
+  content: Locator,
+  side: "min" | "max",
+  axis: "x" | "y",
+  distance: number,
+): Promise<DragResult> {
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const w = window as unknown as { __dxDragBand: number; __dxDragOn: boolean };
+    w.__dxDragBand = 0;
+    w.__dxDragOn = true;
+    const tick = () => {
+      const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+      w.__dxDragBand = Math.max(w.__dxDragBand, m ? Math.abs(Number.parseFloat(m[1])) : 0);
+      if (w.__dxDragOn) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const box = await content.boundingBox();
+  if (!box) throw new Error("content has no bounding box");
+  const x0 = box.x + box.width / 2;
+  const y0 = box.y + box.height / 2;
+  // Content moves WITH the pointer: into the min edge = pointer toward +axis.
+  const sign = side === "min" ? 1 : -1;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  const steps = 24;
+  for (let i = 1; i <= steps; i++) {
+    const d = (sign * distance * i) / steps;
+    await page.mouse.move(axis === "x" ? x0 + d : x0, axis === "y" ? y0 + d : y0);
+    await page.waitForTimeout(16);
+  }
+  const gapAtHold = await content.evaluate((node, { side, axis }) => {
+    const el = node as HTMLElement;
+    const c = el.getBoundingClientRect();
+    const rs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+    return side === "min"
+      ? Math.min(...rs.map((r) => (axis === "x" ? r.left : r.top))) - (axis === "x" ? c.left : c.top)
+      : Math.max(...rs.map((r) => (axis === "x" ? r.right : r.bottom))) - (axis === "x" ? c.right : c.bottom);
+  }, { side, axis });
+  await page.mouse.up();
+  const band = await content.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 100));
+    const w = window as unknown as { __dxDragBand: number; __dxDragOn: boolean };
+    w.__dxDragOn = false;
+    return w.__dxDragBand;
+  });
+  return { band, gapAtHold };
+}
+
+/** After a drag: no stale transform, snapped, and `selected` is the slide actually showing. */
+async function expectCleanRest(content: Locator): Promise<void> {
+  await expect.poll(() => content.evaluate((el) => (el as HTMLElement).style.transform), { timeout: 3000 }).toBe("");
+  await expect
+    .poll(
+      () =>
+        content.evaluate((node) => {
+          const el = node as HTMLElement;
+          const c = el.getBoundingClientRect();
+          const rtl = getComputedStyle(el).direction === "rtl";
+          const vertical = el.getAttribute("data-orientation") === "vertical";
+          let aligned: Element | null = null;
+          let off = Infinity;
+          for (const child of Array.from(el.children)) {
+            const r = child.getBoundingClientRect();
+            const d = Math.abs(vertical ? r.top - c.top : rtl ? r.right - c.right : r.left - c.left);
+            if (d < off) {
+              off = d;
+              aligned = child;
+            }
+          }
+          const sel = el.querySelector('[data-selected="true"]')?.getAttribute("aria-label");
+          return off < 1 && sel === aligned?.getAttribute("aria-label") ? "ok" : `off=${off} sel=${sel} aligned=${aligned?.getAttribute("aria-label")}`;
+        }),
+      { timeout: 3000 },
+    )
+    .toBe("ok");
+}
+
+/** Once idle, a virtual window has re-centred: the scroller is no longer against `side`'s slice edge. */
+async function expectRecentred(content: Locator, side: "min" | "max"): Promise<void> {
+  await expect
+    .poll(() =>
+      content.evaluate((node, side) => {
+        const el = node as HTMLElement;
+        const c = el.getBoundingClientRect();
+        const xs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+        return side === "min"
+          ? Math.min(...xs.map((r) => r.left)) - c.left
+          : c.right - Math.max(...xs.map((r) => r.right));
+      }, side),
+    )
+    .toBeLessThan(-1);
+}
+
+async function pitchOf(content: Locator): Promise<number> {
+  return content.evaluate((el) => (el as HTMLElement).clientWidth);
+}
+
+test.describe("Carousel drag band: only at a true end of the data", () => {
+  test("plain main: dragging past the first slide still bands (unchanged), then rests cleanly", async ({ page }) => {
+    const { content } = await open(page, "main");
+    const r = await dragIntoEdge(page, content, "min", "x", (await pitchOf(content)) * 1.2);
+    expect(r.band).toBeGreaterThan(5);
+    await expectCleanRest(content);
+  });
+
+  test("rewind: dragging past its first and last slide never bands; it clamps and settles", async ({ page }) => {
+    test.setTimeout(120_000);
+    const { frame, content } = await open(page, "rewind");
+    const pitch = await pitchOf(content);
+    for (const [label, side] of [
+      ["1 of 5", "min"],
+      ["5 of 5", "max"],
+    ] as const) {
+      await pageTo(page, frame, label);
+      const r = await dragIntoEdge(page, content, side, "x", pitch * 1.2);
+      expect(Math.abs(r.gapAtHold), `${label}: clamped at the ${side} edge while held`).toBeLessThan(1);
+      expect(r.band, `${label}: no band`).toBe(0);
+      await expectCleanRest(content);
+      await expect(frame.locator('[role="group"][data-selected="true"]').first()).toHaveAttribute("aria-label", label);
+    }
+  });
+
+  for (const variant of ["virtual_loop", "virtual_loop_rtl"] as const) {
+    test(`${variant}: dragging into either slice edge never bands, at start, middle and end; the window re-centres`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      const { frame, content } = await open(page, variant);
+      const pitch = await pitchOf(content);
+      for (const label of ["1 of 12", "6 of 12", "12 of 12"]) {
+        await pageTo(page, frame, label);
+        for (const side of ["min", "max"] as const) {
+          // radius 2: the slice edge is two slides away, so 3 pitches reaches it.
+          const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+          expect(Math.abs(r.gapAtHold), `${label}: reached the ${side} slice edge while held`).toBeLessThan(1);
+          expect(r.band, `${label}, ${side}: no band`).toBe(0);
+          await expectCleanRest(content);
+          await expectRecentred(content, side);
+        }
+      }
+    });
+  }
+
+  test("virtual_many mid-list: a drag against the rendered slice's edge does not band, and the window re-centres once idle", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const { frame, content } = await open(page, "virtual_many");
+    await pageTo(page, frame, "50 of 200");
+    const pitch = await pitchOf(content);
+    for (const side of ["min", "max"] as const) {
+      const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+      expect(Math.abs(r.gapAtHold), `reached the ${side} slice edge while held`).toBeLessThan(1);
+      expect(r.band, `${side}: no band`).toBe(0);
+      await expectCleanRest(content);
+      await expectRecentred(content, side);
+    }
+  });
+
+  test("virtual_many at its real first and last item: a drag past it bands", async ({ page }) => {
+    test.setTimeout(180_000);
+    const { frame, content } = await open(page, "virtual_many");
+    const pitch = await pitchOf(content);
+    const first = await dragIntoEdge(page, content, "min", "x", pitch * 1.2);
+    expect(first.band, "real first item").toBeGreaterThan(5);
+    await expectCleanRest(content);
+    await pageTo(page, frame, "200 of 200");
+    const last = await dragIntoEdge(page, content, "max", "x", pitch * 1.2);
+    expect(last.band, "real last item").toBeGreaterThan(5);
+    await expectCleanRest(content);
+  });
+
+  test("RTL and vertical: the shared predicate on the drag path (true end bands; a rewritten mid-list index does not)", async ({
+    page,
+  }) => {
+    for (const [variant, axis, side] of [
+      ["rtl", "x", "max"],
+      ["vertical", "y", "min"],
+    ] as const) {
+      await page.goto("about:blank");
+      const { content } = await open(page, variant);
+      const pitch = await content.evaluate((el) =>
+        el.getAttribute("data-orientation") === "vertical" ? (el as HTMLElement).clientHeight : (el as HTMLElement).clientWidth,
+      );
+      // Slide 1 rests at the physical right under RTL, at the top when vertical.
+      const control = await dragIntoEdge(page, content, side, axis, pitch * 1.2);
+      expect(control.band, `${variant}: slide 1 is a true end`).toBeGreaterThan(5);
+      await expectCleanRest(content);
+      // Rewrite the edge slide's rendered markup to read as item 41 of 100.
+      await content.evaluate((node, side) => {
+        const el = node as HTMLElement;
+        const kids = Array.from(el.children) as HTMLElement[];
+        const key = (r: DOMRect) => (side === "max" ? r.right + r.bottom : -(r.left + r.top));
+        const edge = kids.reduce((a, b) => (key(b.getBoundingClientRect()) > key(a.getBoundingClientRect()) ? b : a));
+        edge.dataset.index = "40";
+        el.dataset.slideCount = "100";
+      }, side);
+      const refused = await dragIntoEdge(page, content, side, axis, pitch * 1.2);
+      expect(Math.abs(refused.gapAtHold), `${variant}: still clamped at the edge`).toBeLessThan(1);
+      expect(refused.band, `${variant}: a mid-list index at the same edge`).toBe(0);
+      await expect.poll(() => content.evaluate((el) => (el as HTMLElement).style.transform)).toBe("");
+    }
   });
 });

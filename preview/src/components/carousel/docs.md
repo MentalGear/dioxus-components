@@ -18,7 +18,7 @@ Carousel { aria_label: "Featured photos",
 
 - `Carousel` is the root. Give it an accessible name with `aria_label` (or `aria-labelledby`) that does not contain the word "carousel"; the region already announces itself as one.
 - `CarouselPrevious` and `CarouselNext` are buttons. Pass an icon or text as children. Their default accessible names are "Previous slide" and "Next slide". They are positioned with CSS, so place them before `CarouselContent` in the markup to keep them ahead of the slides in the Tab order.
-- `CarouselContent` is the scrolling track. Its `draggable` prop (default `true`) turns mouse and pen dragging on or off.
+- `CarouselContent` is the scrolling track. Its `draggable` prop (default `true`) turns mouse and pen dragging on or off, and its `gap` prop sets the space between slides (see Slide size and spacing).
 - `CarouselItem` is one slide. `index` is 0-based and must be contiguous from 0. Unless you set your own `aria-label`, a slide is named "1 of 5", "2 of 5" and so on.
 - `CarouselVirtualContent` replaces `CarouselContent` and its `CarouselItem`s when the slides come from a `Vec<T>`, rendering only a window of them (see Virtual content below).
 - `CarouselIndicators` and `CarouselIndicator` add a row of dot pickers.
@@ -29,7 +29,7 @@ Carousel { aria_label: "Featured photos",
 Each example is shown live under Variants below.
 
 - **Sizes.** Show two slides at once, or three on wider screens, by setting `--dx-carousel-per-view`.
-- **Spacing.** Change the gap between slides with `--dx-carousel-gap`.
+- **Spacing.** Change the gap between slides with the `gap` prop.
 - **Peek.** Show a sliver of the next slide with `--dx-carousel-peek`.
 - **Align.** Rest each slide against the start, center or end of the track with `align`.
 - **Vertical.** Page along the vertical axis with `orientation`; the track needs an explicit height.
@@ -57,13 +57,17 @@ Each example is shown live under Variants below.
 
 ### Slide size and spacing
 
-These are CSS custom properties, not props. Set them in a `style` attribute on `Carousel` or `CarouselContent`, or in your own stylesheet.
+The space between slides is the `gap` prop on `CarouselContent` (and on `CarouselVirtualContent`). The other two are CSS custom properties, not props: set them in a `style` attribute on `Carousel` or `CarouselContent`, or in your own stylesheet.
+
+- `gap`: `Option<String>`, the space between slides as any CSS length or variable, for example `gap: "var(--dx-space-2)"` or `gap: "1.5rem"`. Leave it unset to keep the default (`var(--dx-space-4)`, 1rem). It works the same in both orientations, along the direction the carousel scrolls.
 
 - `--dx-carousel-per-view`: how many whole slides are visible at once. Default `1`. Combine it with a media query to change the count by screen size.
 - `--dx-carousel-peek`: a percentage of the track left over for a sliver of the next slide. Default `0%`.
-- `--dx-carousel-gap`: the space between slides. Default `var(--dx-space-4)` (1rem).
+- `--dx-carousel-gap`: the space between slides. Default `var(--dx-space-4)` (1rem). The `gap` prop sets this variable, so you can also set it yourself in a stylesheet; a `style` you pass to `CarouselContent` wins over the prop.
 
 To size a slide yourself, set `flex-basis` on the `CarouselItem`; that wins over the per-view calculation.
+
+shadcn has no `gap` prop. It spaces slides with utility classes: `-ml-N` on `CarouselContent` and `pl-N` on every `CarouselItem`, or `-mt-N` and `pt-N` for a vertical carousel. `gap` is a typed shortcut for the same padding-plus-negative-margin technique, so you do not repeat a class on every slide. It is not a flex `gap`: each slide keeps its exact share of the track, so `--dx-carousel-per-view` still counts whole slides.
 
 ### Looping
 
@@ -72,7 +76,7 @@ To size a slide yourself, set `flex-basis` on the `CarouselItem`; that wins over
 - `CarouselVirtualContent` with virtualisation active loops seamlessly, always: paging past the last slide slides forward to the first without a visible rewind. `loop_mode` does not matter here.
 - Everything else (plain `CarouselItem`s, or `CarouselVirtualContent` that is not windowed) has no seamless option. With `LoopMode::Seamless` (the default) `loop` does nothing there and the buttons stay disabled at the ends. Choose `LoopMode::Rewind` to opt in to wrapping: Next on the last slide jumps straight back to the first, and Previous on the first jumps to the last.
 
-Dragging or scrolling past an end never wraps; only the buttons and the arrow keys do.
+Dragging or scrolling past an end never wraps; only the buttons and the arrow keys do. A looping carousel, `Rewind` or seamless, also has no edge stretch (see Dragging and scrolling).
 
 ### Autoplay
 
@@ -178,7 +182,9 @@ Pressing and dragging with a mouse or pen pages the carousel, and it settles smo
 
 Dragging past the first or last slide stretches the track with increasing resistance and springs back when you let go. Slides never change from this.
 
-With a wheel or trackpad, the browser scrolls the track natively. At the first or last slide, a push that starts while the carousel is already resting there adds the same brief elastic stretch, only along the carousel's own axis, and springs back when the input stops. A fling that arrives at the end with momentum is left to the browser, so two bounces never stack. The stretch is not drawn under reduced motion, and a seamless virtual loop has no ends to stretch at. `Rewind` keeps it.
+With a wheel or trackpad, the browser scrolls the track natively. At the first or last slide, a push that starts while the carousel is already resting there adds the same brief elastic stretch, only along the carousel's own axis, and springs back when the input stops. A fling that arrives at the end with momentum is left to the browser, so two bounces never stack.
+
+The stretch only happens at the real first or last slide, for mouse and pen dragging as well as for wheel and trackpad scrolling. It never happens on a looping carousel, whether `Rewind` or seamless, because a loop has no ends. A carousel using `CarouselVirtualContent` only stretches while its real first or last slide is actually on screen, not at the edge of the slides currently rendered. The stretch is not drawn under reduced motion.
 
 ## Debugging
 

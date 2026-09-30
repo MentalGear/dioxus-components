@@ -902,6 +902,32 @@ test.describe("Carousel: pointer drag (mouse/pen)", () => {
     await expect(button).toHaveAttribute("data-clicked", "false");
   });
 
+  /**
+   * A drag that ends clamped against an edge comes to rest exactly on a slide,
+   * so its release needs no settle scroll -- and every `scrollend` during the
+   * drag is dropped while `data-dragging` is set. Before the tracking bridge
+   * treated the end of a drag as the end of a scroll, nothing reported where
+   * it rested: dragging from slide 2 hard past slide 1 left `selected` on
+   * slide 2 with slide 1 showing (measured on this build before the fix:
+   * "2 of 5" at scrollLeft 0).
+   */
+  test("a drag from slide 2 hard past the first slide selects slide 1 (the drag's end reports where it rested)", async ({
+    page,
+  }) => {
+    await goto(page, "main");
+    const frame = demoFrame(page, "main");
+    const content = frame.locator(".dx-carousel-content");
+    const slide = (n: number) => frame.getByRole("group", { name: `${n} of 5` });
+    await frame.getByRole("button", { name: "Next slide" }).click();
+    await expectSnappedToBoundary(content, slide(2));
+    await expect(slide(2)).toHaveAttribute("data-selected", "true");
+
+    await dragBy(page, content, (await slidePitch(slide(2))) * 2.5, 0, 20);
+    await expectSnappedToBoundary(content, slide(1));
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    await expect(frame.getByRole("button", { name: "Previous slide" })).toBeDisabled();
+  });
+
   test("a short movement below the threshold does not page", async ({ page }) => {
     await goto(page, "main");
     const frame = demoFrame(page, "main");
@@ -1510,6 +1536,8 @@ async function enableWheelDebug(page: Page): Promise<void> {
 type WheelRecord = {
   id: string;
   startedAtEdge: string;
+  /** The edge the gesture started at rest against, when `isTrueEnd` refused it. */
+  falseEnd: string | null;
   owned: boolean | null;
   notched: boolean;
   deltas: number[];
@@ -1850,19 +1878,48 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("loop_mode Rewind keeps its physical edges, so the wheel band still applies", async ({ page }) => {
+  /**
+   * The owner's approved rule: the band only engages at a TRUE end of the
+   * data (`isTrueEnd` in `CAROUSEL_WHEEL_BAND_JS`), and a looping carousel
+   * has none -- including `LoopMode::Rewind`, whose ends are physical but
+   * wrap. This used to assert the opposite (Rewind bands like any physical
+   * edge); the rule changed, so the assertion did.
+   */
+  test("loop_mode Rewind never bands, at its first, middle or last slide", async ({ page }) => {
+    await enableWheelDebug(page);
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
     const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
     const content = region.locator(".dx-carousel-content");
-    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
-    const run = await playWheel(content, { deltas: neg(WHEEL.rampAndDecay), tailMs: 900 });
-    expect(maxAbsBand(run)).toBeGreaterThan(5);
-    expect(run.finalTransform).toBe("");
-    await expect(region.getByRole("group", { name: "1 of 5" })).toHaveAttribute("data-selected", "true");
+    const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
+    const next = region.getByRole("button", { name: "Next slide" });
+    await expect(slide(1)).toHaveAttribute("data-selected", "true");
+    expect(await content.getAttribute("data-loop")).toBe("true");
+
+    // Slide 1 (rest at the physical start), slide 3 (middle), slide 5 (end).
+    let current = 1;
+    for (const [n, pushes] of [
+      [1, [-1]],
+      [3, [-1, 1]],
+      [5, [1]],
+    ] as const) {
+      while (current < n) {
+        await next.click();
+        current += 1;
+        await expectSnappedToBoundary(content, slide(current));
+      }
+      for (const sign of pushes) {
+        const run = await playWheel(content, { deltas: WHEEL.rampAndDecay.map((x) => sign * x), tailMs: 400 });
+        expect(maxAbsBand(run), `slide ${n}, push ${sign}`).toBe(0);
+      }
+    }
+    // The pushes at slides 1 and 5 really started at rest against an edge,
+    // and were refused as not a true end -- not merely never at an edge.
+    const refused = (await wheelRecords(content)).map((r) => r.falseEnd).filter(Boolean);
+    expect(refused).toEqual(expect.arrayContaining(["left", "right"]));
   });
 
-  test("a CarouselVirtualContent seamless loop has no edges, so no band even at its window's physical start", async ({
+  test("a CarouselVirtualContent seamless loop has no true end, so no band even at its window's physical start", async ({
     page,
   }) => {
     await enableWheelDebug(page);
@@ -1872,7 +1929,8 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     await expect.poll(() => frame.locator('[data-selected="true"]').getAttribute("aria-label")).toBe("1 of 12");
 
     // Jump to the window's own physical start and push into it in the same
-    // task, before any re-anchor can run: an enabled bridge would own this.
+    // task, before any re-anchor can run: the bridge is attached, and it is
+    // `isTrueEnd` (a looping carousel has no true end) that refuses it.
     const result = await content.evaluate((node) => {
       const el = node as HTMLElement;
       // Physical min over every rendered slide (the window is keyed by
@@ -1898,7 +1956,9 @@ test.describe("Carousel: wheel/trackpad edge band (mode D, platform-aware)", () 
     });
     expect(Math.abs(result.gap), `the scroller really was at its window's start (gap ${result.gap}px)`).toBeLessThan(1);
     expect(result.transform).toBe("");
-    expect(await wheelRecords(content), "the wheel bridge is not attached at all").toEqual([]);
+    const [rec] = (await wheelRecords(content)).slice(-1);
+    expect(rec.falseEnd, "at rest against the window's start, refused as not a true end").toBe("left");
+    expect(rec.owned).not.toBe(true);
   });
 
   test("prefers-reduced-motion: reduce draws no wheel band", async ({ page }) => {
@@ -2307,7 +2367,15 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
-  test("dragging past a physical edge still rubber-bands under loop -- no wrap on drag", async ({ page }) => {
+  /**
+   * Rewritten for the owner's true-end rule (the drag band now follows the
+   * wheel band's shared `dxIsTrueEnd` predicate): this test used to be titled
+   * "dragging past a physical edge still rubber-bands under loop" -- though it
+   * only ever asserted that the transform ended at identity, never that a
+   * band appeared. A looping carousel has no true end, so the drag clamps at
+   * the physical edge with no band at all, and still never wraps.
+   */
+  test("dragging past a looping carousel's physical edge never rubber-bands and never wraps", async ({ page }) => {
     await goto(page, "rewind");
     const frame = demoFrame(page, "rewind");
     const region = frame.getByRole("region", { name: "Rewind-loop gallery", exact: true });
@@ -2315,13 +2383,15 @@ test.describe("Carousel: loop_mode Rewind (explicit opt-in wraparound)", () => {
     const slide = (n: number) => region.getByRole("group", { name: `${n} of 5` });
 
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
-    // A large rightward drag from slide 1 (nothing before it) should
-    // rubber-band, not wrap to slide 5 -- `loop`/`loop_mode` only govern
-    // Previous/Next/the root keyboard (this crate's own module doc).
-    await dragBy(page, content, 250, 0);
-    await expect(async () => {
-      expect(await readContentTransform(content)).toBe("");
-    }).toPass({ timeout: 2000 });
+    // A large rightward drag from slide 1 (nothing before it): no band, no
+    // wrap to slide 5 -- `loop`/`loop_mode` only govern Previous/Next/the
+    // root keyboard (this crate's own module doc). Sampled in-page every
+    // frame for the whole drag (row 112), not read once after it.
+    const samples = await sampleBandDuring(content, async () => {
+      await dragBy(page, content, 250, 0);
+    }, 300);
+    expect(Math.max(0, ...samples.map(Math.abs)), "no band at a looping carousel's edge").toBe(0);
+    expect(await readContentTransform(content)).toBe("");
     await expect(slide(1)).toHaveAttribute("data-selected", "true");
   });
 
