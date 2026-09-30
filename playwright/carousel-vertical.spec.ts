@@ -10,6 +10,12 @@
  * Card 2 overlapped card 1 and the bottom Card was cut off by the clip
  * viewport. See `preview/src/components/carousel/variants/vertical/mod.rs`.
  *
+ * The demo also uses the default `gap` (16px), the same as the horizontal
+ * demos. An earlier 4px gap was filled by the Card's own shadow and read as
+ * no gap at all (owner report), so the space between adjacent visible
+ * cards must be clearly visible (>= MIN_GAP) and equal to the horizontal
+ * default's.
+ *
  * Rects are read in-page in one `evaluate` (never per-element CDP round
  * trips) and re-sampled with `expect.poll` so a still-settling scroll snap
  * cannot flake the assertions.
@@ -22,6 +28,8 @@ import { gotoHydrated } from "./hydration";
 
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
 const EPS = 0.75;
+/** Smallest card-to-card space that reads as a gap (the default is 16px). */
+const MIN_GAP = 12;
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Geometry = {
@@ -47,6 +55,28 @@ async function readGeometry(page: Page): Promise<Geometry> {
       slides: slides.map((s) => ({ slide: R(s), card: R(s.firstElementChild!) })),
     };
   });
+}
+
+/**
+ * Card-to-card space between adjacent, currently visible slides of one demo
+ * along the scroll axis ("y" vertical, "x" horizontal), read in one `evaluate`.
+ */
+async function cardSpacing(page: Page, variant: string, axis: "x" | "y"): Promise<number[]> {
+  return page.evaluate(
+    ([variant, axis]) => {
+      const frame = document.querySelector(`#component-preview-frame-${variant}`)!;
+      const vp = frame.querySelector('[data-slot="carousel-viewport"]')!.getBoundingClientRect();
+      const lo = axis === "x" ? vp.left : vp.top;
+      const hi = axis === "x" ? vp.right : vp.bottom;
+      const cards = [...frame.querySelectorAll('[aria-roledescription="slide"]')]
+        .map((s) => s.firstElementChild!.getBoundingClientRect())
+        .map((r) => (axis === "x" ? { a: r.left, b: r.right } : { a: r.top, b: r.bottom }))
+        .filter((c) => c.a >= lo - 0.75 && c.b <= hi + 0.75)
+        .sort((p, q) => p.a - q.a);
+      return cards.slice(1).map((c, i) => c.a - cards[i].b);
+    },
+    [variant, axis] as const,
+  );
 }
 
 const intersects = (a: Rect, b: Rect) =>
@@ -76,6 +106,11 @@ function problems(g: Geometry): string[] {
     for (let j = i + 1; j < visible.length; j++) {
       if (intersects(visible[i].card, visible[j].card)) out.push(`cards ${i} and ${j} overlap`);
     }
+  }
+  const byY = [...visible].sort((a, b) => a.card.y - b.card.y);
+  for (let i = 0; i + 1 < byY.length; i++) {
+    const space = byY[i + 1].card.y - (byY[i].card.y + byY[i].card.h);
+    if (space < MIN_GAP) out.push(`only ${space}px between cards ${i} and ${i + 1} (< ${MIN_GAP}px)`);
   }
   for (const [name, btn] of [["Previous", g.prev], ["Next", g.next]] as const) {
     for (const [i, s] of visible.entries()) {
@@ -114,6 +149,21 @@ for (const width of [1280, 390]) {
           return inside(last.card, g.viewport) ? problems(g) : ["not settled"];
         })
         .toEqual([]);
+    });
+
+    test("vertical gap equals the horizontal default (the `sizes` demo)", async ({ page }) => {
+      await gotoHydrated(page, `${BASE_URL}/component/?name=carousel&variant=vertical&`, GOTO_OPTS);
+      await page.locator("#component-preview-frame-vertical").scrollIntoViewIfNeeded();
+      await expect.poll(async () => (await cardSpacing(page, "vertical", "y")).length).toBeGreaterThan(0);
+      const vertical = (await cardSpacing(page, "vertical", "y"))[0];
+
+      await gotoHydrated(page, `${BASE_URL}/component/?name=carousel&variant=sizes&`, GOTO_OPTS);
+      await page.locator("#component-preview-frame-sizes").scrollIntoViewIfNeeded();
+      await expect.poll(async () => (await cardSpacing(page, "sizes", "x")).length).toBeGreaterThan(0);
+      const horizontal = (await cardSpacing(page, "sizes", "x"))[0];
+
+      expect(horizontal).toBeGreaterThanOrEqual(MIN_GAP);
+      expect(Math.abs(vertical - horizontal)).toBeLessThanOrEqual(1);
     });
   });
 }

@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 
 /// shadcn's "Spacing" demo (`carousel-spacing.tsx`): the inter-slide gap is
-/// a compositional choice at the call site (`--dx-carousel-gap` on
+/// a compositional choice at the call site (the `gap` prop on
 /// `CarouselContent`), not a hardcoded property -- see docs.md's own
 /// "Sizes and spacing" section. Four presets, matching shadcn's own
 /// `-ml-1/pl-1` ... `-ml-4/pl-4` scale exactly (`--dx-space-1` = 4px ...
@@ -34,7 +34,7 @@ pub fn Demo() -> Element {
                     Carousel { aria_label: "Spacing preset: {label}",
                         CarouselPrevious { ChevronLeft {} }
                         CarouselNext { ChevronRight {} }
-                        CarouselContent { style: "--dx-carousel-gap: {gap};",
+                        CarouselContent { gap: "{gap}",
                             for i in 0..4usize {
                                 CarouselItem { key: "{i}", index: i, style: "flex-basis: 50%;",
                                     Card {
