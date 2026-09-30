@@ -43,6 +43,20 @@ use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 /// other demo: shadcn's own orientation example has none either (height
 /// comes from `CarouselContent`'s explicit height, not from the slide's
 /// own aspect ratio).
+///
+/// **The `Card` must be `box-sizing: border-box`.** `Card` (`.dx-card`)
+/// carries `padding: 24px 0` plus a 1px border and no `box-sizing`, i.e.
+/// the `content-box` default, so `height: 100%` alone means "the slide's
+/// usable block size *plus* 50px of padding/border on top". Measured live
+/// before this fix: each item is 135px (half of the 270px content box),
+/// 119px of it usable after the 16px leading gap padding, and the Card
+/// rendered 169px tall (119 + 48 + 2) -- card 2 overlapped card 1 and the
+/// bottom card ran past the clip viewport. `border-box` makes the Card
+/// exactly the slide's usable size; `CardContent` then takes the Card's
+/// remaining height with `flex: 1` (the Card is a flex column) instead of a
+/// second, again-overflowing `height: 100%`. The gap is set to
+/// `--dx-space-1` (4px) to match shadcn's own vertical demo (`-mt-1` on the
+/// content, `pt-1` on each item) rather than the horizontal demos' 16px.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -52,12 +66,12 @@ pub fn Demo() -> Element {
                 orientation: CarouselOrientation::Vertical,
                 CarouselPrevious { ChevronUp {} }
                 CarouselNext { ChevronDown {} }
-                CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2;",
+                CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2; --dx-carousel-gap: var(--dx-space-1);",
                     for i in 0..4usize {
                         CarouselItem { key: "{i}", index: i,
-                            Card { style: "height: 100%;",
+                            Card { style: "height: 100%; box-sizing: border-box;",
                                 CardContent {
-                                    style: "display: flex; align-items: center; justify-content: center; height: 100%; font-size: var(--dx-text-3xl); font-weight: 600;",
+                                    style: "display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; font-size: var(--dx-text-3xl); font-weight: 600;",
                                     "{i + 1}"
                                 }
                             }
