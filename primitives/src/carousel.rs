@@ -295,8 +295,30 @@ fn item_gap_padding(orientation: CarouselOrientation) -> &'static str {
 /// subtract a gap term itself -- `N` whole slides' basis fractions already
 /// sum to exactly `100%` of the (gap-widened) content box regardless of
 /// `N`.
+///
+/// **`box-sizing: border-box` is declared here, inline, because that
+/// sentence is only true under it.** Under the default `content-box` the gap
+/// padding is added *on top of* the basis, so every slide is one gap wider
+/// than the snapport. Found from the owner's real-trackpad report ("trackpad
+/// custom scroll end snap interferes with looping/virtual slider"): the
+/// box-sizing used to come only from the themed `.dx-carousel-item` class,
+/// which [`CarouselVirtualContent`]'s own slides (rendered by this
+/// primitive, with no class) never carried, so they measured 352px in a
+/// 336px snapport. A snap area larger than the snapport makes every
+/// position inside it a valid rest position (CSS Scroll Snap: snap areas
+/// larger than the snapport), so the browser stopped snapping those slides
+/// at all -- a wheel/trackpad gesture came to rest up to one gap off a slide
+/// boundary, and the virtual window's own re-align then "snapped" the
+/// leftover itself, as a visible instant `scrollBy` at scroll end
+/// (`playwright/carousel-virtual-wheel.spec.ts`). Declaring it on the one
+/// style every slide renderer shares ([`CarouselItem`] and
+/// [`CarouselVirtualContent`] alike) makes the invariant hold by
+/// construction, with or without any theme stylesheet -- this module's "works
+/// with zero theme CSS" rule for layout-critical properties. A caller's own
+/// inline `box-sizing` still wins (it comes later in the same `style`
+/// attribute).
 fn item_basis_style() -> &'static str {
-    "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
+    "box-sizing:border-box;flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
 }
 
 /// The mirror of [`item_gap_padding`], applied to [`CarouselContent`]'s own
@@ -564,6 +586,15 @@ fn carousel_key_intent(
 /// second-scroll. Reuses [`CAROUSEL_SNAP_RESTORE_FALLBACK_MS`] for the
 /// same non-`scrollend`-browser fallback [`CAROUSEL_DRAG_JS`] already
 /// needs it for.
+///
+/// **Every call waits for the browser to be idle.** Its whole body --
+/// including measuring the delta and suspending `scroll-snap-type` -- runs
+/// through the scroller's `__dxWhenIdle` gate
+/// ([`CAROUSEL_SCROLL_TRACKING_JS`], [`CAROUSEL_INPUT_QUIET_MS`]), so a write
+/// requested while wheel/touch input is still arriving (the virtual window's
+/// re-align, or a button/key/autoplay/indicator page) happens once that input
+/// has gone quiet, measured from wherever the browser actually came to rest
+/// -- never mid-gesture (THE RULE). With input already quiet it runs at once.
 const CAROUSEL_SCROLL_TO_JS: &str = "\
     const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs, align] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
@@ -608,7 +639,14 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     // defers this bridge to the drag's own release settle, which already
     // performs the identical scroll-to-nearest-slide alignment once the
     // gesture actually ends.
-    if (scroller && target && !scroller.hasAttribute('data-dragging')) {
+    // Never write the scroll position while user scroll input is still
+    // arriving (THE RULE): wait on the tracking bridge's browser-idle gate
+    // (`CAROUSEL_SCROLL_TRACKING_JS`, `CAROUSEL_INPUT_QUIET_MS`), and measure
+    // the delta only once it lets this run, from wherever the browser came
+    // to rest. Runs at once when input is already quiet, or when no bridge
+    // is attached yet (the very first mount settle).
+    const run = () => {
+    if (scroller && target && target.isConnected && !scroller.hasAttribute('data-dragging')) {
         const s = scroller.getBoundingClientRect();
         const t = target.getBoundingClientRect();
         const delta = anchorOf(t) - anchorOf(s);
@@ -650,6 +688,12 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
             const timer = setTimeout(restoreSnap, snapRestoreFallbackMs);
             scroller.__dxCancelSnapRestore = () => clearTimeout(timer);
         }
+    }
+    };
+    if (scroller && scroller.__dxWhenIdle) {
+        scroller.__dxWhenIdle(run);
+    } else {
+        run();
     }";
 
 /// Long-lived (mount-to-unmount): translate a [`CarouselContent`]
@@ -670,6 +714,15 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// and is still zero-JS-dependency, feature-detected, degrade-not-break,
 /// matching this repo's own platform-features-first posture
 /// (`dev-docs/recommended-implementations.md`'s `<dialog>` finding).
+/// **"Once" means once the browser is truly idle, not on the first
+/// `scrollend`.** The settle waits on this bridge's browser-idle gate: the
+/// latest scroll has ended AND no wheel/touch input for
+/// [`CAROUSEL_INPUT_QUIET_MS`] -- see that constant's own doc for the class
+/// of bug this closes and everything it subsumes. The same gate is exposed
+/// on the scroller as `__dxWhenIdle` (a plain DOM property, the same
+/// cross-eval hand-off [`CAROUSEL_SCROLL_TO_JS`]'s `__dxCancelSnapRestore`
+/// already uses), which every [`CAROUSEL_SCROLL_TO_JS`] write waits on.
+///
 /// Comparing viewport (`getBoundingClientRect`) positions rather than
 /// `scrollLeft`/`offsetLeft` sidesteps the well-known cross-browser
 /// disagreement over what `scrollLeft` itself means under `dir="rtl"` --
@@ -682,7 +735,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// (`dev-docs/recommended-implementations.md` §11 Rule 1) to begin with.
 /// Both listeners are `passive: true` (§11 Rule 2).
 const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
-    const [id, orientation, align] = await dioxus.recv();
+    const [id, orientation, align, inputQuietMs] = await dioxus.recv();
     const container = document.getElementById(id);
     if (!container) {
         await dioxus.recv();
@@ -802,18 +855,80 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             dioxus.send(['visible', visStart, visEnd]);
         }
     };
+    // ---- Browser-idle gate: the module's ONE 'the browser is truly idle'
+    // signal (see `CAROUSEL_INPUT_QUIET_MS`'s own doc for the class this
+    // closes). `scrollend` alone is not idle: a trackpad can end one scroll
+    // (the pan) and keep delivering input (its momentum), and a scroll that
+    // clamps at an edge ends while the fingers keep pushing. So a reaction to
+    // the end of a scroll runs only once BOTH hold: the latest scroll has
+    // ended (no scroll event since its `scrollend`), and no user scroll input
+    // -- a wheel event, or a finger on the screen -- has arrived for
+    // `inputQuietMs`. Every other scroll write this module makes waits on the
+    // same signal through `container.__dxWhenIdle` (`CAROUSEL_SCROLL_TO_JS`).
     const supportsScrollEnd = 'onscrollend' in window;
     let debounceTimer = null;
+    let lastInputAt = -Infinity;
+    let touches = 0;
+    let endPending = false;
+    let gateTimer = null;
+    let waiters = [];
+    const inputQuiet = () => touches === 0 && performance.now() - lastInputAt >= inputQuietMs;
+    const pump = () => {
+        clearTimeout(gateTimer);
+        gateTimer = null;
+        if (!endPending && waiters.length === 0) {
+            return;
+        }
+        if (!inputQuiet()) {
+            // A finger still down re-pumps on its own touchend; otherwise
+            // look again the moment the quiet window would close.
+            if (touches === 0) {
+                gateTimer = setTimeout(pump, Math.max(1, inputQuietMs - (performance.now() - lastInputAt)));
+            }
+            return;
+        }
+        if (endPending) {
+            endPending = false;
+            settle();
+        }
+        const run = waiters;
+        waiters = [];
+        run.forEach((f) => f());
+    };
+    const scrollEnded = () => {
+        endPending = true;
+        pump();
+    };
     const onScroll = () => {
+        // Scrolling again: whatever ended before has not come to rest after
+        // all (a snap animation, momentum resuming) -- wait for the next end.
+        endPending = false;
         if (supportsScrollEnd) {
             return;
         }
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(settle, 120);
+        debounceTimer = setTimeout(scrollEnded, 120);
     };
+    const onInput = () => {
+        lastInputAt = performance.now();
+        pump();
+    };
+    const onTouch = (e) => {
+        touches = e.touches.length;
+        onInput();
+    };
+    const whenIdle = (f) => {
+        waiters.push(f);
+        pump();
+    };
+    container.__dxWhenIdle = whenIdle;
     container.addEventListener('scroll', onScroll, { passive: true });
+    container.addEventListener('wheel', onInput, { passive: true });
+    container.addEventListener('touchstart', onTouch, { passive: true });
+    container.addEventListener('touchend', onTouch, { passive: true });
+    container.addEventListener('touchcancel', onTouch, { passive: true });
     if (supportsScrollEnd) {
-        container.addEventListener('scrollend', settle, { passive: true });
+        container.addEventListener('scrollend', scrollEnded, { passive: true });
     }
     // A resize of the scroller's own box re-settles too -- not just a
     // scroll -- closing a real, measured mount-time race (this session):
@@ -835,15 +950,30 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     // breakpoint, a caller resizing the wrapper) -- a self-correcting
     // construction for the whole class of 'the box was momentarily the
     // wrong size when this measured it', not a fix for this one instance.
-    const resizeObserver = new ResizeObserver(() => settle());
+    //
+    // Routed through the same idle gate as a scroll end: a resize while a
+    // gesture is still in flight settles once the gesture is over.
+    const resizeObserver = new ResizeObserver(() => scrollEnded());
     resizeObserver.observe(container);
     await dioxus.recv();
     container.removeEventListener('scroll', onScroll);
+    container.removeEventListener('wheel', onInput);
+    container.removeEventListener('touchstart', onTouch);
+    container.removeEventListener('touchend', onTouch);
+    container.removeEventListener('touchcancel', onTouch);
     if (supportsScrollEnd) {
-        container.removeEventListener('scrollend', settle);
+        container.removeEventListener('scrollend', scrollEnded);
     }
     resizeObserver.disconnect();
-    clearTimeout(debounceTimer);";
+    clearTimeout(debounceTimer);
+    clearTimeout(gateTimer);
+    // Only ever remove this bridge's OWN gate: a re-attach (new options)
+    // can install its replacement before this teardown message arrives.
+    // Still-waiting scroll writes run rather than being dropped.
+    if (container.__dxWhenIdle === whenIdle) {
+        delete container.__dxWhenIdle;
+    }
+    waiters.forEach((f) => f());";
 
 /// Attach [`CAROUSEL_SCROLL_TRACKING_JS`] to the element with the given
 /// `id` for as long as the calling component stays mounted, forwarding
@@ -880,7 +1010,7 @@ fn use_carousel_scroll_tracking(
         let orientation_str = orientation().as_str().to_string();
         let align_str = align().as_str().to_string();
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
-        let _ = eval.send((id, orientation_str, align_str));
+        let _ = eval.send((id, orientation_str, align_str, CAROUSEL_INPUT_QUIET_MS));
         spawn(async move {
             while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
                 if kind == "selected" {
@@ -901,6 +1031,45 @@ fn use_carousel_scroll_tracking(
         }
     });
 }
+
+/// How long, in milliseconds, user scroll input (a wheel event, or a finger
+/// on the screen) must have been quiet before the browser counts as truly
+/// idle -- the one signal every scroll-end reaction in this module waits on
+/// ([`CAROUSEL_SCROLL_TRACKING_JS`]'s "browser-idle gate").
+///
+/// **The class this closes.** Twice now, logic that reacts to "the scroll
+/// has ended" ran while the browser was still scrolling and fought it: the
+/// overscroll bench's seamless loop re-centred while momentum was still
+/// arriving (a visible double move), and this module's own settle ran on the
+/// first `scrollend` while a trackpad was still delivering input (the owner's
+/// real-trackpad report on the virtualised demos, "trackpad custom scroll end
+/// snap interferes with looping/virtual slider";
+/// `playwright/carousel-virtual-wheel.spec.ts`). Headless evidence: a
+/// trusted wheel flick on `virtual_loop` saw the settle run at ~500ms while
+/// input kept arriving until ~1565ms, the window re-render mid-gesture, and
+/// the re-align write `scrollBy(-16)` with snapping suspended, mid-gesture.
+/// `scrollend` alone is not "idle": a trackpad can end the pan's scroll and
+/// keep sending its momentum, and a scroll clamped at an edge (the virtual
+/// window's own end) ends while the fingers keep pushing. So instead of
+/// patching each reaction, every one of them is gated on the same signal:
+/// the latest scroll has ended AND no input for this long. What that
+/// subsumes: the tracking settle itself (`selected`, the visible range and
+/// `inert`), everything downstream of it ([`CarouselVirtualContent`]'s
+/// re-anchor, window re-render and instant re-align, and the plain API's
+/// settle-driven paging effect), and every [`CAROUSEL_SCROLL_TO_JS`] write
+/// (buttons, keys, autoplay, indicators, `scroll_to`) requested while input
+/// is still arriving, including its `scroll-snap-type` suspension. Not
+/// subsumed, by design: [`CAROUSEL_DRAG_JS`] (a mouse/pen drag has no native
+/// scroll behind it and owns the position -- THE RULE's own exception), and
+/// the wheel band (`CAROUSEL_WHEEL_BAND_JS`, which never writes the scroll
+/// position at all).
+///
+/// **Why 150.** Within one gesture, the owner's recorded trackpad events
+/// arrive every 17-20ms (p99 20ms, `playwright/fixtures/carousel-wheel-recordings.json`),
+/// and the owner-validated wheel band already treats 100ms of silence as a
+/// gesture boundary (`GAP_MS`). 150ms is comfortably past both, and short
+/// enough that a settle after a real lift is not visibly late.
+const CAROUSEL_INPUT_QUIET_MS: f64 = 150.0;
 
 /// Movement, in CSS pixels, a mouse/pen pointer must travel from its
 /// `pointerdown` origin before [`CAROUSEL_DRAG_JS`] treats the gesture as
@@ -5579,6 +5748,15 @@ mod ssr_tests {
         assert!(html.contains(
             "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
         ));
+    }
+
+    #[test]
+    fn every_slide_renderer_declares_border_box_so_the_gap_padding_stays_inside_the_basis() {
+        // `item_basis_style`'s own doc: without it, a slide is one gap wider
+        // than the snapport and the browser stops snapping it.
+        for html in [render(ThreeSlideCarousel), render(VirtualCarousel12Loop)] {
+            assert!(html.contains("box-sizing:border-box;flex:0 0 calc("));
+        }
     }
 
     // -- `align` ---------------------------------------------------------
