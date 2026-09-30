@@ -935,6 +935,21 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         pump();
     };
     container.__dxWhenIdle = whenIdle;
+    // The end of a pointer drag is the end of a scroll, even when its release
+    // needs no settle scroll at all (it came to rest exactly on a slide --
+    // always the case for a drag that ends clamped against an edge). Every
+    // `scrollend` during the drag was dropped by `settle`'s own
+    // `data-dragging` guard, so without this nothing would report where it
+    // rested: found live, a drag from slide 2 past slide 1 left `selected`
+    // on slide 2 with slide 1 showing, and a virtual window dragged against
+    // its slice edge never re-centred. `CAROUSEL_DRAG_JS` announces it
+    // (`dx-carousel-rest`) only once its release is truly finished -- after
+    // any spring-back, and only when no settle scroll follows (that scroll's
+    // own `scrollend` reports instead). Guessing it from here (a first
+    // version waited two frames for no scroll) fired mid-spring-back and
+    // left a stale sub-pixel transform: a measured regression, so the signal
+    // comes from the one party that knows. Routed through the same idle gate.
+    container.addEventListener('dx-carousel-rest', scrollEnded);
     container.addEventListener('scroll', onScroll, { passive: true });
     container.addEventListener('wheel', onInput, { passive: true });
     container.addEventListener('touchstart', onTouch, { passive: true });
@@ -978,6 +993,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         container.removeEventListener('scrollend', scrollEnded);
     }
     resizeObserver.disconnect();
+    container.removeEventListener('dx-carousel-rest', scrollEnded);
     clearTimeout(debounceTimer);
     clearTimeout(gateTimer);
     // Only ever remove this bridge's OWN gate: a re-attach (new options)
@@ -1104,6 +1120,48 @@ const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 /// completed.
 const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 
+/// THE one home of "may an edge rubber-band engage here?" -- the owner's
+/// approved rule, shared by both band bridges ([`CAROUSEL_WHEEL_BAND_JS`] and
+/// [`CAROUSEL_DRAG_JS`]): only at a TRUE end of the data. Expands to one JS
+/// function literal, `dxIsTrueEnd(el, horizontal, side)`, that `concat!`
+/// splices into both scripts, so there is no second copy to drift (a
+/// scroller-attached helper like `__dxWhenIdle` would instead depend on which
+/// bridge's eval happened to run first).
+///
+/// Read from rendered markup, never a Rust signal: `data-loop` and
+/// `data-slide-count` on the scroller, and the `data-index` of the slide at
+/// that physical edge (`side` is `'min'` = left/top or `'max'` =
+/// right/bottom, found by rect, so RTL and vertical need no branch). A
+/// looping carousel (any [`LoopMode`], plain or virtual) has no true end; a
+/// [`CarouselVirtualContent`] window's slice edge mid-list (e.g. items 40-44
+/// of 100) is not one either -- the scroller simply clamps there and the
+/// window re-centres once idle. Plain, non-looping content always has index
+/// 0 / count - 1 at its two ends, so it is unaffected.
+macro_rules! carousel_true_end_js {
+    () => {
+        "
+    function dxIsTrueEnd(el, horizontal, side) {
+        if (el.dataset.loop === 'true') return false;
+        const count = parseInt(el.dataset.slideCount, 10);
+        if (!(count > 0)) return false;
+        let pick = null;
+        let best = side === 'min' ? Infinity : -Infinity;
+        for (const child of el.children) {
+            if (child.dataset.index === undefined) continue;
+            const r = child.getBoundingClientRect();
+            const v = side === 'min' ? (horizontal ? r.left : r.top) : (horizontal ? r.right : r.bottom);
+            if (side === 'min' ? v < best : v > best) {
+                best = v;
+                pick = child;
+            }
+        }
+        const index = pick ? parseInt(pick.dataset.index, 10) : NaN;
+        return index === 0 || index === count - 1;
+    }
+"
+    };
+}
+
 /// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
 /// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
 /// track [`CAROUSEL_SCROLL_TO_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
@@ -1145,7 +1203,7 @@ const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 /// animated scroll. `endDrag` below settles explicitly instead, and
 /// defers restoring this property until that explicit settle has
 /// actually finished.
-const CAROUSEL_DRAG_JS: &str = "\
+const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
     const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs, align] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
@@ -1186,6 +1244,19 @@ const CAROUSEL_DRAG_JS: &str = "\
     // gesture has a compositor and a snap engine also trying to write it.
     let rawOver = 0; // signed content displacement the scroller refused, physical px
     let bounceToken = 0; // see `bounceHome`'s own doc -- invariant 4
+    // Per gesture: may the band engage at the physical 'min' (left/top) /
+    // 'max' (right/bottom) edge? `null` = not decided yet. Decided ONCE, the
+    // first time this drag overdrags past that edge (see `feedOverdrag`), by
+    // the shared `dxIsTrueEnd` (`carousel_true_end_js!`) -- the pointer
+    // counterpart of the wheel band's once-per-gesture ownership decision.
+    // Why there and not at `pointerdown`: the wheel band decides at gesture
+    // start from where the scroller RESTS because it has to tell its own push
+    // apart from the platform's momentum; a drag has no native scroll behind
+    // it, so the only question is whether the edge it actually runs into is
+    // a true end, and a drag can start mid-track and reach either edge. The
+    // rendered slice cannot change mid-drag (the tracking settle is frozen
+    // while `data-dragging` is set), so the cached answer stays correct.
+    let edgeAllowed = { min: null, max: null };
     const RUBBER_C = 0.55; // WebKit's own published rubber-band constant (research doc §4)
 
     function axisSize() {
@@ -1273,7 +1344,21 @@ const CAROUSEL_DRAG_JS: &str = "\
             el.scrollBy({ top: -cd, behavior: 'instant' });
         }
         const moved = contentOffset() - before;
-        const refused = cd - moved;
+        let refused = cd - moved;
+        if (refused) {
+            // Content pushed toward the right/bottom opens a gap at the min
+            // edge, and vice versa.
+            const side = refused > 0 ? 'min' : 'max';
+            if (edgeAllowed[side] === null) {
+                edgeAllowed[side] = dxIsTrueEnd(el, orientation === 'horizontal', side);
+            }
+            if (!edgeAllowed[side]) {
+                // Not a true end: behave like a drag that simply cannot pass
+                // the edge -- the scroller has already clamped, and the
+                // refused motion is dropped rather than drawn as a band.
+                refused = 0;
+            }
+        }
         if (!refused && !rawOver) {
             return;
         }
@@ -1336,6 +1421,7 @@ const CAROUSEL_DRAG_JS: &str = "\
         }
         suppressNextClick = false;
         pointerId = e.pointerId;
+        edgeAllowed = { min: null, max: null };
         originX = lastX = e.clientX;
         originY = lastY = e.clientY;
         dragging = false;
@@ -1426,6 +1512,16 @@ const CAROUSEL_DRAG_JS: &str = "\
         feedOverdrag(orientation === 'horizontal' ? dx : dy);
     };
 
+    // The drag came to rest WITHOUT a release-settle scroll (already exactly
+    // on a slide -- always true for a drag that ends clamped against an
+    // edge). Every `scrollend` during the drag was dropped by the tracking
+    // bridge's `data-dragging` guard, so no scroll event will ever report
+    // where it rested: say so explicitly. `CAROUSEL_SCROLL_TRACKING_JS`
+    // treats this exactly like a `scrollend` (through its idle gate). Only
+    // this script knows when its release is truly finished -- after any
+    // spring-back, and only when no settle scroll follows.
+    const announceRest = () => el.dispatchEvent(new Event('dx-carousel-rest'));
+
     const endDrag = (e) => {
         if (e.pointerId !== pointerId) {
             return;
@@ -1509,6 +1605,7 @@ const CAROUSEL_DRAG_JS: &str = "\
                 // trigger it.
                 if (Math.abs(settleDelta) < 1) {
                     restoreSnap();
+                    announceRest();
                 } else {
                     // Deferred, not synchronous: setting scroll-snap-type
                     // back to mandatory on an already-stationary position is
@@ -1540,6 +1637,7 @@ const CAROUSEL_DRAG_JS: &str = "\
                 // fall back to the old unconditional-restore behavior
                 // rather than leaving scroll-snap-type suspended forever.
                 restoreSnap();
+                announceRest();
             }
             });
         }
@@ -1576,7 +1674,7 @@ const CAROUSEL_DRAG_JS: &str = "\
     el.removeEventListener('pointerup', endDrag);
     el.removeEventListener('pointercancel', endDrag);
     el.removeEventListener('lostpointercapture', endDrag);
-    el.removeEventListener('click', onClickCapture, true);";
+    el.removeEventListener('click', onClickCapture, true);");
 
 /// Attach [`CAROUSEL_DRAG_JS`] to the element with the given `id` for as
 /// long as the calling component stays mounted and `enabled()` is `true`
@@ -1732,7 +1830,7 @@ fn use_carousel_drag(
 /// at rest against that was refused this way. `prefers-reduced-motion:
 /// reduce` draws no band (checked fresh per event, not cached at mount),
 /// matching the pointer path's own reading of that preference.
-const CAROUSEL_WHEEL_BAND_JS: &str = "\
+const CAROUSEL_WHEEL_BAND_JS: &str = concat!(carousel_true_end_js!(), "\
     const [id, orientation] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el) {
@@ -1894,35 +1992,9 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
             max: hi - (horizontal ? c.right : c.bottom),
         };
     }
-    // THE one home of 'may the band engage at this edge?' (the owner's
-    // approved rule): only at a TRUE end of the data. Read per gesture from
-    // rendered markup, never from a Rust signal: `data-loop` and
-    // `data-slide-count` on this element, and the `data-index` of the slide
-    // sitting at that physical edge (found by rect, so RTL and vertical need
-    // no branch). A looping carousel (any `LoopMode`, plain or virtual) has
-    // no true end; a virtual window resting at its rendered slice's edge
-    // mid-list (e.g. items 40-44 of 100) is not one either -- the browser
-    // clamps there and the window re-centres once idle. Plain, non-looping
-    // content always has index 0 / count - 1 at its two ends, so it is
-    // unchanged.
-    function isTrueEnd(side) {
-        if (el.dataset.loop === 'true') return false;
-        const count = parseInt(el.dataset.slideCount, 10);
-        if (!(count > 0)) return false;
-        let pick = null;
-        let best = side === 'min' ? Infinity : -Infinity;
-        for (const child of el.children) {
-            if (child.dataset.index === undefined) continue;
-            const r = child.getBoundingClientRect();
-            const v = side === 'min' ? (horizontal ? r.left : r.top) : (horizontal ? r.right : r.bottom);
-            if (side === 'min' ? v < best : v > best) {
-                best = v;
-                pick = child;
-            }
-        }
-        const index = pick ? parseInt(pick.dataset.index, 10) : NaN;
-        return index === 0 || index === count - 1;
-    }
+    // Only at a true end of the data: the shared `dxIsTrueEnd`
+    // (`carousel_true_end_js!`), decided once per gesture below.
+    const isTrueEnd = (side) => dxIsTrueEnd(el, horizontal, side);
     function plateauCeiling() {
         return isFinite(deviceMinDelta) ? deviceMinDelta * PLATEAU_MULT : PLATEAU_FALLBACK_PX;
     }
@@ -2238,7 +2310,7 @@ const CAROUSEL_WHEEL_BAND_JS: &str = "\
     if (visible) {
         visible = 0;
         el.style.transform = '';
-    }";
+    }");
 
 /// Attach [`CAROUSEL_WHEEL_BAND_JS`] to the element with the given `id` for
 /// as long as the calling component stays mounted -- mirrors
@@ -5864,6 +5936,22 @@ mod ssr_tests {
         assert!(html.contains(
             "flex:0 0 calc((100% - var(--dx-carousel-peek, 0%)) / var(--dx-carousel-per-view, 1));"
         ));
+    }
+
+    // -- true-end rule: one shared predicate ------------------------------
+
+    #[test]
+    fn both_band_bridges_carry_the_one_shared_true_end_predicate() {
+        // `carousel_true_end_js!` is the rule's only home: spliced into the
+        // wheel band and the drag bridge, defined nowhere else.
+        let shared = carousel_true_end_js!();
+        for script in [CAROUSEL_WHEEL_BAND_JS, CAROUSEL_DRAG_JS] {
+            assert!(script.starts_with(shared));
+            assert_eq!(script.matches("function dxIsTrueEnd(").count(), 1);
+            assert_eq!(script.matches("function isTrueEnd(").count(), 0);
+        }
+        assert!(CAROUSEL_DRAG_JS.contains("dxIsTrueEnd(el, orientation === 'horizontal', side)"));
+        assert!(CAROUSEL_WHEEL_BAND_JS.contains("dxIsTrueEnd(el, horizontal, side)"));
     }
 
     // -- wheel band: true-end markup (`isTrueEnd`) ------------------------

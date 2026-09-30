@@ -669,3 +669,229 @@ test.describe("Carousel wheel band: only at a true end of the data", () => {
     }
   });
 });
+
+/*
+ * The mouse/pen drag rubber-band follows the SAME true-end rule as the wheel
+ * band, through the same shared predicate (`carousel_true_end_js!` in
+ * `primitives/src/carousel.rs`, spliced into both bridges). A drag decides
+ * once per edge per gesture, the first time it overdrags past that edge; a
+ * refused edge behaves like a drag that simply cannot pass it (the scroller
+ * clamps, no transform, the slide settles normally, and a virtual window
+ * re-centres once idle).
+ */
+
+type DragResult = { band: number; gapAtHold: number };
+
+/**
+ * Real mouse drag from the track's centre, pushing content INTO the physical
+ * `side` edge (`min` = left/top, `max` = right/bottom) by `distance` px, with
+ * |band| sampled in-page every frame and the edge gap measured while the
+ * button is still held; then release.
+ */
+async function dragIntoEdge(
+  page: Page,
+  content: Locator,
+  side: "min" | "max",
+  axis: "x" | "y",
+  distance: number,
+): Promise<DragResult> {
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const w = window as unknown as { __dxDragBand: number; __dxDragOn: boolean };
+    w.__dxDragBand = 0;
+    w.__dxDragOn = true;
+    const tick = () => {
+      const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+      w.__dxDragBand = Math.max(w.__dxDragBand, m ? Math.abs(Number.parseFloat(m[1])) : 0);
+      if (w.__dxDragOn) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const box = await content.boundingBox();
+  if (!box) throw new Error("content has no bounding box");
+  const x0 = box.x + box.width / 2;
+  const y0 = box.y + box.height / 2;
+  // Content moves WITH the pointer: into the min edge = pointer toward +axis.
+  const sign = side === "min" ? 1 : -1;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  const steps = 24;
+  for (let i = 1; i <= steps; i++) {
+    const d = (sign * distance * i) / steps;
+    await page.mouse.move(axis === "x" ? x0 + d : x0, axis === "y" ? y0 + d : y0);
+    await page.waitForTimeout(16);
+  }
+  const gapAtHold = await content.evaluate((node, { side, axis }) => {
+    const el = node as HTMLElement;
+    const c = el.getBoundingClientRect();
+    const rs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+    return side === "min"
+      ? Math.min(...rs.map((r) => (axis === "x" ? r.left : r.top))) - (axis === "x" ? c.left : c.top)
+      : Math.max(...rs.map((r) => (axis === "x" ? r.right : r.bottom))) - (axis === "x" ? c.right : c.bottom);
+  }, { side, axis });
+  await page.mouse.up();
+  const band = await content.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 100));
+    const w = window as unknown as { __dxDragBand: number; __dxDragOn: boolean };
+    w.__dxDragOn = false;
+    return w.__dxDragBand;
+  });
+  return { band, gapAtHold };
+}
+
+/** After a drag: no stale transform, snapped, and `selected` is the slide actually showing. */
+async function expectCleanRest(content: Locator): Promise<void> {
+  await expect.poll(() => content.evaluate((el) => (el as HTMLElement).style.transform), { timeout: 3000 }).toBe("");
+  await expect
+    .poll(
+      () =>
+        content.evaluate((node) => {
+          const el = node as HTMLElement;
+          const c = el.getBoundingClientRect();
+          const rtl = getComputedStyle(el).direction === "rtl";
+          const vertical = el.getAttribute("data-orientation") === "vertical";
+          let aligned: Element | null = null;
+          let off = Infinity;
+          for (const child of Array.from(el.children)) {
+            const r = child.getBoundingClientRect();
+            const d = Math.abs(vertical ? r.top - c.top : rtl ? r.right - c.right : r.left - c.left);
+            if (d < off) {
+              off = d;
+              aligned = child;
+            }
+          }
+          const sel = el.querySelector('[data-selected="true"]')?.getAttribute("aria-label");
+          return off < 1 && sel === aligned?.getAttribute("aria-label") ? "ok" : `off=${off} sel=${sel} aligned=${aligned?.getAttribute("aria-label")}`;
+        }),
+      { timeout: 3000 },
+    )
+    .toBe("ok");
+}
+
+/** Once idle, a virtual window has re-centred: the scroller is no longer against `side`'s slice edge. */
+async function expectRecentred(content: Locator, side: "min" | "max"): Promise<void> {
+  await expect
+    .poll(() =>
+      content.evaluate((node, side) => {
+        const el = node as HTMLElement;
+        const c = el.getBoundingClientRect();
+        const xs = Array.from(el.children).map((ch) => ch.getBoundingClientRect());
+        return side === "min"
+          ? Math.min(...xs.map((r) => r.left)) - c.left
+          : c.right - Math.max(...xs.map((r) => r.right));
+      }, side),
+    )
+    .toBeLessThan(-1);
+}
+
+async function pitchOf(content: Locator): Promise<number> {
+  return content.evaluate((el) => (el as HTMLElement).clientWidth);
+}
+
+test.describe("Carousel drag band: only at a true end of the data", () => {
+  test("plain main: dragging past the first slide still bands (unchanged), then rests cleanly", async ({ page }) => {
+    const { content } = await open(page, "main");
+    const r = await dragIntoEdge(page, content, "min", "x", (await pitchOf(content)) * 1.2);
+    expect(r.band).toBeGreaterThan(5);
+    await expectCleanRest(content);
+  });
+
+  test("rewind: dragging past its first and last slide never bands; it clamps and settles", async ({ page }) => {
+    test.setTimeout(120_000);
+    const { frame, content } = await open(page, "rewind");
+    const pitch = await pitchOf(content);
+    for (const [label, side] of [
+      ["1 of 5", "min"],
+      ["5 of 5", "max"],
+    ] as const) {
+      await pageTo(page, frame, label);
+      const r = await dragIntoEdge(page, content, side, "x", pitch * 1.2);
+      expect(Math.abs(r.gapAtHold), `${label}: clamped at the ${side} edge while held`).toBeLessThan(1);
+      expect(r.band, `${label}: no band`).toBe(0);
+      await expectCleanRest(content);
+      await expect(frame.locator('[role="group"][data-selected="true"]').first()).toHaveAttribute("aria-label", label);
+    }
+  });
+
+  for (const variant of ["virtual_loop", "virtual_loop_rtl"] as const) {
+    test(`${variant}: dragging into either slice edge never bands, at start, middle and end; the window re-centres`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      const { frame, content } = await open(page, variant);
+      const pitch = await pitchOf(content);
+      for (const label of ["1 of 12", "6 of 12", "12 of 12"]) {
+        await pageTo(page, frame, label);
+        for (const side of ["min", "max"] as const) {
+          // radius 2: the slice edge is two slides away, so 3 pitches reaches it.
+          const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+          expect(Math.abs(r.gapAtHold), `${label}: reached the ${side} slice edge while held`).toBeLessThan(1);
+          expect(r.band, `${label}, ${side}: no band`).toBe(0);
+          await expectCleanRest(content);
+          await expectRecentred(content, side);
+        }
+      }
+    });
+  }
+
+  test("virtual_many mid-list: a drag against the rendered slice's edge does not band, and the window re-centres once idle", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const { frame, content } = await open(page, "virtual_many");
+    await pageTo(page, frame, "50 of 200");
+    const pitch = await pitchOf(content);
+    for (const side of ["min", "max"] as const) {
+      const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+      expect(Math.abs(r.gapAtHold), `reached the ${side} slice edge while held`).toBeLessThan(1);
+      expect(r.band, `${side}: no band`).toBe(0);
+      await expectCleanRest(content);
+      await expectRecentred(content, side);
+    }
+  });
+
+  test("virtual_many at its real first and last item: a drag past it bands", async ({ page }) => {
+    test.setTimeout(180_000);
+    const { frame, content } = await open(page, "virtual_many");
+    const pitch = await pitchOf(content);
+    const first = await dragIntoEdge(page, content, "min", "x", pitch * 1.2);
+    expect(first.band, "real first item").toBeGreaterThan(5);
+    await expectCleanRest(content);
+    await pageTo(page, frame, "200 of 200");
+    const last = await dragIntoEdge(page, content, "max", "x", pitch * 1.2);
+    expect(last.band, "real last item").toBeGreaterThan(5);
+    await expectCleanRest(content);
+  });
+
+  test("RTL and vertical: the shared predicate on the drag path (true end bands; a rewritten mid-list index does not)", async ({
+    page,
+  }) => {
+    for (const [variant, axis, side] of [
+      ["rtl", "x", "max"],
+      ["vertical", "y", "min"],
+    ] as const) {
+      await page.goto("about:blank");
+      const { content } = await open(page, variant);
+      const pitch = await content.evaluate((el) =>
+        el.getAttribute("data-orientation") === "vertical" ? (el as HTMLElement).clientHeight : (el as HTMLElement).clientWidth,
+      );
+      // Slide 1 rests at the physical right under RTL, at the top when vertical.
+      const control = await dragIntoEdge(page, content, side, axis, pitch * 1.2);
+      expect(control.band, `${variant}: slide 1 is a true end`).toBeGreaterThan(5);
+      await expectCleanRest(content);
+      // Rewrite the edge slide's rendered markup to read as item 41 of 100.
+      await content.evaluate((node, side) => {
+        const el = node as HTMLElement;
+        const kids = Array.from(el.children) as HTMLElement[];
+        const key = (r: DOMRect) => (side === "max" ? r.right + r.bottom : -(r.left + r.top));
+        const edge = kids.reduce((a, b) => (key(b.getBoundingClientRect()) > key(a.getBoundingClientRect()) ? b : a));
+        edge.dataset.index = "40";
+        el.dataset.slideCount = "100";
+      }, side);
+      const refused = await dragIntoEdge(page, content, side, axis, pitch * 1.2);
+      expect(Math.abs(refused.gapAtHold), `${variant}: still clamped at the edge`).toBeLessThan(1);
+      expect(refused.band, `${variant}: a mid-list index at the same edge`).toBe(0);
+      await expect.poll(() => content.evaluate((el) => (el as HTMLElement).style.transform)).toBe("");
+    }
+  });
+});
