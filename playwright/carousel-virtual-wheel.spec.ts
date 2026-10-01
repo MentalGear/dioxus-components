@@ -485,14 +485,19 @@ async function placeAtSliceEdge(content: Locator, side: "min" | "max"): Promise<
 async function pageTo(page: Page, frame: Locator, label: string): Promise<void> {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const next = frame.getByRole("button", { name: "Next slide" }).first();
-  await next.evaluate(async (btn, label) => {
-    const root = btn.closest("[aria-roledescription='carousel']") as HTMLElement;
+  await next.evaluate(async (nextBtn, label) => {
+    const root = nextBtn.closest("[aria-roledescription='carousel']") as HTMLElement;
+    const prevBtn = root.querySelector('button[aria-label="Previous slide"]') as HTMLButtonElement;
+    const num = (l: string | null | undefined) => Number((l ?? "").split(" of ")[0]);
     // Slides are role=group, or role=tabpanel when the demo has indicators.
     const selected = () =>
       root.querySelector(':is([role="group"], [role="tabpanel"])[data-selected="true"]')?.getAttribute("aria-label");
     for (let i = 0; i < 400 && selected() !== label; i++) {
       const before = selected();
-      (btn as HTMLButtonElement).click();
+      // Step toward the target: Previous when it is behind (a non-looping
+      // list cannot get there with Next), otherwise Next.
+      const btn = num(label) < num(before) && !prevBtn.disabled ? prevBtn : (nextBtn as HTMLButtonElement);
+      btn.click();
       const t0 = performance.now();
       while (selected() === before && performance.now() - t0 < 2000) await new Promise((r) => requestAnimationFrame(r));
     }
@@ -893,5 +898,147 @@ test.describe("Carousel drag band: only at a true end of the data", () => {
       expect(refused.band, `${variant}: a mid-list index at the same edge`).toBe(0);
       await expect.poll(() => content.evaluate((el) => (el as HTMLElement).style.transform)).toBe("");
     }
+  });
+});
+
+/*
+ * Fast trackpad flicks: the owner's real-trackpad report ("quick trackpad
+ * scrolls still produce an 'end of slides' rubberband effect when there are
+ * still more slides to come"). Measured: a flick shaped like the owner's
+ * hardest recordings holds a virtual window's scroller clamped against its
+ * rendered slice's physical end mid-list (and a looping carousel's against
+ * its physical ends) for ~1s -- where macOS Firefox draws its own native
+ * bounce whenever `overscroll-behavior` is `auto`. This crate's own band
+ * never fired there. The rule under test (`content_overscroll_style` in
+ * `primitives/src/carousel.rs`): the scroll axis is `overscroll-behavior:
+ * none` unless BOTH ends of the rendered slides are true ends, so wherever a
+ * flick can clamp at a false end, the platform cannot bounce. (Whether
+ * Firefox then shows no bounce is the owner's real-device check: headless
+ * Chromium draws no elastic overscroll at all, so the rendered style is what
+ * can be proven here.)
+ */
+
+type FlickFrame = {
+  band: number;
+  atMin: boolean;
+  atMax: boolean;
+  minTrue: boolean;
+  maxTrue: boolean;
+  overscroll: string;
+};
+
+/** One trusted flick (a recording's deltas and timing, one real wheel event each), sampled in-page every frame. */
+async function flick(page: Page, content: Locator, recordingId: string, dir: 1 | -1): Promise<FlickFrame[]> {
+  const rec = recordingsOfKind("end-edge")
+    .concat(recordingsOfKind("owned-push"))
+    .find((r) => r.id === recordingId)!;
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const vertical = el.getAttribute("data-orientation") === "vertical";
+    const trueEnd = (child: HTMLElement | null) => {
+      if (!child || el.dataset.loop === "true") return false;
+      const i = Number(child.dataset.index);
+      return i === 0 || i === Number(el.dataset.slideCount) - 1;
+    };
+    const w = window as unknown as { __dxFlick: { frames: unknown[]; run: boolean } };
+    w.__dxFlick = { frames: [], run: true };
+    const tick = () => {
+      const c = el.getBoundingClientRect();
+      const kids = Array.from(el.children) as HTMLElement[];
+      const lead = (r: DOMRect) => (vertical ? r.top : r.left);
+      const trail = (r: DOMRect) => (vertical ? r.bottom : r.right);
+      let lo: HTMLElement | null = null;
+      let hi: HTMLElement | null = null;
+      for (const k of kids) {
+        if (!lo || lead(k.getBoundingClientRect()) < lead(lo.getBoundingClientRect())) lo = k;
+        if (!hi || trail(k.getBoundingClientRect()) > trail(hi.getBoundingClientRect())) hi = k;
+      }
+      const m = el.style.transform.match(/translate[XY]\(([-\d.]+)px\)/);
+      const cs = getComputedStyle(el);
+      w.__dxFlick.frames.push({
+        band: m ? Math.abs(Number.parseFloat(m[1])) : 0,
+        atMin: !!lo && lead(lo.getBoundingClientRect()) - lead(c) >= -0.5,
+        atMax: !!hi && trail(hi.getBoundingClientRect()) - trail(c) <= 0.5,
+        minTrue: trueEnd(lo),
+        maxTrue: trueEnd(hi),
+        overscroll: vertical ? cs.overscrollBehaviorY : cs.overscrollBehaviorX,
+      });
+      if (w.__dxFlick.run) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const vertical = (await content.getAttribute("data-orientation")) === "vertical";
+  const t0 = Date.now();
+  for (const e of rec.events) {
+    const wait = e.t - (Date.now() - t0);
+    if (wait > 0) await page.waitForTimeout(wait);
+    const d = dir * Math.abs(e.dx || e.dy);
+    await page.mouse.wheel(vertical ? 0 : d, vertical ? d : 0);
+  }
+  return content.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 1200));
+    const w = window as unknown as { __dxFlick: { frames: FlickFrame[]; run: boolean } };
+    w.__dxFlick.run = false;
+    return w.__dxFlick.frames;
+  });
+}
+
+/** Frames where the scroller is clamped against a physical end that is NOT a true end of the data. */
+function falseEndClamps(frames: FlickFrame[]): FlickFrame[] {
+  return frames.filter((f) => (f.atMin && !f.minTrue) || (f.atMax && !f.maxTrue));
+}
+
+test.describe("Carousel fast flicks: the platform may only bounce at a true end", () => {
+  for (const [variant, startLabel] of [
+    ["virtual_many", "50 of 200"],
+    ["virtual_many", "1 of 200"],
+    ["virtual_loop", "6 of 12"],
+    ["virtual_loop_rtl", "6 of 12"],
+    ["rewind", "3 of 5"],
+  ] as const) {
+    test(`${variant} from ${startLabel}: hard flicks both ways -- any false-end clamp has overscroll none, and our band never draws there`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      const { frame, content } = await open(page, variant);
+      let clamps = 0;
+      for (const dir of [1, -1] as const) {
+        await pageTo(page, frame, startLabel);
+        const frames = await flick(page, content, "end-edge", dir);
+        const bad = falseEndClamps(frames);
+        clamps += bad.length;
+        for (const f of bad) expect(f.overscroll, `${variant} dir ${dir}: clamped at a false end`).toBe("none");
+        const bandAway = frames.filter((f) => f.band > 0.5 && !((f.atMin && f.minTrue) || (f.atMax && f.maxTrue)));
+        expect(bandAway.length, `${variant} dir ${dir}: our band away from a true end`).toBe(0);
+      }
+      // Not vacuous: these flicks really do reach a false end on this demo
+      // (the virtual 1-of-200 start reaches only its far, false end forward).
+      expect(clamps, "the flicks reached a false end at least once").toBeGreaterThan(0);
+    });
+  }
+
+  test("plain main: both ends are true, so the platform default is untouched and flicks never clamp at a false end", async ({
+    page,
+  }) => {
+    const { content } = await open(page, "main");
+    expect(await content.evaluate((el) => getComputedStyle(el).overscrollBehaviorX)).toBe("auto");
+    for (const dir of [1, -1] as const) {
+      const frames = await flick(page, content, "end-edge", dir);
+      expect(falseEndClamps(frames).length).toBe(0);
+      expect(frames.every((f) => f.overscroll === "auto")).toBe(true);
+    }
+  });
+
+  test("virtual_many: overscroll follows the rendered window -- none mid-list, and none at a real end whose other slice end is false", async ({
+    page,
+  }) => {
+    const { frame, content } = await open(page, "virtual_many");
+    const axis = () => content.evaluate((el) => getComputedStyle(el).overscrollBehaviorX);
+    expect(await axis(), "at item 1 of 200: its far slice end is false").toBe("none");
+    await pageTo(page, frame, "50 of 200");
+    expect(await axis()).toBe("none");
+    // The band still engages at a real end (a transform, unaffected by
+    // overscroll-behavior) -- carousel-virtual-wheel's own "virtual_many at
+    // its real first item" tests pin that.
   });
 });
