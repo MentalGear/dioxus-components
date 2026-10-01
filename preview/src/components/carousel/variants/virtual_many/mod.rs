@@ -4,8 +4,8 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 
 /// `CarouselVirtualContent` with `loop: false` and a large data set (200
-/// items) -- shows the DOM only ever holds a small window (`radius: 2` ->
-/// at most 5 slides) regardless of `N`, and that Previous/Next genuinely
+/// items) -- shows the DOM only ever holds a small window (the default `radius: 10`
+/// -> at most 21 slides) regardless of `N`, and that Previous/Next genuinely
 /// `disabled` at the real ends (no loop, so `wrap: false` clamps the
 /// window there too) -- see `primitives/src/carousel.rs`'s own
 /// `CarouselVirtualContent` doc, "Non-loop, virtualised."
