@@ -94,29 +94,26 @@ fn SlideCounter() -> Element {
 /// the renamed APG tablist `CarouselIndicator` (`role="tab"`,
 /// `aria-selected`), a different ARIA pattern than this plain, non-tablist
 /// picker (`data-active`, no roving tabindex).
+///
+/// All paint is in `style.css`'s `.dx-carousel-picker`/`-dot` rules, driven
+/// by `data-active` -- NOT an inline `style` that changes with the state:
+/// dioxus-interpreter-js 0.7.9 drops every `var()`-valued shorthand
+/// (`border-radius`, `background`) from an inline `style` the first time
+/// that attribute is re-set, which turned the previously- and newly-active
+/// dots square. See the rule's own comment in `style.css`.
 #[component]
 fn CustomDotPicker() -> Element {
     let api = use_carousel();
     rsx! {
-        div {
-            style: "display: flex; justify-content: center; gap: var(--dx-space-2); margin-block: 0 var(--dx-space-2);",
-            role: "group",
-            "aria-label": "Slide picker",
+        div { class: "dx-carousel-picker", role: "group", "aria-label": "Slide picker",
             for i in 0..api.count {
-                {
-                    let active = i == api.selected;
-                    let background = if active { "var(--secondary-color-1)" } else { "var(--secondary-color-5)" };
-                    let opacity = if active { "1" } else { "0.5" };
-                    rsx! {
-                        button {
-                            key: "{i}",
-                            r#type: "button",
-                            style: "width: var(--dx-space-2); height: var(--dx-space-2); box-sizing: border-box; padding: 0; border: none; border-radius: var(--dx-radius-full); cursor: pointer; background: {background}; opacity: {opacity};",
-                            "data-active": active,
-                            "aria-label": "Go to slide {i + 1}",
-                            onclick: move |_| api.scroll_to(i),
-                        }
-                    }
+                button {
+                    key: "{i}",
+                    class: "dx-carousel-picker-dot",
+                    r#type: "button",
+                    "data-active": i == api.selected,
+                    "aria-label": "Go to slide {i + 1}",
+                    onclick: move |_| api.scroll_to(i),
                 }
             }
         }

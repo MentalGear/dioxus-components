@@ -90,7 +90,7 @@ Carousel { aria_label: "Featured photos",
 }
 ```
 
-`CarouselAutoplay` draws nothing; it drives the timer. `CarouselRotationControl` is a button whose accessible name toggles between "Start automatic slide show" and "Stop automatic slide show".
+`CarouselAutoplay` draws nothing; it drives the timer. `CarouselRotationControl` is a button whose accessible name toggles between "Start automatic slide show" and "Stop automatic slide show". As a direct child of `Carousel` it is painted over the track's top-start corner, while staying first in DOM and Tab order. To put it in a control row instead, wrap it in your own element.
 
 - `delay_ms`: time between slides. Default `4000`.
 - `default_playing`: whether rotation starts on mount. Default `true`.
@@ -162,6 +162,8 @@ fn SlideCounter() -> Element {
     }
 }
 ```
+
+Style the active dot from the `data-active` attribute in your stylesheet, not with an inline `style` string that changes with `api.selected`. Dioxus's web renderer (0.7.9) drops any `var()`-valued shorthand such as `border-radius: var(--r)` or `background: var(--c)` from an inline `style` the first time that string is re-set, so the dots would turn square and lose their colour after the first click.
 
 ## Events
 
