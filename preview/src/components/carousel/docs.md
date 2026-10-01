@@ -186,6 +186,8 @@ With a wheel or trackpad, the browser scrolls the track natively. At the first o
 
 The stretch only happens at the real first or last slide, for mouse and pen dragging as well as for wheel and trackpad scrolling. It never happens on a looping carousel, whether `Rewind` or seamless, because a loop has no ends. A carousel using `CarouselVirtualContent` only stretches while its real first or last slide is actually on screen, not at the edge of the slides currently rendered. The stretch is not drawn under reduced motion.
 
+Where an end of the track is not a real end of your data (any looping carousel, or a `CarouselVirtualContent` partway through a long list), the carousel also turns off the browser's own overscroll bounce along its scroll axis (`overscroll-behavior: none`). A fast flick that reaches the edge of the slides currently rendered then simply stops there instead of bouncing as if the list had ended, and the rendered slides re-centre once you let go. A plain, non-looping carousel, or a virtual list short enough to render in full, keeps the browser's default. While a virtual list sits near one real end, that end gives up the browser's own bounce too (the carousel's own stretch still works there), and a vertical one no longer passes the scroll on to the page at that end.
+
 ## Debugging
 
 To record wheel gestures for a bug report, run `localStorage.setItem("dx-carousel-debug", "1")` in the browser console and reload. Each gesture is then logged to `window.__dxCarouselWheel` (the last 50). Nothing is recorded without the flag.
