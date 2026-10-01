@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 /**
  * Row 32 migration oracle — every themed component must render UNHASHED
@@ -160,7 +161,18 @@ async function prefixReachesAnyFrame(
 
 for (const name of MIGRATED) {
   test(`${name}: stylesheet delivered, classes unhashed`, async ({ page }) => {
-    await page.goto(`${BASE_URL}/component/?name=${name}&`);
+    // Hydrated, not merely `load`ed (dev-docs/backlog.md row 115, row 109's
+    // class): the SSG shell for `/component/?name=...&` has no
+    // `article.dx-component-page` until the client router renders the
+    // route, and assertion 3 below falls back to `document.body` when that
+    // article is absent -- which sweeps in the sitewide navbar's hand-rolled
+    // `dx-select-expand-icon` (see its scoping comment) and demands a
+    // `dx-select` stylesheet no component route ever delivers. Probed: right
+    // after `goto(load)` on the tabs route, 5 of 12 loads had no article and
+    // exactly that class; 0 of 7 once `data-hydrated` was set. Under
+    // `--workers=4` the `load` event routinely fires before hydration, so
+    // this failed tabs/sidebar/navbar 5 times in ~1400 runs.
+    await gotoHydrated(page, `${BASE_URL}/component/?name=${name}&`);
     // The page's own demo must have rendered before the sheet is meaningful.
     await expect(page.locator("body")).toBeVisible();
 
