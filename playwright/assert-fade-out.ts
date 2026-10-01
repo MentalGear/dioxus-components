@@ -50,13 +50,37 @@ export interface FadeSample {
   popoverOpen: boolean | null;
 }
 
+/**
+ * One CSS animation/transition that started on the closing content, recorded
+ * from its `animationstart`/`transitionrun` EVENT -- not from a frame
+ * sample -- so it is captured however starved the page is (events are
+ * queued, never dropped, unlike `requestAnimationFrame` ticks).
+ */
+export interface FadeAnimationRecord {
+  /** `animationName` / `propertyName`. */
+  name: string;
+  /** The animation's own resolved duration in ms (`getComputedTiming().duration`), 0 if it could not be read. */
+  durationMs: number;
+  /** Whether its keyframes (or, for a transition, its property) include `opacity`. */
+  animatesOpacity: boolean;
+}
+
+/** Everything one close-fade capture records: per-frame samples plus the animations seen start. */
+export interface FadeCapture {
+  samples: FadeSample[];
+  animations: FadeAnimationRecord[];
+}
+
+
 export interface FadeOutReport {
   /** Every sample captured while the element was still attached (`exists: true`). */
   mountedSamples: FadeSample[];
-  /** How many consecutive mounted frames had opacity strictly lower than the previous one. */
+  /** How many sampled frames had opacity strictly lower than the previous one -- informational only; load-dependent, never asserted on (see the note below `NEAR_ZERO_OPACITY`). */
   framesWithDroppingOpacity: number;
   /** The opacity of the last mounted sample -- must be ~0 before unmount. */
   finalMountedOpacity: number;
+  /** Whether a real opacity animation/transition (duration > 0) started on the content while closing. */
+  sawOpacityAnimation: boolean;
   /** Whether the element was unmounted (no longer `exists`) before sampling's own cap ran out. */
   unmountedWithinCap: boolean;
   /** ms from the close trigger to unmount, or `null` if it never unmounted within the cap. */
@@ -66,8 +90,21 @@ export interface FadeOutReport {
 /** Opacity at or below this counts as "~0" for the "reaches ~0 before unmount" check. */
 const NEAR_ZERO_OPACITY = 0.05;
 
-/** Minimum number of frames the opacity must be observed strictly decreasing across, while mounted and displayed. */
-const MIN_DECREASING_FRAMES = 3;
+/*
+ * There is deliberately NO "at least N frames of decreasing opacity"
+ * threshold (the original asserted N=3). How many `requestAnimationFrame`
+ * ticks land inside a ~100-150ms fade depends on how starved the page's main
+ * thread is, so any frame-count threshold is a load-dependent assertion: it
+ * went red 3 times in 20 under `--workers=4`, with three different sample
+ * shapes (`[1, 0.04, 0]`, `[0.15, 0.04, 0]`, `[0, 0, ...]`), and under 25x
+ * CPU throttling the first frame can land after the whole fade is over
+ * (dev-docs/backlog.md row 115). "It fades rather than snaps" is asserted
+ * from the animation's own `animationstart`/`transitionrun` event instead
+ * (`FadeCapture.animations`), which fires however few frames are rendered;
+ * the per-frame samples keep only the invariants that hold at ANY sampling
+ * rate (never display:none while mounted, never loses :popover-open, opacity
+ * never increases, ends ~0, unmounts in time).
+ */
 
 /** The element must be unmounted within this long of the close trigger (docs/backlog.md row 7's "~1.5s"). */
 const MAX_UNMOUNT_MS = 1500;
@@ -92,12 +129,35 @@ export function startFadeSampling(
   page: Page,
   contentId: string,
   capMs: number = DEFAULT_SAMPLE_CAP_MS,
-): Promise<FadeSample[]> {
+): Promise<FadeCapture> {
   return page.evaluate(
     ({ id, capMs }) => {
-      return new Promise<FadeSample[]>((resolve) => {
+      return new Promise<FadeCapture>((resolve) => {
         const frames: FadeSample[] = [];
+        const animations: FadeAnimationRecord[] = [];
         const t0 = performance.now();
+
+        // Listeners go on first, synchronously, before the close trigger can
+        // fire -- see this function's doc. `animationstart`/`transitionrun`
+        // are dispatched for every started animation even if no frame is
+        // ever sampled in between.
+        const target = document.getElementById(id);
+        const record = (name: string, isTransition: boolean) => {
+          const el = document.getElementById(id);
+          const anim = el
+            ?.getAnimations()
+            .find((a) => (isTransition ? (a as CSSTransition).transitionProperty === name : (a as CSSAnimation).animationName === name));
+          const effect = anim?.effect as KeyframeEffect | null | undefined;
+          const duration = Number(effect?.getComputedTiming().duration ?? 0);
+          animations.push({
+            name,
+            durationMs: Number.isFinite(duration) ? duration : 0,
+            animatesOpacity: isTransition ? name === "opacity" : !!effect?.getKeyframes().some((k) => "opacity" in k),
+          });
+        };
+        target?.addEventListener("animationstart", (e) => record((e as AnimationEvent).animationName, false));
+        target?.addEventListener("transitionrun", (e) => record((e as TransitionEvent).propertyName, true));
+
         function tick() {
           const el = document.getElementById(id);
           const exists = !!el && document.body.contains(el);
@@ -114,7 +174,7 @@ export function startFadeSampling(
           if (exists && performance.now() - t0 < capMs) {
             requestAnimationFrame(tick);
           } else {
-            resolve(frames);
+            resolve({ samples: frames, animations });
           }
         }
         requestAnimationFrame(tick);
@@ -124,8 +184,53 @@ export function startFadeSampling(
   );
 }
 
-/** Pure analysis over already-captured samples -- no page access, easy to unit-reason about and to reuse across the three consuming specs. */
-export function analyzeFadeSamples(samples: FadeSample[]): FadeOutReport {
+/**
+ * Waits, in-page, until `contentId`'s OPEN transition has finished: every
+ * animation/transition attached to it has settled and its computed opacity
+ * is 1. Playwright's `toBeVisible()` does not wait for this -- it counts an
+ * `opacity: 0` element as visible -- so under load a close trigger fired
+ * right after it lands mid-fade-IN: the close then starts from a low opacity
+ * (samples `[0, 0, ...]` or `[0.15, 0.04, 0]`) and there is nothing left to
+ * fade out (dev-docs/backlog.md row 115).
+ */
+export function awaitOpenSettled(page: Page, contentId: string): Promise<void> {
+  return page.evaluate(async (id) => {
+    const deadline = performance.now() + 10_000;
+    for (;;) {
+      const el = document.getElementById(id);
+      if (!el) throw new Error(`content ${id} is not in the DOM, so it cannot have finished opening`);
+      await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)));
+      const unsettled = el.getAnimations().some((a) => a.playState === "running" || a.playState === "pending");
+      if (!unsettled && Number(getComputedStyle(el).opacity) >= 0.999) return;
+      if (performance.now() > deadline) {
+        throw new Error(`content ${id} never finished opening (opacity ${getComputedStyle(el).opacity})`);
+      }
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+  }, contentId);
+}
+
+/**
+ * The one entry point the consuming specs use: settle the open transition
+ * (`awaitOpenSettled`), start the in-page sampler (`startFadeSampling`),
+ * fire `closeTrigger`, and resolve to the `FadeCapture`. One call, so a spec cannot
+ * forget the settle step or start sampling after the trigger.
+ */
+export async function sampleCloseFade(
+  page: Page,
+  contentId: string,
+  closeTrigger: () => Promise<unknown>,
+  capMs: number = DEFAULT_SAMPLE_CAP_MS,
+): Promise<FadeCapture> {
+  await awaitOpenSettled(page, contentId);
+  const framesPromise = startFadeSampling(page, contentId, capMs);
+  await closeTrigger();
+  return framesPromise;
+}
+
+/** Pure analysis over an already-captured `FadeCapture` -- no page access, easy to unit-reason about and to reuse across the three consuming specs. */
+export function analyzeFadeSamples(capture: FadeCapture): FadeOutReport {
+  const { samples, animations } = capture;
   if (samples.length === 0) {
     throw new Error("no fade samples captured -- startFadeSampling must be called before the close trigger");
   }
@@ -162,6 +267,12 @@ export function analyzeFadeSamples(samples: FadeSample[]): FadeOutReport {
   for (let i = 1; i < mountedSamples.length; i++) {
     if (mountedSamples[i].opacity < mountedSamples[i - 1].opacity - 0.001) {
       framesWithDroppingOpacity++;
+    } else if (mountedSamples[i].opacity > mountedSamples[i - 1].opacity + 0.001) {
+      throw new Error(
+        `opacity INCREASED from ${mountedSamples[i - 1].opacity} to ${mountedSamples[i].opacity} at ` +
+          `t=${mountedSamples[i].t.toFixed(1)}ms while closing -- the content re-opened or was still ` +
+          `fading in. Samples: ${JSON.stringify(mountedSamples)}`,
+      );
     }
   }
 
@@ -173,27 +284,30 @@ export function analyzeFadeSamples(samples: FadeSample[]): FadeOutReport {
     mountedSamples,
     framesWithDroppingOpacity,
     finalMountedOpacity: finalMountedSample.opacity,
+    sawOpacityAnimation: animations.some((a) => a.animatesOpacity && a.durationMs > 0),
     unmountedWithinCap,
     timeToUnmountMs: unmountedWithinCap ? lastSample.t : null,
   };
 }
 
 /**
- * The three assertions docs/backlog.md row 7 asks for: (a) stays displayed
- * with decreasing opacity for at least a few frames [+ stays
- * `:popover-open` on the web arm, folded into `analyzeFadeSamples`'s own
- * invariant above rather than repeated here], (b) reaches ~0 opacity
- * before unmount, (c) unmounts within ~1.5s. Throws with the full sample
- * trace on any failure; returns the report on success in case a caller
- * wants to assert anything additional.
+ * The three assertions docs/backlog.md row 7 asks for: (a) it FADES rather
+ * than snaps -- a real opacity animation/transition (duration > 0) started on
+ * the closing content, stays displayed and (web arm) `:popover-open` the
+ * whole time, and its opacity never increases [the per-frame invariants are
+ * folded into `analyzeFadeSamples` above rather than repeated here],
+ * (b) reaches ~0 opacity before unmount, (c) unmounts within ~1.5s. Throws
+ * with the full capture on any failure; returns the report on success in
+ * case a caller wants to assert anything additional.
  */
-export function assertFadesOutThenUnmounts(samples: FadeSample[]): FadeOutReport {
-  const report = analyzeFadeSamples(samples);
+export function assertFadesOutThenUnmounts(capture: FadeCapture): FadeOutReport {
+  const report = analyzeFadeSamples(capture);
 
-  if (report.framesWithDroppingOpacity < MIN_DECREASING_FRAMES) {
+  if (!report.sawOpacityAnimation) {
     throw new Error(
-      `expected at least ${MIN_DECREASING_FRAMES} frames of decreasing opacity while mounted and displayed, ` +
-        `got ${report.framesWithDroppingOpacity}. Samples: ${JSON.stringify(report.mountedSamples)}`,
+      `no opacity animation/transition (duration > 0) ever started on the closing content -- it snapped ` +
+        `rather than faded (docs/backlog.md row 7). Animations seen: ${JSON.stringify(capture.animations)}. ` +
+        `Samples: ${JSON.stringify(report.mountedSamples)}`,
     );
   }
 
