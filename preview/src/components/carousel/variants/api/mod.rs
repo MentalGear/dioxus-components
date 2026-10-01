@@ -18,21 +18,43 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        // shadcn's own `carousel-api.tsx` wrapper: `mx-auto max-w-[10rem]
-        // sm:max-w-xs` -- narrower than every other demo's container,
-        // since this one has no Previous/Next-clearance content to size
-        // around beyond the slide itself.
-        div { style: "width: 100%; max-width: 10rem; margin: 0 auto;",
+        // shadcn's own `carousel-api.tsx` wrapper is `mx-auto max-w-xs`: a
+        // 320px (20rem) slide with Previous/Next OUTSIDE it. Here
+        // `.dx-carousel` reserves its own 6rem of `padding-inline` for those
+        // buttons INSIDE its box (style.css), so the wrapper is `20rem +
+        // 6rem` -- the same pairing `variants/main/mod.rs` documents -- or
+        // the slide shrinks by the reservation (the old `10rem` wrapper left
+        // a 64x83 sliver and wrapped the caption to "Slide 1 / of 5").
+        // `width: 100%` is load-bearing next to `max-width` (row 94).
+        div { style: "width: 100%; max-width: 26rem; margin: 0 auto;",
             Carousel { aria_label: "API demo gallery",
-                CarouselPrevious { ChevronLeft {} }
-                CarouselNext { ChevronRight {} }
-                CarouselContent {
-                    for i in 0..5usize {
-                        CarouselItem { key: "{i}", index: i,
-                            Card {
-                                CardContent {
-                                    style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-3xl); font-weight: 600;",
-                                    "{i + 1}"
+                // The slide track gets its own positioning context so
+                // Previous/Next (absolutely centred on the nearest
+                // positioned ancestor) centre on the SLIDES, not on the
+                // taller root that also holds the caption and the dots
+                // below -- measured ~30px low otherwise. Its negative
+                // margin/matching padding re-create the root's own
+                // `padding-inline` reservation, so the buttons sit exactly
+                // where they do in every other demo.
+                div { style: "position: relative; margin-inline: calc(-1 * var(--dx-space-12)); padding-inline: var(--dx-space-12);",
+                    CarouselPrevious { ChevronLeft {} }
+                    CarouselNext { ChevronRight {} }
+                    CarouselContent {
+                        for i in 0..5usize {
+                            CarouselItem { key: "{i}", index: i,
+                                Card {
+                                    // shadcn: `CardContent className="flex aspect-square
+                                    // items-center justify-center p-6"` + `text-4xl font-semibold`.
+                                    // `.dx-card-content`'s own `0 space-6` padding stands in
+                                    // for `p-6`: `aspect-ratio` here applies to the CONTENT box
+                                    // (272 square at a 320 card) and the `Card`'s own block
+                                    // padding (24 + 24) brings the whole card back to a true
+                                    // 320 square, like every other demo -- an extra vertical
+                                    // `p-6` on top would make the card 48px taller than wide.
+                                    CardContent {
+                                        style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-4xl); font-weight: 600;",
+                                        "{i + 1}"
+                                    }
                                 }
                             }
                         }
@@ -55,7 +77,8 @@ fn SlideCounter() -> Element {
     let api = use_carousel();
     rsx! {
         p {
-            style: "margin: 0.5rem 0 0; text-align: center; font-size: 0.875rem; color: var(--secondary-color-3);",
+            // shadcn: `text-muted-foreground py-2 text-center text-sm`.
+            style: "margin: 0; padding-block: var(--dx-space-2); text-align: center; font-size: var(--dx-text-sm); color: var(--secondary-color-5);",
             "Slide {api.selected + 1} of {api.count}"
         }
     }
@@ -76,18 +99,19 @@ fn CustomDotPicker() -> Element {
     let api = use_carousel();
     rsx! {
         div {
-            style: "display: flex; justify-content: center; gap: var(--dx-space-2); margin-block-start: var(--dx-space-2);",
+            style: "display: flex; justify-content: center; gap: var(--dx-space-2); margin-block: 0 var(--dx-space-2);",
             role: "group",
             "aria-label": "Slide picker",
             for i in 0..api.count {
                 {
                     let active = i == api.selected;
-                    let background = if active { "var(--primary-color)" } else { "var(--primary-color-6)" };
+                    let background = if active { "var(--secondary-color-1)" } else { "var(--secondary-color-5)" };
+                    let opacity = if active { "1" } else { "0.5" };
                     rsx! {
                         button {
                             key: "{i}",
                             r#type: "button",
-                            style: "width: var(--dx-space-2); height: var(--dx-space-2); box-sizing: border-box; padding: 0; border: none; border-radius: var(--dx-radius-full); cursor: pointer; background: {background};",
+                            style: "width: var(--dx-space-2); height: var(--dx-space-2); box-sizing: border-box; padding: 0; border: none; border-radius: var(--dx-radius-full); cursor: pointer; background: {background}; opacity: {opacity};",
                             "data-active": active,
                             "aria-label": "Go to slide {i + 1}",
                             onclick: move |_| api.scroll_to(i),
