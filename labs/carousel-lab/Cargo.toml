@@ -1,0 +1,25 @@
+[package]
+name = "carousel-lab"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Standalone, router-free web build of the real virtual Carousel, for an external telemetry page"
+
+# Deliberately DETACHED from the repository's workspace: this is its own
+# workspace root, so `cargo clippy --workspace` / `cargo test --workspace`
+# (the CLAUDE.md gates) never see it, and it never pulls the router in.
+[workspace]
+
+[dependencies]
+dioxus = { version = "0.7.8", features = ["web"] }
+dioxus-primitives = { path = "../../primitives", default-features = false, features = ["web"] }
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window"] }
+
+[profile.release]
+opt-level = "z"
+debug = false
+lto = true
+codegen-units = 1
+strip = true
+incremental = false

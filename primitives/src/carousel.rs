@@ -405,6 +405,25 @@ fn content_overscroll_style(
     }
 }
 
+/// The radius [`CarouselVirtualContent`] actually renders with: the
+/// caller's `radius`, except that a looping list's window is capped below
+/// its data count. A wrapping window wider than the data repeats items
+/// (`virtual::window` keys by position, so it would render, e.g., two
+/// "3 of 12" slides) -- and since selection and `inert` follow the DATA
+/// index, both copies would read as the current slide. Capping at
+/// `(count - 2) / 2` keeps `2 * r + 1 < count`, one rendered slide per item,
+/// which also keeps the auto-virtualise rule (`count > 2 * r + 1`) true, so a
+/// looping list of 4+ items still gets its seamless window. Non-looping
+/// lists, and loops too small to window (under 4 items), use `radius`
+/// unchanged.
+fn effective_radius(radius: usize, count: usize, looping: bool) -> usize {
+    if looping && count >= 4 {
+        radius.min((count - 2) / 2).max(1)
+    } else {
+        radius
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -581,6 +600,94 @@ fn carousel_key_intent(
     }
 }
 
+/// THE one home of "may an edge rubber-band engage here?" -- the owner's
+/// approved rule, shared by both band bridges ([`CAROUSEL_WHEEL_BAND_JS`] and
+/// [`CAROUSEL_DRAG_JS`]): only at a TRUE end of the data. Expands to one JS
+/// function literal, `dxIsTrueEnd(el, horizontal, side)`, that `concat!`
+/// splices into both scripts, so there is no second copy to drift (a
+/// scroller-attached helper like `__dxWhenIdle` would instead depend on which
+/// bridge's eval happened to run first).
+///
+/// Read from rendered markup, never a Rust signal: `data-loop` and
+/// `data-slide-count` on the scroller, and the `data-index` of the slide at
+/// that physical edge (`side` is `'min'` = left/top or `'max'` =
+/// right/bottom, found by rect, so RTL and vertical need no branch). A
+/// looping carousel (any [`LoopMode`], plain or virtual) has no true end; a
+/// [`CarouselVirtualContent`] window's slice edge mid-list (e.g. items 40-44
+/// of 100) is not one either -- the scroller simply clamps there and the
+/// window re-centres once idle. Plain, non-looping content always has index
+/// 0 / count - 1 at its two ends, so it is unaffected.
+macro_rules! carousel_true_end_js {
+    () => {
+        "
+    function dxIsTrueEnd(el, horizontal, side) {
+        if (el.dataset.loop === 'true') return false;
+        const count = parseInt(el.dataset.slideCount, 10);
+        if (!(count > 0)) return false;
+        let pick = null;
+        let best = side === 'min' ? Infinity : -Infinity;
+        for (const child of el.children) {
+            if (child.dataset.index === undefined) continue;
+            const r = child.getBoundingClientRect();
+            const v = side === 'min' ? (horizontal ? r.left : r.top) : (horizontal ? r.right : r.bottom);
+            if (side === 'min' ? v < best : v > best) {
+                best = v;
+                pick = child;
+            }
+        }
+        const index = pick ? parseInt(pick.dataset.index, 10) : NaN;
+        return index === 0 || index === count - 1;
+    }
+"
+    };
+}
+
+/// Opt-in diagnostics shared by every carousel JS bridge: one JS literal,
+/// spliced (`concat!`) into each script, defining `dxTraceOn` and
+/// `dxTrace(el, kind, data)`. ONLY when `localStorage["dx-carousel-debug"]
+/// === "1"` (the same flag the wheel band's `window.__dxCarouselWheel`
+/// telemetry uses), or a page sets `window.__dxCarouselDebug = true` before
+/// the carousel mounts (for hosts whose storage throws, e.g. sandboxed
+/// frames), does `dxTrace` append `{ t: performance.now(), id, kind,
+/// sl: scrollLeft, st: scrollTop, ...data }` to `window.__dxCarouselTrace`,
+/// capped at the newest 5000 records. The flag is read once per page (cached
+/// as `window.__dxCarouselTraceOn`), so with it off every call is a single
+/// boolean check and returns -- nothing is allocated, observed or written,
+/// and no rendered markup ever changes (hydration parity unaffected).
+///
+/// Kinds: `input` (a wheel event the idle gate saw), `gate-hold` /
+/// `gate-release` (the browser-idle gate starting to defer, and letting a
+/// settle or queued writes through), `scroll-ended` (a `scrollend`, the
+/// no-`scrollend` debounce, a resize, or a drag's `dx-carousel-rest`),
+/// `settle` (what the tracking bridge reported), `window` (a virtual
+/// window re-render: old -> new rendered data-index/position ranges),
+/// `scroll-write` (every scroll write a bridge makes: method, delta,
+/// behavior, snap state), `scroll-to-skip`, and `drag-*`.
+macro_rules! carousel_trace_js {
+    () => {
+        "
+    const dxTraceOn = (() => {
+        if (window.__dxCarouselTraceOn === undefined) {
+            let on = false;
+            try { on = window.localStorage.getItem('dx-carousel-debug') === '1'; } catch (err) {}
+            if (window.__dxCarouselDebug === true) { on = true; }
+            window.__dxCarouselTraceOn = on;
+        }
+        return window.__dxCarouselTraceOn;
+    })();
+    function dxTrace(el, kind, data) {
+        if (!dxTraceOn) return;
+        const log = (window.__dxCarouselTrace = window.__dxCarouselTrace || []);
+        const rec = { t: Math.round(performance.now() * 10) / 10, id: el ? el.id : null, kind,
+            sl: el ? Math.round(el.scrollLeft * 10) / 10 : null, st: el ? Math.round(el.scrollTop * 10) / 10 : null };
+        if (data) Object.assign(rec, data);
+        log.push(rec);
+        if (log.length > 5000) log.splice(0, log.length - 5000);
+    }
+"
+    };
+}
+
 /// Fire-and-forget: scroll the carousel's own scroller element
 /// (`scrollerId`) by the physical pixel delta needed to align
 /// `targetId`'s slide with the scroller's own leading edge, along the
@@ -662,7 +769,7 @@ fn carousel_key_intent(
 /// re-align, or a button/key/autoplay/indicator page) happens once that input
 /// has gone quiet, measured from wherever the browser actually came to rest
 /// -- never mid-gesture (THE RULE). With input already quiet it runs at once.
-const CAROUSEL_SCROLL_TO_JS: &str = "\
+const CAROUSEL_SCROLL_TO_JS: &str = concat!(carousel_trace_js!(), "\
     const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs, align] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
@@ -713,6 +820,9 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     // to rest. Runs at once when input is already quiet, or when no bridge
     // is attached yet (the very first mount settle).
     const run = () => {
+    if (!(scroller && target && target.isConnected && !scroller.hasAttribute('data-dragging'))) {
+        dxTrace(scroller, 'scroll-to-skip', { targetId, why: !scroller ? 'no scroller' : !target ? 'no target' : !target.isConnected ? 'target gone' : 'dragging' });
+    }
     if (scroller && target && target.isConnected && !scroller.hasAttribute('data-dragging')) {
         const s = scroller.getBoundingClientRect();
         const t = target.getBoundingClientRect();
@@ -728,6 +838,8 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
         // session (the mount settle's own zero-delta call is the common
         // case that hits this on every single carousel).
         if (Math.abs(delta) < 1) {
+            dxTrace(scroller, 'scroll-to-skip', { targetId, why: 'aligned', delta });
+            delete scroller.__dxIntent;
             return;
         }
         // Cancel a still-pending restore from a previous paging call, the
@@ -738,7 +850,13 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
             scroller.__dxCancelSnapRestore();
             scroller.__dxCancelSnapRestore = null;
         }
+        dxTrace(scroller, 'scroll-write', { by: 'scroll-to', targetId, delta, behavior, instant, snapBefore: scroller.style.scrollSnapType });
         scroller.style.scrollSnapType = 'none';
+        // Declare where this write is meant to land, for the tracking
+        // bridge's settle to verify (`CAROUSEL_SCROLL_TRACKING_JS`, 'Write
+        // intent'): the delta is measured against the layout of THIS frame,
+        // and the layout can still change before the scroll comes to rest.
+        scroller.__dxIntent = { targetId, tries: 0 };
         if (orientation === 'horizontal') {
             scroller.scrollBy({ left: delta, behavior });
         } else {
@@ -758,10 +876,12 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     }
     };
     if (scroller && scroller.__dxWhenIdle) {
+        dxTrace(scroller, 'scroll-to-request', { targetId, instant, viaGate: true });
         scroller.__dxWhenIdle(run);
     } else {
+        dxTrace(scroller, 'scroll-to-request', { targetId, instant, viaGate: false });
         run();
-    }";
+    }");
 
 /// Long-lived (mount-to-unmount): translate a [`CarouselContent`]
 /// element's *actual* scroll position into a slide index, so `selected`
@@ -801,8 +921,8 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// callback -- so there is no read-then-write-layout main-thread hazard
 /// (`dev-docs/recommended-implementations.md` §11 Rule 1) to begin with.
 /// Both listeners are `passive: true` (§11 Rule 2).
-const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
-    const [id, orientation, align, inputQuietMs] = await dioxus.recv();
+const CAROUSEL_SCROLL_TRACKING_JS: &str = concat!(carousel_true_end_js!(), carousel_trace_js!(), "\
+    const [id, orientation, align, inputQuietMs, virtualWindow] = await dioxus.recv();
     const container = document.getElementById(id);
     if (!container) {
         await dioxus.recv();
@@ -838,6 +958,42 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         // defers to instead.
         if (container.hasAttribute('data-dragging')) {
             return;
+        }
+        // ---- Write intent: a component write lands on its declared slide,
+        // whatever the layout did meanwhile. `CAROUSEL_SCROLL_TO_JS` measures
+        // its delta against the layout of the frame it writes in, with
+        // `scroll-snap-type` suspended -- so nothing re-snaps if the slides
+        // change size before that scroll rests. Found live: the mount
+        // re-align of a 12-item virtual loop wrote 2080px against 416px
+        // slides, the themed stylesheet then shrank them to 320px before
+        // `scrollend`, and the settle read position 1 at a 160px offset --
+        // re-anchoring the window and selecting slide 2 of 12. So the first
+        // settle after a write checks the declared target first: still
+        // misaligned and no user input since, it re-aligns (instant, at most
+        // twice per write) and lets that scroll's own end settle. Any user
+        // input (`clearIntent`) drops the intent -- the user owns the
+        // position from then on; so does the first settle that finds it met.
+        const intent = container.__dxIntent;
+        if (intent) {
+            const target = document.getElementById(intent.targetId);
+            if (target && target.isConnected && intent.tries < 2) {
+                const t = target.getBoundingClientRect();
+                const c = container.getBoundingClientRect();
+                const d = orientation === 'horizontal'
+                    ? anchorOf(t.left, t.right) - anchorOf(c.left, c.right)
+                    : anchorOf(t.top, t.bottom) - anchorOf(c.top, c.bottom);
+                if (Math.abs(d) >= 1) {
+                    intent.tries++;
+                    dxTrace(container, 'intent-correct', { targetId: intent.targetId, delta: d, tries: intent.tries });
+                    if (orientation === 'horizontal') {
+                        container.scrollBy({ left: d, behavior: 'instant' });
+                    } else {
+                        container.scrollBy({ top: d, behavior: 'instant' });
+                    }
+                    return;
+                }
+            }
+            delete container.__dxIntent;
         }
         const children = Array.from(container.children);
         if (children.length === 0) {
@@ -915,6 +1071,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             lastNearest = nearest;
             lastNearestPos = nearestPos;
             dioxus.send(['selected', nearest, nearestPos]);
+            dxTrace(container, 'settle', { selected: nearest, position: nearestPos, offset: Math.round(nearestDist * 10) / 10 });
         }
         if (visStart !== lastVisStart || visEnd !== lastVisEnd) {
             lastVisStart = visStart;
@@ -939,14 +1096,94 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     let endPending = false;
     let gateTimer = null;
     let waiters = [];
+    // ---- The ONE exception to the idle gate: pinned at a false end.
+    // A virtual window only re-centres at idle, so a long flick runs into
+    // its rendered slice's physical end and sits there, clamped, while the
+    // rest of its input keeps arriving (the owner's lab session: pinned for
+    // 0.85-2.8s, 6-24 slides of momentum still to come). In exactly that
+    // state the browser is NOT moving the scroller -- it cannot -- so a
+    // re-anchor plus its instant re-align does not fight a live scroll.
+    // Conditions, all required: a virtual window (`virtualWindow`); trusted
+    // wheel input still arriving (never during touch -- a finger is a pan
+    // the browser owns); the scroller against a physical end whose edge slide
+    // is NOT a true end of the data (the shared `dxIsTrueEnd`); and its
+    // scroll position unchanged for PINNED_FRAMES consecutive frames. Then
+    // the gate lets the pending settle (re-anchor) through, and grants its
+    // re-align (which arrives a moment later, possibly after the re-render
+    // has already moved the scroller off the edge) until that write runs,
+    // or PIN_GRANT_MS at most. Once per pin episode: re-armed only after
+    // the scroller has moved again, so a flick that runs into the NEW
+    // slice end re-centres again, but never twice for one stall.
+    const PINNED_FRAMES = 2;
+    const PIN_GRANT_MS = 500;
+    const horizontal = orientation === 'horizontal';
+    let pinned = false;
+    let pinFired = false;
+    let pinRaf = 0;
+    let pinLastPos = null;
+    let pinStable = 0;
+    let pinGrantUntil = 0;
+    // Trusted wheel input only: the pinned state is about the browser's own
+    // scroll, and an untrusted (synthetic) wheel event never scrolls
+    // anything, so it can never be the momentum that pins a scroller. (The
+    // gate itself still counts every wheel event as input.)
+    let lastTrustedWheelAt = -Infinity;
+    const pinTick = () => {
+        pinRaf = 0;
+        if (touches || performance.now() - lastTrustedWheelAt >= inputQuietMs) {
+            pinned = false;
+            pinStable = 0;
+            pinLastPos = null;
+            return;
+        }
+        const kids = container.children;
+        if (kids.length) {
+            const c = container.getBoundingClientRect();
+            let lo = Infinity;
+            let hi = -Infinity;
+            for (const k of kids) {
+                const r = k.getBoundingClientRect();
+                lo = Math.min(lo, horizontal ? r.left : r.top);
+                hi = Math.max(hi, horizontal ? r.right : r.bottom);
+            }
+            const side = lo - (horizontal ? c.left : c.top) >= -0.5 ? 'min'
+                : hi - (horizontal ? c.right : c.bottom) <= 0.5 ? 'max' : null;
+            const pos = horizontal ? container.scrollLeft : container.scrollTop;
+            if (side && pos === pinLastPos) {
+                pinStable++;
+            } else {
+                pinStable = 0;
+                pinFired = false;
+                pinned = false;
+            }
+            pinLastPos = pos;
+            if (side && pinStable >= PINNED_FRAMES && !pinFired && !dxIsTrueEnd(container, horizontal, side)) {
+                pinFired = true;
+                pinned = true;
+                pinGrantUntil = performance.now() + PIN_GRANT_MS;
+                if (dxTraceOn) {
+                    const ids = Array.from(kids).map((k) => k.dataset.index);
+                    dxTrace(container, 'pinned-recentre', { side, frames: pinStable, sinceInput: Math.round(performance.now() - lastInputAt), edgeIndex: side === 'min' ? ids[0] : ids[ids.length - 1], window: ids.join(',') });
+                }
+                endPending = true;
+                pump();
+            }
+        }
+        pinRaf = requestAnimationFrame(pinTick);
+    };
     const inputQuiet = () => touches === 0 && performance.now() - lastInputAt >= inputQuietMs;
+    let holding = false;
     const pump = () => {
         clearTimeout(gateTimer);
         gateTimer = null;
         if (!endPending && waiters.length === 0) {
             return;
         }
-        if (!inputQuiet()) {
+        if (!inputQuiet() && !pinned && performance.now() >= pinGrantUntil) {
+            if (!holding) {
+                holding = true;
+                dxTrace(container, 'gate-hold', { why: touches ? 'touch' : 'input', sinceInput: Math.round(performance.now() - lastInputAt), endPending, waiters: waiters.length });
+            }
             // A finger still down re-pumps on its own touchend; otherwise
             // look again the moment the quiet window would close.
             if (touches === 0) {
@@ -954,15 +1191,26 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             }
             return;
         }
+        if (dxTraceOn) {
+            dxTrace(container, 'gate-release', { held: holding, settle: endPending, waiters: waiters.length });
+        }
+        holding = false;
         if (endPending) {
             endPending = false;
             settle();
         }
         const run = waiters;
         waiters = [];
+        if (run.length && pinGrantUntil > performance.now() && !pinned) {
+            // The re-centre's own re-align has gone through: end the grant.
+            pinGrantUntil = 0;
+        }
         run.forEach((f) => f());
     };
-    const scrollEnded = () => {
+    const scrollEnded = (src) => {
+        if (dxTraceOn) {
+            dxTrace(container, 'scroll-ended', { why: typeof src === 'string' ? src : (src && src.type) || 'unknown' });
+        }
         endPending = true;
         pump();
     };
@@ -974,10 +1222,24 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             return;
         }
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(scrollEnded, 120);
+        debounceTimer = setTimeout(() => scrollEnded('scroll-debounce'), 120);
     };
-    const onInput = () => {
+    // Any user input supersedes a pending component write's intent (see
+    // `settle`'s 'Write intent'): a pointer (a drag, the scrollbar), a key
+    // (native keyboard scrolling), a wheel or a finger.
+    const clearIntent = () => {
+        delete container.__dxIntent;
+    };
+    const onInput = (e) => {
         lastInputAt = performance.now();
+        clearIntent();
+        if (dxTraceOn && e && e.type === 'wheel') {
+            dxTrace(container, 'input', { dx: e.deltaX, dy: e.deltaY, mode: e.deltaMode, trusted: e.isTrusted });
+        }
+        if (virtualWindow && e && e.type === 'wheel' && e.isTrusted) {
+            lastTrustedWheelAt = lastInputAt;
+            if (!pinRaf) pinRaf = requestAnimationFrame(pinTick);
+        }
         pump();
     };
     const onTouch = (e) => {
@@ -1004,6 +1266,8 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     // left a stale sub-pixel transform: a measured regression, so the signal
     // comes from the one party that knows. Routed through the same idle gate.
     container.addEventListener('dx-carousel-rest', scrollEnded);
+    container.addEventListener('pointerdown', clearIntent, { passive: true });
+    container.addEventListener('keydown', clearIntent, { passive: true });
     container.addEventListener('scroll', onScroll, { passive: true });
     container.addEventListener('wheel', onInput, { passive: true });
     container.addEventListener('touchstart', onTouch, { passive: true });
@@ -1035,7 +1299,22 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     //
     // Routed through the same idle gate as a scroll end: a resize while a
     // gesture is still in flight settles once the gesture is over.
-    const resizeObserver = new ResizeObserver(() => scrollEnded());
+    const resizeObserver = new ResizeObserver(() => scrollEnded('resize'));
+    // Debug only: every re-render of the rendered slides (a virtual window
+    // re-anchoring), old -> new data-index / data-position ranges.
+    const sliceOf = () => {
+        const kids = Array.from(container.children);
+        return { idx: kids.map((k) => k.dataset.index).join(','), pos: kids.map((k) => k.dataset.position).join(',') };
+    };
+    let lastSlice = dxTraceOn ? sliceOf() : null;
+    const windowObserver = dxTraceOn ? new MutationObserver(() => {
+        const next = sliceOf();
+        if (next.idx !== lastSlice.idx || next.pos !== lastSlice.pos) {
+            dxTrace(container, 'window', { fromIdx: lastSlice.idx, toIdx: next.idx, fromPos: lastSlice.pos, toPos: next.pos });
+            lastSlice = next;
+        }
+    }) : null;
+    if (windowObserver) windowObserver.observe(container, { childList: true });
     resizeObserver.observe(container);
     await dioxus.recv();
     container.removeEventListener('scroll', onScroll);
@@ -1047,16 +1326,20 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         container.removeEventListener('scrollend', scrollEnded);
     }
     resizeObserver.disconnect();
+    if (windowObserver) windowObserver.disconnect();
     container.removeEventListener('dx-carousel-rest', scrollEnded);
+    container.removeEventListener('pointerdown', clearIntent);
+    container.removeEventListener('keydown', clearIntent);
     clearTimeout(debounceTimer);
     clearTimeout(gateTimer);
+    if (pinRaf) cancelAnimationFrame(pinRaf);
     // Only ever remove this bridge's OWN gate: a re-attach (new options)
     // can install its replacement before this teardown message arrives.
     // Still-waiting scroll writes run rather than being dropped.
     if (container.__dxWhenIdle === whenIdle) {
         delete container.__dxWhenIdle;
     }
-    waiters.forEach((f) => f());";
+    waiters.forEach((f) => f());");
 
 /// Attach [`CAROUSEL_SCROLL_TRACKING_JS`] to the element with the given
 /// `id` for as long as the calling component stays mounted, forwarding
@@ -1093,7 +1376,13 @@ fn use_carousel_scroll_tracking(
         let orientation_str = orientation().as_str().to_string();
         let align_str = align().as_str().to_string();
         let mut eval = document::eval(CAROUSEL_SCROLL_TRACKING_JS);
-        let _ = eval.send((id, orientation_str, align_str, CAROUSEL_INPUT_QUIET_MS));
+        let _ = eval.send((
+            id,
+            orientation_str,
+            align_str,
+            CAROUSEL_INPUT_QUIET_MS,
+            on_position.is_some(),
+        ));
         spawn(async move {
             while let Ok((kind, a, b)) = eval.recv::<(String, i64, i64)>().await {
                 if kind == "selected" {
@@ -1174,48 +1463,6 @@ const CAROUSEL_DRAG_THRESHOLD_PX: f64 = 5.0;
 /// completed.
 const CAROUSEL_SNAP_RESTORE_FALLBACK_MS: f64 = 500.0;
 
-/// THE one home of "may an edge rubber-band engage here?" -- the owner's
-/// approved rule, shared by both band bridges ([`CAROUSEL_WHEEL_BAND_JS`] and
-/// [`CAROUSEL_DRAG_JS`]): only at a TRUE end of the data. Expands to one JS
-/// function literal, `dxIsTrueEnd(el, horizontal, side)`, that `concat!`
-/// splices into both scripts, so there is no second copy to drift (a
-/// scroller-attached helper like `__dxWhenIdle` would instead depend on which
-/// bridge's eval happened to run first).
-///
-/// Read from rendered markup, never a Rust signal: `data-loop` and
-/// `data-slide-count` on the scroller, and the `data-index` of the slide at
-/// that physical edge (`side` is `'min'` = left/top or `'max'` =
-/// right/bottom, found by rect, so RTL and vertical need no branch). A
-/// looping carousel (any [`LoopMode`], plain or virtual) has no true end; a
-/// [`CarouselVirtualContent`] window's slice edge mid-list (e.g. items 40-44
-/// of 100) is not one either -- the scroller simply clamps there and the
-/// window re-centres once idle. Plain, non-looping content always has index
-/// 0 / count - 1 at its two ends, so it is unaffected.
-macro_rules! carousel_true_end_js {
-    () => {
-        "
-    function dxIsTrueEnd(el, horizontal, side) {
-        if (el.dataset.loop === 'true') return false;
-        const count = parseInt(el.dataset.slideCount, 10);
-        if (!(count > 0)) return false;
-        let pick = null;
-        let best = side === 'min' ? Infinity : -Infinity;
-        for (const child of el.children) {
-            if (child.dataset.index === undefined) continue;
-            const r = child.getBoundingClientRect();
-            const v = side === 'min' ? (horizontal ? r.left : r.top) : (horizontal ? r.right : r.bottom);
-            if (side === 'min' ? v < best : v > best) {
-                best = v;
-                pick = child;
-            }
-        }
-        const index = pick ? parseInt(pick.dataset.index, 10) : NaN;
-        return index === 0 || index === count - 1;
-    }
-"
-    };
-}
-
 /// Long-lived (mount-to-unmount): a mouse/pen drag-to-scroll gesture on
 /// [`CarouselContent`]'s own element, layered on the *same* scroll-snap
 /// track [`CAROUSEL_SCROLL_TO_JS`]/[`CAROUSEL_SCROLL_TRACKING_JS`]
@@ -1257,7 +1504,7 @@ macro_rules! carousel_true_end_js {
 /// animated scroll. `endDrag` below settles explicitly instead, and
 /// defers restoring this property until that explicit settle has
 /// actually finished.
-const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
+const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), carousel_trace_js!(), "\
     const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs, align] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
@@ -1384,6 +1631,7 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
                 rawOver = 0;
                 applyBounce();
             }
+            dxTrace(el, 'scroll-write', { by: 'drag-move', delta: -cd, behavior: 'instant', snapBefore: el.style.scrollSnapType, reduced: true });
             if (orientation === 'horizontal') {
                 el.scrollBy({ left: -cd, behavior: 'instant' });
             } else {
@@ -1399,6 +1647,9 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
         }
         const moved = contentOffset() - before;
         let refused = cd - moved;
+        if (dxTraceOn) {
+            dxTrace(el, 'scroll-write', { by: 'drag-move', delta: -cd, moved: Math.round(moved * 10) / 10, refused: Math.round(refused * 10) / 10, behavior: 'instant', snapBefore: el.style.scrollSnapType });
+        }
         if (refused) {
             // Content pushed toward the right/bottom opens a gap at the min
             // edge, and vice versa.
@@ -1511,6 +1762,7 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
             }
             dragging = true;
             el.setAttribute('data-dragging', 'true');
+            dxTrace(el, 'drag-start', { pointerType: e.pointerType });
             try { el.setPointerCapture(pointerId); } catch (err) {}
             // `scroll-snap-type: ... mandatory` (set inline by this same
             // element's own Rust-rendered `style`) re-snaps after EVERY
@@ -1658,9 +1910,11 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
                 // snapping suspended until the next gesture happens to
                 // trigger it.
                 if (Math.abs(settleDelta) < 1) {
+                    dxTrace(el, 'drag-release', { settleDelta, settle: 'none (already aligned)', rest: true });
                     restoreSnap();
                     announceRest();
                 } else {
+                    dxTrace(el, 'scroll-write', { by: 'drag-release-settle', delta: settleDelta, behavior: settleBehavior, snapBefore: el.style.scrollSnapType });
                     // Deferred, not synchronous: setting scroll-snap-type
                     // back to mandatory on an already-stationary position is
                     // what made release never animate in the first place
@@ -1851,7 +2105,8 @@ fn use_carousel_drag(
 ///   the bench, a new gesture that did not own the edge could freeze a
 ///   spring-back mid-flight; here a band left over from an earlier gesture
 ///   springs home as soon as a new gesture turns out not to own it.
-/// - *Telemetry* only behind `localStorage['dx-carousel-debug'] === '1'`,
+/// - *Telemetry* only behind `localStorage['dx-carousel-debug'] === '1'`
+///   (or `window.__dxCarouselDebug === true` set by the host page),
 ///   read once at mount (see "Debug telemetry" below). The bench's knob
 ///   panel is gone; its defaults (the owner's tuned values) are the named
 ///   constants below.
@@ -1965,6 +2220,7 @@ const CAROUSEL_WHEEL_BAND_JS: &str = concat!(carousel_true_end_js!(), "\
     try {
         dbg = window.localStorage.getItem('dx-carousel-debug') === '1';
     } catch (err) {}
+    if (window.__dxCarouselDebug === true) { dbg = true; }
     let rec = null;
 
     const ow = {
@@ -2856,7 +3112,17 @@ pub fn Carousel(props: CarouselProps) -> Element {
         if has_items {
             is_first.set(false);
         }
-        let Some(id) = item_ids.peek().get(index).cloned() else {
+        // A windowed `CarouselVirtualContent` registers an EMPTY id per
+        // index (it owns its own paging -- see its "Seamless loop" doc), so
+        // there is no target here: skip, rather than evaluating a scroll-to
+        // that can only report "no target" (seen as noise on every virtual
+        // settle in the lab trace).
+        let Some(id) = item_ids
+            .peek()
+            .get(index)
+            .cloned()
+            .filter(|id| !id.is_empty())
+        else {
             return;
         };
         // Tracked (like `count()` above), for the identical reason: a
@@ -3900,12 +4166,32 @@ pub struct CarouselVirtualContentProps<T: Clone + PartialEq + 'static> {
 
     /// Slides kept mounted on each side of the current one once
     /// virtualisation is active -- the window is `2 * radius + 1` slides
-    /// wide. Defaults to `2`.
-    #[props(default = 2usize)]
+    /// wide. Defaults to `10`.
+    ///
+    /// **Why 10.** The window only re-centres once a gesture is over (the
+    /// browser-idle gate: nothing writes the scroll position while the
+    /// browser is scrolling), so how far ONE trackpad flick can travel
+    /// before reaching the rendered slice's end is exactly `radius` slides.
+    /// Measured from the owner's real sessions (Firefox, MacBook trackpad;
+    /// excursion of each uninterrupted input stream, in slides of a 336px
+    /// track): 252 earlier bursts had a median of 3.0, p75 8.6, p90 15.2;
+    /// the owner's deliberate fast-flick session had a median of 10.8 and a
+    /// max of 29; the recorded fixture gestures reach 15.6. `10` absorbs
+    /// roughly 85% of everyday flicks without any mid-gesture write while
+    /// keeping the DOM at 21 slides; the long tail is caught by the
+    /// pinned-at-a-false-end re-centre (`CAROUSEL_SCROLL_TRACKING_JS`). It
+    /// was `2` (5 slides), which a single flick exhausted after 0-2 slides.
+    ///
+    /// **Looping lists** never render the same item twice: the effective
+    /// radius is capped at `(items.len() - 2) / 2` (5 for 12 items, so 11 of
+    /// them), keeping one `data-index` per rendered slide -- see
+    /// [`effective_radius`].
+    #[props(default = 10usize)]
     pub radius: usize,
 
     /// Whether to virtualise at all. `None` (the default) auto-decides:
-    /// virtualise only once `items.len() > 2 * radius + 1` (there is
+    /// virtualise only once `items.len() > 2 * radius + 1` (with the
+    /// effective radius -- see [`effective_radius`]; there is
     /// something to save by not rendering every slide). `Some(false)`
     /// always renders the full list (find-in-page/browse-mode reach every
     /// slide, at the cost of the DOM holding all of them). `Some(true)`
@@ -4095,7 +4381,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let id = use_id_or(uuid, props.id);
     let items = props.items;
     let render_item = props.render_item;
-    let radius = props.radius.max(1);
+    let requested_radius = props.radius.max(1);
     let explicit_virtualize = props.virtualize;
 
     use_effect(move || {
@@ -4118,6 +4404,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     // lane report for why that distinction matters here.
     let virtualize_active_now = move || {
         let n = count();
+        let radius = effective_radius(requested_radius, n, (ctx.loop_enabled)());
         n > 0 && mounted() && explicit_virtualize.unwrap_or_else(|| n > 2 * radius + 1)
     };
 
@@ -4273,6 +4560,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         // element at all -- rather than silently failing to reach an
         // element that was never going to exist.
         let cur_anchor = *anchor.peek();
+        let radius = effective_radius(requested_radius, n, (ctx.loop_enabled)());
         if (target_position - cur_anchor).unsigned_abs() as usize <= radius {
             // Already a rendered window slide -- animate the existing
             // scroller-only paging helper to it. `intended` moves right
@@ -4367,6 +4655,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let win: Vec<crate::r#virtual::WindowItem> = if n == 0 {
         Vec::new()
     } else if virtualize_active {
+        let radius = effective_radius(requested_radius, n, (ctx.loop_enabled)());
         crate::r#virtual::window(n, anchor(), anchor(), radius, loop_now)
     } else {
         crate::r#virtual::window(n, 0, n as isize - 1, 0, false)
@@ -6010,15 +6299,67 @@ mod ssr_tests {
     #[test]
     fn both_band_bridges_carry_the_one_shared_true_end_predicate() {
         // `carousel_true_end_js!` is the rule's only home: spliced into the
-        // wheel band and the drag bridge, defined nowhere else.
+        // wheel band, the drag bridge and the tracking bridge's
+        // pinned-at-a-false-end re-centre, defined nowhere else.
         let shared = carousel_true_end_js!();
-        for script in [CAROUSEL_WHEEL_BAND_JS, CAROUSEL_DRAG_JS] {
+        for script in [
+            CAROUSEL_WHEEL_BAND_JS,
+            CAROUSEL_DRAG_JS,
+            CAROUSEL_SCROLL_TRACKING_JS,
+        ] {
             assert!(script.starts_with(shared));
             assert_eq!(script.matches("function dxIsTrueEnd(").count(), 1);
             assert_eq!(script.matches("function isTrueEnd(").count(), 0);
         }
         assert!(CAROUSEL_DRAG_JS.contains("dxIsTrueEnd(el, orientation === 'horizontal', side)"));
         assert!(CAROUSEL_WHEEL_BAND_JS.contains("dxIsTrueEnd(el, horizontal, side)"));
+        assert!(CAROUSEL_SCROLL_TRACKING_JS.contains("dxIsTrueEnd(container, horizontal, side)"));
+    }
+
+    #[test]
+    fn every_component_write_declares_an_intent_the_settle_verifies() {
+        // The write declares its target before scrolling; the tracking
+        // bridge's settle checks it before reporting any position, and every
+        // kind of user input drops it.
+        let declare = CAROUSEL_SCROLL_TO_JS
+            .find("scroller.__dxIntent = { targetId, tries: 0 };")
+            .expect("scroll-to declares its intent");
+        let write = CAROUSEL_SCROLL_TO_JS
+            .find("scroller.scrollBy({ left: delta, behavior })")
+            .unwrap();
+        assert!(declare < write);
+        let check = CAROUSEL_SCROLL_TRACKING_JS
+            .find("const intent = container.__dxIntent;")
+            .unwrap();
+        let report = CAROUSEL_SCROLL_TRACKING_JS
+            .find("dioxus.send(['selected'")
+            .unwrap();
+        assert!(check < report);
+        assert!(CAROUSEL_SCROLL_TRACKING_JS.contains("intent.tries < 2"));
+        for ev in ["pointerdown", "keydown"] {
+            assert!(CAROUSEL_SCROLL_TRACKING_JS
+                .contains(&format!("addEventListener('{ev}', clearIntent")));
+            assert!(CAROUSEL_SCROLL_TRACKING_JS
+                .contains(&format!("removeEventListener('{ev}', clearIntent")));
+        }
+    }
+
+    #[test]
+    fn effective_radius_never_lets_a_looping_window_repeat_an_item() {
+        // Non-looping: the caller's radius, untouched.
+        assert_eq!(effective_radius(10, 200, false), 10);
+        assert_eq!(effective_radius(10, 12, false), 10);
+        // Looping: capped so `2r + 1 < count` -- the 12-item demo renders 11.
+        assert_eq!(effective_radius(10, 12, true), 5);
+        assert_eq!(effective_radius(2, 12, true), 2);
+        assert_eq!(effective_radius(10, 200, true), 10);
+        for count in 4..40 {
+            let r = effective_radius(10, count, true);
+            assert!(2 * r + 1 < count, "count {count}: radius {r}");
+            assert!(r >= 1);
+        }
+        // Too small to window: unchanged (the auto rule then renders all).
+        assert_eq!(effective_radius(10, 3, true), 10);
     }
 
     // -- wheel band: true-end markup (`isTrueEnd`) ------------------------

@@ -1,0 +1,5 @@
+[application]
+name = "carousel-lab"
+
+[web.app]
+title = "Carousel lab"

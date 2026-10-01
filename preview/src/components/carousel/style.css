@@ -311,9 +311,30 @@
    on `use_carousel()` the same way docs.md's own "A custom picker" section
    already shows it, rather than as a second exported component whose name
    would otherwise collide with this one. */
+
+/* PLACEMENT: APG's tabbed pattern wants the tablist BEFORE the slides in
+   DOM order (a keyboard user meets the picker first -- tier-1 oracle R9),
+   but a dot picker reads as a footer, so it must paint BELOW them. The
+   root becomes a block-axis flex column only when it actually contains an
+   indicators list (`:has()` -- a plain Previous/Next carousel keeps its
+   ordinary block layout untouched) and `order: 1` moves the tablist to the
+   end visually, leaving DOM order -- and therefore tab order and the
+   accessibility tree -- exactly as authored. `margin-block-start` is then
+   the gap between the slides and the dots (it used to sit above the dots
+   with them painted first, leaving them 8px tall against a 0-gap card
+   edge: measured tablist y=324 h=8 against the viewport's y=332). A caller
+   that already puts the tablist AFTER the slides in DOM (the
+   `virtual_loop` demos) is unaffected: it already sorted last, and
+   `order: 1` keeps it there. */
+.dx-carousel:has(> .dx-carousel-indicators) {
+    display: flex;
+    flex-direction: column;
+}
+
 .dx-carousel-indicators {
     display: flex;
     justify-content: center;
+    order: 1;
     gap: var(--dx-space-2);
     margin-block-start: var(--dx-space-4);
 }
@@ -325,7 +346,13 @@
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);
-    background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+
+    /* Muted foreground at half opacity (inactive) / full foreground
+       (active): the previous `--primary-color-*` pair painted the ACTIVE
+       dot white on the white light-theme frame -- invisible -- and the
+       inactive ones barely off it. `--secondary-color-*` is the
+       foreground ramp. */
+    background: var(--secondary-color-5);
     cursor: pointer;
     opacity: 0.5;
     touch-action: manipulation;
@@ -345,7 +372,7 @@
 
 .dx-carousel-indicator[aria-selected="true"] {
     width: var(--dx-space-4);
-    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-6));
+    background: var(--secondary-color-1);
     opacity: 1;
 }
 

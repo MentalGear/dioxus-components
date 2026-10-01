@@ -131,7 +131,7 @@ Carousel { aria_label: "Catalog", r#loop: true,
 
 - `items`: the full data set, in order.
 - `render_item`: renders one slide from its index and value.
-- `radius`: slides kept mounted on each side of the current one. Default `2`, so at most 5 slides are in the DOM.
+- `radius`: slides kept mounted on each side of the current one. Default `10`, so at most 21 slides are in the DOM; that is enough for most trackpad flicks to run without reaching the edge of the rendered slides. A looping list caps it at `(n − 2) / 2` so no item is shown twice (a 12-item loop renders 11). If a long flick does run into the edge of the rendered slides while it is still going, the slides re-centre right away, unless that edge is the real first or last item.
 - `virtualize`: `None` (default) windows the list only when `items.len() > 2 * radius + 1`; `Some(true)` always windows; `Some(false)` always renders every slide.
 - `draggable`: same as on `CarouselContent`.
 
