@@ -271,10 +271,36 @@
 
 /* Rotation control (autoplay) -- a small circular button, matching
    Previous/Next's own footprint/border/background so the three read as
-   one control family; placed by the caller (see docs.md's "Autoplay"
-   section) rather than absolutely positioned here, since -- unlike
-   Previous/Next -- APG only requires it precede the slide content in tab
-   order, not any particular visual position. */
+   one control family. APG only requires it precede the slide content in
+   DOM/tab order, not any particular visual position, so DOM order is left
+   exactly as authored (first child) and PLACEMENT is a paint-only rule
+   below.
+
+   Default placement: as a direct child of `.dx-carousel`, it overlays the
+   slide track's own top-start corner (`--dx-space-2` in from both track
+   edges), where every other carousel's pause control lives. Before this
+   rule it was an ordinary in-flow `inline-flex` box, so it sat in a line
+   box of its own ABOVE the slides, hard against the card's top edge and
+   visually detached from it -- reported on the deployed `autoplay` demo as
+   "floating above the slide, outside its top-left corner". Logical
+   `inset-*` so it mirrors under `dir="rtl"`; `.dx-carousel`'s own
+   `padding-inline`/`-block` reservation (the orientation rules above) is
+   added to the offset so it lands on the TRACK's corner, not the root's.
+   A caller who wants a control row instead wraps the button in their own
+   element (the selector is a child combinator on purpose) or overrides
+   `position: static`. */
+.dx-carousel > .dx-carousel-rotation-control {
+    position: absolute;
+    z-index: var(--dx-z-raise);
+    inset-block-start: var(--dx-space-2);
+    inset-inline-start: calc(var(--dx-space-12) + var(--dx-space-2));
+}
+
+.dx-carousel[data-orientation="vertical"] > .dx-carousel-rotation-control {
+    inset-block-start: calc(var(--dx-space-12) + var(--dx-space-2));
+    inset-inline-start: var(--dx-space-2);
+}
+
 .dx-carousel-rotation-control {
     display: inline-flex;
     width: var(--dx-space-7);
@@ -377,6 +403,53 @@
 }
 
 .dx-carousel-indicator:focus-visible {
+    outline: 2px solid var(--dx-ring-color);
+    outline-offset: 2px;
+}
+
+/* Custom picker (the `api` demo; docs.md's "A custom picker"): plain,
+   non-tablist dots a caller builds on `use_carousel()`. Its state lives on
+   a `data-active` attribute and ALL of its paint lives here, never in an
+   inline `style` string that changes with the state.
+
+   Why not inline: dioxus-interpreter-js 0.7.9's `setAttributeInner`
+   (`"style"` branch) snapshots the element's CSSOM longhands before
+   re-setting the attribute, then restores each longhand whose
+   `getPropertyValue()` is falsy -- and a SHORTHAND whose value contains
+   `var()` (`border-radius: var(--dx-radius-full)`, `background:
+   var(--secondary-color-1)`) reports empty longhands, so every such
+   declaration is silently dropped the first time the string changes.
+   Measured on the deployed build: after one click the previously-active
+   and newly-active dots had `border-radius: 0` and no background (square,
+   one grey, one white) while the untouched dots stayed round. State in an
+   attribute + paint in a class cannot hit that: the attribute is a plain
+   value, the declarations never pass through that code path. */
+.dx-carousel-picker {
+    display: flex;
+    justify-content: center;
+    gap: var(--dx-space-2);
+    margin-block: 0 var(--dx-space-2);
+}
+
+.dx-carousel-picker-dot {
+    width: var(--dx-space-2);
+    height: var(--dx-space-2);
+    box-sizing: border-box;
+    padding: 0;
+    border: none;
+    border-radius: var(--dx-radius-full);
+    background: var(--secondary-color-5);
+    cursor: pointer;
+    opacity: 0.5;
+    touch-action: manipulation;
+}
+
+.dx-carousel-picker-dot[data-active="true"] {
+    background: var(--secondary-color-1);
+    opacity: 1;
+}
+
+.dx-carousel-picker-dot:focus-visible {
     outline: 2px solid var(--dx-ring-color);
     outline-offset: 2px;
 }
