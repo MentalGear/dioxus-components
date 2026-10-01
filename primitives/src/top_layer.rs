@@ -914,15 +914,27 @@ pub(crate) fn use_popover_shown_while_mounted(
     // sites it lists.
     use_effect(ensure_top_layer_ink_styles);
 
-    // Browser -> signal: identical in shape to `use_popover_sync`'s own --
-    // forwards every native `toggle` for this element's whole mounted
-    // lifetime, unconditionally.
+    // Browser -> signal: forwards every native *close* `toggle` for this
+    // element's whole mounted lifetime -- and ONLY closes (docs/backlog.md
+    // row 115). `toggle` is dispatched asynchronously (a queued task), so
+    // the `toggle(newState: "open")` echo of this hook's own `showPopover()`
+    // call can arrive AFTER the signal has already gone `false` again (a
+    // focus-out/mouse-leave in the same beat as the open: input events
+    // outrank that queued task under main-thread load). Mirroring that
+    // stale "open" back would flip `open` to `true` with nothing left to
+    // close it -- a tooltip/hover card stuck open forever (reproduced
+    // deterministically by calling `blur()` right after `showPopover()`).
+    // The `open` direction is never needed: this hook's effect below is the
+    // only `showPopover()` caller for the element (the signal always opens
+    // it, never the browser), so a native "open" can only be an echo of our
+    // own call. Native closes (light dismiss, Escape) have no such echo --
+    // the browser acted first -- and still sync back.
     let id_for_listener = id.clone();
     crate::use_effect_with_cleanup(move || {
         let mut eval = document::eval(
             "const id = await dioxus.recv();
             const el = document.getElementById(id);
-            const onToggle = (e) => dioxus.send(e.newState === 'open');
+            const onToggle = (e) => { if (e.newState !== 'open') dioxus.send(false); };
             el.addEventListener('toggle', onToggle);
             await dioxus.recv();
             el.removeEventListener('toggle', onToggle);",

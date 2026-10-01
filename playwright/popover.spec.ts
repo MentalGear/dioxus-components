@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
-import { startFadeSampling, assertFadesOutThenUnmounts } from "./assert-fade-out";
+import { sampleCloseFade, assertFadesOutThenUnmounts } from "./assert-fade-out";
 import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
@@ -248,13 +248,13 @@ test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)"
     const contentId = await content.getAttribute("id");
     if (!contentId) throw new Error("non-modal popover content has no id to sample");
 
-    // Start sampling before triggering the close, so the first frames
-    // (still data-state="open") are never missed -- see
-    // assert-fade-out.ts's `startFadeSampling` doc.
-    const framesPromise = startFadeSampling(page, contentId);
-    await trigger.evaluate((el) => (el as HTMLElement).click());
-    const samples = await framesPromise;
+    // `sampleCloseFade` settles the OPEN fade-in first, starts sampling before
+    // the close trigger so the first frames are never missed, fires the
+    // trigger and returns the capture -- see assert-fade-out.ts.
+    const capture = await sampleCloseFade(page, contentId, () =>
+      trigger.evaluate((el) => (el as HTMLElement).click()),
+    );
 
-    assertFadesOutThenUnmounts(samples);
+    assertFadesOutThenUnmounts(capture);
   });
 });

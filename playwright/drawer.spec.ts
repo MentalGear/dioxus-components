@@ -22,6 +22,8 @@
 import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
+import { gotoHydrated } from './hydration';
+import { awaitAnimationsSettled } from './animations';
 
 const URL = `${BASE_URL}/component/?name=drawer&`;
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
@@ -32,8 +34,11 @@ const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
 // transform position, not the resting one (confirmed live: reading
 // `getBoundingClientRect()` immediately after the trigger click, with no
 // wait, showed the panel still at its pre-animation `translateY(100%)`
-// position). 500ms is 2.5x that duration.
-const ANIMATION_SETTLE_MS = 500;
+// position). Waited for with `awaitAnimationsSettled` (./animations.ts), NOT
+// a fixed `waitForTimeout`: the animation's clock starts at the first frame
+// rendered after mount, which under parallel load can be hundreds of ms
+// after the click, so no fixed slack is a guarantee (dev-docs/backlog.md
+// row 115, `flush` test).
 
 // primitives/src/drawer.rs's own rubber-band constants for an overdrag PAST
 // the fully-open resting position (dragging away from the dismiss
@@ -60,7 +65,7 @@ const RUBBER_BAND_ASSERT_SLACK_PX = 6;
 const FLUSH_TOLERANCE_PX = 1;
 
 test('opens and traps focus, Escape closes and restores focus to the trigger', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   const trigger = page.getByRole('button', { name: 'Move Goal' });
   await trigger.click();
 
@@ -80,7 +85,7 @@ test('opens and traps focus, Escape closes and restores focus to the trigger', a
 });
 
 test('data-state transitions from closed to open to closed', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   const root = page.locator('[data-slot="drawer-root"]');
   const content = page.locator('[data-slot="drawer-content"]');
 
@@ -96,7 +101,7 @@ test('data-state transitions from closed to open to closed', async ({ page }) =>
 });
 
 test('opens from the top side with side-specific data attributes', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   await page.getByRole('button', { name: 'Open from Top' }).click();
 
   const content = page.locator('[data-slot="drawer-content"]');
@@ -116,12 +121,12 @@ test('the panel sits flush against its own edge at rest, bottom and top variants
   // computed `margin` was `223px 496.594px` (equal top/bottom AND
   // left/right margins) on an 800x1280 viewport, i.e. a floating card, not
   // a bottom sheet.
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   const viewport = page.viewportSize();
   if (!viewport) throw new Error('no viewport size');
 
   await page.getByRole('button', { name: 'Move Goal' }).click();
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  await awaitAnimationsSettled(page.locator('[data-slot="drawer-content"]'));
   const bottomBox = await page.locator('[data-slot="drawer-content"]').boundingBox();
   if (!bottomBox) throw new Error('drawer content has no bounding box');
   // Flush with the viewport's bottom edge: no gap below.
@@ -130,7 +135,7 @@ test('the panel sits flush against its own edge at rest, bottom and top variants
   await expect(page.locator('[data-slot="drawer-root"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open from Top' }).click();
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  await awaitAnimationsSettled(page.locator('[data-slot="drawer-content"]'));
   const topBox = await page.locator('[data-slot="drawer-content"]').boundingBox();
   if (!topBox) throw new Error('drawer content has no bounding box');
   // Flush with the viewport's top edge: no gap above.
@@ -138,12 +143,12 @@ test('the panel sits flush against its own edge at rest, bottom and top variants
 });
 
 test('a drag away from the dismiss direction never exposes the viewport edge', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   const viewport = page.viewportSize();
   if (!viewport) throw new Error('no viewport size');
 
   await page.getByRole('button', { name: 'Move Goal' }).click();
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  await awaitAnimationsSettled(page.locator('[data-slot="drawer-content"]'));
 
   const content = page.locator('[data-slot="drawer-content"]');
   const handleBox = await page.locator('[data-slot="drawer-handle"]').boundingBox();
@@ -166,6 +171,15 @@ test('a drag away from the dismiss direction never exposes the viewport edge', a
     const box = await content.boundingBox();
     if (box) maxGapBelow = Math.max(maxGapBelow, viewport.height - (box.y + box.height));
   }
+  // Read while the pointer is still down -- NOT after `mouse.up()`. This
+  // gesture ends 160px above the handle, over the dialog's `::backdrop`, so
+  // the release's click (common ancestor of the handle and the backdrop =
+  // the dialog itself, outside its own rect) is a backdrop dismiss and the
+  // panel starts its close animation; a `getComputedStyle` taken a
+  // round-trip later under load can land on the closed/unmounted panel,
+  // where `filter` is `none` (dev-docs/backlog.md row 115, observed twice
+  // in 20 repeats under `--workers=4`).
+  const filterValue = await content.evaluate((el) => getComputedStyle(el).filter);
   await page.mouse.up();
 
   // Half 1: the real layout box never moves further than the documented,
@@ -178,7 +192,6 @@ test('a drag away from the dismiss direction never exposes the viewport edge', a
   // this fails if the two ever drift apart. Chromium reports each
   // `drop-shadow(...)`'s offsets/color already resolved, e.g.
   // `drop-shadow(rgb(10, 10, 10) 0px 40px 0px)`.
-  const filterValue = await content.evaluate((el) => getComputedStyle(el).filter);
   const offsets = [...filterValue.matchAll(/(-?[\d.]+)px/g)].map((m) => parseFloat(m[1]));
   expect(offsets.length).toBeGreaterThan(0);
   const maxAbsOffset = Math.max(...offsets.map(Math.abs));
@@ -186,9 +199,9 @@ test('a drag away from the dismiss direction never exposes the viewport edge', a
 });
 
 test('dragging over the handle or the drawer content does not select text', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   await page.getByRole('button', { name: 'Move Goal' }).click();
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  await awaitAnimationsSettled(page.locator('[data-slot="drawer-content"]'));
 
   // Drag #1: directly over DrawerHandle itself. The handle has no text of
   // its own, so this alone can't prove much (there's nothing there TO
@@ -229,7 +242,7 @@ test('dragging over the handle or the drawer content does not select text', asyn
 });
 
 test('a long, slow drag past the dismiss threshold closes the drawer', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   await page.getByRole('button', { name: 'Move Goal' }).click();
 
   const root = page.locator('[data-slot="drawer-root"]');
@@ -270,7 +283,7 @@ test('a long, slow drag past the dismiss threshold closes the drawer', async ({ 
 });
 
 test('a short, slow drag snaps back without closing the drawer', async ({ page }) => {
-  await page.goto(URL, GOTO_OPTS);
+  await gotoHydrated(page, URL, GOTO_OPTS);
   await page.getByRole('button', { name: 'Move Goal' }).click();
 
   const root = page.locator('[data-slot="drawer-root"]');
@@ -322,7 +335,7 @@ test('a short, slow drag snaps back without closing the drawer', async ({ page }
 
 test.describe('Axe automated scan', () => {
   test('loaded (drawer closed) has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto(URL, GOTO_OPTS);
+    await gotoHydrated(page, URL, GOTO_OPTS);
     // Wait for render before scanning -- see input.spec.ts's identical
     // comment for why (avoids a false pre-hydration "no main"/"no h1").
     await expect(page.getByRole('button', { name: 'Move Goal' })).toBeVisible();
@@ -330,7 +343,7 @@ test.describe('Axe automated scan', () => {
   });
 
   test('open has no automatically detectable a11y issues', async ({ page }) => {
-    await page.goto(URL, GOTO_OPTS);
+    await gotoHydrated(page, URL, GOTO_OPTS);
     await page.getByRole('button', { name: 'Move Goal' }).click();
     await expect(page.locator('[data-slot="drawer-root"]')).toHaveAttribute('data-state', 'open');
     // Named via DrawerTitle so axe's `aria-dialog-name` rule passes -- see
