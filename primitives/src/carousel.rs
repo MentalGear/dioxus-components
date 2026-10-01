@@ -585,7 +585,9 @@ fn carousel_key_intent(
 /// spliced (`concat!`) into each script, defining `dxTraceOn` and
 /// `dxTrace(el, kind, data)`. ONLY when `localStorage["dx-carousel-debug"]
 /// === "1"` (the same flag the wheel band's `window.__dxCarouselWheel`
-/// telemetry uses) does `dxTrace` append `{ t: performance.now(), id, kind,
+/// telemetry uses), or a page sets `window.__dxCarouselDebug = true` before
+/// the carousel mounts (for hosts whose storage throws, e.g. sandboxed
+/// frames), does `dxTrace` append `{ t: performance.now(), id, kind,
 /// sl: scrollLeft, st: scrollTop, ...data }` to `window.__dxCarouselTrace`,
 /// capped at the newest 5000 records. The flag is read once per page (cached
 /// as `window.__dxCarouselTraceOn`), so with it off every call is a single
@@ -607,6 +609,7 @@ macro_rules! carousel_trace_js {
         if (window.__dxCarouselTraceOn === undefined) {
             let on = false;
             try { on = window.localStorage.getItem('dx-carousel-debug') === '1'; } catch (err) {}
+            if (window.__dxCarouselDebug === true) { on = true; }
             window.__dxCarouselTraceOn = on;
         }
         return window.__dxCarouselTraceOn;
@@ -1940,7 +1943,8 @@ fn use_carousel_drag(
 ///   the bench, a new gesture that did not own the edge could freeze a
 ///   spring-back mid-flight; here a band left over from an earlier gesture
 ///   springs home as soon as a new gesture turns out not to own it.
-/// - *Telemetry* only behind `localStorage['dx-carousel-debug'] === '1'`,
+/// - *Telemetry* only behind `localStorage['dx-carousel-debug'] === '1'`
+///   (or `window.__dxCarouselDebug === true` set by the host page),
 ///   read once at mount (see "Debug telemetry" below). The bench's knob
 ///   panel is gone; its defaults (the owner's tuned values) are the named
 ///   constants below.
@@ -2054,6 +2058,7 @@ const CAROUSEL_WHEEL_BAND_JS: &str = concat!(carousel_true_end_js!(), "\
     try {
         dbg = window.localStorage.getItem('dx-carousel-debug') === '1';
     } catch (err) {}
+    if (window.__dxCarouselDebug === true) { dbg = true; }
     let rec = null;
 
     const ow = {
