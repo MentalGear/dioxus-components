@@ -7,7 +7,7 @@ It renders two carousels, stacked, into one mount element (default id `dx-carous
 - **`virtual_many`**: 200 items, not looping.
 - **`virtual_loop`**: 12 items, seamless loop, autoplay at 1200ms, dot picker.
 
-Both are configured exactly like `preview/src/components/carousel/variants/{virtual_many,virtual_loop}`: default `radius` 2, a `1rem` gap, `26rem` max width, and the theme's 48px Previous/Next reservation. Only minimal inline styles are used; the primitive needs no theme CSS.
+Both are configured exactly like `preview/src/components/carousel/variants/{virtual_many,virtual_loop}`: default `radius` 10 (capped at 5 on the 12-item loop, so 21 and 11 slides in the DOM), a `1rem` gap, `26rem` max width, and the theme's 48px Previous/Next reservation. Only minimal inline styles are used; the primitive needs no theme CSS.
 
 A host page can choose the mount element by setting `window.__dxCarouselLabMount = "<id>"` before booting.
 

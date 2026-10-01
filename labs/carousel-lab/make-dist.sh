@@ -20,22 +20,29 @@ set -euo pipefail
 
 : "${CARGO_TARGET_DIR:?set CARGO_TARGET_DIR to the absolute target dir of the dx build}"
 out="${1:?usage: make-dist.sh <out-dir>}"
-assets="$CARGO_TARGET_DIR/dx/carousel-lab/release/web/public/assets"
+public="$CARGO_TARGET_DIR/dx/carousel-lab/release/web/public"
 mkdir -p "$out"
 
-python3 - "$assets" "$out" <<'PY'
-import glob, re, shutil, sys
-assets, out = sys.argv[1], sys.argv[2]
-js = glob.glob(f"{assets}/carousel-lab-dxh*.js")
-wasm = glob.glob(f"{assets}/carousel-lab_bg-dxh*.wasm")
-if len(js) != 1 or len(wasm) != 1:
-    sys.exit(f"expected exactly one glue .js and one .wasm in {assets}, found {js} {wasm}")
-src = open(js[0]).read()
+python3 - "$public" "$out" <<'PY'
+import os, re, shutil, sys
+public, out = sys.argv[1], sys.argv[2]
+# Take exactly the files THIS build uses, never a glob of the assets dir: dx
+# does not clear old hashed assets out of a reused target dir, so a second
+# build leaves two of each there (found live). The build's own index.html
+# names its glue, and the glue's own auto-boot names its wasm.
+html = open(f"{public}/index.html").read()
+js = sorted(set(re.findall(r'assets/carousel-lab-dxh\w+\.js', html)))
+if len(js) != 1:
+    sys.exit(f"index.html: expected one glue reference, found {js}")
+src = open(f"{public}/{js[0]}").read()
 
-boot = re.findall(r'\w+\(\{module_or_path:"[^"]*"\}\)\.then\(r=>\{[^}]*\}\);', src)
+boot = re.findall(r'\w+\(\{module_or_path:"([^"]*)"\}\)\.then\(r=>\{[^}]*\}\);', src)
 if len(boot) != 1:
     sys.exit(f"auto-boot statement: expected 1 match, found {len(boot)}")
-src = src.replace(boot[0], "")
+wasm = [f"{public}/assets/{os.path.basename(boot[0])}"]
+if not os.path.isfile(wasm[0]):
+    sys.exit(f"the auto-boot's wasm {boot[0]} is not in {public}/assets")
+src = re.sub(r'\w+\(\{module_or_path:"[^"]*"\}\)\.then\(r=>\{[^}]*\}\);', "", src, count=1)
 
 default_url = 'new URL("carousel-lab_bg.wasm",import.meta.url)'
 if src.count(default_url) != 1:
