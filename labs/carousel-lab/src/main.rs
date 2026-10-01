@@ -5,7 +5,8 @@
 //! exactly as `preview/src/components/carousel/variants/{virtual_many,
 //! virtual_loop}` configure them: 200 non-looping items, and 12 items with
 //! `loop` (the seamless windowed loop) plus `CarouselAutoplay { delay_ms:
-//! 1200 }` and a `CarouselIndicators` dot picker; the default `radius` (2);
+//! 1200 }` and a `CarouselIndicators` dot picker; the default `radius` (10,
+//! capped at 5 on the 12-item loop so no item repeats);
 //! a `1rem` gap (the theme's `--dx-space-4`); a `26rem` max width with the
 //! theme's 48px Previous/Next reservation on each side. Only minimal inline
 //! styling -- the primitive itself needs no theme CSS.

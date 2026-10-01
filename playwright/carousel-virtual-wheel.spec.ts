@@ -789,6 +789,23 @@ async function expectRecentred(content: Locator, side: "min" | "max"): Promise<v
     .toBeLessThan(-1);
 }
 
+/**
+ * Drag into the rendered slice's `side` edge from AT that edge: the window is
+ * wider than a drag can cover (radius 10, or 5 on the 12-item loop), so the
+ * scroller is first placed against the edge under held-open input (the
+ * window may not re-centre while input is arriving), dragged 1.2 pitches
+ * into it, and input is released once the pointer is up.
+ */
+async function dragFromSliceEdge(page: Page, content: Locator, side: "min" | "max", pitch: number): Promise<DragResult> {
+  await holdInputOpen(content);
+  try {
+    await placeAtSliceEdge(content, side);
+    return await dragIntoEdge(page, content, side, "x", pitch * 1.2);
+  } finally {
+    await releaseInput(content);
+  }
+}
+
 async function pitchOf(content: Locator): Promise<number> {
   return content.evaluate((el) => (el as HTMLElement).clientWidth);
 }
@@ -828,8 +845,10 @@ test.describe("Carousel drag band: only at a true end of the data", () => {
       for (const label of ["1 of 12", "6 of 12", "12 of 12"]) {
         await pageTo(page, frame, label);
         for (const side of ["min", "max"] as const) {
-          // radius 2: the slice edge is two slides away, so 3 pitches reaches it.
-          const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+          // The slice edge is several slides away (radius 5 here): start the
+          // drag from it, placed there with input held open so the window
+          // cannot re-centre before the pointer goes down.
+          const r = await dragFromSliceEdge(page, content, side, pitch);
           expect(Math.abs(r.gapAtHold), `${label}: reached the ${side} slice edge while held`).toBeLessThan(1);
           expect(r.band, `${label}, ${side}: no band`).toBe(0);
           await expectCleanRest(content);
@@ -847,7 +866,7 @@ test.describe("Carousel drag band: only at a true end of the data", () => {
     await pageTo(page, frame, "50 of 200");
     const pitch = await pitchOf(content);
     for (const side of ["min", "max"] as const) {
-      const r = await dragIntoEdge(page, content, side, "x", pitch * 3);
+      const r = await dragFromSliceEdge(page, content, side, pitch);
       expect(Math.abs(r.gapAtHold), `reached the ${side} slice edge while held`).toBeLessThan(1);
       expect(r.band, `${side}: no band`).toBe(0);
       await expectCleanRest(content);
@@ -1040,5 +1059,146 @@ test.describe("Carousel fast flicks: the platform may only bounce at a true end"
     // The band still engages at a real end (a transform, unaffected by
     // overscroll-behavior) -- carousel-virtual-wheel's own "virtual_many at
     // its real first item" tests pin that.
+  });
+});
+
+/*
+ * The owner's real "it stopped when it shouldn't" flicks (lab session,
+ * Firefox 156, MacBook trackpad; /home/user/wheel-recordings/lab-sessions/
+ * merged.json, marks 3, 4 and 6 on virtual_many): the uninterrupted wheel
+ * stream that preceded each mark, as [ms since its first event, deltaX]
+ * (the small deltaY components are dropped: replayed headlessly they would
+ * scroll the page out from under the pointer, and the carousel reacts only
+ * to its own axis anyway). Each carried 16-25 slides of input; on the
+ * radius-2 build the scroller reached the rendered slice's end after 0-2
+ * slides and sat pinned there for most of the stream.
+ *
+ * Under test: the default radius of 10 (most flicks never reach a slice
+ * end) plus the pinned-at-a-false-end re-centre (the tail that does reach
+ * one re-centres within a couple of frames instead of waiting for idle) --
+ * so the carousel travels well past the old 2-slide limit and never sits
+ * pinned at a false end for more than ~200ms while input continues.
+ * Replayed with trusted page.mouse.wheel at the recorded timing; sampled
+ * in-page every frame. Chromium moves at most one slide per wheel event
+ * (scroll-snap-stop: always per operation); Firefox's longer per-gesture
+ * travel is the owner's real-device check, via the lab's trace.
+ */
+const OWNER_FLICKS: Record<"mark3" | "mark4" | "mark6", [number, number][]> = {"mark3":[[0,6],[16,9],[32,32],[49,72],[65,81],[82,50],[99,60],[100,93],[118,99],[135,98],[153,94],[168,91],[186,87],[203,87],[219,82],[236,77],[253,72],[269,68],[286,63],[300,59],[319,55],[335,51],[352,47],[368,43],[384,41],[402,37],[419,34],[434,32],[452,29],[469,26],[486,24],[502,22],[519,20],[535,19],[552,17],[615,4],[632,22],[649,19],[665,44],[682,64],[697,81],[714,87],[731,86],[747,83],[764,80],[781,77],[797,77],[814,74],[831,68],[848,64],[864,60],[881,55],[898,51],[915,47],[931,45],[948,41],[964,38],[981,35],[1032,2],[1049,10],[1065,47],[1083,68],[1099,81],[1116,71],[1133,87],[1150,62],[1160,106],[1176,110],[1193,109],[1209,106],[1225,102],[1243,97],[1259,95],[1275,90],[1293,85],[1310,81],[1326,76],[1342,70],[1359,66],[1377,62],[1392,58],[1410,53],[1450,4],[1467,10],[1483,13],[1501,32],[1517,39],[1534,46],[1543,61],[1559,68],[1576,68],[1592,66],[1609,65],[1626,61],[1642,63],[1660,60],[1700,-6],[1716,-23],[1733,-62],[1749,-165],[1767,-214],[1783,-155],[1800,-93],[1817,-62],[1824,-160],[1839,-168],[1858,-166],[1873,-160],[1890,-153],[1907,-145],[1923,-136],[1940,-131],[1956,-124],[1973,-119],[1990,-113],[2006,-107],[2050,-27],[2050,-7],[2066,-54],[2083,-127],[2100,-126],[2116,-73],[2126,-126],[2142,-136],[2159,-136],[2176,-131],[2193,-126],[2210,-122],[2226,-121],[2242,-115],[2372,-8],[2373,-579],[2383,-133],[2385,-221],[2402,-230],[2419,-224],[2434,-215],[2453,-203],[2469,-193],[2486,-179],[2502,-170],[2519,-162],[2536,-155],[2552,-148],[2600,-34],[2601,-6],[2617,-56],[2633,-111],[2650,-109],[2667,-122],[2682,-132],[2700,-128],[2715,-125],[2733,-120],[2749,-117],[2766,-117],[2783,-109],[2833,-3],[2850,-25],[2866,-66],[2883,-151],[2900,-207],[2918,-174],[2925,-243],[2942,-248],[2958,-241],[2975,-229],[2992,-219],[3009,-207],[3025,-193],[3042,-184],[3060,-175],[3075,-167],[3092,-158],[3109,-151]],"mark4":[[0,-1],[17,-7],[33,-34],[50,-50],[68,-149],[83,-79],[100,-37],[117,-37],[120,-76],[136,-85],[155,-86],[170,-83],[188,-80],[203,-77],[219,-79],[236,-75],[254,-70],[270,-66],[288,-61],[305,-57],[384,-17],[400,-13],[416,-59],[434,-99],[450,-105],[468,-75],[481,-123],[497,-128],[515,-125],[531,-121],[547,-115],[564,-109],[582,-103],[598,-99],[614,-93],[631,-89],[647,-84],[665,-79],[681,-75],[698,-70],[715,-66],[767,-7],[784,-8],[800,-19],[817,-15],[834,-29],[884,-108],[901,-50],[956,-65],[985,-282],[1002,-132],[1019,-62],[1035,-59],[1052,-55],[1069,-50],[1086,-46],[1102,-43],[1119,-39],[1136,-36],[1181,-33],[1199,-58],[1252,-25],[1266,-2],[1284,-2],[1300,-3],[1317,-3],[1334,-3],[1350,-3],[1367,-4],[1384,-3],[1400,-3],[1417,-5],[1435,-8],[1451,-23],[1468,-73],[1485,-174],[1501,-186],[1516,-204],[1532,-205],[1548,-196],[1565,-184],[1583,-174],[1599,-166],[1624,-152],[1631,-143],[1649,-137],[1665,-132],[1682,-127]],"mark6":[[0,-5],[17,-42],[92,-40],[111,-90],[170,-44],[172,-273],[180,-29],[195,-26],[214,-24],[229,-22],[247,-20],[264,-19],[280,-17],[297,-16],[313,-14],[329,-13],[347,-12],[363,-11],[380,-10],[397,-9],[411,-8],[431,-8],[447,-7],[463,-7],[480,-6],[497,-5],[513,-5],[531,-5],[547,-5],[564,-4],[578,-4],[597,-4],[658,-2],[674,-24],[691,-32],[707,-56],[724,-61],[741,-57],[750,-87],[766,-93],[783,-92],[800,-89],[816,-84],[833,-81],[850,-80],[866,-77],[883,-72],[900,-68],[916,-62],[933,-59],[950,-55],[966,-51],[983,-47],[1000,-43],[1016,-41],[1033,-37],[1051,-34],[1066,-32],[1083,-29],[1100,-26],[1116,-24],[1132,-22],[1149,-20],[1166,-19],[1182,-17],[1200,-16],[1258,-2],[1260,-2],[1275,-27],[1291,-47],[1308,-87],[1325,-96],[1341,-88],[1358,-76],[1375,-44],[1391,-97],[1407,-102],[1425,-100],[1441,-97],[1458,-93],[1474,-89],[1491,-88],[1507,-84],[1525,-79],[1541,-74],[1558,-70],[1574,-64],[1591,-60],[1607,-57],[1624,-53],[1640,-49],[1658,-45],[1675,-41],[1692,-39],[1708,-35],[1724,-33],[1741,-30],[1757,-28],[1774,-24],[1824,2],[1841,4],[1858,2],[1941,-1],[1958,-4],[1975,-8],[1991,-17],[2008,-29],[2024,-38],[2041,-43],[2055,-54],[2073,-58],[2090,-60],[2105,-58],[2123,-57],[2139,-55],[2155,-57],[2173,-54],[2189,-50],[2206,-46],[2223,-42],[2239,-39],[2255,-36],[2273,-33],[2289,-29],[2306,-27],[2323,-25],[2340,-23],[2355,-21],[2373,-20],[2389,-18],[2405,-17],[2422,-14],[2439,-13],[2456,-12],[2524,-4],[2541,-30],[2558,-36],[2576,-54],[2592,-61],[2608,-62],[2625,-51],[2628,-78],[2645,-85],[2662,-87],[2678,-84],[2697,-81],[2712,-78],[2730,-80],[2744,-76],[2761,-70],[2778,-66],[2794,-61],[2813,-56],[2830,-52],[2846,-49],[2863,-45],[2878,-41],[2895,-38],[2913,-34],[2930,-32],[2946,-30],[2963,-27],[2979,-24],[2995,-22],[3013,-19],[3029,-18],[3045,-16],[3063,-15],[3078,-15],[3096,-12],[3113,-11],[3130,-10],[3145,-10],[3162,-9],[3178,-8],[3196,-8],[3213,-6],[3229,-6],[3247,-5],[3263,-5],[3278,-5],[3296,-4],[3313,-4],[3329,-4],[3346,-4],[3363,-3],[3379,-3],[3396,-3],[3413,-3],[3429,-2],[3446,-2],[3463,-2],[3479,-2],[3496,-2],[3513,-2],[3528,-2],[3546,-1],[3562,-1],[3579,-1],[3596,-1],[3612,-1],[3629,-1],[3647,-1],[3679,-1],[3696,-1],[3713,0],[3728,-1],[3808,-1],[3826,-7],[3842,-16],[3859,-32],[3875,-47],[3892,-54],[3908,-48],[3923,-73],[3939,-79],[3956,-78],[3973,-76],[3990,-74],[4007,-71],[4023,-71],[4039,-68],[4056,-62],[4073,-59],[4089,-55],[4106,-51],[4123,-47],[4141,-43]]};
+
+type FlickRun = { travel: number; maxPinnedMs: number; pinnedFrames: number; startPos: number; endPos: number };
+
+/** Replay one owner flick (trusted wheel, recorded timing) and measure travel and pinned-at-a-false-end stalls. */
+async function replayOwnerFlick(page: Page, content: Locator, events: [number, number][]): Promise<FlickRun> {
+  await content.evaluate((node) => {
+    const el = node as HTMLElement;
+    const w = window as unknown as { __dxOwner: { frames: unknown[]; lastWheel: number; run: boolean } };
+    w.__dxOwner = { frames: [], lastWheel: -Infinity, run: true };
+    el.addEventListener("wheel", (e) => { if (e.isTrusted) w.__dxOwner.lastWheel = performance.now(); }, { passive: true });
+    const trueEnd = (child: HTMLElement | null) => {
+      if (!child || el.dataset.loop === "true") return false;
+      const i = Number(child.dataset.index);
+      return i === 0 || i === Number(el.dataset.slideCount) - 1;
+    };
+    const tick = () => {
+      const c = el.getBoundingClientRect();
+      const kids = Array.from(el.children) as HTMLElement[];
+      let lo: HTMLElement | null = null;
+      let hi: HTMLElement | null = null;
+      let aligned: HTMLElement | null = null;
+      let off = Infinity;
+      for (const k of kids) {
+        const r = k.getBoundingClientRect();
+        if (!lo || r.left < lo.getBoundingClientRect().left) lo = k;
+        if (!hi || r.right > hi.getBoundingClientRect().right) hi = k;
+        if (Math.abs(r.left - c.left) < off) {
+          off = Math.abs(r.left - c.left);
+          aligned = k;
+        }
+      }
+      const atMin = !!lo && lo.getBoundingClientRect().left - c.left >= -0.5;
+      const atMax = !!hi && hi.getBoundingClientRect().right - c.right <= 0.5;
+      const now = performance.now();
+      w.__dxOwner.frames.push({
+        t: now,
+        pos: el.scrollLeft,
+        falseEnd: (atMin && !trueEnd(lo)) || (atMax && !trueEnd(hi)),
+        inputLive: now - w.__dxOwner.lastWheel < 150,
+        alignedPos: aligned ? Number(aligned.dataset.position) : NaN,
+      });
+      if (w.__dxOwner.run) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const t0 = Date.now();
+  for (const [t, dx] of events) {
+    const wait = t - (Date.now() - t0);
+    if (wait > 0) await page.waitForTimeout(wait);
+    await page.mouse.wheel(dx, 0);
+  }
+  const frames = await content.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 1200));
+    const w = window as unknown as { __dxOwner: { frames: { t: number; pos: number; falseEnd: boolean; inputLive: boolean; alignedPos: number }[]; run: boolean } };
+    w.__dxOwner.run = false;
+    return w.__dxOwner.frames;
+  });
+  // Longest run of frames pinned at a false end (position unchanged) while input is live.
+  let maxPinnedMs = 0;
+  let pinnedFrames = 0;
+  let runStart: number | null = null;
+  for (let i = 1; i < frames.length; i++) {
+    const f = frames[i];
+    const pinned = f.falseEnd && f.inputLive && f.pos === frames[i - 1].pos;
+    if (pinned) {
+      pinnedFrames++;
+      if (runStart === null) runStart = frames[i - 1].t;
+      maxPinnedMs = Math.max(maxPinnedMs, f.t - runStart);
+    } else {
+      runStart = null;
+    }
+  }
+  const startPos = frames[0].alignedPos;
+  const endPos = frames[frames.length - 1].alignedPos;
+  return { travel: Math.abs(endPos - startPos), maxPinnedMs, pinnedFrames, startPos, endPos };
+}
+
+test.describe("Carousel: the owner's long real flicks never stall at a rendered slice end", () => {
+  for (const mark of ["mark3", "mark4", "mark6"] as const) {
+    test(`virtual_many, owner's ${mark}: travels well past the old 2-slide limit and never sits pinned at a false end for more than ~200ms`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      const { frame, content } = await open(page, "virtual_many");
+      await pageTo(page, frame, "60 of 200");
+      const r = await replayOwnerFlick(page, content, OWNER_FLICKS[mark]);
+      console.log(`${mark} virtual_many: ${JSON.stringify(r)}`);
+      expect(r.travel, "travelled beyond the old radius-2 slice").toBeGreaterThan(3);
+      expect(r.maxPinnedMs, "longest pinned-at-a-false-end stall while input continued").toBeLessThanOrEqual(200);
+    });
+  }
+
+  test("virtual_loop (seamless, effective radius 5 of 12): the owner's mark4 never stalls at a slice end either", async ({ page }) => {
+    test.setTimeout(180_000);
+    const { frame, content } = await open(page, "virtual_loop");
+    await pageTo(page, frame, "6 of 12");
+    expect(await content.locator("> *").count(), "12 looping items render 11 positions, never a repeat").toBe(11);
+    const r = await replayOwnerFlick(page, content, OWNER_FLICKS.mark4);
+    console.log(`mark4 virtual_loop: ${JSON.stringify(r)}`);
+    expect(r.travel).toBeGreaterThan(3);
+    expect(r.maxPinnedMs).toBeLessThanOrEqual(200);
+  });
+
+  test("a true end is unchanged: a flick back to virtual_many's real first item stays there, with no re-centre", async ({ page }) => {
+    test.setTimeout(120_000);
+    await enableWheelDebug(page);
+    const { frame, content } = await open(page, "virtual_many");
+    await pageTo(page, frame, "4 of 200");
+    await replayOwnerFlick(page, content, OWNER_FLICKS.mark4);
+    await expect(frame.locator('[data-selected="true"]').first()).toHaveAttribute("aria-label", "1 of 200");
+    const recentres = await content.evaluate((el) =>
+      ((window as unknown as { __dxCarouselTrace?: { id: string; kind: string; edgeIndex?: string }[] }).__dxCarouselTrace ?? []).filter(
+        (r) => r.id === el.id && r.kind === "pinned-recentre",
+      ),
+    );
+    expect(recentres.filter((r) => r.edgeIndex === "0"), "never re-centres against the real first item").toEqual([]);
   });
 });

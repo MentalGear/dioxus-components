@@ -3338,33 +3338,42 @@ test.describe("Carousel: only visible slides are reachable (inert)", () => {
  * primitive owns the wrapping div, not a nested themed component) -- so
  * every locator below scopes on `[data-position]` instead.
  *
- * `virtual_loop` (12 items, `radius: 2` -> a 5-slide window, `loop: true`,
- * `CarouselAutoplay { delay_ms: 1200 }`, `CarouselIndicators` dots) and
- * `virtual_many` (200 items, `loop: false`) are the two demo variants
- * (`preview/src/components/carousel/variants/virtual_loop|virtual_many/mod.rs`).
+ * `virtual_loop` (12 items, `loop: true`, `CarouselAutoplay { delay_ms:
+ * 1200 }`, `CarouselIndicators` dots) and `virtual_many` (200 items,
+ * `loop: false`) are the two demo variants
+ * (`preview/src/components/carousel/variants/virtual_loop|virtual_many/mod.rs`),
+ * both on the default `radius` (10). A looping window never repeats an
+ * item, so `virtual_loop`'s is capped at `(12 - 2) / 2 = 5` per side
+ * (`effective_radius`, `primitives/src/carousel.rs`): 11 slides.
+ * `virtual_many`'s is the full `2 * 10 + 1 = 21` once away from its start.
  */
+const VLOOP_WINDOW = 11;
+const VMANY_WINDOW = 21;
+
 test.describe("CarouselVirtualContent: the DOM never holds more than 2*radius+1 slides", () => {
-  test("virtual_loop (N=12) mounts exactly 5 slides", async ({ page }) => {
+  test("virtual_loop (N=12) mounts exactly 11 slides (radius capped at 5 so no item repeats)", async ({ page }) => {
     await goto(page, "virtual_loop");
     const frame = demoFrame(page, "virtual_loop");
-    await expect(frame.locator("[data-position]")).toHaveCount(5);
+    await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
   });
 
-  test("virtual_many (N=200) mounts exactly 5 slides once away from the (non-looping) start edge", async ({ page }) => {
+  test("virtual_many (N=200) mounts exactly 21 slides once away from the (non-looping) start edge", async ({ page }) => {
     await goto(page, "virtual_many");
     const frame = demoFrame(page, "virtual_many");
     // At the very first slide the (non-wrapping) window clamps to
-    // `[0, radius]` -- 3 slides, not 5 (`window()`'s own documented
+    // `[0, radius]` -- 11 slides, not 21 (`window()`'s own documented
     // clamping behaviour, `primitives/src/virtual/window.rs`). Page away
-    // from that edge first so the window is centred and at its full
-    // width, the case this test is actually about.
+    // from that edge first (index >= radius) so the window is centred and
+    // at its full width, the case this test is actually about.
+    await expect(frame.locator("[data-position]")).toHaveCount(11);
     const next = frame.getByRole("button", { name: "Next slide" });
-    await next.dispatchEvent("click");
-    await next.dispatchEvent("click");
-    await expect.poll(() => frame.locator('[data-selected="true"]').getAttribute("aria-label")).toBe(
-      "3 of 200",
-    );
-    await expect(frame.locator("[data-position]")).toHaveCount(5);
+    for (let i = 2; i <= 11; i++) {
+      await next.dispatchEvent("click");
+      await expect.poll(() => frame.locator('[data-selected="true"]').getAttribute("aria-label")).toBe(
+        `${i} of 200`,
+      );
+    }
+    await expect(frame.locator("[data-position]")).toHaveCount(VMANY_WINDOW);
   });
 });
 
@@ -3385,13 +3394,13 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
       await expect.poll(label).toBe(`${i} of 12`);
       // Structurally impossible to have "rewound" through every
       // intervening slide the way the CarouselItem-based `looping`
-      // variant does: the scroller only ever holds 5 DOM slides.
-      await expect(frame.locator("[data-position]")).toHaveCount(5);
+      // variant does: the scroller only ever holds 11 DOM slides.
+      await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
     }
     // The 13th Next wraps physically forward (12 -> 1), not a rewind.
     await next.dispatchEvent("click");
     await expect.poll(label).toBe("1 of 12");
-    await expect(frame.locator("[data-position]")).toHaveCount(5);
+    await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
   });
 
   test("Previous through all 12 slides wraps 1 -> 12, one slide per click", async ({ page }) => {
@@ -3409,7 +3418,7 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
     for (const i of [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]) {
       await previous.dispatchEvent("click");
       await expect.poll(label).toBe(`${i} of 12`);
-      await expect(frame.locator("[data-position]")).toHaveCount(5);
+      await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
     }
   });
 
@@ -3428,7 +3437,7 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
     await expect.poll(label).toBe("1 of 12");
     // A small gap between presses -- see this file's own "seamless loop"
     // describe block's "autoplay" test for why a real settle needs real
-    // wall-clock time between steps (`radius: 2`'s own margin is not
+    // wall-clock time between steps (the window's own margin is not
     // unlimited): a genuinely human keyboard cadence, not a synthetic
     // zero-delay flood, is what this construction is built for.
     for (let i = 0; i < 13; i++) {
@@ -3483,7 +3492,8 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
     const label = selectedLabel(frame);
     await expect.poll(label).toBe("1 of 12");
 
-    // Jump straight to slide 7 (6 away -- outside the 5-slide window),
+    // Jump straight to slide 7 (6 away -- outside the 11-slide window, whose
+    // far edges are positions -5 and +5),
     // the "distant dot click" re-anchor path (`CarouselVirtualContent`'s
     // own "Seamless loop" doc, second bullet). `CarouselIndicator`'s own
     // default accessible name is "Slide {n}" (renamed from the old
@@ -3491,7 +3501,7 @@ test.describe("CarouselVirtualContent: seamless loop (virtual_loop)", () => {
     // not the retired custom dot-picker's "Go to slide {n}".
     await frame.getByRole("tab", { name: "Slide 7" }).click();
     await expect.poll(label).toBe("7 of 12");
-    await expect(frame.locator("[data-position]")).toHaveCount(5);
+    await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
     // Now a single Next from there still advances by exactly one, proving
     // the anchor is genuinely centred on 7, not merely displaying it.
     await frame.getByRole("button", { name: "Next slide" }).dispatchEvent("click");
@@ -3547,7 +3557,7 @@ test.describe("CarouselVirtualContent: trackpad-style wheel scrolling wraps seam
       if (cur !== seen[seen.length - 1]) {
         seen.push(cur);
       }
-      await expect(frame.locator("[data-position]")).toHaveCount(5);
+      await expect(frame.locator("[data-position]")).toHaveCount(VLOOP_WINDOW);
     }
     // Exactly one new slide per step -- no step is ever skipped (a
     // multi-slide jump) and none repeats (a stall).
