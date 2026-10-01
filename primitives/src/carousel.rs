@@ -581,6 +581,49 @@ fn carousel_key_intent(
     }
 }
 
+/// Opt-in diagnostics shared by every carousel JS bridge: one JS literal,
+/// spliced (`concat!`) into each script, defining `dxTraceOn` and
+/// `dxTrace(el, kind, data)`. ONLY when `localStorage["dx-carousel-debug"]
+/// === "1"` (the same flag the wheel band's `window.__dxCarouselWheel`
+/// telemetry uses) does `dxTrace` append `{ t: performance.now(), id, kind,
+/// sl: scrollLeft, st: scrollTop, ...data }` to `window.__dxCarouselTrace`,
+/// capped at the newest 5000 records. The flag is read once per page (cached
+/// as `window.__dxCarouselTraceOn`), so with it off every call is a single
+/// boolean check and returns -- nothing is allocated, observed or written,
+/// and no rendered markup ever changes (hydration parity unaffected).
+///
+/// Kinds: `input` (a wheel event the idle gate saw), `gate-hold` /
+/// `gate-release` (the browser-idle gate starting to defer, and letting a
+/// settle or queued writes through), `scroll-ended` (a `scrollend`, the
+/// no-`scrollend` debounce, a resize, or a drag's `dx-carousel-rest`),
+/// `settle` (what the tracking bridge reported), `window` (a virtual
+/// window re-render: old -> new rendered data-index/position ranges),
+/// `scroll-write` (every scroll write a bridge makes: method, delta,
+/// behavior, snap state), `scroll-to-skip`, and `drag-*`.
+macro_rules! carousel_trace_js {
+    () => {
+        "
+    const dxTraceOn = (() => {
+        if (window.__dxCarouselTraceOn === undefined) {
+            let on = false;
+            try { on = window.localStorage.getItem('dx-carousel-debug') === '1'; } catch (err) {}
+            window.__dxCarouselTraceOn = on;
+        }
+        return window.__dxCarouselTraceOn;
+    })();
+    function dxTrace(el, kind, data) {
+        if (!dxTraceOn) return;
+        const log = (window.__dxCarouselTrace = window.__dxCarouselTrace || []);
+        const rec = { t: Math.round(performance.now() * 10) / 10, id: el ? el.id : null, kind,
+            sl: el ? Math.round(el.scrollLeft * 10) / 10 : null, st: el ? Math.round(el.scrollTop * 10) / 10 : null };
+        if (data) Object.assign(rec, data);
+        log.push(rec);
+        if (log.length > 5000) log.splice(0, log.length - 5000);
+    }
+"
+    };
+}
+
 /// Fire-and-forget: scroll the carousel's own scroller element
 /// (`scrollerId`) by the physical pixel delta needed to align
 /// `targetId`'s slide with the scroller's own leading edge, along the
@@ -662,7 +705,7 @@ fn carousel_key_intent(
 /// re-align, or a button/key/autoplay/indicator page) happens once that input
 /// has gone quiet, measured from wherever the browser actually came to rest
 /// -- never mid-gesture (THE RULE). With input already quiet it runs at once.
-const CAROUSEL_SCROLL_TO_JS: &str = "\
+const CAROUSEL_SCROLL_TO_JS: &str = concat!(carousel_trace_js!(), "\
     const [scrollerId, targetId, orientation, instant, snapRestoreFallbackMs, align] = await dioxus.recv();
     const behavior = (instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         ? 'auto' : 'smooth';
@@ -713,6 +756,9 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     // to rest. Runs at once when input is already quiet, or when no bridge
     // is attached yet (the very first mount settle).
     const run = () => {
+    if (!(scroller && target && target.isConnected && !scroller.hasAttribute('data-dragging'))) {
+        dxTrace(scroller, 'scroll-to-skip', { targetId, why: !scroller ? 'no scroller' : !target ? 'no target' : !target.isConnected ? 'target gone' : 'dragging' });
+    }
     if (scroller && target && target.isConnected && !scroller.hasAttribute('data-dragging')) {
         const s = scroller.getBoundingClientRect();
         const t = target.getBoundingClientRect();
@@ -728,6 +774,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
         // session (the mount settle's own zero-delta call is the common
         // case that hits this on every single carousel).
         if (Math.abs(delta) < 1) {
+            dxTrace(scroller, 'scroll-to-skip', { targetId, why: 'aligned', delta });
             return;
         }
         // Cancel a still-pending restore from a previous paging call, the
@@ -738,6 +785,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
             scroller.__dxCancelSnapRestore();
             scroller.__dxCancelSnapRestore = null;
         }
+        dxTrace(scroller, 'scroll-write', { by: 'scroll-to', targetId, delta, behavior, instant, snapBefore: scroller.style.scrollSnapType });
         scroller.style.scrollSnapType = 'none';
         if (orientation === 'horizontal') {
             scroller.scrollBy({ left: delta, behavior });
@@ -758,10 +806,12 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
     }
     };
     if (scroller && scroller.__dxWhenIdle) {
+        dxTrace(scroller, 'scroll-to-request', { targetId, instant, viaGate: true });
         scroller.__dxWhenIdle(run);
     } else {
+        dxTrace(scroller, 'scroll-to-request', { targetId, instant, viaGate: false });
         run();
-    }";
+    }");
 
 /// Long-lived (mount-to-unmount): translate a [`CarouselContent`]
 /// element's *actual* scroll position into a slide index, so `selected`
@@ -801,7 +851,7 @@ const CAROUSEL_SCROLL_TO_JS: &str = "\
 /// callback -- so there is no read-then-write-layout main-thread hazard
 /// (`dev-docs/recommended-implementations.md` §11 Rule 1) to begin with.
 /// Both listeners are `passive: true` (§11 Rule 2).
-const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
+const CAROUSEL_SCROLL_TRACKING_JS: &str = concat!(carousel_trace_js!(), "\
     const [id, orientation, align, inputQuietMs] = await dioxus.recv();
     const container = document.getElementById(id);
     if (!container) {
@@ -915,6 +965,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             lastNearest = nearest;
             lastNearestPos = nearestPos;
             dioxus.send(['selected', nearest, nearestPos]);
+            dxTrace(container, 'settle', { selected: nearest, position: nearestPos, offset: Math.round(nearestDist * 10) / 10 });
         }
         if (visStart !== lastVisStart || visEnd !== lastVisEnd) {
             lastVisStart = visStart;
@@ -940,6 +991,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     let gateTimer = null;
     let waiters = [];
     const inputQuiet = () => touches === 0 && performance.now() - lastInputAt >= inputQuietMs;
+    let holding = false;
     const pump = () => {
         clearTimeout(gateTimer);
         gateTimer = null;
@@ -947,6 +999,10 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             return;
         }
         if (!inputQuiet()) {
+            if (!holding) {
+                holding = true;
+                dxTrace(container, 'gate-hold', { why: touches ? 'touch' : 'input', sinceInput: Math.round(performance.now() - lastInputAt), endPending, waiters: waiters.length });
+            }
             // A finger still down re-pumps on its own touchend; otherwise
             // look again the moment the quiet window would close.
             if (touches === 0) {
@@ -954,6 +1010,10 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             }
             return;
         }
+        if (dxTraceOn) {
+            dxTrace(container, 'gate-release', { held: holding, settle: endPending, waiters: waiters.length });
+        }
+        holding = false;
         if (endPending) {
             endPending = false;
             settle();
@@ -962,7 +1022,10 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         waiters = [];
         run.forEach((f) => f());
     };
-    const scrollEnded = () => {
+    const scrollEnded = (src) => {
+        if (dxTraceOn) {
+            dxTrace(container, 'scroll-ended', { why: typeof src === 'string' ? src : (src && src.type) || 'unknown' });
+        }
         endPending = true;
         pump();
     };
@@ -974,10 +1037,13 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
             return;
         }
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(scrollEnded, 120);
+        debounceTimer = setTimeout(() => scrollEnded('scroll-debounce'), 120);
     };
-    const onInput = () => {
+    const onInput = (e) => {
         lastInputAt = performance.now();
+        if (dxTraceOn && e && e.type === 'wheel') {
+            dxTrace(container, 'input', { dx: e.deltaX, dy: e.deltaY, mode: e.deltaMode, trusted: e.isTrusted });
+        }
         pump();
     };
     const onTouch = (e) => {
@@ -1035,7 +1101,22 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     //
     // Routed through the same idle gate as a scroll end: a resize while a
     // gesture is still in flight settles once the gesture is over.
-    const resizeObserver = new ResizeObserver(() => scrollEnded());
+    const resizeObserver = new ResizeObserver(() => scrollEnded('resize'));
+    // Debug only: every re-render of the rendered slides (a virtual window
+    // re-anchoring), old -> new data-index / data-position ranges.
+    const sliceOf = () => {
+        const kids = Array.from(container.children);
+        return { idx: kids.map((k) => k.dataset.index).join(','), pos: kids.map((k) => k.dataset.position).join(',') };
+    };
+    let lastSlice = dxTraceOn ? sliceOf() : null;
+    const windowObserver = dxTraceOn ? new MutationObserver(() => {
+        const next = sliceOf();
+        if (next.idx !== lastSlice.idx || next.pos !== lastSlice.pos) {
+            dxTrace(container, 'window', { fromIdx: lastSlice.idx, toIdx: next.idx, fromPos: lastSlice.pos, toPos: next.pos });
+            lastSlice = next;
+        }
+    }) : null;
+    if (windowObserver) windowObserver.observe(container, { childList: true });
     resizeObserver.observe(container);
     await dioxus.recv();
     container.removeEventListener('scroll', onScroll);
@@ -1047,6 +1128,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
         container.removeEventListener('scrollend', scrollEnded);
     }
     resizeObserver.disconnect();
+    if (windowObserver) windowObserver.disconnect();
     container.removeEventListener('dx-carousel-rest', scrollEnded);
     clearTimeout(debounceTimer);
     clearTimeout(gateTimer);
@@ -1056,7 +1138,7 @@ const CAROUSEL_SCROLL_TRACKING_JS: &str = "\
     if (container.__dxWhenIdle === whenIdle) {
         delete container.__dxWhenIdle;
     }
-    waiters.forEach((f) => f());";
+    waiters.forEach((f) => f());");
 
 /// Attach [`CAROUSEL_SCROLL_TRACKING_JS`] to the element with the given
 /// `id` for as long as the calling component stays mounted, forwarding
@@ -1257,7 +1339,7 @@ macro_rules! carousel_true_end_js {
 /// animated scroll. `endDrag` below settles explicitly instead, and
 /// defers restoring this property until that explicit settle has
 /// actually finished.
-const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
+const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), carousel_trace_js!(), "\
     const [id, orientation, thresholdPx, enabled, snapRestoreFallbackMs, align] = await dioxus.recv();
     const el = document.getElementById(id);
     if (!el || !enabled) {
@@ -1384,6 +1466,7 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
                 rawOver = 0;
                 applyBounce();
             }
+            dxTrace(el, 'scroll-write', { by: 'drag-move', delta: -cd, behavior: 'instant', snapBefore: el.style.scrollSnapType, reduced: true });
             if (orientation === 'horizontal') {
                 el.scrollBy({ left: -cd, behavior: 'instant' });
             } else {
@@ -1399,6 +1482,9 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
         }
         const moved = contentOffset() - before;
         let refused = cd - moved;
+        if (dxTraceOn) {
+            dxTrace(el, 'scroll-write', { by: 'drag-move', delta: -cd, moved: Math.round(moved * 10) / 10, refused: Math.round(refused * 10) / 10, behavior: 'instant', snapBefore: el.style.scrollSnapType });
+        }
         if (refused) {
             // Content pushed toward the right/bottom opens a gap at the min
             // edge, and vice versa.
@@ -1511,6 +1597,7 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
             }
             dragging = true;
             el.setAttribute('data-dragging', 'true');
+            dxTrace(el, 'drag-start', { pointerType: e.pointerType });
             try { el.setPointerCapture(pointerId); } catch (err) {}
             // `scroll-snap-type: ... mandatory` (set inline by this same
             // element's own Rust-rendered `style`) re-snaps after EVERY
@@ -1658,9 +1745,11 @@ const CAROUSEL_DRAG_JS: &str = concat!(carousel_true_end_js!(), "\
                 // snapping suspended until the next gesture happens to
                 // trigger it.
                 if (Math.abs(settleDelta) < 1) {
+                    dxTrace(el, 'drag-release', { settleDelta, settle: 'none (already aligned)', rest: true });
                     restoreSnap();
                     announceRest();
                 } else {
+                    dxTrace(el, 'scroll-write', { by: 'drag-release-settle', delta: settleDelta, behavior: settleBehavior, snapBefore: el.style.scrollSnapType });
                     // Deferred, not synchronous: setting scroll-snap-type
                     // back to mandatory on an already-stationary position is
                     // what made release never animate in the first place
