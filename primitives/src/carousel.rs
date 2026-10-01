@@ -351,6 +351,60 @@ fn content_gap_var(gap: Option<&str>) -> String {
     }
 }
 
+/// `overscroll-behavior` on the scroll axis, from whether BOTH physical ends
+/// of the currently rendered slides are true ends of the data (the same rule
+/// the rubber-bands follow, `carousel_true_end_js!`): `""` (the platform's
+/// default, `auto`) when they are, `none` otherwise.
+///
+/// **Why.** The owner's real-trackpad report (MacBook, Firefox 156): "quick
+/// trackpad scrolls still produce an 'end of slides' rubberband effect when
+/// there are still more slides to come". Measured headlessly with trusted
+/// flicks shaped like the owner's hardest recordings (peaks 131 and 266
+/// px/event): this crate's own band never fired away from a true end on any
+/// demo, but on every virtual demo a single flick held the scroller clamped
+/// against its rendered slice's physical end mid-list for 48-67 frames
+/// (e.g. `virtual_many` against indices 48/52 of 200), and `rewind`
+/// (looping, so no true end) against its physical ends for 128-146 -- with
+/// `overscroll-behavior: auto`, which is exactly where macOS Firefox draws
+/// its own native elastic bounce. The browser-idle gate deliberately keeps
+/// the window from re-centring mid-gesture (THE RULE: never write the scroll
+/// position while the browser is scrolling), and a gesture can travel far
+/// more than any slice holds (one recorded gesture: 5,255px, ~16 slides;
+/// Chromium moves up to one slide per wheel event even with
+/// `scroll-snap-stop: always`), so reaching a false end cannot be prevented
+/// by sizing the slice without abandoning virtualisation. What can be
+/// prevented is the lie: at a false end the platform must not bounce.
+///
+/// **The rule, per axis.** `overscroll-behavior` covers both ends of an axis
+/// at once, so it is `none` whenever EITHER end of the rendered slides is a
+/// false end: a looping carousel (plain or virtual -- no true end at all), or
+/// a virtualised window that does not currently hold both the first and the
+/// last item. Only when both ends are true (plain non-looping content, or a
+/// virtual list rendering its whole data set) does it stay the platform
+/// default, which is therefore unchanged for every plain non-looping
+/// carousel. Trade-off, accepted: while one end of a virtual window is true
+/// and the other false (e.g. items 0-2 of 200), the true end loses the
+/// platform's own bounce (this crate's wheel/drag band still engages there,
+/// being a transform) and, for a vertical virtual list, scroll chaining to
+/// the page at that end; a false end bouncing is the bug being fixed, and
+/// chaining away from the middle of a list was never right either. `none`
+/// also stops scroll chaining for a looping carousel's axis. Deterministic
+/// from state, never an effect-only value: a virtual list's server render
+/// and hydrating first render both render the whole list (so the same
+/// value); only the post-mount windowing changes it.
+fn content_overscroll_style(
+    orientation: CarouselOrientation,
+    both_ends_true: bool,
+) -> &'static str {
+    if both_ends_true {
+        return "";
+    }
+    match orientation {
+        CarouselOrientation::Horizontal => "overscroll-behavior-inline:none;",
+        CarouselOrientation::Vertical => "overscroll-behavior-block:none;",
+    }
+}
+
 /// Clamp `index` into the valid range for a carousel of `count` slides
 /// (`0` when `count` is `0`, otherwise `[0, count - 1]`). The one
 /// definition every path that could produce an out-of-range index
@@ -3510,6 +3564,8 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation);
     let gap_var = content_gap_var(props.gap.as_deref());
+    // Plain content renders every slide: both ends are true unless it loops.
+    let overscroll = content_overscroll_style(orientation, !(ctx.loop_enabled)());
     let axis_style = match orientation {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -3521,7 +3577,7 @@ pub fn CarouselContent(props: CarouselContentProps) -> Element {
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{gap_var}{}",
+        "{axis_style}{gap_margin}{gap_var}{overscroll}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -4315,6 +4371,12 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     } else {
         crate::r#virtual::window(n, 0, n as isize - 1, 0, false)
     };
+    // Does the rendered window hold the real first / last item? (Feeds
+    // `content_overscroll_style`: a slice edge mid-list is a false end.)
+    let win_first_last = (
+        win.iter().any(|item| item.data_index == 0),
+        n > 0 && win.iter().any(|item| item.data_index == n - 1),
+    );
 
     let selected = (ctx.selected)();
     let (visible_start, visible_end) = (ctx.visible_range)();
@@ -4337,6 +4399,11 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
     let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
     let gap_margin = content_gap_margin(orientation_now);
     let gap_var = content_gap_var(props.gap.as_deref());
+    // Both ends true only when not looping AND the rendered window holds the
+    // real first and last item (always so before windowing: SSR and the
+    // hydrating first render render the whole list).
+    let both_ends_true = !(ctx.loop_enabled)() && win_first_last.0 && win_first_last.1;
+    let overscroll = content_overscroll_style(orientation_now, both_ends_true);
     let axis_style = match orientation_now {
         CarouselOrientation::Horizontal => {
             "display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;\
@@ -4348,7 +4415,7 @@ pub fn CarouselVirtualContent<T: Clone + PartialEq + 'static>(
         }
     };
     let style = format!(
-        "{axis_style}{gap_margin}{gap_var}{}",
+        "{axis_style}{gap_margin}{gap_var}{overscroll}{}",
         caller_style.map(|s| format!(" {s}")).unwrap_or_default()
     );
 
@@ -5997,6 +6064,34 @@ mod ssr_tests {
         let plain = render(ThreeSlideCarousel);
         assert!(plain.contains("data-loop=false"));
         assert!(plain.contains("data-slide-count=0"));
+    }
+
+    // -- overscroll-behavior at false ends ---------------------------------
+
+    #[component]
+    fn VerticalLoopingCarousel() -> Element {
+        rsx! {
+            Carousel { aria_label: "Featured photos", r#loop: true, orientation: CarouselOrientation::Vertical,
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overscroll_is_left_to_the_platform_only_where_both_ends_are_true() {
+        // Plain, non-looping: both ends are true -- unchanged (no declaration).
+        assert!(!render(ThreeSlideCarousel).contains("overscroll-behavior"));
+        // Looping (any mode): no true end, so the platform must not bounce.
+        assert!(render(LoopingPlainCarousel).contains("overscroll-behavior-inline:none;"));
+        assert!(render(VerticalLoopingCarousel).contains("overscroll-behavior-block:none;"));
+        assert!(render(VirtualCarousel12Loop).contains("overscroll-behavior-inline:none;"));
+        // Virtual, non-looping: SSR (and the hydrating first render) renders
+        // the whole list, so both ends are true there; only post-mount
+        // windowing can make one false.
+        assert!(!render(VirtualCarouselNoLoop).contains("overscroll-behavior"));
     }
 
     // -- `gap` prop ------------------------------------------------------
