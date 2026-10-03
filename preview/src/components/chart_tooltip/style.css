@@ -120,3 +120,24 @@
   font-variant-numeric: tabular-nums;
   margin-inline-start: auto;
 }
+
+/* ---------------------------------------------------------------------- *
+ * shadcn's `formatter` demos: `{value}<span>kcal</span>` -- the number in
+ * the tooltip's value weight, the unit muted and regular-weight beside it.
+ * The `formatter` demo's own row is shadcn's
+ * `flex min-w-[130px] items-center text-xs text-muted-foreground`.
+ * ---------------------------------------------------------------------- */
+
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip-unit"] {
+  color: var(--secondary-color-5);
+  font-weight: 400;
+  margin-inline-start: 2px;
+}
+
+.dx-chart-tooltip-gallery [data-slot="chart-tooltip-formatter-row"] {
+  display: flex;
+  min-width: 130px;
+  align-items: center;
+  color: var(--secondary-color-5);
+  font-size: 12px;
+}

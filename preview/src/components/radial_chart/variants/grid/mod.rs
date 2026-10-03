@@ -24,7 +24,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// A muted full-sweep track drawn behind every ring (`RadialOptions::grid`).
+/// The rings over a circular grid: a circle through every ring and a spoke at
+/// every 20 visitors (`RadialGrid::Circles`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -36,10 +37,13 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::RadialBar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Visitors by browser",
-                        radial: RadialOptions { inner_radius: 30.0, grid: true, ..Default::default() },
+                        radial: RadialOptions {
+                            inner_radius: Radius::Px(30.0),
+                            outer_radius: Radius::Px(100.0),
+                            grid: RadialGrid::Circles { radial_lines: true },
+                            ..Default::default()
+                        },
                     }
                     ChartTooltip { hide_label: true }
                 }

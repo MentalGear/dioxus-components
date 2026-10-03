@@ -51,4 +51,4 @@ pub use dioxus_primitives::chart::Curve;
 /// straight from the primitive here for the same reason and with the same
 /// no-shared-file-edit benefit as `Curve` above, rather than adding a
 /// second lane's own names to `chart::component`'s shared list.
-pub use dioxus_primitives::chart::{DotContext, DotRenderer, LineLabels};
+pub use dioxus_primitives::chart::{DotContext, DotRenderer, LineLabels, TooltipIndicator};

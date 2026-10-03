@@ -1,0 +1,178 @@
+{
+  "name": "chart-radar-lines-only",
+  "title": "Radar Chart - Lines Only",
+  "description": "Showing total visitors for the last 6 months",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "January - June 2024"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 160
+    },
+    {
+      "month": "February",
+      "desktop": 185,
+      "mobile": 170
+    },
+    {
+      "month": "March",
+      "desktop": 207,
+      "mobile": 180
+    },
+    {
+      "month": "April",
+      "desktop": 173,
+      "mobile": 160
+    },
+    {
+      "month": "May",
+      "desktop": 160,
+      "mobile": 190
+    },
+    {
+      "month": "June",
+      "desktop": 174,
+      "mobile": 204
+    }
+  ],
+  "desktopData": null,
+  "mobileData": null,
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": false,
+    "indicator": "line",
+    "nameKey": null,
+    "labelKey": null
+  },
+  "legend": false,
+  "centerLabel": null,
+  "radarChart": {
+    "margin": null
+  },
+  "radars": [
+    {
+      "dataKey": "desktop",
+      "fillOpacity": 0,
+      "strokeWidth": 2,
+      "dot": null
+    },
+    {
+      "dataKey": "mobile",
+      "fillOpacity": 0,
+      "strokeWidth": 2,
+      "dot": null
+    }
+  ],
+  "polarGrid": {
+    "gridType": null,
+    "radialLines": false,
+    "polarRadius": null,
+    "fill": false
+  },
+  "angleAxis": {
+    "customTick": false
+  },
+  "radiusAxis": null,
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [],
+    "rings": [
+      0,
+      24,
+      48,
+      72,
+      96
+    ],
+    "spokes": 0,
+    "polygons": [
+      {
+        "fill": "var(--color-desktop)",
+        "fillOpacity": 0,
+        "strokeWidth": 2,
+        "radii": [
+          81.16,
+          80.73,
+          90.33,
+          75.49,
+          69.82,
+          75.93
+        ]
+      },
+      {
+        "fill": "var(--color-mobile)",
+        "fillOpacity": 0,
+        "strokeWidth": 2,
+        "radii": [
+          69.82,
+          74.18,
+          78.55,
+          69.82,
+          82.91,
+          89.02
+        ]
+      }
+    ],
+    "dots": [],
+    "texts": [
+      {
+        "kind": "angle",
+        "text": "January",
+        "anchor": "middle",
+        "x": 0,
+        "y": -104
+      },
+      {
+        "kind": "angle",
+        "text": "February",
+        "anchor": "start",
+        "x": 90.07,
+        "y": -52
+      },
+      {
+        "kind": "angle",
+        "text": "March",
+        "anchor": "start",
+        "x": 90.07,
+        "y": 52
+      },
+      {
+        "kind": "angle",
+        "text": "April",
+        "anchor": "middle",
+        "x": 0,
+        "y": 104
+      },
+      {
+        "kind": "angle",
+        "text": "May",
+        "anchor": "end",
+        "x": -90.07,
+        "y": 52
+      },
+      {
+        "kind": "angle",
+        "text": "June",
+        "anchor": "end",
+        "x": -90.07,
+        "y": -52
+      }
+    ],
+    "labelLines": 0
+  }
+}

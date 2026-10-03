@@ -1,0 +1,166 @@
+{
+  "name": "chart-pie-interactive",
+  "title": "Pie Chart - Interactive",
+  "description": "January - June 2024",
+  "footer": [],
+  "containerClass": "mx-auto aspect-square w-full max-w-[300px]",
+  "data": null,
+  "desktopData": [
+    {
+      "month": "january",
+      "desktop": 186,
+      "fill": "var(--color-january)"
+    },
+    {
+      "month": "february",
+      "desktop": 305,
+      "fill": "var(--color-february)"
+    },
+    {
+      "month": "march",
+      "desktop": 237,
+      "fill": "var(--color-march)"
+    },
+    {
+      "month": "april",
+      "desktop": 173,
+      "fill": "var(--color-april)"
+    },
+    {
+      "month": "may",
+      "desktop": 209,
+      "fill": "var(--color-may)"
+    }
+  ],
+  "mobileData": null,
+  "config": {
+    "visitors": {
+      "label": "Visitors"
+    },
+    "desktop": {
+      "label": "Desktop"
+    },
+    "mobile": {
+      "label": "Mobile"
+    },
+    "january": {
+      "label": "January",
+      "color": "var(--chart-1)"
+    },
+    "february": {
+      "label": "February",
+      "color": "var(--chart-2)"
+    },
+    "march": {
+      "label": "March",
+      "color": "var(--chart-3)"
+    },
+    "april": {
+      "label": "April",
+      "color": "var(--chart-4)"
+    },
+    "may": {
+      "label": "May",
+      "color": "var(--chart-5)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": true,
+    "indicator": "dot",
+    "nameKey": null,
+    "labelKey": null
+  },
+  "legend": false,
+  "centerLabel": {
+    "primaryClass": "fill-foreground text-3xl font-bold",
+    "raised": false
+  },
+  "pies": [
+    {
+      "dataKey": "desktop",
+      "nameKey": "month",
+      "innerRadius": 60,
+      "outerRadius": null,
+      "startAngle": null,
+      "endAngle": null,
+      "paddingAngle": null,
+      "cornerRadius": null,
+      "labelLine": null,
+      "label": false,
+      "activeShape": true
+    }
+  ],
+  "labelList": [],
+  "activeIndex": null,
+  "halo": true,
+  "rendered": {
+    "width": 300,
+    "height": 300,
+    "cx": 150,
+    "cy": 150,
+    "sectors": [
+      {
+        "background": false,
+        "fill": "var(--color-january)",
+        "outer": 126,
+        "inner": 60,
+        "start": 0,
+        "sweep": 60.32
+      },
+      {
+        "background": false,
+        "fill": "var(--color-january)",
+        "outer": 141,
+        "inner": 128,
+        "start": 0,
+        "sweep": 60.32
+      },
+      {
+        "background": false,
+        "fill": "var(--color-february)",
+        "outer": 116,
+        "inner": 60,
+        "start": 60.32,
+        "sweep": 98.92
+      },
+      {
+        "background": false,
+        "fill": "var(--color-march)",
+        "outer": 116,
+        "inner": 60,
+        "start": 159.24,
+        "sweep": 76.86
+      },
+      {
+        "background": false,
+        "fill": "var(--color-april)",
+        "outer": 116,
+        "inner": 60,
+        "start": 236.11,
+        "sweep": 56.11
+      },
+      {
+        "background": false,
+        "fill": "var(--color-may)",
+        "outer": 116,
+        "inner": 60,
+        "start": 292.22,
+        "sweep": 67.78
+      }
+    ],
+    "rings": [],
+    "spokes": 0,
+    "polygons": [],
+    "dots": [],
+    "texts": [
+      {
+        "kind": "other",
+        "text": "186Visitors",
+        "anchor": "middle",
+        "x": 0,
+        "y": 0
+      }
+    ],
+    "labelLines": 0
+  }
+}

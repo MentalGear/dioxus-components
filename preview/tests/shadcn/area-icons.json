@@ -1,0 +1,109 @@
+{
+  "name": "chart-area-icons",
+  "variant": "icons",
+  "title": "Area Chart - Icons",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 80
+    },
+    {
+      "month": "February",
+      "desktop": 305,
+      "mobile": 200
+    },
+    {
+      "month": "March",
+      "desktop": 237,
+      "mobile": 120
+    },
+    {
+      "month": "April",
+      "desktop": 73,
+      "mobile": 190
+    },
+    {
+      "month": "May",
+      "desktop": 209,
+      "mobile": 130
+    },
+    {
+      "month": "June",
+      "desktop": 214,
+      "mobile": 140
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)",
+      "icon": "TrendingDown"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)",
+      "icon": "TrendingUp"
+    }
+  },
+  "chart": {
+    "kind": "area",
+    "margin": {
+      "left": 12,
+      "right": 12
+    },
+    "layout": null,
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "mobile",
+      "type": "natural",
+      "fill": "var(--color-mobile)",
+      "fillOpacity": 0.4,
+      "stackId": "a",
+      "radius": null,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    },
+    {
+      "dataKey": "desktop",
+      "type": "natural",
+      "fill": "var(--color-desktop)",
+      "fillOpacity": 0.4,
+      "stackId": "a",
+      "radius": null,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": {
+    "vertical": false,
+    "horizontal": true
+  },
+  "xAxis": {
+    "dataKey": "month",
+    "type": null,
+    "hide": false,
+    "tickMargin": 8,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": null,
+  "tooltip": {
+    "cursor": false,
+    "indicator": "line",
+    "hideLabel": false,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": true,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [],
+  "activeIndex": null
+}

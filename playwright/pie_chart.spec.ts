@@ -80,33 +80,38 @@ test.describe("Pie chart: slice geometry", () => {
   // `chart-pie-simple`'s own 5-category dataset (chart-pie-simple.tsx,
   // ported verbatim into `variants/main/mod.rs`) -- every non-stacked
   // variant shares it, so `main` is a representative, not a special case.
-  test("main: one arc per datum, slices sum to a full turn within tolerance", async ({ page }) => {
+  test("main: one arc per datum, counter-clockwise from three o'clock, a full turn", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "main");
     const slices = f.locator('[data-slot="chart-arc"]');
     const count = await slices.count();
-    expect(count).toBeGreaterThan(1);
+    expect(count).toBe(5);
 
-    // `pie.rs` emits `data-start-angle`/`data-end-angle` (radians, this
-    // crate's `engine::polar` convention) on every arc specifically so a
-    // spec can assert on the real layout numbers without reconstructing
-    // them from the `d` path string.
-    let total = 0;
-    let previousEnd: number | null = null;
+    // `pie.rs` emits `data-start-angle`/`data-end-angle` in Recharts
+    // degrees (0 = three o'clock, counter-clockwise) and the radii in px,
+    // so a spec asserts on the real layout without parsing `d`. These are
+    // the numbers measured on shadcn's rendered chart-pie-simple.
+    let previousEnd = 0;
     for (let i = 0; i < count; i++) {
       const slice = slices.nth(i);
       await expect(slice).toHaveAttribute("data-index", String(i));
       const start = parseFloat((await slice.getAttribute("data-start-angle")) ?? "NaN");
       const end = parseFloat((await slice.getAttribute("data-end-angle")) ?? "NaN");
-      expect(Number.isNaN(start)).toBe(false);
-      expect(Number.isNaN(end)).toBe(false);
-      if (previousEnd !== null) {
-        expect(start).toBeCloseTo(previousEnd, 2);
-      }
+      expect(start).toBeCloseTo(previousEnd, 2);
+      expect(end).toBeGreaterThan(start);
       previousEnd = end;
-      total += end - start;
     }
-    expect(total).toBeCloseTo(2 * Math.PI, 2);
+    expect(previousEnd).toBeCloseTo(360, 2);
+    await expect(slices.first()).toHaveAttribute("data-end-angle", /^107\.0/);
+    await expect(slices.first()).toHaveAttribute("data-outer-radius", "96");
+  });
+
+  test("main: a 250px square, like shadcn's aspect-square max-h-[250px]", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const box = await frame(page, "main").locator('[data-slot="chart-svg"]').boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeLessThanOrEqual(250.5);
+    expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
   });
 
   test("donut: has a real hole (inner_radius > 0) and its arc path draws an inner ring", async ({ page }) => {
@@ -119,15 +124,17 @@ test.describe("Pie chart: slice geometry", () => {
     expect((d!.match(/A/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  test("stacked: renders two concentric rings (two series) from the same category axis", async ({ page }) => {
+  test("stacked: two concentric pies, a disc of radius 60 and a ring from 70 to 90", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "stacked");
-    const seriesGroups = await f.locator('[data-slot="chart-arc"]').evaluateAll((nodes) =>
-      Array.from(new Set(nodes.map((n) => n.getAttribute("data-series")))),
-    );
-    // Two rings -> two distinct dataKey-equivalent groupings (desktop,
-    // mobile), matching chart-pie-stacked.tsx's own two `<Pie>` elements.
-    expect(seriesGroups.filter((s) => s !== null).length).toBeGreaterThanOrEqual(2);
+    // One group per series (chart-pie-stacked.tsx's two `<Pie>` elements).
+    await expect(f.locator('[data-slot="chart-series"] g[data-series]')).toHaveCount(2);
+    const desktop = f.locator('g[data-series="desktop"] [data-slot="chart-arc"]');
+    const mobile = f.locator('g[data-series="mobile"] [data-slot="chart-arc"]');
+    await expect(desktop).toHaveCount(5);
+    await expect(desktop.first()).toHaveAttribute("data-outer-radius", "60");
+    await expect(mobile.first()).toHaveAttribute("data-inner-radius", "70");
+    await expect(mobile.first()).toHaveAttribute("data-outer-radius", "90");
   });
 });
 
@@ -144,12 +151,22 @@ test.describe("Pie chart: hover and active-slice behaviour", () => {
     await expect(first).not.toHaveAttribute("data-active", "true");
   });
 
-  test("donut_active: a fixed slice is active without any hover", async ({ page }) => {
+  test("donut_active: a fixed slice is active, drawn 10px further out, hole unchanged", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "donut_active");
     const active = f.locator('[data-slot="chart-arc"][data-active="true"]');
     await expect(active).toHaveCount(1);
     await expect(active).toHaveAttribute("data-index", "0");
+    await expect(active).toHaveAttribute("data-outer-radius", "106");
+    await expect(active).toHaveAttribute("data-inner-radius", "60");
+    // Geometry, not a CSS scale: the drawn arc is not transformed.
+    expect(await active.evaluate((el) => getComputedStyle(el).transform)).toBe("none");
+  });
+
+  test("interactive: the active slice has its halo ring beyond the rim", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const f = frame(page, "interactive");
+    await expect(f.locator('[data-slot="chart-arc-halo"]')).toHaveCount(1);
   });
 
   test("interactive: choosing a month in the Select moves the active slice", async ({ page }) => {
@@ -202,11 +219,13 @@ test.describe("Pie chart: legend swatches", () => {
 });
 
 test.describe("Pie chart: labels", () => {
-  test("label: a text label is drawn for every slice", async ({ page }) => {
+  test("label: every slice's value outside the rim, with a leader line", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "label");
-    const labels = f.locator('[data-slot="chart-arc-label"]');
+    const labels = f.locator('[data-slot="chart-arc-label"][data-position="outside"]');
     await expect(labels).toHaveCount(await f.locator('[data-slot="chart-arc"]').count());
+    await expect(labels.first()).toHaveText("275");
+    await expect(f.locator('[data-slot="chart-arc-label-line"]')).toHaveCount(5);
   });
 
   test("label_list: each label reads the category name, not a formatted number", async ({ page }) => {
@@ -215,6 +234,17 @@ test.describe("Pie chart: labels", () => {
     // chart-pie-label-list.tsx's own dataset -- the first category ported
     // into `variants/label_list/mod.rs`.
     await expect(f.locator('[data-slot="chart-arc-label"]').first()).toHaveText(/chrome/i);
+  });
+});
+
+test.describe("Pie chart: load animation", () => {
+  test("main: the slices sweep in once measured, and not under reduced motion", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const mask = frame(page, "main").locator('[data-slot="chart-sweep-mask"] path');
+    await expect(frame(page, "main").locator('[data-slot="chart-svg"][data-animate="true"]')).toBeAttached();
+    expect(await mask.evaluate((el) => getComputedStyle(el).animationName)).toBe("dx-chart-sweep");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    expect(await mask.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
   });
 });
 

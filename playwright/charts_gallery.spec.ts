@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { type Locator } from "@playwright/test";
 import { gotoHydrated } from "./hydration";
 import { expectNoAxeViolations } from "./axe";
 import { BASE_URL } from "./base-url";
@@ -192,12 +193,162 @@ test("View Code shows the installed import path, highlighted", async ({ page }) 
   );
 });
 
+/** "1\n2\n...\nN": the gutter text a listing of `source` must show. */
+function gutterNumbers(source: string): string {
+  const lines = source.replace(/\n+$/, "").split("\n").length;
+  return Array.from({ length: lines }, (_, i) => String(i + 1)).join("\n");
+}
+
+/** How far (px) the top of line `n` (1-based) sits from the top of number `n`, in a listing. */
+async function lineOffset(code: Locator, n: number): Promise<number> {
+  return code.evaluate((box, n) => {
+    const top = (text: Node, line: number) => {
+      const data = (text as Text).data;
+      let at = 0;
+      for (let i = 1; i < line; i++) at = data.indexOf("\n", at) + 1;
+      const range = document.createRange();
+      range.setStart(text, at);
+      range.setEnd(text, at + 1);
+      return range.getBoundingClientRect().top;
+    };
+    const gutter = box.querySelector(".dx-code-gutter")!.firstChild!;
+    // The code's first text node holds line 1 only up to its first token; walk the
+    // spans in order and find the one that starts line `n`.
+    const spans = Array.from(box.querySelectorAll(".dxc code > span, .dxc code > *"));
+    let seen = 1;
+    for (const span of spans) {
+      const text = span.firstChild;
+      if (!text) continue;
+      const data = (text as Text).data;
+      if (n === seen) return top(text, 1) - top(gutter, n);
+      const breaks = data.split("\n").length - 1;
+      // Line `n` starts in this text node -- unless the node ENDS with the
+      // newline before it (e.g. a lone "\n" token): then the line's first
+      // character is in the next node, which the next pass picks up.
+      if (n <= seen + breaks && !(n === seen + breaks && data.endsWith("\n"))) {
+        return top(text, n - seen + 1) - top(gutter, n);
+      }
+      seen += breaks;
+    }
+    throw new Error(`line ${n} not found`);
+  }, n);
+}
+
+test("View Code numbers its lines in a gutter that selecting and copying leave out", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHydrated(page, `${BASE_URL}/charts/bar/`);
+  const viewCode = page
+    .locator('.dx-charts-cell[data-variant="main"]')
+    .getByRole("button", { name: /^View Code/ });
+  await viewCode.scrollIntoViewIfNeeded();
+  await viewCode.click();
+  const dialog = page.getByRole("dialog", { name: "bar_chart/variants/main/mod.rs" });
+  const code = dialog.locator(".dx-preview-code-theme");
+  const gutter = code.locator(".dx-code-gutter");
+  const source = installedSource("bar_chart", "main");
+
+  // One number per line, 1..N, visible, decorative, and not selectable.
+  await expect(gutter).toBeVisible();
+  await expect(gutter).toHaveAttribute("aria-hidden", "true");
+  expect(await gutter.textContent()).toBe(gutterNumbers(source));
+  expect(await gutter.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+
+  // Each number is level with its line: first, middle and last.
+  const lines = source.replace(/\n+$/, "").split("\n").length;
+  for (const n of [1, Math.ceil(lines / 2), lines]) {
+    expect(Math.abs(await lineOffset(code, n)), `line ${n}`).toBeLessThanOrEqual(1.5);
+  }
+
+  // Selecting the whole listing (and copying it) yields the source, no numbers.
+  await code.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const selection = getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  const selected = await page.evaluate(() => getSelection()!.toString());
+  expect(selected.trim()).toBe(source.trim());
+  await page.keyboard.press("ControlOrMeta+c");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied.trim()).toBe(source.trim());
+  expect(copied).not.toMatch(/^\d+$/m);
+
+  // The Copy button is unchanged: the source, exactly.
+  await dialog.getByRole("button", { name: /^Copy code/ }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(source);
+});
+
+test("View Code's gutter follows the theme and stays put when long lines scroll", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 600, height: 800 });
+  await gotoHydrated(page, `${BASE_URL}/charts/bar/`);
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const viewCode = page
+      .locator('.dx-charts-cell[data-variant="main"]')
+      .getByRole("button", { name: /^View Code/ });
+    await viewCode.scrollIntoViewIfNeeded();
+    await viewCode.click();
+    const dialog = page.getByRole("dialog", { name: "bar_chart/variants/main/mod.rs" });
+    const gutter = dialog.locator(".dx-code-gutter");
+    await expect(gutter).toBeVisible();
+
+    // Legible against its own background: not the page's text color on itself.
+    const [color, background] = await gutter.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.color, style.backgroundColor];
+    });
+    expect(color, scheme).not.toBe(background);
+    expect(background, scheme).not.toBe("rgba(0, 0, 0, 0)");
+
+    // Scrolling the code sideways leaves the numbers where they are.
+    const body = dialog.locator(".dx-charts-code-body");
+    const before = (await gutter.boundingBox())!.x;
+    await body.evaluate((el) => (el.scrollLeft = 120));
+    expect(await body.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    expect(Math.abs((await gutter.boundingBox())!.x - before)).toBeLessThanOrEqual(1);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  }
+});
+
 test("the component pages' CODE tab shows the installed import path too", async ({ page }) => {
   await gotoHydrated(page, `${BASE_URL}/component/pie_chart/`);
   await page.getByRole("tab", { name: "CODE" }).first().click();
   const code = page.locator(".dx-component-preview-frame .dx-preview-code-theme").first();
   await expect(code).toContainText("use crate::components::pie_chart::*;");
   await expect(code).not.toContainText("super::super");
+});
+
+test("the component pages' CODE tab numbers its lines, and Copy leaves the numbers out", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await gotoHydrated(page, `${BASE_URL}/component/pie_chart/`);
+  await page.getByRole("tab", { name: "CODE" }).first().click();
+  const block = page.locator(".dx-component-preview-frame .dx-code-block").first();
+  const gutter = block.locator(".dx-code-gutter");
+  await expect(gutter).toBeVisible();
+  await expect(gutter).toHaveAttribute("aria-hidden", "true");
+  expect(await gutter.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+  const numbers = (await gutter.textContent())!.split("\n");
+  expect(numbers[0]).toBe("1");
+  expect(numbers.at(-1)).toBe(String(numbers.length));
+
+  // The block's Copy button copies the source: one line per number, none of them a number.
+  await block.locator("xpath=..").getByRole("button", { name: "Copy code" }).first().click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(/^use crate::components::pie_chart::/);
+  expect(copied).not.toMatch(/^\d+$/m);
+  expect(copied.replace(/\n+$/, "").split("\n").length).toBe(numbers.length);
 });
 
 test("switching tabs keeps the tab row in view and focuses the active tab", async ({ page }) => {

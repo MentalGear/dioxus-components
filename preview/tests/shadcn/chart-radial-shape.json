@@ -1,0 +1,98 @@
+{
+  "name": "chart-radial-shape",
+  "title": "Radial Chart - Shape",
+  "description": "January - June 2024",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "Showing total visitors for the last 6 months"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": [
+    {
+      "browser": "safari",
+      "visitors": 1260,
+      "fill": "var(--color-safari)"
+    }
+  ],
+  "desktopData": null,
+  "mobileData": null,
+  "config": {
+    "visitors": {
+      "label": "Visitors"
+    },
+    "safari": {
+      "label": "Safari",
+      "color": "var(--chart-2)"
+    }
+  },
+  "tooltip": null,
+  "legend": false,
+  "centerLabel": {
+    "primaryClass": "fill-foreground text-4xl font-bold",
+    "raised": false
+  },
+  "radialChart": {
+    "startAngle": null,
+    "endAngle": 100,
+    "innerRadius": 65,
+    "outerRadius": 95
+  },
+  "radialBars": [
+    {
+      "dataKey": "visitors",
+      "background": true,
+      "cornerRadius": null,
+      "stackId": null
+    }
+  ],
+  "polarGrid": {
+    "gridType": "circle",
+    "radialLines": false,
+    "polarRadius": [
+      86,
+      74
+    ]
+  },
+  "labelList": [],
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 92,
+        "inner": 68,
+        "start": 0,
+        "sweep": 100
+      },
+      {
+        "background": false,
+        "fill": "var(--color-safari)",
+        "outer": 92,
+        "inner": 68,
+        "start": 0,
+        "sweep": 100
+      }
+    ],
+    "rings": [
+      86,
+      74
+    ],
+    "spokes": 0,
+    "polygons": [],
+    "dots": [],
+    "texts": [
+      {
+        "kind": "other",
+        "text": "1,260Visitors",
+        "anchor": "middle",
+        "x": 0,
+        "y": 0
+      }
+    ],
+    "labelLines": 0
+  }
+}

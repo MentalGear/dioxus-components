@@ -1,12 +1,17 @@
+//! shadcn's `chart-area-interactive`: 91 days of desktop and mobile visitors,
+//! stacked (mobile at the bottom) with a gradient fill at Recharts' default
+//! 0.6 opacity, in a fixed 250px-tall chart that is as wide as the card. The
+//! select narrows it to the last 30 or 7 days -- the days on or after
+//! June 30 minus the range, so 91, 31 or 8 rows, as in shadcn.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle};
 use crate::components::select::{Select, SelectOption};
 use dioxus::prelude::*;
 
-/// The ranges the select offers; each shows the tail of the 91-day series
-/// below.
+/// The ranges the select offers.
 #[derive(Debug, Clone, Copy, PartialEq, strum::Display)]
-enum TimeRange {
+pub(crate) enum TimeRange {
     #[strum(to_string = "Last 3 months")]
     Days90,
     #[strum(to_string = "Last 30 days")]
@@ -16,7 +21,8 @@ enum TimeRange {
 }
 
 impl TimeRange {
-    const fn days(self) -> usize {
+    /// How many days before the last date the range starts.
+    pub(crate) const fn days(self) -> usize {
         match self {
             TimeRange::Days90 => 90,
             TimeRange::Days30 => 30,
@@ -25,9 +31,7 @@ impl TimeRange {
     }
 }
 
-/// The 91-day dataset as `(date, desktop, mobile)` rows. The `"Mon D"` labels
-/// are built once in [`generate_data`]; `ChartDatum::label` is what both the
-/// hidden data table and the x axis read.
+/// The 91-day dataset as `(date, desktop, mobile)` rows -- shadcn's own.
 const ROWS: [(&str, f64, f64); 91] = [
     ("2024-04-01", 222.0, 150.0),
     ("2024-04-02", 97.0, 180.0),
@@ -122,39 +126,48 @@ const ROWS: [(&str, f64, f64); 91] = [
     ("2024-06-30", 446.0, 400.0),
 ];
 
-/// `"2024-04-01"` -> `"Apr 1"`, using a fixed month-name table instead of a
-/// date library.
-fn format_date_label(iso: &str) -> String {
+/// `"2024-04-01"` -> `("Apr", "1", "2024")`, from a fixed month-name table
+/// instead of a date library.
+fn date_parts(iso: &str) -> (&'static str, &str, &str) {
     let month = match &iso[5..7] {
         "04" => "Apr",
         "05" => "May",
         "06" => "Jun",
-        other => other,
+        _ => "",
     };
-    let day = iso[8..10].trim_start_matches('0');
-    format!("{month} {day}")
+    (month, iso[8..10].trim_start_matches('0'), &iso[..4])
 }
 
-fn generate_data() -> Vec<ChartDatum> {
+/// Every row, values in config order (mobile, desktop); the label is the ISO
+/// date, which the axis and the tooltip format.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
     ROWS.iter()
         .map(|&(date, desktop, mobile)| ChartDatum {
-            label: format_date_label(date),
-            values: vec![Some(desktop), Some(mobile)],
+            label: date.to_string(),
+            values: vec![Some(mobile), Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The rows from `range.days()` days before the last date on: shadcn keeps
+/// `date >= June 30 - days`, which includes both ends (91 / 31 / 8 rows).
+pub(crate) fn visible_data(range: TimeRange) -> Vec<ChartDatum> {
+    let all = chart_data();
+    let start = all.len().saturating_sub(range.days() + 1);
+    all[start..].to_vec()
+}
+
+/// The series, in draw (and stacking) order: mobile at the bottom.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new()
+        .series("mobile", "Mobile", "var(--dx-chart-2)")
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
+}
+
 #[component]
 pub fn Demo() -> Element {
     let mut range = use_signal(|| TimeRange::Days90);
-    let all_data = generate_data();
-    let days = range().days();
-    let visible: Vec<ChartDatum> = all_data.iter().rev().take(days).rev().cloned().collect();
-
-    let config = ChartConfig::new()
-        .series("desktop", "Desktop", "var(--dx-chart-1)")
-        .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
         AreaChartGallery {
@@ -193,23 +206,32 @@ pub fn Demo() -> Element {
                     }
                 }
                 CardContent {
-                    ChartContainer { config, data: visible, kind: ChartKind::Area,
+                    ChartContainer { config: chart_config(), data: visible_data(range()), kind: ChartKind::Area,
                         Chart {
-                            // Stacked: the two series are drawn on top of each
-                            // other.
-                            aria_label: "Visitors by day, desktop and mobile",
+                            aria_label: "Visitors by day, mobile and desktop, stacked",
                             // A fixed 250px height; the width follows the card.
-                            // `width` is only the size used for the
-                            // server/first render (see
-                            // `ChartProps::fit_width`).
-                            fit_width: true,
-                            width: 700.0,
                             height: 250.0,
                             stacked: true,
+                            curve: Curve::Natural,
+                            cursor: false,
+                            area: AreaOptions {
+                                gradient: true,
+                                fill_opacity: 0.6,
+                                ..Default::default()
+                            },
                             x_label: "Date",
-                            x_tick_format: |label: String| label,
+                            min_tick_gap: 32.0,
+                            x_tick_format: |date: String| {
+                                let (month, day, _) = date_parts(&date);
+                                format!("{month} {day}")
+                            },
                         }
-                        ChartTooltip {}
+                        ChartTooltip {
+                            label_format: |date: String| {
+                                let (month, day, _) = date_parts(&date);
+                                format!("{month} {day}")
+                            },
+                        }
                         ChartLegend {}
                     }
                 }

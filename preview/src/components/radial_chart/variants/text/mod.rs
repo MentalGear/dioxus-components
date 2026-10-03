@@ -2,24 +2,39 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// A single-category dataset: one gauge-style ring with the visitor count
-/// centered in the hole.
+/// One browser's visitors.
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
-        label: "Visitors".to_string(),
-        values: vec![Some(1999.0)],
-        color: Some("var(--dx-chart-1)".to_string()),
+        label: "Safari".to_string(),
+        values: vec![Some(200.0)],
+        color: Some("var(--dx-chart-2)".to_string()),
     }]
 }
 
 fn chart_config() -> ChartConfig {
-    ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
+    ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-2)")
 }
 
-/// A single ring with a two-line total centered in its hole
-/// (`RadialOptions::center_text`).
+/// `1260.0` as `"1,260"` (JavaScript's `toLocaleString()`).
+fn thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A 250-degree gauge with rounded ends over a full muted ring, the value in
+/// its centre.
 #[component]
 pub fn Demo() -> Element {
+    let data = chart_data();
+    let visitors = data[0].values[0].unwrap_or(0.0);
+
     rsx! {
         Card {
             CardHeader {
@@ -27,15 +42,18 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::RadialBar,
+                ChartContainer { config: chart_config(), data, kind: ChartKind::RadialBar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Visitors",
                         radial: RadialOptions {
-                            inner_radius: 80.0,
-                            grid: true,
-                            center_text: Some(("1,999".to_string(), "Visitors".to_string())),
+                            start_angle: 0.0,
+                            end_angle: 250.0,
+                            inner_radius: Radius::Px(80.0),
+                            outer_radius: Radius::Px(90.0),
+                            grid: RadialGrid::Annulus { outer: 90.0, inner: 80.0 },
+                            background: true,
+                            corner_radius: 10.0,
+                            center_text: Some((thousands(visitors), "Visitors".to_string())),
                             ..Default::default()
                         },
                     }

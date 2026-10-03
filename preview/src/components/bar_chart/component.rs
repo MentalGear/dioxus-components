@@ -26,8 +26,8 @@ pub use crate::components::card::{
 };
 pub use dioxus_primitives::chart::TooltipIndicator;
 pub use crate::components::chart::{
-    BarOptions, Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartLegend,
-    ChartTooltip,
+    BarOptions, BarRadius, Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartLegend,
+    ChartMargin, ChartTooltip,
 };
 
 /// The "Trending up by 5.2% this month" footer shadcn repeats, byte-for-byte,

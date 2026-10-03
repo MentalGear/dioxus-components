@@ -10,12 +10,16 @@ enum Month {
     March,
     April,
     May,
-    June,
 }
 
 impl Month {
-    const ALL: [Month; 6] =
-        [Month::January, Month::February, Month::March, Month::April, Month::May, Month::June];
+    const ALL: [Month; 5] = [
+        Month::January,
+        Month::February,
+        Month::March,
+        Month::April,
+        Month::May,
+    ];
 
     fn label(self) -> &'static str {
         match self {
@@ -24,7 +28,6 @@ impl Month {
             Month::March => "March",
             Month::April => "April",
             Month::May => "May",
-            Month::June => "June",
         }
     }
 
@@ -33,7 +36,7 @@ impl Month {
     }
 }
 
-/// Visitor counts per month, one color per month.
+/// Desktop visitors per month, one color per month.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("January", 186.0, "var(--dx-chart-1)"),
@@ -41,23 +44,36 @@ fn chart_data() -> Vec<ChartDatum> {
         ("March", 237.0, "var(--dx-chart-3)"),
         ("April", 173.0, "var(--dx-chart-4)"),
         ("May", 209.0, "var(--dx-chart-5)"),
-        ("June", 214.0, "var(--dx-chart-1)"),
     ]
     .into_iter()
-    .map(|(month, visitors, color)| ChartDatum {
+    .map(|(month, desktop, color)| ChartDatum {
         label: month.to_string(),
-        values: vec![Some(visitors)],
+        values: vec![Some(desktop)],
         color: Some(color.to_string()),
     })
     .collect()
 }
 
 fn chart_config() -> ChartConfig {
-    ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
+    ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)")
 }
 
-/// A `Select` picks which month's slice is active (grown) and what the donut's
-/// center text shows; `PieOptions::active_index` drives both.
+/// `1125.0` as `"1,125"` (JavaScript's `toLocaleString()`).
+fn thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A `Select` picks the active month: its slice is drawn 10px further out
+/// with a halo ring beyond the rim (`active_index` + `active_halo`), and its
+/// value fills the donut's hole. A 300px square, as in shadcn.
 #[component]
 pub fn Demo() -> Element {
     let mut active = use_signal(|| Month::January);
@@ -75,7 +91,7 @@ pub fn Demo() -> Element {
                 CardAction {
                     Select::<Month> {
                         default_value: Month::January,
-                        trigger_aria_label: Some("Select a month".to_string()),
+                        trigger_aria_label: Some("Select a value".to_string()),
                         on_value_change: move |value: Option<Month>| {
                             if let Some(value) = value {
                                 active.set(value);
@@ -94,13 +110,19 @@ pub fn Demo() -> Element {
                 }
             }
             CardContent {
-                ChartContainer { config: chart_config(), data: data.clone(), kind: ChartKind::Pie,
+                ChartContainer {
+                    config: chart_config(),
+                    data: data.clone(),
+                    kind: ChartKind::Pie,
+                    style: "max-inline-size: 300px",
                     Chart {
+                        width: 300.0,
                         aria_label: "Visitors by month",
                         pie: PieOptions {
-                            inner_radius: 60.0,
+                            inner_radius: Radius::Px(60.0),
                             active_index: Some(active().index()),
-                            center_text: Some((format!("{active_visitors:.0}"), "Visitors".to_string())),
+                            active_halo: true,
+                            center_text: Some((thousands(active_visitors), "Visitors".to_string())),
                             ..Default::default()
                         },
                     }

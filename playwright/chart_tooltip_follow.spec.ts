@@ -48,12 +48,20 @@ async function measure(page: Page, frameSel = "#component-preview-frame") {
   const bandLocs = page.locator(frameSel).first().locator('[data-slot="chart-hit-band"]');
   const n = await bandLocs.count();
   const bands: Box[] = [];
-  for (let i = 0; i < n; i++) bands.push(await box(bandLocs.nth(i)));
+  const xs: number[] = [];
+  for (let i = 0; i < n; i++) {
+    bands.push(await box(bandLocs.nth(i)));
+    // The category's own position (svg px == CSS px: the svg is drawn at its
+    // measured size). Not the band's center: an area/line chart's first and
+    // last points sit ON the plot's edges (Recharts' point scale), so their
+    // bands, kept inside the svg, are not centered on them.
+    xs.push(Number(await bandLocs.nth(i).getAttribute("data-x")));
+  }
   return {
     chart: c,
     bands,
     /** A category's data-point x, relative to the chart box. */
-    pointX: (i: number) => bands[i].x + bands[i].width / 2 - c.x,
+    pointX: (i: number) => xs[i],
     plot: {
       top: bands[0].y - c.y,
       bottom: bands[0].y + bands[0].height - c.y,
@@ -200,8 +208,9 @@ test.describe("Cartesian tooltip follows the pointer", () => {
   test("never leaves the chart box, wherever the pointer is over the plot", async ({ page }) => {
     const m = await measure(page);
     const tooltip = tooltipOf(page);
-    const left = m.bands[0].x - m.chart.x + 4;
-    const right = m.bands[m.bands.length - 1].x + m.bands[m.bands.length - 1].width - m.chart.x - 4;
+    // The plot spans the first point to the last (both ON its edges).
+    const left = m.pointX(0) + 1;
+    const right = m.pointX(m.bands.length - 1) - 1;
     let opened = 0;
     for (let i = 0; i <= 8; i++) {
       for (let j = 0; j <= 6; j++) {
@@ -707,8 +716,9 @@ test.describe("defaultIndex: the tooltip starts open", () => {
     const m = await measure(page, frame);
     const tooltip = tooltipOf(page, frame);
     await expect(tooltip).toHaveAttribute("data-placed", "true");
-    // `default_index: 2` in the demos: x is that category's point + 10px.
-    await expectTooltipFollows(tooltip, m.chart, { x: m.pointX(2), y: 0 }, { x: true, y: false }, "default index 2");
+    // `default_index: 1` in the demos (shadcn's `defaultIndex={1}`): x is
+    // that category's point + 10px.
+    await expectTooltipFollows(tooltip, m.chart, { x: m.pointX(1), y: 0 }, { x: true, y: false }, "default index 1");
     await expect(tooltip.locator('[data-slot="chart-tooltip-label"]')).toHaveText(/./);
   });
 

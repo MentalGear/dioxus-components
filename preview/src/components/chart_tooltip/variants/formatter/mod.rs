@@ -27,15 +27,15 @@ fn chart_config() -> ChartConfig {
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// Formats a value as "{value} kcal", or "—" for a gap.
-fn kcal(value: Option<f64>) -> String {
+/// Formats a value as its bare number (`450`), or "—" for a gap. The "kcal" unit is a separate, muted span next to it, as in shadcn's `{value}<span>kcal</span>`.
+fn amount(value: Option<f64>) -> String {
     match value {
-        Some(v) => format!("{v} kcal"),
+        Some(v) => format!("{v}"),
         None => "—".to_string(),
     }
 }
 
-/// Hides the label and uses a `formatter` that lays each row out as the name on the left and "value kcal" on the right.
+/// Hides the label and uses a `formatter` that lays each row out as a 130px-wide row: the name on the left, the value and a muted "kcal" unit on the right.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -43,14 +43,27 @@ pub fn Demo() -> Element {
             Card {
                 CardHeader {
                     CardTitle { "Tooltip - Formatter" }
-                    CardDescription { "Tooltip with custom formatter." }
+                    CardDescription { "Tooltip with custom formatter ." }
                 }
                 CardContent {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
-                            // Open on the third day so every tooltip variant is visible
-                            default_index: 2,
+                            // shadcn's `defaultIndex={1}`: open on the second day. No grid and no y axis, as in shadcn's tooltip demos
+                            default_index: 1,
+                            show_grid: false,
+                            show_y_axis: false,
+                            // `tickMargin={10}` and `cursor={false}`
+                            tick_margin: 10.0,
+                            cursor: false,
+                            // The bottom series rounds its lower corners, the top one its upper corners (`radius={[0, 0, 4, 4]}` / `[4, 4, 0, 0]`)
+                            bar: BarOptions {
+                                series_radius: vec![
+                                    BarRadius::corners(0.0, 0.0, 4.0, 4.0),
+                                    BarRadius::corners(4.0, 4.0, 0.0, 0.0),
+                                ],
+                                ..Default::default()
+                            },
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
@@ -58,8 +71,13 @@ pub fn Demo() -> Element {
                         ChartTooltip {
                             hide_label: true,
                             formatter: |row: TooltipRow| rsx! {
-                                span { "data-slot": "chart-tooltip-name", "{row.label}" }
-                                span { "data-slot": "chart-tooltip-value", {kcal(row.value)} }
+                                div { "data-slot": "chart-tooltip-formatter-row",
+                                    span { "data-slot": "chart-tooltip-name", "{row.label}" }
+                                    span { "data-slot": "chart-tooltip-value",
+                                        {amount(row.value)}
+                                        span { "data-slot": "chart-tooltip-unit", "kcal" }
+                                    }
+                                }
                             },
                         }
                     }
@@ -74,9 +92,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kcal_formats_a_value_and_falls_back_for_a_gap() {
-        assert_eq!(kcal(Some(450.0)), "450 kcal");
-        assert_eq!(kcal(Some(305.5)), "305.5 kcal");
-        assert_eq!(kcal(None), "—");
+    fn amount_formats_a_bare_number_and_falls_back_for_a_gap() {
+        assert_eq!(amount(Some(450.0)), "450");
+        assert_eq!(amount(Some(305.5)), "305.5");
+        assert_eq!(amount(None), "—");
     }
 }

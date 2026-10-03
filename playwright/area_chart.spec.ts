@@ -83,11 +83,11 @@ test.describe("Behavioural: variant-specific rendering", () => {
     await page.goto(`${BASE_URL}/component/?name=area_chart&`);
     const frame = page.locator("#component-preview-frame-stacked").first();
     // A stacked chart's hidden table still lists every series' own raw
-    // value (stacking is a drawing concern, not a data concern) -- January
-    // is desktop=186, the second series ("mobile")=80, so both values must
-    // still be readable.
+    // value (stacking is a drawing concern, not a data concern), in config
+    // order -- which, as in shadcn's JSX, puts the second series first (it
+    // is the bottom layer): January is 80 for it and 186 for desktop.
     const row = frame.locator('[data-slot="chart-data"] tbody tr').first();
-    await expect(row.locator("td")).toHaveText(["186", "80"]);
+    await expect(row.locator("td")).toHaveText(["80", "186"]);
   });
 
   test("step: the line path is a staircase -- every segment after the initial M is purely horizontal or purely vertical", async ({
@@ -129,22 +129,19 @@ test.describe("Behavioural: variant-specific rendering", () => {
   }) => {
     await page.goto(`${BASE_URL}/component/?name=area_chart&`);
     const frame = page.locator("#component-preview-frame-stacked_expand").first();
-    // Config order is desktop, mobile, other (`ChartConfig::series`
-    // positional stacking order -- `engine::stack`'s own doc): each
-    // series stacks on top of the previous one, so "other" (added last)
-    // is the topmost series, and every row's percent-stacked top is
-    // exactly 1.0 regardless of the row's raw total.
-    const topPath = frame.locator('[data-series="other"] [data-slot="chart-area"]');
+    // Config order is other, mobile, desktop (shadcn's JSX order, which is
+    // Recharts' stacking order): each series stacks on top of the previous
+    // one, so desktop (added last) is the topmost series, and every row's
+    // percent-stacked top is exactly 1.0 regardless of the row's raw total.
+    const topPath = frame.locator('[data-series="desktop"] [data-slot="chart-area"]');
     const d = await topPath.getAttribute("d");
     expect(d).toBeTruthy();
     const match = (d as string).match(/^M(-?[\d.]+)[ ,](-?[\d.]+)/);
     expect(match).toBeTruthy();
     const y = Number(match![2]);
-    // MARGIN_TOP (primitives/src/chart/components/layout.rs) is 8.0 of a
-    // 300-tall default viewBox -- a wide, deliberately loose bound (not
-    // pixel-exact) so this test is about "reaches the plot top", not a
-    // brittle pin on an internal layout constant.
-    expect(y).toBeLessThan(9);
+    // The demo's `margin.top` is 12px (shadcn's), and one svg unit is one
+    // CSS px, so the 100% line is exactly 12.
+    expect(Math.abs(y - 12)).toBeLessThan(0.01);
   });
 
   test("gradient: every series' area fill references its own <linearGradient> def", async ({
@@ -164,12 +161,20 @@ test.describe("Behavioural: variant-specific rendering", () => {
       // group -- primitives/src/chart/components/series/area.rs).
       await expect(frame.locator(`linearGradient[id="${id}"]`)).toHaveCount(1);
     }
+    // ...and that is what actually paints: no stylesheet `fill` overrides the
+    // presentation attribute (a themed `fill: var(--series-color)` once did,
+    // flattening every gradient area to a solid colour).
+    for (const fill of await areaPaths.evaluateAll((els) => els.map((el) => getComputedStyle(el).fill))) {
+      expect(fill).toMatch(/^url\(/);
+    }
   });
 
-  test('interactive: switching to "Last 7 days" shows exactly 7 hit-bands', async ({ page }) => {
+  test('interactive: switching to "Last 7 days" shows shadcn\'s 8 days', async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=area_chart&`);
     const frame = page.locator("#component-preview-frame-interactive").first();
-    await expect(frame.locator('[data-slot="chart-hit-band"]')).toHaveCount(90);
+    // shadcn keeps every date on or after June 30 minus the range: 91 rows
+    // for 90 days, 8 for 7.
+    await expect(frame.locator('[data-slot="chart-hit-band"]')).toHaveCount(91);
 
     // Same trigger/listbox/option pattern as `select.spec.ts` -- the
     // listbox itself renders in a top-layer portal, not nested under this
@@ -178,6 +183,6 @@ test.describe("Behavioural: variant-specific rendering", () => {
     const listbox = page.getByRole("listbox");
     await expect(listbox).toHaveAttribute("data-state", "open");
     await listbox.getByRole("option", { name: "Last 7 days" }).click();
-    await expect(frame.locator('[data-slot="chart-hit-band"]')).toHaveCount(7);
+    await expect(frame.locator('[data-slot="chart-hit-band"]')).toHaveCount(8);
   });
 });

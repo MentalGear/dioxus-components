@@ -24,7 +24,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// `inner_radius > 0.0` turns the pie into a donut.
+/// A 60px hole turns the pie into a donut.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -37,7 +37,7 @@ pub fn Demo() -> Element {
                 ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Pie,
                     Chart {
                         aria_label: "Visitors by browser",
-                        pie: PieOptions { inner_radius: 60.0, ..Default::default() },
+                        pie: PieOptions { inner_radius: Radius::Px(60.0), ..Default::default() },
                     }
                     ChartTooltip { hide_label: true }
                 }

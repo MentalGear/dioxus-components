@@ -1,0 +1,149 @@
+{
+  "name": "chart-radar-grid-circle-fill",
+  "title": "Radar Chart - Grid Circle Filled",
+  "description": "Showing total visitors for the last 6 months",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "January - June 2024"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186
+    },
+    {
+      "month": "February",
+      "desktop": 285
+    },
+    {
+      "month": "March",
+      "desktop": 237
+    },
+    {
+      "month": "April",
+      "desktop": 203
+    },
+    {
+      "month": "May",
+      "desktop": 209
+    },
+    {
+      "month": "June",
+      "desktop": 264
+    }
+  ],
+  "desktopData": null,
+  "mobileData": null,
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": false,
+    "indicator": "dot",
+    "nameKey": null,
+    "labelKey": null
+  },
+  "legend": false,
+  "centerLabel": null,
+  "radarChart": {
+    "margin": null
+  },
+  "radars": [
+    {
+      "dataKey": "desktop",
+      "fillOpacity": 0.5,
+      "strokeWidth": null,
+      "dot": null
+    }
+  ],
+  "polarGrid": {
+    "gridType": "circle",
+    "radialLines": null,
+    "polarRadius": null,
+    "fill": true
+  },
+  "angleAxis": {
+    "customTick": false
+  },
+  "radiusAxis": null,
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [],
+    "rings": [
+      0,
+      24,
+      48,
+      72,
+      96
+    ],
+    "spokes": 6,
+    "polygons": [
+      {
+        "fill": "var(--color-desktop)",
+        "fillOpacity": 0.5,
+        "strokeWidth": null,
+        "radii": [
+          59.52,
+          91.2,
+          75.84,
+          64.96,
+          66.88,
+          84.48
+        ]
+      }
+    ],
+    "dots": [],
+    "texts": [
+      {
+        "kind": "angle",
+        "text": "January",
+        "anchor": "middle",
+        "x": 0,
+        "y": -104
+      },
+      {
+        "kind": "angle",
+        "text": "February",
+        "anchor": "start",
+        "x": 90.07,
+        "y": -52
+      },
+      {
+        "kind": "angle",
+        "text": "March",
+        "anchor": "start",
+        "x": 90.07,
+        "y": 52
+      },
+      {
+        "kind": "angle",
+        "text": "April",
+        "anchor": "middle",
+        "x": 0,
+        "y": 104
+      },
+      {
+        "kind": "angle",
+        "text": "May",
+        "anchor": "end",
+        "x": -90.07,
+        "y": 52
+      },
+      {
+        "kind": "angle",
+        "text": "June",
+        "anchor": "end",
+        "x": -90.07,
+        "y": -52
+      }
+    ],
+    "labelLines": 0
+  }
+}

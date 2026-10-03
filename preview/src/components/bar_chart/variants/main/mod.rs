@@ -1,10 +1,12 @@
+//! shadcn's `chart-bar-default`: one series, 8px-rounded bars, no hover
+//! cursor; the tooltip hides its label row.
+
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// One series over six months: rounded bars, a grid, an x axis and a tooltip
-/// without a label row.
-fn generate_data() -> Vec<ChartDatum> {
-    const MONTHS: [(&str, f64); 6] = [
+/// The chart's rows, `(month, desktop)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
+    const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),
         ("February", 305.0),
         ("March", 237.0),
@@ -12,20 +14,23 @@ fn generate_data() -> Vec<ChartDatum> {
         ("May", 209.0),
         ("June", 214.0),
     ];
-    MONTHS
-        .iter()
-        .map(|(label, value)| ChartDatum {
+    ROWS.iter()
+        .map(|&(label, desktop)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*value)],
+            values: vec![Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The series, in draw (and stacking) order.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new()
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
-
     rsx! {
         Card {
             CardHeader {
@@ -33,8 +38,16 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Bar,
-                    Chart { aria_label: "Visitors by month, desktop" }
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
+                    Chart {
+                        aria_label: "Visitors by month, desktop",
+                        tick_margin: 10.0,
+                        cursor: false,
+                        bar: BarOptions {
+                            radius: BarRadius::all(8.0),
+                            ..Default::default()
+                        },
+                    }
                     ChartTooltip { hide_label: true }
                 }
             }

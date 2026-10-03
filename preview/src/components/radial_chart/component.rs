@@ -9,5 +9,8 @@
 //! after `dx components add chart` (there `chart/mod.rs` is `mod component;
 //! pub use component::*;`). Never reach into `chart::component::` directly:
 //! that module is private once installed (`scripts/check-installed-paths.sh`).
-pub use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
+pub use crate::components::card::{
+    Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+};
 pub use crate::components::chart::*;
+pub use dioxus_primitives::chart::engine::polar::{RadialGrid, Radius};

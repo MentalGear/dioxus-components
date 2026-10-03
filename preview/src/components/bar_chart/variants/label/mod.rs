@@ -1,10 +1,11 @@
+//! shadcn's `chart-bar-label`: each bar's value 12px above it
+//! (`BarOptions::value_labels`), with 20px of top margin to fit the labels.
+
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// The six-month series with each bar's value drawn above it
-/// (`BarOptions::value_labels`); the grid and y axis are hidden because the
-/// labels replace them.
-fn generate_data() -> Vec<ChartDatum> {
+/// The chart's rows, `(month, desktop)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),
         ("February", 305.0),
@@ -14,18 +15,22 @@ fn generate_data() -> Vec<ChartDatum> {
         ("June", 214.0),
     ];
     ROWS.iter()
-        .map(|(label, value)| ChartDatum {
+        .map(|&(label, desktop)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*value)],
+            values: vec![Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The series, in draw (and stacking) order.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new()
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
-
     rsx! {
         Card {
             CardHeader {
@@ -33,12 +38,17 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Bar,
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                     Chart {
-                        aria_label: "Visitors by month, desktop, labelled",
-                        show_grid: false,
-                        show_y_axis: false,
-                        bar: BarOptions { value_labels: true, ..Default::default() },
+                        aria_label: "Visitors by month, desktop",
+                        margin: ChartMargin { top: 20.0, ..ChartMargin::NONE },
+                        tick_margin: 10.0,
+                        cursor: false,
+                        bar: BarOptions {
+                            radius: BarRadius::all(8.0),
+                            value_labels: true,
+                            ..Default::default()
+                        },
                     }
                     ChartTooltip { hide_label: true }
                 }

@@ -1,12 +1,13 @@
+//! shadcn's `chart-line-multiple`: two series on monotone curves.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Two series (desktop/mobile) sharing one tooltip; its label row shows the
-/// category they share.
-fn generate_data() -> Vec<ChartDatum> {
-    const MONTHS: [(&str, f64, f64); 6] = [
+/// The chart's rows, `(month, desktop, mobile)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
+    const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
         ("February", 305.0, 200.0),
         ("March", 237.0, 120.0),
@@ -14,22 +15,24 @@ fn generate_data() -> Vec<ChartDatum> {
         ("May", 209.0, 130.0),
         ("June", 214.0, 140.0),
     ];
-    MONTHS
-        .iter()
-        .map(|(label, desktop, mobile)| ChartDatum {
+    ROWS.iter()
+        .map(|&(label, desktop, mobile)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*desktop), Some(*mobile)],
+            values: vec![Some(desktop), Some(mobile)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The series, in draw order.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new()
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
+        .series("mobile", "Mobile", "var(--dx-chart-2)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new()
-        .series("desktop", "Desktop", "var(--dx-chart-1)")
-        .series("mobile", "Mobile", "var(--dx-chart-2)");
-
     rsx! {
         Card {
             CardHeader {
@@ -37,11 +40,12 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Line,
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Line,
                     Chart {
                         aria_label: "Visitors by month, desktop and mobile",
-                        x_label: "Month",
+                        margin: ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE },
                         curve: Curve::Monotone,
+                        cursor: false,
                     }
                     ChartTooltip {}
                 }

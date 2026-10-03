@@ -24,8 +24,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// A plain pie with no separator between slices; slices are drawn without one
-/// by default.
+/// The plain pie without a separator between slices (slices are drawn without
+/// one by default).
 #[component]
 pub fn Demo() -> Element {
     rsx! {

@@ -1,0 +1,81 @@
+{
+  "name": "chart-bar-negative",
+  "variant": "negative",
+  "title": "Bar Chart - Negative",
+  "data": [
+    {
+      "month": "January",
+      "visitors": 186
+    },
+    {
+      "month": "February",
+      "visitors": 205
+    },
+    {
+      "month": "March",
+      "visitors": -207
+    },
+    {
+      "month": "April",
+      "visitors": 173
+    },
+    {
+      "month": "May",
+      "visitors": -209
+    },
+    {
+      "month": "June",
+      "visitors": 214
+    }
+  ],
+  "config": {
+    "visitors": {
+      "label": "Visitors"
+    }
+  },
+  "chart": {
+    "kind": "bar",
+    "margin": null,
+    "layout": null,
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "visitors",
+      "type": null,
+      "fill": null,
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": null,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": {
+    "vertical": false,
+    "horizontal": true
+  },
+  "xAxis": null,
+  "yAxis": null,
+  "tooltip": {
+    "cursor": false,
+    "indicator": "dot",
+    "hideLabel": true,
+    "hideIndicator": true,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": true,
+  "labelLists": [
+    {
+      "dataKey": "month",
+      "position": "top",
+      "offset": null
+    }
+  ],
+  "activeIndex": null
+}

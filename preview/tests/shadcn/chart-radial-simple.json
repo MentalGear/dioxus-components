@@ -1,0 +1,182 @@
+{
+  "name": "chart-radial-simple",
+  "title": "Radial Chart",
+  "description": "January - June 2024",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "Showing total visitors for the last 6 months"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": [
+    {
+      "browser": "chrome",
+      "visitors": 275,
+      "fill": "var(--color-chrome)"
+    },
+    {
+      "browser": "safari",
+      "visitors": 200,
+      "fill": "var(--color-safari)"
+    },
+    {
+      "browser": "firefox",
+      "visitors": 187,
+      "fill": "var(--color-firefox)"
+    },
+    {
+      "browser": "edge",
+      "visitors": 173,
+      "fill": "var(--color-edge)"
+    },
+    {
+      "browser": "other",
+      "visitors": 90,
+      "fill": "var(--color-other)"
+    }
+  ],
+  "desktopData": null,
+  "mobileData": null,
+  "config": {
+    "visitors": {
+      "label": "Visitors"
+    },
+    "chrome": {
+      "label": "Chrome",
+      "color": "var(--chart-1)"
+    },
+    "safari": {
+      "label": "Safari",
+      "color": "var(--chart-2)"
+    },
+    "firefox": {
+      "label": "Firefox",
+      "color": "var(--chart-3)"
+    },
+    "edge": {
+      "label": "Edge",
+      "color": "var(--chart-4)"
+    },
+    "other": {
+      "label": "Other",
+      "color": "var(--chart-5)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": true,
+    "indicator": "dot",
+    "nameKey": "browser",
+    "labelKey": null
+  },
+  "legend": false,
+  "centerLabel": null,
+  "radialChart": {
+    "startAngle": null,
+    "endAngle": null,
+    "innerRadius": 30,
+    "outerRadius": 110
+  },
+  "radialBars": [
+    {
+      "dataKey": "visitors",
+      "background": true,
+      "cornerRadius": null,
+      "stackId": null
+    }
+  ],
+  "polarGrid": null,
+  "labelList": [],
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 43.6,
+        "inner": 31.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 59.6,
+        "inner": 47.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 75.6,
+        "inner": 63.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 91.6,
+        "inner": 79.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": true,
+        "fill": "#eee",
+        "outer": 107.6,
+        "inner": 95.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": false,
+        "fill": "var(--color-chrome)",
+        "outer": 43.6,
+        "inner": 31.6,
+        "start": 0,
+        "sweep": 360
+      },
+      {
+        "background": false,
+        "fill": "var(--color-safari)",
+        "outer": 59.6,
+        "inner": 47.6,
+        "start": 0,
+        "sweep": 261.82
+      },
+      {
+        "background": false,
+        "fill": "var(--color-firefox)",
+        "outer": 75.6,
+        "inner": 63.6,
+        "start": 0,
+        "sweep": 244.8
+      },
+      {
+        "background": false,
+        "fill": "var(--color-edge)",
+        "outer": 91.6,
+        "inner": 79.6,
+        "start": 0,
+        "sweep": 226.47
+      },
+      {
+        "background": false,
+        "fill": "var(--color-other)",
+        "outer": 107.6,
+        "inner": 95.6,
+        "start": 0,
+        "sweep": 117.82
+      }
+    ],
+    "rings": [],
+    "spokes": 0,
+    "polygons": [],
+    "dots": [],
+    "texts": [],
+    "labelLines": 0
+  }
+}

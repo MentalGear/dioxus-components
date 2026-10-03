@@ -1,0 +1,116 @@
+{
+  "name": "chart-bar-label-custom",
+  "variant": "label_custom",
+  "title": "Bar Chart - Custom Label",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 80
+    },
+    {
+      "month": "February",
+      "desktop": 305,
+      "mobile": 200
+    },
+    {
+      "month": "March",
+      "desktop": 237,
+      "mobile": 120
+    },
+    {
+      "month": "April",
+      "desktop": 73,
+      "mobile": 190
+    },
+    {
+      "month": "May",
+      "desktop": 209,
+      "mobile": 130
+    },
+    {
+      "month": "June",
+      "desktop": 214,
+      "mobile": 140
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-2)"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)"
+    },
+    "label": {
+      "color": "var(--background)"
+    }
+  },
+  "chart": {
+    "kind": "bar",
+    "margin": {
+      "right": 16
+    },
+    "layout": "vertical",
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "desktop",
+      "type": null,
+      "fill": "var(--color-desktop)",
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": 4,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": {
+    "vertical": true,
+    "horizontal": false
+  },
+  "xAxis": {
+    "dataKey": "desktop",
+    "type": "number",
+    "hide": true,
+    "tickMargin": null,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": {
+    "dataKey": "month",
+    "type": "category",
+    "hide": true,
+    "tickMargin": 10,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "tooltip": {
+    "cursor": false,
+    "indicator": "line",
+    "hideLabel": false,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [
+    {
+      "dataKey": "month",
+      "position": "insideLeft",
+      "offset": 8
+    },
+    {
+      "dataKey": "desktop",
+      "position": "right",
+      "offset": 8
+    }
+  ],
+  "activeIndex": null
+}

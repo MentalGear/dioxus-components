@@ -5,7 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Two stroke-only series, no fill, on the default polygon grid.
+/// Two outline-only series (`lines_only`) over polygon rings without spokes.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 160.0),
@@ -40,12 +40,14 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Total visitors by month, desktop and mobile",
-                        radar: RadarOptions { lines_only: true, fill_opacity: 0.0, ..Default::default() },
+                        radar: RadarOptions {
+                            grid: RadarGrid::PolygonNoLines,
+                            lines_only: true,
+                            ..Default::default()
+                        },
                     }
-                    ChartTooltip {}
+                    ChartTooltip { indicator: TooltipIndicator::Line }
                 }
             }
             CardFooter { class: "dx-chart-footer",

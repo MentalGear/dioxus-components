@@ -1,12 +1,15 @@
+//! shadcn's `chart-line-dots-custom`: `LineOptions::dot` draws your own mark at
+//! every point -- here lucide's `GitCommitVertical` icon, 24px, as shadcn
+//! does.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
-use dioxus_icons::lucide::TrendingUp;
+use dioxus_icons::lucide::{GitCommitVertical, TrendingUp};
 
-/// `LineOptions::dot` replaces the default dot with your own renderer, here a
-/// small diamond that grows when hovered or focused (`DotContext::active`).
-fn generate_data() -> Vec<ChartDatum> {
-    const MONTHS: [(&str, f64); 6] = [
+/// The chart's rows, `(month, desktop)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
+    const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),
         ("February", 305.0),
         ("March", 237.0),
@@ -14,33 +17,34 @@ fn generate_data() -> Vec<ChartDatum> {
         ("May", 209.0),
         ("June", 214.0),
     ];
-    MONTHS
-        .iter()
-        .map(|(label, desktop)| ChartDatum {
+    ROWS.iter()
+        .map(|&(label, desktop)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*desktop)],
+            values: vec![Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The one series drawn.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
     let dot = DotRenderer(Callback::new(|ctx: DotContext| {
-        let size: f64 = if ctx.active { 10.0 } else { 7.0 };
-        let half = size / 2.0;
+        let r = 24.0;
         rsx! {
-            rect {
-                key: "{ctx.index}",
-                "data-slot": "chart-custom-dot",
-                "data-index": "{ctx.index}",
-                x: "{ctx.cx - half}",
-                y: "{ctx.cy - half}",
-                width: "{size}",
-                height: "{size}",
-                fill: "var(--series-color)",
-                transform: "rotate(45 {ctx.cx} {ctx.cy})",
+            g { key: "{ctx.index}", "data-slot": "chart-custom-dot", "data-index": "{ctx.index}",
+                GitCommitVertical {
+                    x: "{ctx.cx - r / 2.0}",
+                    y: "{ctx.cy - r / 2.0}",
+                    width: "{r}",
+                    height: "{r}",
+                    fill: "var(--primary-color-1)",
+                    stroke: "var(--series-color)",
+                }
             }
         }
     }));
@@ -52,11 +56,16 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Line,
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Line,
                     Chart {
-                        aria_label: "Visitors by month, desktop, diamond-shaped points",
-                        x_label: "Month",
-                        line: LineOptions { dot: Some(dot), ..Default::default() },
+                        aria_label: "Visitors by month, desktop",
+                        margin: ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE },
+                        curve: Curve::Natural,
+                        cursor: false,
+                        line: LineOptions {
+                            dot: Some(dot),
+                            ..Default::default()
+                        },
                     }
                     ChartTooltip { hide_label: true }
                 }

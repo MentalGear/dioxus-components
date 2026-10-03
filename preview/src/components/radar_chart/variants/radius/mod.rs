@@ -5,8 +5,8 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// One series on the default grid; hovering a vertex shows the category name
-/// and value in the tooltip.
+/// Two series without month labels; the radius axis' tick values run along the
+/// 60-degree spoke (`radius_axis`).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -41,16 +41,15 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Total visitors by month, desktop and mobile",
                         radar: RadarOptions {
-                            fill_opacity: 0.6,
+                            fill_opacity: vec![0.6],
                             axis_labels: false,
+                            radius_axis: Some(60.0),
                             ..Default::default()
                         },
                     }
-                    ChartTooltip {}
+                    ChartTooltip { indicator: TooltipIndicator::Line }
                 }
             }
             CardFooter { class: "dx-chart-footer",

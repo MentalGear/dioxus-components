@@ -32,8 +32,9 @@ use dioxus_primitives::merge_attributes;
 // directly, and `AreaOptions.stack_mode`, respectively).
 #[allow(unused_imports)]
 pub use dioxus_primitives::chart::{
-    AreaOptions, BarOptions, ChartConfig, ChartDatum, ChartIcon, ChartKind, ChartSeries, Curve,
-    LegendAlign, LineOptions, PieLabels, PieOptions, RadarOptions, RadialOptions, StackMode,
+    AreaOptions, BarOptions, BarRadius, ChartConfig, ChartDatum, ChartIcon, ChartKind,
+    ChartMargin, ChartSeries, Curve, LegendAlign, LineOptions, PieLabels, PieOptions,
+    RadarOptions, RadialOptions, StackMode,
 };
 
 /// The themed chart container: sets the `--color-<key>` CSS variables

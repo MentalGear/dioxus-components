@@ -38,12 +38,10 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Total visitors by month, desktop",
                         radar: RadarOptions {
                             grid: RadarGrid::CircleFill,
-                            fill_opacity: 0.5,
+                            fill_opacity: vec![0.5],
                             ..Default::default()
                         },
                     }

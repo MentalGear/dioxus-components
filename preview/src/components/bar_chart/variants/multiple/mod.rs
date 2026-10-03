@@ -1,9 +1,11 @@
+//! shadcn's `chart-bar-multiple`: two series side by side, 4px apart, 4px
+//! rounded; the tooltip uses the dashed indicator.
+
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Two series (desktop/mobile) grouped side by side per month, with a dashed
-/// tooltip indicator (`TooltipIndicator::Dashed`).
-fn generate_data() -> Vec<ChartDatum> {
+/// The chart's rows, `(month, desktop, mobile)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
         ("February", 305.0, 200.0),
@@ -13,20 +15,23 @@ fn generate_data() -> Vec<ChartDatum> {
         ("June", 214.0, 140.0),
     ];
     ROWS.iter()
-        .map(|(label, desktop, mobile)| ChartDatum {
+        .map(|&(label, desktop, mobile)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*desktop), Some(*mobile)],
+            values: vec![Some(desktop), Some(mobile)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The series, in draw (and stacking) order.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new()
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
+        .series("mobile", "Mobile", "var(--dx-chart-2)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new()
-        .series("desktop", "Desktop", "var(--dx-chart-1)")
-        .series("mobile", "Mobile", "var(--dx-chart-2)");
-
     rsx! {
         Card {
             CardHeader {
@@ -34,8 +39,16 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Bar,
-                    Chart { aria_label: "Visitors by month, desktop and mobile" }
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
+                    Chart {
+                        aria_label: "Visitors by month, desktop and mobile",
+                        tick_margin: 10.0,
+                        cursor: false,
+                        bar: BarOptions {
+                            radius: BarRadius::all(4.0),
+                            ..Default::default()
+                        },
+                    }
                     ChartTooltip { indicator: TooltipIndicator::Dashed }
                 }
             }

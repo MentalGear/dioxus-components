@@ -24,7 +24,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Each slice's value drawn inside it (`PieLabels::Value`).
+/// Each slice's value outside the rim with a leader line (Recharts' `label`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -37,7 +37,7 @@ pub fn Demo() -> Element {
                 ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Pie,
                     Chart {
                         aria_label: "Visitors by browser",
-                        pie: PieOptions { labels: PieLabels::Value, ..Default::default() },
+                        pie: PieOptions { labels: PieLabels::Outside { line: true }, ..Default::default() },
                     }
                     ChartTooltip { hide_label: true }
                 }

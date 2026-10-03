@@ -152,37 +152,52 @@ test.describe("interactive variant (shadcn chart-bar-interactive.tsx)", () => {
 });
 
 test.describe("horizontal variant (shadcn chart-bar-horizontal.tsx)", () => {
-  test("renders one wider-than-tall bar per browser with category labels", async ({ page }) => {
+  test("renders one wider-than-tall bar per month with category labels", async ({ page }) => {
     await goto(page);
     const f = frame(page, "horizontal");
     const bars = f.locator('[data-slot="chart-bar"]');
-    await expect(bars).toHaveCount(5);
+    // shadcn's six months (not browsers).
+    await expect(bars).toHaveCount(6);
     for (const bar of await bars.all()) {
       const box = await bar.boundingBox();
       expect(box).not.toBeNull();
       if (box) expect(box.width).toBeGreaterThan(box.height);
     }
-    await expect(f.locator('[data-axis="category"]')).toHaveCount(1);
-    // No default axes -- this family draws its own category labels.
+    // The months are the y axis (shadcn's `<YAxis type="category">`); the
+    // value axis is hidden.
+    await expect(f.locator('[data-axis="y"]')).toHaveCount(1);
+    await expect(f.locator('[data-axis="y"] text').first()).toHaveText("Jan");
     await expect(f.locator('[data-axis="x"]')).toHaveCount(0);
-    await expect(f.locator('[data-axis="y"]')).toHaveCount(0);
   });
 });
 
 test.describe("negative variant (shadcn chart-bar-negative.tsx)", () => {
-  test("draws a zero line with bars on both sides and per-datum colors", async ({ page }) => {
+  test("draws bars on both sides of zero, each labelled with its month", async ({ page }) => {
     await goto(page);
     const f = frame(page, "negative");
-    await expect(f.locator('[data-slot="chart-zero-line"]')).toHaveCount(1);
     const bars = f.locator('[data-slot="chart-bar"]');
     await expect(bars).toHaveCount(6);
-    const zeroY = await f.locator('[data-slot="chart-zero-line"]').getAttribute("y1");
-    expect(zeroY).not.toBeNull();
-    const boxes = await Promise.all((await bars.all()).map((b) => b.boundingBox()));
-    const heights = boxes.map((b) => b?.height ?? 0);
-    // Every bar has a real, positive height (both the positive and
-    // negative months draw a visible rect, not a zero-length sliver).
-    expect(heights.every((h) => h > 0)).toBe(true);
+    // shadcn draws no x axis here: the month is a label past each bar's end.
+    await expect(f.locator('[data-axis="x"]')).toHaveCount(0);
+    await expect(f.locator('[data-position="category"]')).toHaveCount(6);
+    // March and May (negative) start at the zero line and grow down; the
+    // others end there. `--dx-chart-zero` is the value axis' zero in svg px.
+    const zero = await f
+      .locator('[data-slot="chart-svg"]')
+      .evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue("--dx-chart-zero")));
+    const ys = await Promise.all(
+      (await bars.all()).map((b) =>
+        b.evaluate((el) => {
+          const r = el as SVGRectElement;
+          return [r.y.baseVal.value, r.height.baseVal.value];
+        }),
+      ),
+    );
+    for (const [i, [y, h]] of ys.entries()) {
+      expect(h).toBeGreaterThan(0);
+      if (i === 2 || i === 4) expect(Math.abs(y - zero)).toBeLessThan(0.01);
+      else expect(Math.abs(y + h - zero)).toBeLessThan(0.01);
+    }
   });
 });
 
@@ -202,12 +217,13 @@ test.describe("mixed variant (shadcn chart-bar-mixed.tsx)", () => {
 });
 
 test.describe("label variant (shadcn chart-bar-label.tsx)", () => {
-  test("draws one value label above each bar, grid and y-axis hidden", async ({ page }) => {
+  test("draws one value label above each bar over shadcn's grid and x axis", async ({ page }) => {
     await goto(page);
     const f = frame(page, "label");
     await expect(f.locator('[data-slot="chart-bar"]')).toHaveCount(6);
     await expect(f.locator('[data-slot="chart-label"]')).toHaveCount(6);
-    await expect(f.locator('[data-slot="chart-grid"]')).toHaveCount(0);
+    await expect(f.locator('[data-slot="chart-grid"]')).toHaveCount(1);
+    await expect(f.locator('[data-axis="x"]')).toHaveCount(1);
     await expect(f.locator('[data-axis="y"]')).toHaveCount(0);
   });
 });
@@ -216,16 +232,17 @@ test.describe("label_custom variant (shadcn chart-bar-label-custom.tsx)", () => 
   test("draws a category label inside each bar and its value outside", async ({ page }) => {
     await goto(page);
     const f = frame(page, "label_custom");
-    await expect(f.locator('[data-slot="chart-bar"]')).toHaveCount(5);
+    // shadcn's six months.
+    await expect(f.locator('[data-slot="chart-bar"]')).toHaveCount(6);
     // Two labels per bar: the inside category name and the outside value.
-    await expect(f.locator('[data-slot="chart-label"]')).toHaveCount(10);
-    await expect(f.locator('[data-position="inside"]')).toHaveCount(5);
-    await expect(f.locator('[data-position="value"]')).toHaveCount(5);
+    await expect(f.locator('[data-slot="chart-label"]')).toHaveCount(12);
+    await expect(f.locator('[data-position="inside"]')).toHaveCount(6);
+    await expect(f.locator('[data-position="value"]')).toHaveCount(6);
   });
 });
 
 test.describe("active variant (shadcn chart-bar-active.tsx)", () => {
-  test("marks exactly one bar active and dims every other bar", async ({ page }) => {
+  test("marks exactly one bar active with shadcn's dashed outline", async ({ page }) => {
     await goto(page);
     const f = frame(page, "active");
     const bars = f.locator('[data-slot="chart-bar"]');
@@ -238,12 +255,25 @@ test.describe("active variant (shadcn chart-bar-active.tsx)", () => {
       await Promise.all((await bars.all()).map((b) => b.getAttribute("data-active")))
     ).filter((v) => v === "true").length;
     expect(activeCount).toBe(1);
-    const opacities = await Promise.all(
-      (await bars.all()).map((b) => b.evaluate((el) => getComputedStyle(el).opacity)),
+    // shadcn's `chart-bar-active`: the active bar (Firefox, index 2) at 0.8
+    // fill opacity with a dashed outline; the others unchanged (not dimmed).
+    const styles = await Promise.all(
+      (await bars.all()).map((b) =>
+        b.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return [cs.opacity, cs.fillOpacity, cs.strokeDasharray];
+        }),
+      ),
     );
-    // The 4 non-active bars share one dimmed opacity, distinct from the
-    // active bar's own full opacity.
-    expect(new Set(opacities).size).toBe(2);
+    for (const [i, [opacity, fillOpacity, dash]] of styles.entries()) {
+      expect(opacity).toBe("1");
+      if (i === 2) {
+        expect(fillOpacity).toBe("0.8");
+        expect(dash).not.toBe("none");
+      } else {
+        expect(fillOpacity).toBe("1");
+      }
+    }
   });
 });
 

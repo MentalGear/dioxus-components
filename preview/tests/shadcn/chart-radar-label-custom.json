@@ -1,0 +1,183 @@
+{
+  "name": "chart-radar-label-custom",
+  "title": "Radar Chart - Custom Label",
+  "description": "Showing total visitors for the last 6 months",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "January - June 2024"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 80
+    },
+    {
+      "month": "February",
+      "desktop": 305,
+      "mobile": 200
+    },
+    {
+      "month": "March",
+      "desktop": 237,
+      "mobile": 120
+    },
+    {
+      "month": "April",
+      "desktop": 73,
+      "mobile": 190
+    },
+    {
+      "month": "May",
+      "desktop": 209,
+      "mobile": 130
+    },
+    {
+      "month": "June",
+      "desktop": 214,
+      "mobile": 140
+    }
+  ],
+  "desktopData": null,
+  "mobileData": null,
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": false,
+    "indicator": "line",
+    "nameKey": null,
+    "labelKey": null
+  },
+  "legend": false,
+  "centerLabel": null,
+  "radarChart": {
+    "margin": {
+      "top": 10,
+      "right": 10,
+      "bottom": 10,
+      "left": 10
+    }
+  },
+  "radars": [
+    {
+      "dataKey": "desktop",
+      "fillOpacity": 0.6,
+      "strokeWidth": null,
+      "dot": null
+    },
+    {
+      "dataKey": "mobile",
+      "fillOpacity": null,
+      "strokeWidth": null,
+      "dot": null
+    }
+  ],
+  "polarGrid": {
+    "gridType": null,
+    "radialLines": null,
+    "polarRadius": null,
+    "fill": false
+  },
+  "angleAxis": {
+    "customTick": true
+  },
+  "radiusAxis": null,
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [],
+    "rings": [
+      0,
+      23,
+      46,
+      69,
+      92
+    ],
+    "spokes": 6,
+    "polygons": [
+      {
+        "fill": "var(--color-desktop)",
+        "fillOpacity": 0.6,
+        "strokeWidth": null,
+        "radii": [
+          53.47,
+          87.69,
+          68.14,
+          20.99,
+          60.09,
+          61.52
+        ]
+      },
+      {
+        "fill": "var(--color-mobile)",
+        "fillOpacity": 1,
+        "strokeWidth": null,
+        "radii": [
+          23,
+          57.5,
+          34.5,
+          54.63,
+          37.38,
+          40.25
+        ]
+      }
+    ],
+    "dots": [],
+    "texts": [
+      {
+        "kind": "other",
+        "text": "186/80January",
+        "anchor": "middle",
+        "x": 0,
+        "y": -110
+      },
+      {
+        "kind": "other",
+        "text": "305/200February",
+        "anchor": "start",
+        "x": 86.6,
+        "y": -50
+      },
+      {
+        "kind": "other",
+        "text": "237/120March",
+        "anchor": "start",
+        "x": 86.6,
+        "y": 50
+      },
+      {
+        "kind": "other",
+        "text": "73/190April",
+        "anchor": "middle",
+        "x": 0,
+        "y": 100
+      },
+      {
+        "kind": "other",
+        "text": "209/130May",
+        "anchor": "end",
+        "x": -86.6,
+        "y": 50
+      },
+      {
+        "kind": "other",
+        "text": "214/140June",
+        "anchor": "end",
+        "x": -86.6,
+        "y": -50
+      }
+    ],
+    "labelLines": 0
+  }
+}

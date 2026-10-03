@@ -2,8 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Five browsers' visitor counts, one slice each, with a tooltip that hides its
-/// label row and no legend.
+/// Visitor counts per browser.
 pub(crate) fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -25,6 +24,8 @@ pub(crate) fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
+/// Five browsers' visitor counts, one slice each: a Recharts `<Pie>` with its
+/// default 80% outer radius, laid out counter-clockwise from three o'clock.
 #[component]
 pub fn Demo() -> Element {
     rsx! {

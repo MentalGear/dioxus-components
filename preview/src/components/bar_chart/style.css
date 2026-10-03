@@ -1,38 +1,24 @@
-/* Bar Chart gallery -- shadcn/ui `chart-bar-*` demo parity
- * (dev-docs/research/chart-2026-09-19.md §1.2). Every demo composes the
- * installable `chart` package's own themed pieces (Chart/ChartContainer/
- * ChartTooltip/ChartLegend, styled by `chart/style.css`) plus `Card`; the
- * rules below only cover this gallery's OWN bespoke chrome that neither of
- * those two packages provides -- the `interactive` variant's split header
- * (title/description beside a per-series total toggle, shadcn's own
- * `chart-bar-interactive.tsx`). The "Trending up" card footer is the shared
- * `dx-chart-footer` pattern in `chart/style.css`. Classes namespaced
- * `dx-bar-chart-*` (scripts/check-dx-class-prefix.sh's rule for the
- * `bar_chart` folder).
- *
- * Simplification, stated plainly: shadcn's own interactive header bleeds
- * edge-to-edge (`<Card className="py-0">`, a zero-padding-block override) so
- * its bottom border spans the card's full width including the corners'
- * curvature. This port keeps `Card`'s own block padding instead of
- * overriding it -- a purely cosmetic difference (the header's rule sits
- * slightly inset rather than flush) that leaves every other component's
- * `Card` usage, and `Card`'s own stylesheet, untouched. The two-zone layout,
- * the per-series total, and the `data-active` highlight are otherwise
- * unchanged from shadcn's demo.
- */
+/* shadcn's interactive bar card header (`chart-bar-interactive`): the
+ * card has no block padding (`py-0`); the header has none either (`!p-0`)
+ * and ends in a rule (`border-b`); the title block (`px-6 pt-4 pb-3
+ * sm:!py-0`) takes the free width and the two series toggles stand at the
+ * right as full-height cells (`px-6 py-4 sm:border-l sm:px-8 sm:py-6`), the
+ * total `text-lg leading-none font-bold sm:text-3xl`. Below 40rem the
+ * toggles drop under the title, side by side. Two-class selectors: the
+ * card's own `.dx-card`/`.dx-card-header`/`.dx-card-content` rules
+ * (`display: grid`, `padding`) load in an order this stylesheet does not
+ * control, so equal specificity was a coin toss -- and lost. */
+.dx-card.dx-bar-chart-interactive {
+  padding-block: 0;
+}
 
-.dx-bar-chart-interactive-header {
+.dx-card-header.dx-bar-chart-interactive-header {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  border-bottom: 1px solid var(--primary-color-6);
-  padding-block-end: var(--dx-space-4);
-}
-
-@media (width >= 40rem) {
-  .dx-bar-chart-interactive-header {
-    flex-direction: row;
-  }
+  padding: 0;
+  border-bottom: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  gap: 0;
 }
 
 .dx-bar-chart-interactive-heading {
@@ -40,6 +26,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   justify-content: center;
+  padding: var(--dx-space-4) var(--dx-space-6) var(--dx-space-3);
   gap: var(--dx-space-1);
 }
 
@@ -51,26 +38,24 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  align-items: start;
   justify-content: center;
-  padding: var(--dx-space-3) var(--dx-space-4);
+  padding: var(--dx-space-4) var(--dx-space-6);
 
-  /* Reset the UA button border (an outset 2px on every side) before the
-   * start-edge divider below puts one side back. */
+  /* Reset the UA button border and colour (an outset 2px border and black
+   * `buttontext`) before drawing shadcn's own rules. */
   border: 0;
   border-radius: 0;
   background-color: transparent;
-  border-inline-start: 1px solid var(--primary-color-6);
-
-  /* A bare `<button>` takes the UA `buttontext` colour (black), which is
-   * unreadable on the dark card; the toggle should read as card text. */
+  border-block-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
   color: inherit;
+  cursor: pointer;
+  font: inherit;
   gap: var(--dx-space-1);
   text-align: start;
 }
 
-.dx-bar-chart-interactive-toggle:first-child {
-  border-inline-start: none;
+.dx-bar-chart-interactive-toggle + .dx-bar-chart-interactive-toggle {
+  border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
 }
 
 .dx-bar-chart-interactive-toggle[data-active="true"] {
@@ -83,13 +68,37 @@
 }
 
 .dx-bar-chart-interactive-toggle-total {
-  font-size: var(--dx-text-xl);
+  font-size: var(--dx-text-lg);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  line-height: 1;
+}
+
+.dx-card-content.dx-bar-chart-interactive-content {
+  padding: var(--dx-space-6) var(--dx-space-2);
 }
 
 @media (width >= 40rem) {
+  .dx-card-header.dx-bar-chart-interactive-header {
+    flex-direction: row;
+  }
+
+  .dx-bar-chart-interactive-heading {
+    padding-block: 0;
+  }
+
+  .dx-bar-chart-interactive-toggle {
+    flex: 0 0 auto;
+    padding: var(--dx-space-6) var(--dx-space-8);
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  }
+
   .dx-bar-chart-interactive-toggle-total {
     font-size: var(--dx-text-3xl);
+  }
+
+  .dx-card-content.dx-bar-chart-interactive-content {
+    padding: var(--dx-space-6);
   }
 }
