@@ -1,7 +1,6 @@
 .dx-accordion-trigger {
   display: flex;
   width: 100%;
-  box-sizing: border-box;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
@@ -141,7 +140,6 @@
 
 .dx-accordion-item {
   overflow: hidden;
-  box-sizing: border-box;
   border-bottom: 1px solid var(--dx-border);
   margin-top: 1px;
 }

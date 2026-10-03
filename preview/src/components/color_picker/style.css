@@ -14,7 +14,6 @@
 .dx-color-picker-swatch {
     width: 2rem;
     height: 2rem;
-    box-sizing: border-box;
     border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
     background-color: var(--swatch-color);
@@ -59,7 +58,6 @@
 .dx-color-picker-slider-track {
     position: relative;
     height: 24px;
-    box-sizing: border-box;
     flex-grow: 1;
     border-radius: var(--dx-radius-md);
     background: linear-gradient(to right, rgb(255 0 0), rgb(255 255 0), rgb(0 255 0), rgb(0 255 255), rgb(0 0 255), rgb(255 0 255), rgb(255 0 0)), repeating-conic-gradient(rgb(204 204 204) 0%, rgb(204 204 204) 25%, white 0%, white 50%) 50% center / 16px 16px;
@@ -111,7 +109,6 @@
 }
 
 .dx-color-picker-area-track {
-    box-sizing: border-box;
     flex-grow: 1;
     border-radius: 10px;
     background: linear-gradient(to top, black, transparent), linear-gradient(to right, white, transparent), var(--area-color);
@@ -254,7 +251,6 @@
 
 .dx-color-picker-dialog {
     display: flex;
-    box-sizing: border-box;
     flex-direction: column;
     padding: var(--dx-space-2);
     gap: var(--dx-space-2);

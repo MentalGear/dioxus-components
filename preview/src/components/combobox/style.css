@@ -29,7 +29,6 @@
 .dx-combobox-input {
   width: 100%;
   height: 2.25rem;
-  box-sizing: border-box;
   border: none;
   border-radius: var(--dx-radius-lg);
   background: var(--dx-card);

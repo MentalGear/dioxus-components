@@ -2,7 +2,6 @@
 .dx-textarea {
   width: 100%;
   min-height: var(--dx-space-16);
-  box-sizing: border-box;
   padding: var(--dx-space-2) var(--dx-space-3);
   border: none;
   border-radius: var(--dx-radius-lg);

@@ -16,7 +16,6 @@
 .dx-slider-track {
     position: relative;
     height: 0.5rem;
-    box-sizing: border-box;
     flex-grow: 1;
     border-radius: var(--dx-radius-full);
     background: var(--dx-muted);

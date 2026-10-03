@@ -10,7 +10,6 @@
   overflow: visible;
   min-width: 200px;
   max-width: calc(100% - 2rem);
-  box-sizing: border-box;
   flex-direction: column;
   padding: var(--dx-space-1);
 

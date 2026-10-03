@@ -52,7 +52,6 @@
   display: flex;
   width: 100%;
   max-width: calc(100% - 2rem);
-  box-sizing: border-box;
   flex-direction: column;
   padding: var(--dx-space-8) var(--dx-space-6) var(--dx-space-6);
   border: 1px solid var(--dx-border);

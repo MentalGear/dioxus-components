@@ -6,7 +6,6 @@
 
 .dx-native-select {
   width: 100%;
-  box-sizing: border-box;
   border: none;
   border-radius: var(--dx-radius-lg);
   appearance: none;

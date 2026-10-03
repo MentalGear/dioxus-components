@@ -396,7 +396,6 @@
    * made every short tooltip 152px wide -- too wide to fit beside the pointer
    * on either side of a 250px polar chart, so it pinned instead of following). */
   min-width: 8rem;
-  box-sizing: border-box;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: var(--dx-radius-lg);
   background-color: var(--dx-background);

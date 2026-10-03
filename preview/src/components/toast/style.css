@@ -72,7 +72,6 @@
   overflow: hidden;
   width: 18rem;
   height: var(--dx-space-16);
-  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   padding: var(--dx-space-3) var(--dx-space-4);

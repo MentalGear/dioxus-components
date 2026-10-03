@@ -376,6 +376,46 @@ html[data-theme="light"] [class~="dxc-system"] {
 }
 
 /* ============================================================================
+ * Box model (docs/backlog.md row 111, phase A).
+ *
+ * Every element we ship is `box-sizing: border-box`, so a `width`/`height`/
+ * `min-*`/`max-*`/`flex-basis` means the box the user sees (padding and border
+ * included), which is what shadcn's components assume: Tailwind's preflight
+ * (`*, ::before, ::after { box-sizing: border-box }`) is part of every shadcn
+ * install. The initial `content-box` bit us twice with the same shape:
+ * `.dx-card` given `height: 100%` overflowed a fixed slot by its padding +
+ * border (carousel `vertical` demo, `09cd59e`), and `CarouselVirtualContent`'s
+ * slides added the gap padding on top of `flex-basis: 100%` (`971e955`).
+ *
+ * Scoped, not universal, on purpose. This file is copied into the app of
+ * every `dx components add` user and linked at THEIR root, so a bare `*` here
+ * would silently resize their own padded/sized elements too (shadcn can say
+ * `*` because Tailwind users already have it; a Dioxus app need not).
+ * Matching the `dx-` class namespace (every shipped class carries it, enforced
+ * by `scripts/check-dx-class-prefix.sh`; `#[css_module]` hashing only appends
+ * a suffix, so `dx-card-<hash>` still matches) confines the change to our
+ * own components, and each `:where()` holds a single simple selector so the
+ * whole rule has ZERO specificity: any component's own `box-sizing`
+ * (including `content-box` and `all: unset`, which resets it) still wins.
+ * Flat list, one selector per `:where()`, for the same asset-pipeline reason
+ * the rules below are flat.
+ *
+ * Not covered, by design: an element inside a component that carries no `dx-`
+ * class (a primitive's inner wrapper, a demo's inline-styled div) keeps the
+ * browser's `content-box`; a primitive that needs border-box without this
+ * theme must declare it itself (`primitives/src/carousel.rs`'s inline slide
+ * style, `top_layer.rs`), because primitives ship without this file.
+ * ========================================================================== */
+:where([class^="dx-"]),
+:where([class*=" dx-"]),
+:where([class^="dx-"])::before,
+:where([class*=" dx-"])::before,
+:where([class^="dx-"])::after,
+:where([class*=" dx-"])::after {
+  box-sizing: border-box;
+}
+
+/* ============================================================================
  * Shared interaction-rules layer (docs/backlog.md row 31a).
  *
  * One place for the hover/focus/disabled/reduced-motion affordances that

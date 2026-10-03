@@ -121,7 +121,6 @@
   max-width: none;
   height: auto;
   max-height: none;
-  box-sizing: border-box;
   flex-direction: column;
   border: none;
   margin: 0;

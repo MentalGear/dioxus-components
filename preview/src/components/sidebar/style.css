@@ -94,7 +94,6 @@
   display: none;
   width: var(--dx-sidebar-width);
   height: 100svh;
-  box-sizing: border-box;
   transition: left var(--dx-motion-duration-slow) var(--dx-motion-ease-out), right var(--dx-motion-duration-slow) var(--dx-motion-ease-out), width var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
@@ -151,7 +150,6 @@
   display: flex;
   width: 100%;
   height: 100%;
-  box-sizing: border-box;
   flex-direction: column;
   background: var(--dx-sidebar-background);
 }
@@ -573,7 +571,6 @@
   display: flex;
   overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
   align-items: center;
   padding: var(--dx-space-2);
   border: none;
@@ -870,7 +867,6 @@
   width: 100%;
   min-width: 0;
   height: 1.75rem;
-  box-sizing: border-box;
   align-items: center;
   padding: 0 var(--dx-space-2);
   border: none;

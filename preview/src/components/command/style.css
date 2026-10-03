@@ -85,7 +85,6 @@
   overflow: hidden;
   width: 100%;
   max-width: calc(100% - var(--dx-space-8));
-  box-sizing: border-box;
   flex-direction: column;
   padding: 0;
   border: 1px solid var(--dx-border);

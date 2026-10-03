@@ -1,6 +1,5 @@
 .dx-navigation-menu {
   display: flex;
-  box-sizing: border-box;
 }
 
 .dx-navigation-menu-list {
@@ -97,7 +96,6 @@
   width: max-content;
   min-width: 280px;
   max-width: calc(100vw - var(--dx-space-8));
-  box-sizing: border-box;
   padding: var(--dx-space-3);
   border: none;
   border-radius: var(--dx-radius-lg);

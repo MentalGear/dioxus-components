@@ -61,7 +61,10 @@
 }
 
 .dx-form-result {
-    min-height: 1.5rem;
+    /* One line of content (1.5rem) plus the padding and border below. The
+       theme makes this border-box, where the bare `1.5rem` would otherwise be
+       the whole box and shrink the empty result by 24px. */
+    min-height: calc(1.5rem + var(--dx-space-3) * 2 + 2px);
     padding: var(--dx-space-3) var(--dx-space-4);
     border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);

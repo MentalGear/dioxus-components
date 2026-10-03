@@ -3,7 +3,6 @@
     display: flex;
     width: fit-content;
     max-width: 100%;
-    box-sizing: border-box;
     flex-direction: row;
     border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-lg);

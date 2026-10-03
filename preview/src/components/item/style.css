@@ -12,7 +12,6 @@
 /* Base Item */
 .dx-item {
   display: flex;
-  box-sizing: border-box;
   flex-wrap: wrap;
   align-items: center;
   border: 1px solid transparent;

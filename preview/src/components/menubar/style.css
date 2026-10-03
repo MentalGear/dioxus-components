@@ -1,6 +1,5 @@
 .dx-menubar {
   display: flex;
-  box-sizing: border-box;
   padding: var(--dx-space-1);
   border: none;
   border-radius: var(--dx-radius-lg);

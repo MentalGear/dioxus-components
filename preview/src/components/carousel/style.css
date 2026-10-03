@@ -68,10 +68,6 @@
     user-select: none;
 }
 
-.dx-carousel-item {
-    box-sizing: border-box;
-}
-
 .dx-carousel-previous,
 .dx-carousel-next {
     position: absolute;
@@ -87,7 +83,6 @@
        matches the measured element, not the un-overridden default class. */
     width: var(--dx-space-7);
     height: var(--dx-space-7);
-    box-sizing: border-box;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--dx-input);
@@ -305,7 +300,6 @@
     display: inline-flex;
     width: var(--dx-space-7);
     height: var(--dx-space-7);
-    box-sizing: border-box;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--dx-input);
@@ -368,7 +362,6 @@
 .dx-carousel-indicator {
     width: var(--dx-space-2);
     height: var(--dx-space-2);
-    box-sizing: border-box;
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);
@@ -434,7 +427,6 @@
 .dx-carousel-picker-dot {
     width: var(--dx-space-2);
     height: var(--dx-space-2);
-    box-sizing: border-box;
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);

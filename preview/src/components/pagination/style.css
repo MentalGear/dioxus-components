@@ -16,7 +16,6 @@
 
 .dx-pagination-link {
   display: inline-flex;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   border-radius: var(--dx-radius-lg);

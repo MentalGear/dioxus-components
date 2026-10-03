@@ -20,7 +20,6 @@
   display: flex;
   max-width: fit-content;
   min-height: var(--dx-space-7);
-  box-sizing: border-box;
   align-items: center;
   border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-full);

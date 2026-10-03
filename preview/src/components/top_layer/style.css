@@ -9,7 +9,6 @@
      applied (oracle/tier2-html/global-stylesheet.spec.ts). */
   width: 100%;
   max-width: 42rem;
-  box-sizing: border-box;
   flex-direction: column;
   gap: 2.5rem;
 }
@@ -39,7 +38,6 @@
      (see oracle/tier2-html/global-stylesheet.spec.ts). */
   max-width: 100%;
   height: 60px;
-  box-sizing: border-box;
   align-items: center;
 
   /* Start-aligned on purpose: centred flex content that overflows spills to
@@ -56,7 +54,11 @@
 
 .dx-top-layer-stack-area {
   position: relative;
-  min-height: 160px;
+
+  /* 160px of room below the 90px padding-top: border-box (theme) counts the
+     padding, so it is spelled out to keep the fixture exactly as tall as
+     before. */
+  min-height: 250px;
   padding-top: 90px;
 }
 

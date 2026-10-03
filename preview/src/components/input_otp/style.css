@@ -27,7 +27,6 @@
   display: flex;
   width: 2.5rem;
   height: 2.75rem;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   border-radius: var(--dx-radius-md);

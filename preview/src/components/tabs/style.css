@@ -15,7 +15,6 @@
     display: flex;
     width: fit-content;
     height: 2rem;
-    box-sizing: border-box;
     flex: none;
     flex-direction: row;
     align-items: center;
@@ -34,7 +33,6 @@
     position: relative;
     display: inline-flex;
     height: calc(100% - 1px);
-    box-sizing: border-box;
     flex: 1;
     align-items: center;
     justify-content: center;
@@ -108,7 +106,6 @@
 
 .dx-tabs-content {
     width: 100%;
-    box-sizing: border-box;
     padding: var(--dx-space-8);
 }
 

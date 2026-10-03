@@ -11,7 +11,6 @@
   display: inline-flex;
   min-width: 20px;
   height: 20px;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;

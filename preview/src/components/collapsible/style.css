@@ -2,7 +2,6 @@
   display: flex;
   overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
