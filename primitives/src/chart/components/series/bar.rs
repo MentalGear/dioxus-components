@@ -467,7 +467,7 @@ fn render_horizontal_category_labels(
                     text {
                         key: "{i}",
                         "data-index": "{i}",
-                        x: "{fmt_num(ctx.plot_x0 - 8.0)}",
+                        x: "{fmt_num(ctx.plot_x0 - 8.0 * ctx.text_scale)}",
                         y: "{fmt_num(category_scale.center(i))}",
                         "text-anchor": "end",
                         "dominant-baseline": "central",

@@ -17,6 +17,8 @@
 
 use dioxus::prelude::*;
 
+use super::super::center_text;
+use super::super::fragment::safe_fragment_id;
 use super::super::layout::SeriesRenderContext;
 use crate::chart::context::use_chart;
 use crate::chart::engine::polar::{angle_scale, arc_path};
@@ -153,14 +155,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Element
                 }
             }
             if let Some((primary, secondary)) = &opts.center_text {
-                text {
-                    "data-slot": "chart-pie-center-text",
-                    x: "{fmt_num(cx)}",
-                    y: "{fmt_num(cy)}",
-                    text_anchor: "middle",
-                    tspan { x: "{fmt_num(cx)}", dy: "-0.1em", "{primary}" }
-                    tspan { x: "{fmt_num(cx)}", dy: "1.4em", "{secondary}" }
-                }
+                {center_text::render(cx, cy, inner_radius, primary, secondary)}
             }
         }
     }
@@ -218,6 +213,7 @@ fn render_rings(
                     id: format!("{}-radial-label-{i}", chart_id),
                     text,
                     radius: (ring_inner + ring_outer) / 2.0,
+                    thickness: ring_width,
                     start,
                     end,
                     text_scale: ctx.text_scale,
@@ -308,6 +304,7 @@ fn render_stacked_ring(
                     id: format!("{}-radial-label-{s}", chart_id),
                     text,
                     radius: (inner_radius + outer_radius) / 2.0,
+                    thickness: outer_radius - inner_radius,
                     start,
                     end,
                     text_scale: ctx.text_scale,
@@ -341,6 +338,10 @@ const LABEL_INSET: f64 = 8.0;
 /// whatever the arc's own sweep -- see [`ArcLabel::centerline`]. Just under a
 /// full turn so the path never closes onto its own start.
 const LABEL_SPAN: f64 = std::f64::consts::TAU * 0.95;
+/// The largest label font size, as a fraction of the ring's radial
+/// thickness: cap height is ~0.7em, so 0.85em of text fits a ring band with a
+/// little air on each side.
+const LABEL_MAX_FONT_FRACTION: f64 = 0.85;
 /// A label's own half-height as a fraction of its font size: the offset
 /// (`dy`) that centers the glyphs on the ring's centerline rather than
 /// resting their baseline on it.
@@ -355,6 +356,11 @@ struct ArcLabel {
     text: String,
     /// The ring's centerline radius.
     radius: f64,
+    /// The ring's radial thickness (logical units): the label's font size is
+    /// capped to a fraction of it ([`LABEL_MAX_FONT_FRACTION`]) so text on a
+    /// thin ring (many rings, or a narrow container) never spills across its
+    /// neighbours.
+    thickness: f64,
     start: f64,
     end: f64,
     /// The chart's text compensation scale (`SeriesRenderContext::text_scale`):
@@ -386,11 +392,26 @@ impl ArcLabel {
             text {
                 "data-slot": "chart-arc-label",
                 direction: "ltr",
+                style: "{self.font_size_style()}",
                 text_anchor: "{anchor}",
                 dy: "{LABEL_HALF_HEIGHT_EM}em",
                 textPath { "href": "{href}", "startOffset": "{offset}", "{text}" }
             }
         }
+    }
+
+    /// The inline `font-size` for this label: the themed size (the
+    /// stylesheet's `--dx-text-xs` x `--dx-chart-text-scale`, repeated here
+    /// because an inline declaration replaces the stylesheet's) capped at
+    /// [`LABEL_MAX_FONT_FRACTION`] of the ring's thickness. The cap is a
+    /// logical-unit length (user units = `px` in SVG), so it scales with the
+    /// drawing like the ring itself does.
+    fn font_size_style(&self) -> String {
+        let cap = (self.thickness * LABEL_MAX_FONT_FRACTION).max(0.0);
+        format!(
+            "font-size: min(calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1)), {}px)",
+            fmt_num(cap)
+        )
     }
 
     /// `(path d, text-anchor, startOffset)` for this label's centerline.
@@ -417,22 +438,6 @@ impl ArcLabel {
             (centerline_path(self.radius, far, from), "end", "100%")
         }
     }
-}
-
-/// `id` made safe to appear in a `url(#...)`/`href="#..."` fragment: every
-/// character outside `[A-Za-z0-9_-]` (a `%` would start a percent-escape,
-/// a space or `)` ends a `url()`) becomes `_` + its code point in hex, so
-/// two different ids can never collapse to the same fragment.
-fn safe_fragment_id(id: &str) -> String {
-    let mut out = String::with_capacity(id.len());
-    for c in id.chars() {
-        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-            out.push(c);
-        } else {
-            out.push_str(&format!("_{:x}", c as u32));
-        }
-    }
-    out
 }
 
 /// An SVG path `d` along the circle of `radius` (centered at the origin)
@@ -802,6 +807,7 @@ mod tests {
             radius: 100.0,
             start: 0.0,
             end: std::f64::consts::PI,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         let (d, anchor, offset) = label.centerline();
@@ -828,6 +834,7 @@ mod tests {
             radius: 100.0,
             start: PI,
             end: PI * 1.5,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         let (d, anchor, offset) = label.centerline();
@@ -875,6 +882,7 @@ mod tests {
             radius: 40.0,
             start: 0.0,
             end: 0.0,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         let (d, anchor, offset) = label.centerline();
@@ -893,6 +901,7 @@ mod tests {
             radius: 100.0,
             start: 0.0,
             end: 0.3,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         let long = ArcLabel {
@@ -901,6 +910,7 @@ mod tests {
             text: "Chrome 275".to_string(),
             radius: 100.0,
             start: 0.0,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         // Same start, same fixed span: the path length does not depend on
@@ -919,6 +929,7 @@ mod tests {
                 radius: 100.0,
                 start: 0.0,
                 end: PI_,
+                thickness: 40.0,
                 text_scale: scale,
             }
             .centerline()
@@ -950,22 +961,11 @@ mod tests {
         let labels = rtl.matches(r#"data-slot="chart-arc-label""#).count();
         assert_eq!(labels, 3, "{rtl}");
         assert_eq!(
-            rtl.matches(r#"direction="ltr""#).count(),
+            rtl.matches(r#"data-slot="chart-arc-label" direction="ltr""#)
+                .count(),
             labels,
             "every arc label must pin direction=ltr: {rtl}"
         );
-    }
-
-    #[test]
-    fn safe_fragment_id_escapes_fragment_breaking_characters() {
-        assert_eq!(safe_fragment_id("abc-DEF_09"), "abc-DEF_09");
-        assert_eq!(safe_fragment_id("a%b"), "a_25b");
-        assert_eq!(safe_fragment_id("a b)"), "a_20b_29");
-        // Different ids never collapse onto one fragment.
-        assert_ne!(safe_fragment_id("a%"), safe_fragment_id("a_"));
-        for c in safe_fragment_id("x%y#z (1)").chars() {
-            assert!(c.is_ascii_alphanumeric() || c == '-' || c == '_', "{c}");
-        }
     }
 
     #[test]
@@ -976,15 +976,16 @@ mod tests {
             radius: 40.0,
             start: 0.0,
             end: 1.0,
+            thickness: 40.0,
             text_scale: 1.0,
         };
         let html = dioxus_ssr::render_element(label.render());
         assert!(!html.contains("chart%"), "{html}");
         assert!(
-            html.contains(r##"href="#chart_251-radial-label-0""##),
+            html.contains(r##"href="#chart_25_1-radial-label-0""##),
             "{html}"
         );
-        assert!(html.contains(r#"id="chart_251-radial-label-0""#), "{html}");
+        assert!(html.contains(r#"id="chart_25_1-radial-label-0""#), "{html}");
     }
 
     #[test]
@@ -1060,5 +1061,25 @@ mod tests {
             RadialOptions::default(),
         );
         assert_eq!(html.matches(r#"data-slot="chart-arc""#).count(), 0);
+    }
+
+    #[test]
+    fn label_font_size_is_capped_by_the_ring_thickness() {
+        let mk = |thickness| ArcLabel {
+            id: "x".to_string(),
+            text: "Chrome".to_string(),
+            radius: 100.0,
+            start: 0.0,
+            end: 1.0,
+            thickness,
+            text_scale: 1.0,
+        };
+        // 0.85 x 10 = 8.5 logical units: below the themed 12px.
+        assert!(mk(10.0).font_size_style().ends_with(", 8.5px)"));
+        assert!(mk(10.0).font_size_style().contains("var(--dx-text-xs)"));
+        let html = dioxus_ssr::render_element(mk(10.0).render());
+        assert!(html.contains("style=\"font-size: min("), "{html}");
+        // A degenerate ring never yields a negative size.
+        assert!(mk(-4.0).font_size_style().ends_with(", 0px)"));
     }
 }

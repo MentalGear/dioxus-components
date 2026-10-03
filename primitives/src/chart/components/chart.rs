@@ -68,8 +68,9 @@ pub struct ChartProps {
     /// gaps) is expressed in. The SVG scales to fit its container (the
     /// themed wrapper's `width: 100%; height: auto`), so this sets the
     /// aspect ratio and the layout, not a pixel size. On a container
-    /// narrower than this the text is compensated to stay legible (see
-    /// [`text_scale`]) instead of shrinking with the drawing.
+    /// narrower or wider than this the text is compensated to keep its
+    /// authored size (see [`text_scale`]) instead of shrinking or growing
+    /// with the drawing.
     #[props(default = 600.0)]
     pub width: f64,
 
@@ -501,6 +502,16 @@ pub fn Chart(props: ChartProps) -> Element {
                 "aria-label": "{props.aria_label}",
                 view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
                 style: "--dx-chart-text-scale: {fmt_num(text_scale)}",
+                // The drawing is NOT mirrored under `dir="rtl"` (x grows
+                // rightward, the y axis sits on the left, only keyboard
+                // navigation follows `dir`), so its text must not flip
+                // either: SVG `text-anchor: start`/`end` are relative to the
+                // text's own direction, and an inherited `rtl` would swap
+                // every anchored label (y ticks would run into the plot,
+                // x ticks and value labels would shift off their marks).
+                // Pinned once here, on the root, so every text a family draws
+                // inherits it -- axis ticks, value labels, rim and arc labels.
+                "direction": "ltr",
                 onpointerleave: move |_| active_index.set(None),
 
                 title { "{props.aria_label}" }
@@ -631,24 +642,36 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
-/// The largest text compensation [`text_scale`] applies: beyond a 2x
+/// The largest text compensation [`text_scale`] applies: beyond a 2.5x
 /// shrink the drawing no longer has room for proportionally larger text, so
-/// text is allowed to render smaller than authored instead.
-const MAX_TEXT_SCALE: f64 = 2.0;
+/// text is allowed to render smaller than authored instead. (Margins scale
+/// with the text, so at the cap a default 600-wide chart keeps a ~17% left
+/// margin and a ~20% bottom margin -- the plot stays usable at a 320px
+/// viewport, where the container is ~240-270px.)
+const MAX_TEXT_SCALE: f64 = 2.5;
 
-/// Container widths within this factor of the logical width get no text
-/// compensation (`s = 1`): a ~1-5% shrink (e.g. a 592px card around a 600
-/// chart) leaves text visually at its authored size, and compensating it
-/// would only shave labels off the desktop layout for no legibility gain.
-const TEXT_SCALE_DEADZONE: f64 = 1.05;
+/// The smallest text compensation [`text_scale`] applies: a chart shown more
+/// than 2x *larger* than its logical size (a 300x300 radar stretched across a
+/// 1200px card) draws text at half its logical size, rendering at the
+/// authored CSS size instead of 2x it.
+const MIN_TEXT_SCALE: f64 = 0.5;
+
+/// Computed scales within this distance of `1` snap to exactly `1`
+/// (`|1 - s| < 5%`), in either direction: a ~5% shrink or growth (e.g. a 592px
+/// card around a 600 chart) leaves text visually at its authored size, and
+/// compensating it would only shave labels off the desktop layout for no
+/// legibility gain.
+const TEXT_SCALE_DEADZONE: f64 = 0.05;
 
 /// The text compensation scale `s`: how much larger than authored (in the
 /// chart's logical units) text is drawn so it renders at its authored CSS
 /// size when the SVG is shown `k = measured / width` times its logical size.
-/// `s = clamp(1 / k, 1, MAX_TEXT_SCALE)`; `1` when the width is unmeasured
-/// (SSR, first client render, `None`), unusable (non-finite or non-positive),
-/// at least as wide as the logical width, or within [`TEXT_SCALE_DEADZONE`]
-/// of it -- text is never shrunk below authored.
+/// `s = clamp(1 / k, MIN_TEXT_SCALE, MAX_TEXT_SCALE)`, symmetric around `1`:
+/// above 1 on a container narrower than the viewBox (text would shrink with
+/// the drawing), below 1 on one wider (text would grow with it), snapped to
+/// exactly `1` within [`TEXT_SCALE_DEADZONE`] of it. `1` also when the width
+/// is unmeasured (SSR, first client render, `None`) or unusable (non-finite
+/// or non-positive) -- so the server HTML and the first client render agree.
 ///
 /// Published to CSS as `--dx-chart-text-scale` on the SVG, which the themed
 /// stylesheet multiplies into every chart text's `font-size`, and read by
@@ -657,10 +680,13 @@ const TEXT_SCALE_DEADZONE: f64 = 1.05;
 /// coordinate space and scales with the drawing.
 fn text_scale(width: f64, measured: Option<f64>) -> f64 {
     match measured {
-        Some(m)
-            if m.is_finite() && m > 0.0 && width.is_finite() && width > m * TEXT_SCALE_DEADZONE =>
-        {
-            (width / m).clamp(1.0, MAX_TEXT_SCALE)
+        Some(m) if m.is_finite() && m > 0.0 && width.is_finite() && width > 0.0 => {
+            let s = (width / m).clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE);
+            if (1.0 - s).abs() < TEXT_SCALE_DEADZONE {
+                1.0
+            } else {
+                s
+            }
         }
         _ => 1.0,
     }
@@ -753,28 +779,58 @@ mod tests {
     fn text_scale_is_the_inverse_shrink_factor_clamped() {
         // 600 logical shown at 400 CSS px: k = 2/3, s = 1.5.
         assert!((text_scale(600.0, Some(400.0)) - 1.5).abs() < 1e-9);
-        // 600 shown at 300: s = 2 (the cap).
+        // 600 shown at 300: s = 2 (under the cap now).
         assert_eq!(text_scale(600.0, Some(300.0)), 2.0);
-        // Beyond the cap it stays at the cap (390 phone: 600 -> 229).
+        // 600 shown at 240: exactly the 2.5 cap; beyond it stays there
+        // (390 phone: 600 -> 229).
+        assert_eq!(text_scale(600.0, Some(240.0)), MAX_TEXT_SCALE);
         assert_eq!(text_scale(600.0, Some(229.0)), MAX_TEXT_SCALE);
         assert_eq!(text_scale(600.0, Some(1.0)), MAX_TEXT_SCALE);
     }
 
     #[test]
-    fn text_scale_is_one_when_wider_or_unmeasured() {
+    fn text_scale_shrinks_text_on_a_container_wider_than_the_viewbox() {
+        // A 300x300 radar stretched across a 592px card: text is drawn at
+        // ~half size in logical units so it renders at its authored size.
+        let s = text_scale(300.0, Some(592.0));
+        assert!((s - 300.0 / 592.0).abs() < 1e-9, "{s}");
+        assert!(s < 1.0);
+        // A default 600x300 chart in a 1200px container.
+        assert_eq!(text_scale(600.0, Some(1200.0)), 0.5);
+        // The shrink is floored: a hugely wider container stays at the floor.
+        assert_eq!(text_scale(300.0, Some(5000.0)), MIN_TEXT_SCALE);
+        // Symmetric around 1: width/m and m/width mirror each other.
+        let (up, down) = (
+            text_scale(600.0, Some(400.0)),
+            text_scale(400.0, Some(600.0)),
+        );
+        assert!((up * down - 1.0).abs() < 1e-9, "{up} * {down}");
+    }
+
+    #[test]
+    fn text_scale_is_one_when_unmeasured_or_unusable() {
         assert_eq!(text_scale(600.0, None), 1.0);
         assert_eq!(text_scale(600.0, Some(600.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(900.0)), 1.0);
-        // Within the dead zone: a 592px card around a 600 chart.
-        assert_eq!(text_scale(600.0, Some(592.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(572.0)), 1.0);
-        assert!(text_scale(600.0, Some(570.0)) > 1.0);
         assert_eq!(text_scale(600.0, Some(0.0)), 1.0);
         assert_eq!(text_scale(600.0, Some(-5.0)), 1.0);
         assert_eq!(text_scale(600.0, Some(f64::NAN)), 1.0);
         assert_eq!(text_scale(600.0, Some(f64::INFINITY)), 1.0);
         assert_eq!(text_scale(0.0, Some(300.0)), 1.0);
+        assert_eq!(text_scale(-600.0, Some(300.0)), 1.0);
         assert_eq!(text_scale(f64::NAN, Some(300.0)), 1.0);
+    }
+
+    #[test]
+    fn text_scale_dead_zone_is_symmetric() {
+        // Narrower: a 592px card around a 600 chart.
+        assert_eq!(text_scale(600.0, Some(592.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(572.0)), 1.0);
+        assert!(text_scale(600.0, Some(570.0)) > 1.0);
+        // Wider: the same 5% in the other direction.
+        assert_eq!(text_scale(600.0, Some(608.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(630.0)), 1.0);
+        assert!(text_scale(600.0, Some(640.0)) < 1.0);
+        assert_eq!(text_scale(600.0, Some(900.0)), 600.0 / 900.0);
     }
 
     #[test]
@@ -1212,5 +1268,86 @@ mod tests {
             html.contains("62.1%"),
             "expected February's own percent share: {html}"
         );
+    }
+
+    /// The `<g data-axis="...">` group's own markup (up to its first `</g>`).
+    fn axis_group<'a>(html: &'a str, axis: &str) -> &'a str {
+        let start = html
+            .find(&format!(r#"data-axis="{axis}""#))
+            .unwrap_or_else(|| panic!("no {axis} axis group: {html}"));
+        let rest = &html[start..];
+        &rest[..rest.find("</g>").expect("axis group closes")]
+    }
+
+    fn text_tags(group: &str) -> Vec<&str> {
+        group
+            .split("<text ")
+            .skip(1)
+            .map(|t| &t[..t.find('>').unwrap()])
+            .collect()
+    }
+
+    #[test]
+    fn x_tick_labels_are_centered_on_their_band() {
+        let html = render(ChartKind::Bar, false, true);
+        let tags = text_tags(axis_group(&html, "x"));
+        assert_eq!(tags.len(), 2, "{html}");
+        for tag in tags {
+            assert!(tag.contains(r#"text-anchor="middle""#), "{tag}");
+        }
+    }
+
+    #[test]
+    fn y_tick_labels_are_end_anchored_and_centered_on_their_gridline() {
+        let html = render_dir(None);
+        let tags = text_tags(axis_group(&html, "y"));
+        assert!(!tags.is_empty(), "{html}");
+        for tag in tags {
+            assert!(tag.contains(r#"text-anchor="end""#), "{tag}");
+            assert!(tag.contains(r#"dominant-baseline="central""#), "{tag}");
+            // Right edge 8 units left of the plot (margin 40, scale 1).
+            assert!(tag.contains(r#"x="32""#), "{tag}");
+        }
+    }
+
+    #[test]
+    fn the_svg_pins_ltr_so_anchors_do_not_flip_under_rtl() {
+        use crate::direction::Direction;
+        for dir in [None, Some(Direction::Rtl)] {
+            let html = render_dir(dir);
+            let svg_open = &html[html.find("<svg").unwrap()..];
+            let svg_open = &svg_open[..svg_open.find('>').unwrap()];
+            assert!(
+                svg_open.contains(r#"direction="ltr""#),
+                "{dir:?}: {svg_open}"
+            );
+            // The chart's own wrapper still reports the requested direction.
+            if dir.is_some() {
+                assert!(html.contains(r#"data-direction="rtl""#), "{html}");
+            }
+        }
+    }
+
+    fn render_dir(dir: Option<crate::direction::Direction>) -> String {
+        let mut dom = VirtualDom::new_with_props(DirHarness, DirHarnessProps { dir });
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        dioxus_ssr::render(&dom)
+    }
+
+    #[derive(Clone, PartialEq, Props)]
+    struct DirHarnessProps {
+        dir: Option<crate::direction::Direction>,
+    }
+
+    #[component]
+    fn DirHarness(props: DirHarnessProps) -> Element {
+        let config = use_signal(sample_config);
+        let data = use_signal(sample_data);
+        rsx! {
+            ChartContainer { config, data, kind: ChartKind::Bar,
+                Chart { aria_label: "Dir", dir: props.dir, show_y_axis: true }
+            }
+        }
     }
 }

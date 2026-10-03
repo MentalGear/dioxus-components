@@ -16,8 +16,10 @@
 //! themselves stay refactor-lane-owned regardless, per
 //! `$S/stage2-common.md`'s structural-construction section).
 
+mod center_text;
 pub mod chart;
 pub mod container;
+mod fragment;
 mod layout;
 pub mod legend;
 pub mod series;

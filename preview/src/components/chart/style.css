@@ -102,13 +102,16 @@
   /* Text compensation. The viewBox is always the props' `width` x `height`,
    * so on a narrower container the whole drawing -- text included -- shrinks.
    * `Chart` measures its container and publishes `--dx-chart-text-scale`
-   * (`s = clamp(1 / k, 1, 2)`, `k` = rendered / logical width; `1` on the
-   * server, first render and any container at least as wide as the viewBox)
-   * on this element; every chart text size below is multiplied by it, which
-   * cancels the shrink so text renders at its authored size while the
-   * geometry (radii, bar radius, ring gaps) scales with the drawing. This
-   * base rule scales text that has no font-size of its own (`chart-label`). */
-  font-size: calc(1em * var(--dx-chart-text-scale, 1));
+   * (`s = clamp(1 / k, 0.5, 2.5)`, `k` = rendered / logical width, snapped to
+   * `1` within 5%; `1` on the server and first render) on this element;
+   * every chart text size below is multiplied by it, which cancels the
+   * shrink (s > 1) or growth (s < 1) so text renders at its authored size
+   * while the geometry (radii, bar radius, ring gaps) scales with the
+   * drawing. This base rule scales text that has no font-size of its own
+   * (`chart-label`: bar/line value labels), at the same `--dx-text-xs` size
+   * as the axis text so values and ticks read as one typographic tier --
+   * previously it inherited the page's 1em (16px), a third larger. */
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
 .dx-chart [data-slot="chart-grid"] line {
@@ -238,7 +241,12 @@
   border-radius: var(--dx-radius-lg);
   background-color: var(--primary-color-2);
   box-shadow: var(--dx-shadow-md);
-  color: var(--primary-color);
+
+  /* Body text on the `--primary-color-2` surface. NOT `--primary-color`: that
+   * is the page background, so the text was invisible in both themes
+   * (white-on-white / near-black-on-near-black). `--secondary-color-4` is the
+   * body-text token the chart's own svg text and every other popover use. */
+  color: var(--secondary-color-4);
   font-size: var(--dx-text-xs);
 
   /* Shares `[data-slot="chart"]`'s own grid area -- see `.dx-chart`'s own
@@ -549,7 +557,13 @@
  * above) plus a halo in the surface colour (`paint-order: stroke` draws the
  * stroke underneath the fill): legible on any hue, and the halo is the
  * theme's own surface so it disappears wherever the text spills onto the
- * card background. */
+ * card background.
+ *
+ * A radial label's inline `font-size` (radial.rs) caps this one at ~0.85 of
+ * the ring's thickness, so on a narrow container -- where the text scale
+ * grows but the rings stay thin -- the text shrinks to its ring instead of
+ * spilling across the neighbours. The halo is in `em` so it follows whichever
+ * size wins (3px at the authored 12px, exactly as before). */
 .dx-chart [data-slot="chart-arc-label"] {
   font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
   font-weight: 600;
@@ -557,23 +571,41 @@
   pointer-events: none;
   stroke: var(--primary-color-1);
   stroke-linejoin: round;
-  stroke-width: calc(3px * var(--dx-chart-text-scale, 1));
+  stroke-width: 0.25em;
 }
 
 /* The donut/gauge center text (`PieOptions::center_text`/
  * `RadialOptions::center_text`): two `<tspan>`s, the primary value drawn
  * larger/bolder than the secondary caption below it -- same two-tier
  * text-color pairing `card/style.css` uses for a title versus its
- * description. */
+ * description.
+ *
+ * Sizing differs from the other chart text in two ways:
+ *  - it never shrinks below its authored size in logical units
+ *    (`max(1, scale)`): the center number belongs to the gauge graphic, so
+ *    when the chart is shown larger than its viewBox (a 300x300 radial across
+ *    a ~590px card) it grows with the donut instead of being halved by the
+ *    text compensation and looking lost in the big hole (the other text --
+ *    ticks, labels -- is compensated down to its authored pixel size);
+ *  - on a narrow container, where the scale grows up to 2.5x but the hole
+ *    does not, it is clamped to what fits the hole -- the primitive publishes
+ *    `--dx-chart-center-{primary,secondary}-max` (center_text.rs) -- so a
+ *    3-digit number never overflows it. */
 .dx-chart [data-slot="chart-pie-center-text"] {
   fill: var(--secondary-color-5);
-  font-size: calc(var(--dx-text-sm) * var(--dx-chart-text-scale, 1));
+  font-size: min(
+    calc(var(--dx-text-sm) * max(1, var(--dx-chart-text-scale, 1))),
+    var(--dx-chart-center-secondary-max, 9999px)
+  );
   pointer-events: none;
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
   fill: var(--secondary-color-4);
-  font-size: calc(var(--dx-text-2xl) * var(--dx-chart-text-scale, 1));
+  font-size: min(
+    calc(var(--dx-text-2xl) * max(1, var(--dx-chart-text-scale, 1))),
+    var(--dx-chart-center-primary-max, 9999px)
+  );
   font-weight: 700;
 }
 

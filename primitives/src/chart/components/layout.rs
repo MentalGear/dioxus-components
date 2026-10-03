@@ -52,10 +52,12 @@ pub(crate) const BAND_PADDING: f64 = 0.2;
 pub(crate) struct LayoutParams<'a> {
     pub width: f64,
     pub height: f64,
-    /// The text compensation scale (`>= 1`, see `chart::text_scale`): how
-    /// many logical units one CSS pixel of axis text occupies once the chart
-    /// is rendered narrower than its logical `width`. `1.0` on the server,
-    /// the first client render and any container at least `width` wide.
+    /// The text compensation scale (`0.5..=2.5`, see `chart::text_scale`):
+    /// how many logical units one CSS pixel of axis text occupies once the
+    /// chart is rendered at a different size than its logical `width` --
+    /// above 1 in a narrower container, below 1 in a wider one. `1.0` on the
+    /// server, the first client render and any container within ~5% of
+    /// `width`.
     pub text_scale: f64,
     pub show_x_axis: bool,
     pub show_y_axis: bool,
@@ -349,6 +351,9 @@ pub(crate) fn render_x_axis(
                         "data-index": "{i}",
                         x: "{fmt_num(ctx.x_scale.center(i))}",
                         y: "{fmt_num(ctx.plot_y1 + 16.0 * ctx.text_scale)}",
+                        // Centered on the band/point it labels (an unanchored
+                        // SVG text starts AT x, i.e. half a label to the right).
+                        "text-anchor": "middle",
                         {label}
                     }
                 }
@@ -367,6 +372,11 @@ pub(crate) fn render_y_axis(ctx: &SeriesRenderContext) -> Element {
                     key: "{y_tick}",
                     x: "{fmt_num(ctx.plot_x0 - 8.0 * ctx.text_scale)}",
                     y: "{fmt_num(ctx.y_scale.scale(y_tick))}",
+                    // Right-aligned against the plot edge and vertically
+                    // centered on its gridline (an unanchored text starts at
+                    // x and sits on its baseline, i.e. runs INTO the plot).
+                    "text-anchor": "end",
+                    "dominant-baseline": "central",
                     {fmt_decimal(y_tick, 2)}
                 }
             }

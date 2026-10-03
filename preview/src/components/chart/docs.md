@@ -57,7 +57,7 @@ On `Chart`:
 - `x_label` — the name of the x-axis column in the hidden data table. Defaults to `"Category"`.
 - `x_tick_format` — format x-axis labels. By default a label is cut to its first three characters (`"January"` becomes `"Jan"`), so supply a formatter for anything that is not a month name.
 - `max_x_ticks` — cap on how many x-axis labels are drawn (see below).
-- `width` and `height` — the logical size (default 600 by 300): the coordinate space that every length in the chart's props (radii, insets, gaps) is expressed in. The SVG scales to fit its container, so these set the aspect ratio and the layout, not a pixel size. On a container narrower than `width`, text is scaled up to stay legible instead of shrinking with the drawing.
+- `width` and `height` — the logical size (default 600 by 300): the coordinate space that every length in the chart's props (radii, insets, gaps) is expressed in. The SVG scales to fit its container, so these set the aspect ratio and the layout, not a pixel size. Text keeps its authored size whatever the container: on a container narrower than `width` it is scaled up (to at most 2.5x) instead of shrinking with the drawing, and on a wider one scaled down (to at least 0.5x) instead of growing with it. Axis text is anchored to its marks and stays left-to-right under `dir="rtl"` (the drawing itself is not mirrored).
 - `keyboard` — keyboard stepping through data points, on by default.
 - `area`, `bar`, `line`, `pie`, `radar`, `radial` — per-kind options structs, such as `LineOptions { dots: true, .. }`. Each is described on its gallery page.
 
