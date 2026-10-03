@@ -60,8 +60,21 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
-                            // Open on the third day so every tooltip variant is visible
-                            default_index: 2,
+                            // shadcn's `defaultIndex={1}`: open on the second day. No grid and no y axis, as in shadcn's tooltip demos
+                            default_index: 1,
+                            show_grid: false,
+                            show_y_axis: false,
+                            // `tickMargin={10}` and `cursor={false}`
+                            tick_margin: 10.0,
+                            cursor: false,
+                            // The bottom series rounds its lower corners, the top one its upper corners (`radius={[0, 0, 4, 4]}` / `[4, 4, 0, 0]`)
+                            bar: BarOptions {
+                                series_radius: vec![
+                                    BarRadius::corners(0.0, 0.0, 4.0, 4.0),
+                                    BarRadius::corners(4.0, 4.0, 0.0, 0.0),
+                                ],
+                                ..Default::default()
+                            },
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

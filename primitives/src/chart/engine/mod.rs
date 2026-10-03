@@ -38,8 +38,10 @@
 //!
 //! # Modules
 //!
-//! - [`scale`] -- [`scale::LinearScale`] (with "nice" tick generation) and
-//!   [`scale::BandScale`], plus [`scale::nice_domain`].
+//! - [`scale`] -- [`scale::LinearScale`] (with "nice" tick generation),
+//!   [`scale::BandScale`]/[`scale::PointScale`]/[`scale::CategoryScale`]
+//!   (bars / area-line category axes), [`scale::nice_ticks`] (Recharts'
+//!   y-axis ticks), plus [`scale::nice_domain`].
 //! - [`curve`] -- [`curve::Curve`] and the [`curve::line_path`]/
 //!   [`curve::area_path`] SVG path builders.
 //! - [`mod@stack`] -- [`stack::stack`], series stacking, plus
@@ -77,5 +79,5 @@ pub mod table;
 
 pub use curve::{area_between_path, area_path, line_path, Curve};
 pub use data::{ChartDatum, ChartKind};
-pub use scale::{nice_domain, BandScale, LinearScale};
+pub use scale::{nice_domain, nice_ticks, BandScale, CategoryScale, LinearScale, PointScale};
 pub use stack::{stack, stack_with_mode, StackMode};

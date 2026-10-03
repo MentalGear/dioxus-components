@@ -5,7 +5,8 @@ The other chart pages are galleries built on this same package: [Area chart](/co
 ## Quick start
 
 ```rust
-// Series, in draw order (also the legend and tooltip row order). `color` is
+// Series, in draw order (also the tooltip row order; the legend lists them by
+// key, as Recharts' legend does). `color` is
 // any CSS color or a `var(--token)`; the theme ships `--dx-chart-1` to
 // `--dx-chart-8`, which adapt to light and dark mode.
 let config = ChartConfig::new()
@@ -44,21 +45,23 @@ ChartContainer {
 }
 ```
 
-`Chart`, `ChartTooltip` and `ChartLegend` are independent siblings inside the container. Leave out whichever you do not need; a single-series chart often wants no legend.
+`Chart`, `ChartTooltip` and `ChartLegend` are independent siblings inside the container. Leave out whichever you do not need; a single-series chart often wants no legend. As in shadcn/ui, a legend takes its room from the chart's own box rather than adding to it: an area, bar, line or pie chart with a legend is exactly as tall as one without, and its plot is shorter by the legend's height. A legend that wraps onto more rows tells `Chart` its size up front with `legend_size` (in px), so the server render already reserves the right amount.
 
 ## Props you will use most
 
 On `Chart`:
 
 - `aria_label` (required) and `description` — the accessible name, and an optional longer description exposed as the SVG's `<desc>`.
-- `stacked` — stack series instead of overlaying (area) or grouping (bar). Ignored for other kinds.
-- `curve` — `Curve::Monotone` (default, smooth), `Curve::Linear` or `Curve::Step`. Applies to area and line.
-- `show_grid` (default on), `show_x_axis` (default on), `show_y_axis` (default off) and `y_tick_count` (default 5).
+- `stacked` — stack series instead of overlaying (area) or grouping (bar), in config order: the first series is the bottom layer (Recharts stacks in declaration order). Ignored for other kinds.
+- `curve` — `Curve::Natural`, `Curve::Monotone` (default), `Curve::Linear`, `Curve::Step` (midpoint steps), `Curve::StepBefore` or `Curve::StepAfter` — Recharts' `type` values. Applies to area and line.
+- `show_grid` (default on), `show_x_axis` (default on), `show_y_axis` (default off), `y_tick_count` (default 5) and `tick_margin` (default 8: px between a tick label and the plot, beyond the 6px tick size). The value axis uses Recharts' tick algorithm: exactly `y_tick_count` round values, and the axis runs from the first to the last of them, so the top gridline is the plot's top edge. A shown x axis reserves a 30px band under the plot and a shown y axis a 60px band left of it, as Recharts does. On horizontal bars the y axis holds the categories and the x axis the values.
+- `margin` — Recharts' `margin` in px (`ChartMargin`, default 5 on every side). A partial Recharts margin replaces the whole default, so `margin={{ left: 12, right: 12 }}` is `ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE }`. Sides may be negative.
+- `cursor` (default on) — the hover cursor: a 1px line through the active point on area and line charts, a muted band behind the active category on bar charts. shadcn's demos usually set `cursor={false}`; so do ours.
 - `x_label` — the name of the x-axis column in the hidden data table. Defaults to `"Category"`.
 - `x_tick_format` — format x-axis labels. By default a label is cut to its first three characters (`"January"` becomes `"Jan"`), so supply a formatter for anything that is not a month name.
-- `max_x_ticks` — cap on how many x-axis labels are drawn (see below).
-- `width` and `height` — the logical size (default 600 by 300): the coordinate space that every length in the chart's props (radii, insets, gaps) is expressed in. The SVG scales to fit its container, so these set the aspect ratio and the layout, not a pixel size. Text keeps its authored size whatever the container: on a container narrower than `width` it is scaled up (to at most 2.5x) instead of shrinking with the drawing, and on a wider one scaled down (to at least 0.5x) instead of growing with it. Axis text is anchored to its marks and stays left-to-right under `dir="rtl"` (the drawing itself is not mirrored).
-- `fit_width` (default off) — fixed height, fluid width, like shadcn's `h-[250px]` chart: once mounted, the chart's logical width becomes its container's measured width (1 unit is 1 CSS pixel), `height` is rendered at exactly that many CSS pixels, and text is not scaled. Use it for a full-width chart that must be the same height on a phone and on a desktop, which a fixed aspect ratio cannot do. `width` is still used for the server render and the first client render (so hydration matches), but that render already fills the container at `height` pixels tall: its drawing is stretched to the box (so marks sit where the measured render will put them), and its text is hidden until the measured render fades it in, so there is no narrow left-aligned strip, no tiny phone text and no page shift when the measured width is adopted (`data-measured="false"` marks the pre-measure render). X-axis labels are thinned to the real width. Area, bar (vertical and horizontal) and line charts only; ignored for pie, radar and radial charts, whose radii are authored in the fixed logical space.
+- `min_tick_gap` — the smallest gap in px between two x-axis labels (default 5; see below).
+- `width`, `height` and `aspect` — the size. A chart is always exactly as wide as its container and draws at 1 unit = 1 CSS pixel, so every length — margins, bar radius, stroke widths, dot radii, label offsets — is the pixel size you wrote, and text is never scaled. Its height is `height` when given (a fixed-height, fluid-width chart, like shadcn's `h-[250px]` interactive charts), otherwise the width divided by `aspect` (default 16/9 for area, bar and line, like shadcn's `aspect-video`; 1 for pie, radar and radial). `width` (default 369 for area, bar and line, 250 for the others) is only the size of the server render and the first client render, before the container has been measured, so hydration matches; that render already fills the container — an aspect-ratio chart is drawn as a uniform scale of the final one, a fixed-height chart is stretched across at its final height with its text hidden until the measured render (`data-measured="false"` marks it). Pie, radar and radial charts are squares at most 250px wide, centered, like shadcn's `aspect-square max-h-[250px]`; give the container a `max-inline-size` for another size. Axis text is anchored to its marks and stays left-to-right under `dir="rtl"` (the drawing itself is not mirrored).
+- `animate` (default on) — after the chart is first measured in the browser, bars grow from the baseline and lines and areas are revealed left to right, once (Recharts' load animation). Never on the server render, so without JavaScript the final chart shows, and never under `prefers-reduced-motion`.
 - `keyboard` — keyboard stepping through data points, on by default.
 - `default_index` — show the tooltip already open at this data point (shadcn's `defaultIndex`), on the server render and the first client render, until the user hovers, taps or presses a key; once it closes it stays closed. Read on mount only, and ignored when it is past the end of the data. The tooltip is hidden until the browser has measured the chart (it needs the box to flip and clamp), then shown at the data point, with the cursor line and the active dots. Place `ChartTooltip` after `Chart` in the container so it sees the index on the server render. The tooltip gallery uses it so each variant is visible without hovering.
 - `area`, `bar`, `line`, `pie`, `radar`, `radial` — per-kind options structs, such as `LineOptions { dots: true, .. }`. Each is described on its gallery page.
@@ -90,6 +93,6 @@ A chart is a picture, so it comes with a real data table for anyone who cannot s
 
 ## Dense x-axes
 
-With many points (say 90 daily values) a label under every category would be an unreadable smear, so a chart draws at most 12 x-axis labels. `max_x_ticks` (default `12`) sets that upper limit: the chart labels every n-th category, where n is the number of categories divided by the label count, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
+With many points (say 90 daily values) a label under every category would be an unreadable smear, so labels are thinned the way Recharts' default `interval="preserveEnd"` thins them: the last category is always labelled, and walking back from it, a label is drawn only where it clears the previous one by `min_tick_gap` px and fits inside the chart. A narrow chart (a phone) therefore shows fewer labels than a wide one, and longer labels fewer than short ones. shadcn's 91-day charts set `minTickGap={32}` and so do ours (`min_tick_gap: 32.0`). Only the labels are thinned; every point stays hoverable and stays in the data table.
 
-Labels are also thinned to fit the available width. The chart estimates how wide its longest label is and draws only as many as fit with a small gap, so a narrow chart (such as on a phone) shows fewer labels than a wide one, and longer labels show fewer than short ones. The estimate is not an exact measurement, so extremely wide labels can still touch; shorten them with `x_tick_format` or lower `max_x_ticks`.
+Label widths are estimated from typical UI-font metrics rather than measured, so the server and the browser agree; an unusually wide font can still crowd, in which case raise `min_tick_gap` or shorten the labels with `x_tick_format`.

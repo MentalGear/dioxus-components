@@ -5,7 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Two overlapping series on the default grid, no legend.
+/// Two overlapping series: desktop at 60% opacity under an opaque mobile.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -40,12 +40,10 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Total visitors by month, desktop and mobile",
-                        radar: RadarOptions { fill_opacity: 0.6, ..Default::default() },
+                        radar: RadarOptions { fill_opacity: vec![0.6], ..Default::default() },
                     }
-                    ChartTooltip {}
+                    ChartTooltip { indicator: TooltipIndicator::Line }
                 }
             }
             CardFooter { class: "dx-chart-footer",

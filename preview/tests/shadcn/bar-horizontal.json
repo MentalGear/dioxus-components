@@ -1,0 +1,89 @@
+{
+  "name": "chart-bar-horizontal",
+  "variant": "horizontal",
+  "title": "Bar Chart - Horizontal",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186
+    },
+    {
+      "month": "February",
+      "desktop": 305
+    },
+    {
+      "month": "March",
+      "desktop": 237
+    },
+    {
+      "month": "April",
+      "desktop": 73
+    },
+    {
+      "month": "May",
+      "desktop": 209
+    },
+    {
+      "month": "June",
+      "desktop": 214
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    }
+  },
+  "chart": {
+    "kind": "bar",
+    "margin": {
+      "left": -20
+    },
+    "layout": "vertical",
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "desktop",
+      "type": null,
+      "fill": "var(--color-desktop)",
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": 5,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": null,
+  "xAxis": {
+    "dataKey": "desktop",
+    "type": "number",
+    "hide": true,
+    "tickMargin": null,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": {
+    "dataKey": "month",
+    "type": "category",
+    "hide": false,
+    "tickMargin": 10,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "tooltip": {
+    "cursor": false,
+    "indicator": "dot",
+    "hideLabel": true,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [],
+  "activeIndex": null
+}

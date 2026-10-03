@@ -2,26 +2,41 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// A single category (January) with two series stacked cumulatively into one
-/// ring instead of one ring each (`RadialOptions::stacked`).
+/// January's mobile and desktop visitors, stacked into one half-turn ring
+/// (mobile first, from three o'clock).
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
         label: "January".to_string(),
-        values: vec![Some(1260.0), Some(570.0)],
+        values: vec![Some(570.0), Some(1260.0)],
         ..Default::default()
     }]
 }
 
 fn chart_config() -> ChartConfig {
     ChartConfig::new()
-        .series("desktop", "Desktop", "var(--dx-chart-1)")
         .series("mobile", "Mobile", "var(--dx-chart-2)")
+        .series("desktop", "Desktop", "var(--dx-chart-1)")
 }
 
+/// `1830.0` as `"1,830"` (JavaScript's `toLocaleString()`).
+fn thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A half-turn gauge with rounded segments, the total in its centre. Each
+/// segment spans its share of the total.
 #[component]
 pub fn Demo() -> Element {
     let data = chart_data();
-    let total: f64 = data[0].values.iter().filter_map(|v| *v).sum();
+    let total: f64 = data[0].values.iter().flatten().sum();
 
     rsx! {
         Card {
@@ -32,18 +47,19 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config: chart_config(), data, kind: ChartKind::RadialBar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
-                        aria_label: "Visitors by month, desktop and mobile",
+                        aria_label: "Visitors in January, mobile and desktop",
                         radial: RadialOptions {
-                            inner_radius: 80.0,
+                            end_angle: 180.0,
+                            inner_radius: Radius::Px(80.0),
+                            outer_radius: Radius::Px(110.0),
                             stacked: true,
-                            center_text: Some((format!("{total:.0}"), "Visitors".to_string())),
+                            corner_radius: 5.0,
+                            center_text: Some((thousands(total), "Visitors".to_string())),
+                            center_text_raised: true,
                             ..Default::default()
                         },
                     }
-                    ChartTooltip {}
-                    ChartLegend {}
+                    ChartTooltip { hide_label: true }
                 }
             }
             CardFooter { class: "dx-chart-footer",

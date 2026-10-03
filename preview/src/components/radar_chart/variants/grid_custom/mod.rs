@@ -5,7 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// A single custom ring at value `90`, no spokes.
+/// A single polygon ring 90px out (`polarRadius={[90]}`), no spokes.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),
@@ -38,12 +38,10 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Total visitors by month, desktop",
                         radar: RadarOptions {
-                            grid: RadarGrid::Custom { values: vec![90.0], spokes: false },
-                            fill_opacity: 0.6,
+                            grid: RadarGrid::Custom { polar_radius: vec![90.0], spokes: false },
+                            fill_opacity: vec![0.6],
                             ..Default::default()
                         },
                     }

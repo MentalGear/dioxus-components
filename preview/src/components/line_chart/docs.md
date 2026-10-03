@@ -21,7 +21,7 @@ ChartContainer { config, data, kind: ChartKind::Line,
 
 ## Curve
 
-`Chart`'s `curve` prop sets the interpolation: `Curve::Monotone` (the default) is a smooth curve that never overshoots a data point, `Curve::Linear` joins points with straight segments, and `Curve::Step` draws a horizontal run to the next point and then a vertical jump. A missing value (`None`) breaks the line at that point.
+`Chart`'s `curve` prop sets the interpolation: `Curve::Natural` is the smooth spline most shadcn demos use (it can overshoot a point slightly between data points), `Curve::Monotone` (the default) is smooth and never overshoots a data point, `Curve::Linear` draws straight segments, and `Curve::Step` draws midpoint steps -- each value holds until halfway to the next point (`StepBefore`/`StepAfter` put the riser at a point instead). A missing value (`None`) breaks the line at that point.
 
 ## Line options
 
@@ -34,12 +34,14 @@ Line-specific settings live in `line: LineOptions { .. }` on `Chart`:
 
 ## Demos
 
-- **Default** — one series, no dots.
+Each demo is a port of the shadcn/ui chart of the same name -- same data, curve, margins, axes and tooltip -- checked against shadcn's own source by a test.
+
+- **Default** — one series on a natural curve, no dots.
 - **Linear** and **Step** — the same data with `Curve::Linear` and `Curve::Step`.
-- **Multiple** — two series, with a tooltip that shows both rows.
+- **Multiple** — two series on monotone curves, with a tooltip that shows both rows.
 - **Dots** — `dots: true`.
-- **Dots with colors** — one series over browser categories, each dot colored through `ChartDatum::color`.
-- **Custom dots** — a diamond drawn through `dot`.
-- **Label** — `LineLabels::Value`, with the grid and y-axis hidden.
-- **Custom label** — `LineLabels::Custom`, labeling each point with its category.
-- **Interactive** — two header buttons toggle which of two series is drawn, each showing that series' total.
+- **Dots with colors** — one series over browsers with no x axis, each 5px dot colored through `ChartDatum::color`.
+- **Custom dots** — lucide's `GitCommitVertical` icon drawn at every point through `dot`.
+- **Label** — `LineLabels::Value` above each dot, with 20px of top margin for the labels.
+- **Custom label** — `LineLabels::Custom`, labeling each browser's point with its name.
+- **Interactive** — 91 days in a fixed 250px-tall chart; two header buttons toggle which series is drawn, each showing that series' total.

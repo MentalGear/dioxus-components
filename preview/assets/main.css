@@ -322,10 +322,14 @@ summary,
 /* Code block styles */
 /* stylelint-disable-next-line selector-class-pattern */
 .dx-preview-code-theme {
+  display: grid;
   overflow: auto;
   border: 1px solid var(--primary-color-6);
   border-radius: 0.5rem;
   background-color: var(--primary-color-1);
+
+  /* Line-number gutter, then the code (`1fr` keeps the code at least as wide as its longest line). */
+  grid-template-columns: auto 1fr;
 }
 
 /* stylelint-disable-next-line selector-class-pattern */
@@ -339,6 +343,31 @@ summary,
   font-size: 0.875rem;
   line-height: 1.55;
   tab-size: 4;
+}
+
+/* Line numbers beside a listing (`PreviewCode`'s `pre.dx-code-gutter`). A column of its own, not
+ * part of the code's text: `user-select: none` keeps it out of any selection and copy, and it is
+ * `aria-hidden`. Same font, size, line-height and vertical padding as `.dxc` above, and the code
+ * does not wrap, so number N is level with line N while scrolling in either direction. Sticky so
+ * the numbers stay put when a long line scrolls sideways; its own background hides the code
+ * passing underneath. */
+.dx-preview-code-theme .dx-code-gutter {
+  position: sticky;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 1rem 0.75rem 1rem 1.1rem;
+  margin: 0;
+  background-color: var(--primary-color-1);
+  border-inline-end: 1px solid var(--primary-color-6);
+  color: var(--secondary-color-5);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  inset-inline-start: 0;
+  line-height: 1.55;
+  text-align: end;
+  user-select: none;
+  white-space: pre;
 }
 
 /* axe `color-contrast` (docs/backlog.md row 39 residue): the vendored
@@ -391,11 +420,16 @@ summary,
   margin: 0;
 }
 
+/* The scroller is the themed wrapper, not the `<pre>`: the line-number gutter is a sibling of the
+ * `<pre>`, and a cap on the `<pre>` alone would let the gutter (one row per line) grow the grid
+ * row past it, past this block's own clip. */
+.dx-code-block .dx-preview-code-theme {
+  max-height: 80vh;
+}
+
 /* stylelint-disable-next-line selector-class-pattern */
 .dx-code-block .dxc {
   width: 100%;
-  height: 100%;
-  max-height: 80vh;
   box-sizing: border-box;
 }
 
@@ -1945,7 +1979,11 @@ summary,
 }
 
 .dx-charts-card-body .dx-card {
+  /* border-box: the Tooltips tab wraps each card in a block (not the flex
+   * row the other tabs use), where a content-box `width: 100%` plus the
+   * card's 1px border overflowed the cell by 2px. */
   width: 100%;
+  box-sizing: border-box;
   min-width: 0;
   max-width: none;
   flex: 1 1 0%;

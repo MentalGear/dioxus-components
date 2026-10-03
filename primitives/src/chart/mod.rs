@@ -104,6 +104,6 @@ pub use context::*;
 // `ChartDatum`, `ChartKind`, the three path builders) keeps working
 // unchanged.
 pub use engine::{
-    area_between_path, area_path, line_path, nice_domain, stack, stack_with_mode, BandScale,
-    ChartDatum, ChartKind, Curve, LinearScale, StackMode,
+    area_between_path, area_path, line_path, nice_domain, nice_ticks, stack, stack_with_mode,
+    BandScale, CategoryScale, ChartDatum, ChartKind, Curve, LinearScale, PointScale, StackMode,
 };

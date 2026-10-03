@@ -62,10 +62,37 @@ test.describe("Radial chart: ring geometry", () => {
     }
   });
 
-  test("grid: a background track renders behind the value arcs", async ({ page }) => {
+  test("main: rings start at three o'clock and sweep counter-clockwise over muted tracks", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const f = frame(page, "main");
+    const arcs = f.locator('[data-slot="chart-arc"]');
+    // Recharts degrees (0 = three o'clock, counter-clockwise), px radii:
+    // the numbers measured on shadcn's chart-radial-simple.
+    await expect(arcs.nth(0)).toHaveAttribute("data-start-angle", "0");
+    await expect(arcs.nth(0)).toHaveAttribute("data-end-angle", "360");
+    await expect(arcs.nth(1)).toHaveAttribute("data-end-angle", /^261\.8/);
+    await expect(arcs.nth(0)).toHaveAttribute("data-inner-radius", "31.6");
+    await expect(arcs.nth(0)).toHaveAttribute("data-outer-radius", "43.6");
+    await expect(f.locator('[data-slot="chart-radial-background"]')).toHaveCount(5);
+  });
+
+  test("grid: circles through the rings and spokes, no tracks", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "grid");
-    await expect(f.locator('[data-slot="chart-polar-grid"]').first()).toBeAttached();
+    await expect(f.locator('circle[data-slot="chart-grid-ring"]')).toHaveCount(5);
+    await expect(f.locator('[data-slot="chart-grid-spoke"]')).toHaveCount(14);
+    await expect(f.locator('[data-slot="chart-radial-background"]')).toHaveCount(0);
+  });
+
+  test("text: a 250-degree gauge over a full muted ring", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const f = frame(page, "text");
+    const arc = f.locator('[data-slot="chart-arc"]');
+    await expect(arc).toHaveAttribute("data-end-angle", "250");
+    await expect(arc).toHaveAttribute("data-inner-radius", "81");
+    await expect(arc).toHaveAttribute("data-outer-radius", "89");
+    await expect(f.locator('[data-slot="chart-radial-annulus"]')).toHaveCount(1);
+    await expect(f.locator('[data-slot="chart-pie-center-text"]')).toHaveText("200Visitors");
   });
 
   test("stacked: two series stack cumulatively into one ring, not two concentric rings", async ({ page }) => {
@@ -86,6 +113,13 @@ test.describe("Radial chart: ring geometry", () => {
     const end0 = parseFloat((await arcs.nth(0).getAttribute("data-end-angle")) ?? "NaN");
     const start1 = parseFloat((await arcs.nth(1).getAttribute("data-start-angle")) ?? "NaN");
     expect(end0).toBeCloseTo(start1, 2);
+    // Mobile first, at its share of the stack total (a deliberate
+    // difference from Recharts' clamped scale -- see radial.rs), and the
+    // stack fills the half turn exactly.
+    await expect(arcs.nth(0)).toHaveAttribute("data-series", "mobile");
+    expect(end0).toBeCloseTo((570 / 1830) * 180, 1);
+    await expect(arcs.nth(1)).toHaveAttribute("data-end-angle", "180");
+    await expect(f.locator('[data-slot="chart-pie-center-text"]')).toHaveText("1,830Visitors");
   });
 });
 
@@ -98,21 +132,24 @@ test.describe("Radial chart: center text and labels", () => {
     await expect(centerText).toContainText(/\d/);
   });
 
-  test("shape: a single ring renders with a rounded corner radius", async ({ page }) => {
+  test("shape: a single ring with square ends, like shadcn's", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "shape");
     const d = await f.locator('[data-slot="chart-arc"]').first().getAttribute("d");
     expect(d).not.toBeNull();
-    // A rounded-corner arc's path uses small-radius fillet `A` commands in
-    // addition to the two main ring arcs -- more than the 2 a sharp-corner
-    // annular sector needs.
-    expect((d!.match(/A/g) ?? []).length).toBeGreaterThan(2);
+    // shadcn's chart-radial-shape sets no `cornerRadius` (its fixture,
+    // preview/tests/shadcn/chart-radial-shape.json, has `cornerRadius: null`):
+    // a plain annular sector, whose path has exactly the two ring arcs and
+    // no fillet `A` commands.
+    expect((d!.match(/A/g) ?? []).length).toBe(2);
   });
 
-  test("label: each ring's own category label is drawn", async ({ page }) => {
+  test("label: rings start at six o'clock and each is named along its arc", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
     const f = frame(page, "label");
-    await expect(f.locator('[data-slot="chart-arc-label"]').first()).toBeAttached();
+    await expect(f.locator('[data-slot="chart-arc"]').first()).toHaveAttribute("data-start-angle", "-90");
+    await expect(f.locator('[data-slot="chart-arc-label"]')).toHaveCount(5);
+    await expect(f.locator('[data-slot="chart-arc-label"]').first()).toHaveText("Chrome");
   });
 });
 

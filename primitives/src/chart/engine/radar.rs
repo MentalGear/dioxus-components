@@ -281,6 +281,51 @@ pub fn sector_path(start_angle: f64, end_angle: f64, outer_radius: f64) -> Strin
     )
 }
 
+/// How an angle-axis tick label sits against its point: Recharts'
+/// `PolarAngleAxis` puts the text `tickSize` (8px) beyond the outer radius
+/// along the spoke, anchored `start` on the right half, `end` on the left
+/// half and `middle` at the two poles; vertically centred (`dy 0.355em`),
+/// except at the top pole (baseline on the point, `0em`) and the bottom
+/// pole (hanging below it, `0.71em`).
+///
+/// `angle` is this module's convention (radians, `0` at the top,
+/// clockwise). Returns `(text-anchor, dy)`.
+///
+/// ```
+/// use dioxus_primitives::chart::engine::radar::angle_tick_anchor;
+/// use std::f64::consts::PI;
+///
+/// assert_eq!(angle_tick_anchor(0.0), ("middle", "0em"));
+/// assert_eq!(angle_tick_anchor(PI / 3.0), ("start", "0.355em"));
+/// assert_eq!(angle_tick_anchor(PI), ("middle", "0.71em"));
+/// assert_eq!(angle_tick_anchor(5.0 * PI / 3.0), ("end", "0.355em"));
+/// ```
+pub fn angle_tick_anchor(angle: f64) -> (&'static str, &'static str) {
+    const EPS: f64 = 1e-5;
+    let (x, y) = point_radial(angle, 1.0);
+    if x > EPS {
+        ("start", "0.355em")
+    } else if x < -EPS {
+        ("end", "0.355em")
+    } else if y < 0.0 {
+        ("middle", "0em")
+    } else {
+        ("middle", "0.71em")
+    }
+}
+
+/// One custom angle-axis tick label (`RadarOptions::ticks`) -- shadcn's
+/// `chart-radar-label-custom` replaces each month label with a two-line
+/// tick: `desktop / mobile` (the `/` muted), then the month, muted and a
+/// size smaller, on a second line.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct RadarTick {
+    /// The first line, as `(text, muted)` runs.
+    pub parts: Vec<(String, bool)>,
+    /// An optional muted second line.
+    pub caption: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,6 +548,29 @@ mod tests {
         assert!(
             d.contains(&format!("L{} {}", fmt_num(x), fmt_num(y))),
             "got {d}"
+        );
+    }
+
+    // -- angle_tick_anchor --------------------------------------------------
+
+    #[test]
+    fn angle_tick_anchor_matches_shadcns_six_month_labels() {
+        // Measured on chart-radar-default: January middle/0em, February and
+        // March start/0.355em, April middle/0.71em, May and June end.
+        let anchors: Vec<_> = category_angles(6)
+            .into_iter()
+            .map(angle_tick_anchor)
+            .collect();
+        assert_eq!(
+            anchors,
+            vec![
+                ("middle", "0em"),
+                ("start", "0.355em"),
+                ("start", "0.355em"),
+                ("middle", "0.71em"),
+                ("end", "0.355em"),
+                ("end", "0.355em"),
+            ]
         );
     }
 }

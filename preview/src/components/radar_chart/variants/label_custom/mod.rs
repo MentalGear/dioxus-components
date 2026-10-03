@@ -5,8 +5,8 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Category labels around the chart (`axis_labels: true`, the default). There
-/// is no hook to replace the label markup.
+/// Each month labelled with its two values over its name (`RadarOptions::ticks`),
+/// inside a 10px margin.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -31,6 +31,22 @@ pub fn Demo() -> Element {
     let config = ChartConfig::new()
         .series("desktop", "Desktop", "var(--dx-chart-1)")
         .series("mobile", "Mobile", "var(--dx-chart-2)");
+    let data = generate_data();
+    // shadcn's custom tick: "desktop/mobile" (the slash muted) over the month.
+    let ticks: Vec<RadarTick> = data
+        .iter()
+        .map(|d| {
+            let value = |s: usize| format!("{:.0}", d.values[s].unwrap_or(0.0));
+            RadarTick {
+                parts: vec![
+                    (value(0), false),
+                    ("/".to_string(), true),
+                    (value(1), false),
+                ],
+                caption: Some(d.label.clone()),
+            }
+        })
+        .collect();
 
     rsx! {
         Card {
@@ -39,14 +55,17 @@ pub fn Demo() -> Element {
                 CardDescription { "Showing total visitors for the last 6 months" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Radar,
+                ChartContainer { config, data, kind: ChartKind::Radar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
+                        margin: ChartMargin::all(10.0),
                         aria_label: "Total visitors by month, desktop and mobile",
-                        radar: RadarOptions { fill_opacity: 0.6, ..Default::default() },
+                        radar: RadarOptions {
+                            fill_opacity: vec![0.6],
+                            ticks: Some(ticks),
+                            ..Default::default()
+                        },
                     }
-                    ChartTooltip {}
+                    ChartTooltip { indicator: TooltipIndicator::Line }
                 }
             }
             CardFooter { class: "dx-chart-footer",

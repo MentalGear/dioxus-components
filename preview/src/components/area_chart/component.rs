@@ -27,6 +27,10 @@
 use dioxus::prelude::*;
 
 pub use crate::components::chart::*;
+/// The tooltip's indicator style, a plain value enum (re-exported from the
+/// primitive here, like `line_chart`/`bar_chart` do, rather than by editing
+/// `chart::component`'s shared list).
+pub use dioxus_primitives::chart::TooltipIndicator;
 
 /// Root of every demo in this gallery. Its only job is to link this
 /// package's `style.css` (the `display: contents` rule that makes the

@@ -176,14 +176,53 @@ test.describe("behavioural", () => {
     await expect(frame(page, "grid_none").locator('g[data-slot="chart-grid"]')).toHaveCount(0);
   });
 
-  test("lines_only: series paths render with zero fill opacity", async ({ page }) => {
+  test("lines_only: outlines only (no fill, 2px stroke) over rings without spokes", async ({ page }) => {
     await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
-    const paths = frame(page, "lines_only").locator('path[data-slot="chart-radar-area"]');
-    await expect(paths).not.toHaveCount(0);
+    const f = frame(page, "lines_only");
+    const paths = f.locator('path[data-slot="chart-radar-area"]');
+    await expect(paths).toHaveCount(2);
     for (const p of await paths.all()) {
-      const fillOpacity = await p.evaluate((el) => getComputedStyle(el).fillOpacity);
-      expect(Number(fillOpacity)).toBe(0);
+      const style = await p.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { fillOpacity: cs.fillOpacity, strokeWidth: cs.strokeWidth };
+      });
+      expect(Number(style.fillOpacity)).toBe(0);
+      expect(style.strokeWidth).toBe("2px");
     }
+    await expect(f.locator('[data-slot="chart-grid-spoke"]')).toHaveCount(0);
+  });
+
+  test("main: Recharts' five radius ticks (0..320), no outline, labels anchored away from the centre", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const f = frame(page, "main");
+    const rings = f.locator('[data-slot="chart-grid-ring"]');
+    await expect(rings).toHaveCount(5);
+    await expect(rings.last()).toHaveAttribute("data-radius", "96");
+    const area = f.locator('path[data-slot="chart-radar-area"]');
+    expect(await area.evaluate((el) => getComputedStyle(el).stroke)).toBe("none");
+    const labels = f.locator('[data-axis="angle"] text');
+    await expect(labels.nth(0)).toHaveAttribute("text-anchor", "middle");
+    await expect(labels.nth(1)).toHaveAttribute("text-anchor", "start");
+    await expect(labels.nth(4)).toHaveAttribute("text-anchor", "end");
+  });
+
+  test("multiple: the first series translucent, the second opaque", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const paths = frame(page, "multiple").locator('path[data-slot="chart-radar-area"]');
+    await expect(paths.nth(0)).toHaveAttribute("fill-opacity", "0.6");
+    await expect(paths.nth(1)).toHaveAttribute("fill-opacity", "1");
+  });
+
+  test("radius: the radius axis' tick values along the 60-degree spoke", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const ticks = frame(page, "radius").locator('[data-axis="radius"] text');
+    await expect(ticks).toHaveText(["0", "80", "160", "240", "320"]);
+  });
+
+  test("label_custom: two-line ticks, values over the month", async ({ page }) => {
+    await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
+    const first = frame(page, "label_custom").locator('[data-axis="angle"] text').first();
+    await expect(first).toHaveText("186/80January");
   });
 
   test("dots: one dot per category per series", async ({ page }) => {
@@ -194,6 +233,7 @@ test.describe("behavioural", () => {
 
     const dots = frame(page, "dots").locator('circle[data-slot="chart-dot"]');
     await expect(dots).toHaveCount(6 * seriesCount); // 6 months
+    await expect(dots.first()).toHaveAttribute("r", "4");
   });
 
   for (const variant of ["main", "multiple", "dots"] as const) {

@@ -38,10 +38,16 @@ use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 use unic_langid::{langid, LanguageIdentifier};
 
+#[cfg(test)]
+mod chart_parity;
+#[cfg(test)]
+mod chart_tooltip_parity;
 mod charts_gallery;
 mod components;
 mod dashboard;
 mod installed_source;
+#[cfg(test)]
+mod polar_parity;
 mod theme;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -650,12 +656,28 @@ fn CodeBlock(source: HighlightedCode) -> Element {
     }
 }
 
+/// The line numbers shown beside a source listing: "1\n2\n...\nN", N being the number of lines
+/// `Code` renders (it drops trailing newlines, so a file's final newline is not a line).
+fn line_numbers(source: &str) -> String {
+    let lines = source.trim_end_matches('\n').split('\n').count();
+    (1..=lines)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A highlighted listing with its line numbers in a gutter. The gutter is a separate, `aria-hidden`,
+/// `user-select: none` column (see `.dx-code-gutter`), so selecting and copying code never picks the
+/// numbers up, and the Copy buttons hand over the source text untouched. It uses the code's own font
+/// metrics and does not wrap, so each number stays level with its line.
 #[component]
 fn PreviewCode(source: HighlightedSource) -> Element {
+    let numbers = line_numbers(source.source());
     rsx! {
         div {
             class: "dx-preview-code-theme",
             tabindex: "0",
+            pre { class: "dx-code-gutter", "aria-hidden": "true", "data-slot": "code-gutter", "{numbers}" }
             Code {
                 src: source,
                 theme: CodeTheme::system(Theme::GITHUB_LIGHT, Theme::GITHUB_DARK),
@@ -794,7 +816,7 @@ fn CopyButton(#[props(extends=GlobalAttributes)] attributes: Vec<Attribute>) -> 
             r#type: "button",
             aria_label: "Copy code",
             "data-copied": copied,
-            "onclick": "const visiblePre = Array.from(this.parentNode.querySelectorAll('pre')).find((pre) => pre.offsetParent !== null); navigator.clipboard.writeText(visiblePre ? visiblePre.innerText : Array.from(this.parentNode.childNodes).filter((node) => node !== this).map((node) => node.textContent).join('').trim());",
+            "onclick": "const visiblePre = Array.from(this.parentNode.querySelectorAll('pre:not(.dx-code-gutter)')).find((pre) => pre.offsetParent !== null); navigator.clipboard.writeText(visiblePre ? visiblePre.innerText : Array.from(this.parentNode.childNodes).filter((node) => node !== this).map((node) => node.textContent).join('').trim());",
             onclick: move |_| copied.set(true),
             ..attributes,
             if copied() {
@@ -3243,5 +3265,29 @@ mod docs_tests {
             offenders.is_empty(),
             "use `](/component/<name>/)`, not the legacy query form, in: {offenders:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod line_number_tests {
+    use super::line_numbers;
+
+    #[test]
+    fn numbers_one_per_line_of_the_rendered_listing() {
+        assert_eq!(line_numbers("a\nb\nc"), "1\n2\n3");
+        assert_eq!(line_numbers("a"), "1");
+        assert_eq!(line_numbers(""), "1");
+    }
+
+    #[test]
+    fn trailing_newlines_are_not_lines() {
+        // `Code` trims them before rendering, so the gutter must too, or it would outrun the code.
+        assert_eq!(line_numbers("a\nb\n"), "1\n2");
+        assert_eq!(line_numbers("a\nb\n\n\n"), "1\n2");
+    }
+
+    #[test]
+    fn blank_lines_inside_the_listing_count() {
+        assert_eq!(line_numbers("a\n\nb"), "1\n2\n3");
     }
 }

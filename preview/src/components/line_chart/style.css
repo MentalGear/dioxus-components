@@ -1,34 +1,52 @@
-/*
- * Line chart gallery -- extra layout for the one demo that needs anything
- * beyond `chart/style.css` (already loaded by `ChartContainer`/`Chart`/
- * `ChartTooltip`/`ChartLegend`, which this package re-exports unchanged --
- * see component.rs). Every other variant (default, linear, step, multiple,
- * dots, ...) composes those pieces directly and needs no rule here.
- *
- * `interactive` (`chart-line-interactive.tsx`) is the exception: its
- * "which series" header is a small cluster of two toggle buttons shadcn
- * renders as bare `<button data-active>` (not their `Button` component --
- * the compact stacked label+total layout has no equivalent `Button` size),
- * ported the same way here as plain `button` elements (still real,
- * focusable, `type="button"` controls -- not a styled `div`) with
- * `data-active` driving the pressed-look highlight. Namespaced under this
- * component's own `dx-line-chart` prefix (scripts/check-dx-class-prefix.sh).
- */
-
-.dx-line-chart-toggle-row {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
-  border-radius: var(--dx-radius-lg);
+/* shadcn's interactive line card header (`chart-line-interactive`): the
+ * card has no block padding (`py-0`); the header has none either (`!p-0`)
+ * and ends in a rule (`border-b`); the title block (`px-6 pt-4 pb-3
+ * sm:!py-0`) takes the free width and the two series toggles stand at the
+ * right as full-height cells (`px-6 py-4 sm:border-l sm:px-8 sm:py-6`), the
+ * total `text-lg leading-none font-bold sm:text-3xl`. Below 40rem the
+ * toggles drop under the title, side by side. Two-class selectors: the
+ * card's own `.dx-card`/`.dx-card-header`/`.dx-card-content` rules
+ * (`display: grid`, `padding`) load in an order this stylesheet does not
+ * control, so equal specificity was a coin toss -- and lost. */
+.dx-card.dx-line-chart-interactive {
+  padding-block: 0;
 }
 
-.dx-line-chart-toggle {
+.dx-card-header.dx-line-chart-interactive-header {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  padding: var(--dx-space-2) var(--dx-space-4);
-  border: none;
+  align-items: stretch;
+  padding: 0;
+  border-bottom: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  gap: 0;
+}
+
+.dx-line-chart-interactive-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--dx-space-4) var(--dx-space-6) var(--dx-space-3);
+  gap: var(--dx-space-1);
+}
+
+.dx-line-chart-interactive-toggles {
+  display: flex;
+}
+
+.dx-line-chart-interactive-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--dx-space-4) var(--dx-space-6);
+
+  /* Reset the UA button border and colour (an outset 2px border and black
+   * `buttontext`) before drawing shadcn's own rules. */
+  border: 0;
+  border-radius: 0;
   background-color: transparent;
+  border-block-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -36,22 +54,51 @@
   text-align: start;
 }
 
-.dx-line-chart-toggle + .dx-line-chart-toggle {
+.dx-line-chart-interactive-toggle + .dx-line-chart-interactive-toggle {
   border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
 }
 
-.dx-line-chart-toggle:hover,
-.dx-line-chart-toggle[data-active="true"] {
+.dx-line-chart-interactive-toggle[data-active="true"] {
   background-color: var(--primary-color-4);
 }
 
-.dx-line-chart-toggle-label {
+.dx-line-chart-interactive-toggle-label {
   color: var(--secondary-color-5);
   font-size: var(--dx-text-xs);
 }
 
-.dx-line-chart-toggle-value {
+.dx-line-chart-interactive-toggle-total {
   font-size: var(--dx-text-lg);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  line-height: 1;
+}
+
+.dx-card-content.dx-line-chart-interactive-content {
+  padding: var(--dx-space-6) var(--dx-space-2);
+}
+
+@media (width >= 40rem) {
+  .dx-card-header.dx-line-chart-interactive-header {
+    flex-direction: row;
+  }
+
+  .dx-line-chart-interactive-heading {
+    padding-block: 0;
+  }
+
+  .dx-line-chart-interactive-toggle {
+    flex: 0 0 auto;
+    padding: var(--dx-space-6) var(--dx-space-8);
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  }
+
+  .dx-line-chart-interactive-toggle-total {
+    font-size: var(--dx-text-3xl);
+  }
+
+  .dx-card-content.dx-line-chart-interactive-content {
+    padding: var(--dx-space-6);
+  }
 }

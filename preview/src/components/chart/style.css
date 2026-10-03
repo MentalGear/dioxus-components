@@ -99,19 +99,12 @@
      `main.css`'s own `font-family: inherit` re-affirmations. */
   font-family: inherit;
 
-  /* Text compensation. The viewBox is always the props' `width` x `height`,
-   * so on a narrower container the whole drawing -- text included -- shrinks.
-   * `Chart` measures its container and publishes `--dx-chart-text-scale`
-   * (`s = clamp(1 / k, 0.5, 2.5)`, `k` = rendered / logical width, snapped to
-   * `1` within 5%; `1` on the server and first render) on this element;
-   * every chart text size below is multiplied by it, which cancels the
-   * shrink (s > 1) or growth (s < 1) so text renders at its authored size
-   * while the geometry (radii, bar radius, ring gaps) scales with the
-   * drawing. This base rule scales text that has no font-size of its own
-   * (`chart-label`: bar/line value labels), at the same `--dx-text-xs` size
-   * as the axis text so values and ticks read as one typographic tier --
-   * previously it inherited the page's 1em (16px), a third larger. */
-  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
+  /* One svg unit is one CSS px (the primitive draws at its measured size --
+   * `Chart`'s sizing contract), so text needs no compensation: 12px like
+   * shadcn's `text-xs` chart text. This base rule sizes text that has no
+   * font-size of its own (`chart-label`: bar/line value labels) at the same
+   * size as the axis text, one typographic tier. */
+  font-size: var(--dx-text-xs);
 
   /* Touch scrubs the tooltip along the category axis (see the tooltip
    * section): horizontal drags go to the chart, vertical ones still scroll
@@ -125,16 +118,25 @@
   stroke-width: 1;
 }
 
-/* `fit_width` before the first measurement (server render, pre-hydration, the
- * first client render): the viewBox is the props' size stretched to the box
- * (`preserveAspectRatio="none"`) -- exact height, so only x is scaled, and
- * every mark lands within a few px of where the measured render puts it.
- * What a non-uniform stretch would distort is made safe: strokes keep their
- * width (`non-scaling-stroke`) and the text -- which would be stretched
- * sideways -- is held back and fades in when the measured render replaces
- * it (`data-measured="true"`). The result is a full-width chart of the final
- * height from the first paint instead of a left-aligned strip, or ~5px text
- * on a phone, that jumps. */
+/* Polar charts are shadcn's `aspect-square max-h-[250px] mx-auto`: the
+ * container is at most 250px wide and centered, and `Chart` (aspect 1 for
+ * pie/radar/radial) draws a square of that measured width. A demo wanting
+ * shadcn's `max-h-[300px]` sets `max-inline-size` on its own container. */
+.dx-chart:is([data-kind="pie"], [data-kind="radar"], [data-kind="radial-bar"]) {
+  margin-inline: auto;
+  max-inline-size: 250px;
+}
+
+/* A fixed-height chart (`Chart`'s `height` prop) before the first
+ * measurement (server render, pre-hydration, the first client render): the
+ * initial-width viewBox is stretched to the box (`preserveAspectRatio=
+ * "none"`) -- exact height, so only x is scaled, and every mark lands within
+ * a few px of where the measured render puts it. What a non-uniform stretch
+ * would distort is made safe: strokes keep their width (`non-scaling-stroke`)
+ * and the text -- which would be stretched sideways -- is held back and fades
+ * in when the measured render replaces it (`data-measured="true"`). An
+ * aspect-ratio chart needs none of this: its pre-measure render is a uniform
+ * scale of the final one. */
 .dx-chart [data-slot="chart-svg"][data-fit="width"] text {
   transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
@@ -175,11 +177,15 @@
  * text colour. That token stays for the cursor, which is not a tick. */
 .dx-chart [data-slot="chart-axis"] text {
   fill: var(--secondary-color-5);
-  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
+  font-size: var(--dx-text-xs);
 }
 
+/* No `fill` here on purpose (as for the polar arcs below): `area.rs` sets
+ * each area's fill as a presentation attribute -- `var(--series-color)`, or
+ * the `url(#..)` of its `<linearGradient>` (`AreaOptions::gradient`) -- and a
+ * stylesheet `fill` beats a presentation attribute, which silently painted
+ * every gradient area (gradient, interactive) as a flat colour. */
 .dx-chart [data-slot="chart-area"] {
-  fill: var(--series-color);
   fill-opacity: 0.4;
   stroke: none;
 }
@@ -192,59 +198,128 @@
   stroke-width: 2;
 }
 
+/* An area's top edge is Recharts' default 1px `<Area>` stroke (a line chart's
+ * 2px is shadcn's own `strokeWidth={2}`). */
+.dx-chart[data-kind="area"] [data-slot="chart-line"] {
+  stroke-width: 1;
+}
+
+/* Bars: no theme radius -- the primitive draws Recharts' per-chart `radius`
+ * (`BarOptions::radius`, px). A per-datum color is the bar's own inline
+ * `--series-color`, so the fill and the active outline both follow it. */
 .dx-chart [data-slot="chart-bar"] {
   fill: var(--series-color);
-  rx: var(--dx-radius-xs);
 }
 
-/* `BarOptions::active_index` (s2-bar lane) -- shadcn's `chart-bar-active`:
- * every OTHER bar dims once some bar in the same svg is marked active.
- * Scoped with `:has()` (not a plain `[data-active="false"]` rule) so an
- * ordinary bar chart -- no `active_index` set, every bar's own
- * `data-active` is `"false"` by default -- is never affected: this rule
- * only fires once at least one sibling bar's `data-active` is `"true"`. */
-.dx-chart svg:has([data-slot="chart-bar"][data-active="true"])
-  [data-slot="chart-bar"][data-active="false"] {
-  opacity: 0.3;
+/* `BarOptions::active_index` -- shadcn's `chart-bar-active` shape: the active
+ * bar at 0.8 fill opacity with a dashed 2px outline in its own color
+ * (`strokeDasharray={4} strokeDashoffset={4}`); the other bars unchanged. */
+.dx-chart [data-slot="chart-bar"][data-active="true"] {
+  fill-opacity: 0.8;
+  stroke: var(--series-color);
+  stroke-dasharray: 4;
+  stroke-dashoffset: 4;
+  stroke-width: 2;
 }
 
+/* Bar labels: `category` labels take the bar's color (`chart-bar-negative`),
+ * `inside` labels sit on the bar in the card's color (`chart-bar-label-custom`:
+ * `fill-(--color-label)`); value labels keep the base text fill. */
+.dx-chart [data-slot="chart-label"][data-position="category"] {
+  fill: var(--series-color);
+}
+
+.dx-chart [data-slot="chart-label"][data-position="inside"] {
+  fill: var(--primary-color-1);
+}
+
+/* Line dots: Recharts' `<Dot>` -- the series color, stroked in it at the
+ * line's 2px (shadcn's `dot={{ fill: "var(--color-desktop)" }}`). */
 .dx-chart [data-slot="chart-dot"] {
   fill: var(--series-color);
-  stroke: var(--primary-color-1);
-  stroke-width: 1.5;
+  stroke: var(--series-color);
+  stroke-width: 2;
 }
 
 /* The hovered point's dot on every series (`chart-active-dot`, area and line
- * charts -- shadcn/Recharts' `activeDot`, r = 4): the series color with a ring
- * in the card's own surface color so it reads against the line and the fill
- * in both themes (same light/dark pair as `card/style.css`'s background). The
- * ring scales with the text compensation, like the radius the primitive sets
- * (`r` = 4 x scale), so the dot keeps its CSS size on a shrunken drawing. */
+ * charts -- shadcn/Recharts' `activeDot`, r = 4): the series color with a 2px
+ * ring in the card's own surface color so it reads against the line and the
+ * fill in both themes (same light/dark pair as `card/style.css`'s
+ * background). */
 .dx-chart [data-slot="chart-active-dot"] {
   fill: var(--series-color);
   pointer-events: none;
   stroke: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
-  stroke-width: calc(2px * var(--dx-chart-text-scale, 1));
+  stroke-width: 2;
 }
 
-/* The hover/keyboard crosshair: a dashed line for area/line charts
- * (`chart-cursor-line`), a translucent band over the active group for bar
- * charts (`chart-cursor-rect` -- its own distinct data-slot, per
- * `$S/chart-api.md`'s "API changes" #6, not a `data-kind`-conditioned
- * variant of the line slot as this file originally assumed). */
+/* The hover cursor (`Chart`'s `cursor` prop), as shadcn styles Recharts' own:
+ * a solid 1px `border`-colored line for area/line charts
+ * (`chart-cursor-line`), a `muted` band behind the active category for bar
+ * charts (`chart-cursor-rect`). Drawn below the marks. */
 .dx-chart [data-slot="chart-cursor-line"] {
   fill: none;
   pointer-events: none;
-  stroke: var(--dx-chart-axis-text);
-  stroke-dasharray: 4 4;
+  stroke: var(--primary-color-6);
   stroke-width: 1;
 }
 
 .dx-chart [data-slot="chart-cursor-rect"] {
-  fill: var(--dx-chart-axis-text);
-  fill-opacity: 0.1;
+  fill: var(--primary-color-5);
   pointer-events: none;
   stroke: none;
+}
+
+/* Load animation (Recharts' `isAnimationActive`): `Chart` sets
+ * `data-animate="true"` on its first measured render in the browser -- never
+ * on the server render, so without JS the final drawing shows. Bars grow from
+ * the value axis' zero (`--dx-chart-zero`, px, inline on the svg); lines and
+ * areas are revealed left to right. Once: the attribute never comes back
+ * off. */
+@keyframes dx-chart-grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes dx-chart-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes dx-chart-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}
+
+.dx-chart [data-slot="chart-svg"][data-animate="true"] [data-slot="chart-bar"] {
+  animation: dx-chart-grow-y 500ms var(--dx-motion-ease);
+  transform-box: view-box;
+  transform-origin: 0 var(--dx-chart-zero);
+}
+
+.dx-chart [data-slot="chart-svg"][data-animate="true"][data-bars="horizontal"] [data-slot="chart-bar"] {
+  animation-name: dx-chart-grow-x;
+  transform-origin: var(--dx-chart-zero) 0;
+}
+
+.dx-chart:is([data-kind="area"], [data-kind="line"])
+  [data-slot="chart-svg"][data-animate="true"]
+  [data-slot="chart-series"] {
+  animation: dx-chart-reveal 600ms var(--dx-motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-chart [data-slot="chart-svg"][data-animate="true"] [data-slot="chart-bar"],
+  .dx-chart [data-slot="chart-svg"][data-animate="true"] [data-slot="chart-series"] {
+    animation: none;
+  }
 }
 
 /* The whole hover mechanism (`$S/chart-api.md`: "no coordinate math, no
@@ -315,7 +390,13 @@
   position: absolute;
   z-index: var(--dx-z-local-md);
   left: 0; /* rtl-physical: the transform's x is measured from the chart box's physical left edge, whatever the text direction */
+
+  /* shadcn's `min-w-[8rem]` under Tailwind's border-box preflight: 128px
+   * including the padding, not 128px of content plus 24px of padding (which
+   * made every short tooltip 152px wide -- too wide to fit beside the pointer
+   * on either side of a 250px polar chart, so it pinned instead of following). */
   min-width: 8rem;
+  box-sizing: border-box;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: var(--dx-radius-lg);
   background-color: var(--primary-color-2);
@@ -433,12 +514,29 @@
   padding-block: 0 var(--dx-space-3);
 }
 
+/* shadcn's `ChartLegendContent` items: `text-xs` (the container's size) on
+ * a 16px line, an 8px swatch, `gap-1.5`. One row is then exactly 28px with
+ * the `pt-3` above -- the room `Chart` reserves for a legend before it is
+ * measured (`DEFAULT_LEGEND_SIZE`), so the card does not move on hydration. */
 .dx-chart-legend [data-slot="chart-legend-item"] {
   display: flex;
   align-items: center;
   color: var(--secondary-color-5);
-  font-size: var(--dx-text-sm);
-  gap: var(--dx-space-2);
+  font-size: var(--dx-text-xs);
+  gap: calc(var(--dx-space-1) * 1.5);
+  line-height: 1rem;
+}
+
+/* A demo that wraps its legend into columns (shadcn's pie legend:
+ * `*:basis-1/4 *:justify-center`) sets `--dx-chart-legend-item-basis`. */
+.dx-chart-legend > [data-slot="chart-legend-item"] {
+  flex-basis: var(--dx-chart-legend-item-basis, auto);
+  justify-content: center;
+}
+
+.dx-chart-legend [data-slot="chart-legend-item"] [data-slot="chart-swatch"] {
+  width: 8px;
+  height: 8px;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -543,38 +641,49 @@
 }
 
 /* ---------------------------------------------------------------------- *
- * Radar family (`ChartKind::Radar`, s2-radar lane, §4(e) of the stage-2
- * chart handoff). One closed polygon per series (both filled and stroked
- * by the same element -- unlike Area, there is no separate fill/stroke
- * path pair). fill-opacity is a per-chart configurable value
- * (RadarOptions::fill_opacity), so it is set as a direct `fill-opacity`
- * SVG presentation attribute by the primitive, not here. Everything else
- * Radar draws reuses existing slots (dots, axis labels, hit-bands)
- * unchanged.
+ * Radar family (`ChartKind::Radar`). One closed polygon per series, filled
+ * with the series colour at its own `fillOpacity` (a per-series SVG
+ * `fill-opacity` attribute the primitive sets: `RadarOptions::fill_opacity`,
+ * opaque when unset, as Recharts). No outline -- Recharts' `<Radar>` has
+ * none -- except for `RadarOptions::lines_only` (`data-lines-only`), which
+ * is shadcn's `fillOpacity={0} strokeWidth={2}`.
  * ---------------------------------------------------------------------- */
 
 .dx-chart [data-slot="chart-radar-area"] {
   fill: var(--series-color);
+}
+
+.dx-chart [data-slot="chart-radar-area"][data-lines-only="true"] {
   stroke: var(--series-color);
   stroke-width: 2;
 }
 
-/* Grid rings (RadarGrid::{Polygon,Circle,CircleFill,Fill,CircleNoLines,Custom}),
- * both the `<circle>` and closed polygon `<path>` shapes. */
+/* Radar dots: shadcn's `dot={{ r: 4, fillOpacity: 1 }}` (r is the
+ * primitive's). */
+.dx-chart [data-kind="radar"] [data-slot="chart-dot"] {
+  fill: var(--series-color);
+  fill-opacity: 1;
+  stroke: none;
+}
+
+/* Grid rings (radar `RadarGrid`, radial `RadialGrid::Circles`), both the
+ * `<circle>` and closed polygon `<path>` shapes. */
 .dx-chart [data-slot="chart-grid-ring"] {
   fill: none;
   stroke: var(--dx-chart-grid);
   stroke-width: 1;
 }
 
-/* RadarGrid::{CircleFill,Fill}: the primitive sets
- * `--grid-fill-color: var(--color-<first-series-key>)` inline on the
- * `g[data-slot="chart-grid"]` wrapper (same inherited-custom-property
- * technique as `--series-color`), and `data-fill="true"` on each ring that
- * should show it. */
-.dx-chart [data-slot="chart-grid-ring"][data-fill="true"] {
+/* RadarGrid::{CircleFill,Fill}: shadcn's `className="fill-(--color-desktop)
+ * opacity-20"` on the `PolarGrid` lands on every ring and spoke: each one is
+ * filled with the first series' colour and the whole element (fill and
+ * stroke) drawn at 20%, so the nested rings tint cumulatively towards the
+ * centre. The primitive sets `--grid-fill-color` on the grid group and
+ * `data-fill="true"` on each ring and spoke. */
+.dx-chart [data-slot="chart-grid-ring"][data-fill="true"],
+.dx-chart [data-slot="chart-grid-spoke"][data-fill="true"] {
   fill: var(--grid-fill-color);
-  fill-opacity: 0.2;
+  opacity: 0.2;
 }
 
 .dx-chart [data-slot="chart-grid-spoke"] {
@@ -582,101 +691,171 @@
   stroke-width: 1;
 }
 
+/* `RadarOptions::radius_axis` (shadcn's `PolarRadiusAxis
+ * stroke="var(--foreground)"`): the tick values in the foreground colour. */
+.dx-chart [data-axis="radius"] text {
+  fill: var(--secondary-color-1);
+}
+
+/* `RadarOptions::ticks` (shadcn's `chart-radar-label-custom` tick):
+ * `fontSize={13} fontWeight={500}`, the muted runs and the 12px caption in
+ * the muted foreground. */
+.dx-chart [data-axis="angle"] text[data-custom="true"] {
+  fill: var(--secondary-color-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dx-chart [data-axis="angle"] text[data-custom="true"] tspan[data-muted="true"] {
+  fill: var(--secondary-color-5);
+}
+
+.dx-chart [data-axis="angle"] text[data-custom="true"] tspan[data-caption="true"] {
+  font-size: var(--dx-text-xs);
+}
+
+/* Load animation: once the chart's svg is `data-animate="true"` (set after
+ * its first measured client render), each polygon and its dots grow from the
+ * centre, as Recharts' radar does. The marks are drawn around the series
+ * group's own origin (the chart centre), hence `transform-origin: 0 0`. */
+@media (prefers-reduced-motion: no-preference) {
+  .dx-chart [data-slot="chart-svg"][data-animate="true"] [data-kind="radar"] [data-series] > * {
+    animation: dx-chart-radar-grow 1500ms var(--dx-motion-ease) both;
+    transform-origin: 0 0;
+  }
+}
+
+@keyframes dx-chart-radar-grow {
+  from {
+    transform: scale(0);
+  }
+}
+
 /* ---------------------------------------------------------------------- *
- * Polar family (`ChartKind::{Pie,RadialBar}`, s2-polar lane). Both kinds
- * share the same `path[data-slot="chart-arc"]` mark (an angular slice for
- * Pie, a concentric proportional ring segment for RadialBar) and the same
- * hover/forced-active affordance -- a `transform: scale(...)` grown
- * outward from the arc's own center, never a re-render of the path itself
- * (`series/pie.rs`'s own module doc: the `d` is always computed at the
- * slice's *resting* radius). `transform-origin: 0 0` matters here
- * specifically: every arc's own `d` is drawn in a coordinate space already
- * centered at the chart's origin (the wrapping `g[transform="translate(cx,
- * cy)"]` both `pie.rs`/`radial.rs` render), so scaling from `0 0` grows the
- * slice from the chart's true center -- the default SVG transform-origin
- * (the element's own bounding box) would instead grow it lopsidedly toward
- * whichever edge that one slice's own bounding box happens to sit near.
+ * Polar family (`ChartKind::{Pie,RadialBar}`). Both kinds share the
+ * `path[data-slot="chart-arc"]` mark (a pie slice, a radial bar). Every
+ * geometric state is drawn by the primitive itself -- the forced-active
+ * slice's larger rim and halo (`PieOptions::active_index`/`active_halo`)
+ * are real geometry, so nothing here transforms an arc. Hover only marks a
+ * slice `data-active` (Recharts' pie and radial bars do not grow on hover).
+ *
+ * No `fill` on the arcs on purpose: `pie.rs`/`radial.rs` set each arc's
+ * colour as a `fill` presentation attribute (`var(--dx-chart-N)` /
+ * `var(--color-<slot>)`), and any CSS `fill` declaration would beat it.
  * ---------------------------------------------------------------------- */
 
-/* No `fill` here on purpose: `pie.rs`/`radial.rs` set each arc's colour as a
- * `fill` presentation attribute (`var(--dx-chart-N)` / `var(--color-<slot>)`),
- * and any CSS `fill` declaration would beat that attribute (neither sets
- * `--series-color`), painting every slice the same near-black `currentColor`. */
-.dx-chart [data-slot="chart-arc"] {
-  transform-origin: 0 0;
-  transition: transform 120ms var(--dx-motion-ease);
-}
-
-.dx-chart [data-slot="chart-arc"][data-active="true"] {
-  transform: scale(1.05);
-}
-
-/* Arc labels sit ON the series colour (pie slices, radial rings), and the
- * eight rotating `--dx-chart-N` hues are neither reliably light nor dark, so
- * no single text colour clears 4.5:1 against all of them in both themes.
- * Instead the label takes the base themed text colour (the `:where` rule
- * above) plus a halo in the surface colour (`paint-order: stroke` draws the
- * stroke underneath the fill): legible on any hue, and the halo is the
- * theme's own surface so it disappears wherever the text spills onto the
- * card background.
- *
- * A radial label's inline `font-size` (radial.rs) caps this one at ~0.85 of
- * the ring's thickness, so on a narrow container -- where the text scale
- * grows but the rings stay thin -- the text shrinks to its ring instead of
- * spilling across the neighbours. The halo is in `em` so it follows whichever
- * size wins (3px at the authored 12px, exactly as before). */
+/* Arc labels (`PieLabels`), styled as shadcn styles each Recharts label:
+ *  - inside a pie slice (`<LabelList>`, `chart-pie-label-list`): 12px in the
+ *    background colour (`className="fill-background"`);
+ *  - outside the rim (`<Pie label>`, `chart-pie-label`/`-label-custom`):
+ *    the foreground colour, with a 1px leader line in the slice colour;
+ *  - along a radial bar (`<LabelList position="insideStart">`,
+ *    `chart-radial-label`): 11px white, `mix-blend-luminosity`. */
 .dx-chart [data-slot="chart-arc-label"] {
-  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
-  font-weight: 600;
-  paint-order: stroke;
+  font-size: var(--dx-text-xs);
   pointer-events: none;
-  stroke: var(--primary-color-1);
-  stroke-linejoin: round;
-  stroke-width: 0.25em;
+}
+
+.dx-chart [data-slot="chart-arc-label"][data-position="inside"] {
+  fill: var(--primary-color-2);
+}
+
+.dx-chart [data-slot="chart-arc-label"][data-position="outside"] {
+  fill: var(--secondary-color-1);
+}
+
+.dx-chart [data-slot="chart-arc-label"][data-position="inside-start"] {
+  fill: #fff;
+  font-size: 11px;
+  mix-blend-mode: luminosity;
+}
+
+.dx-chart [data-slot="chart-arc-label-line"] {
+  stroke-width: 1;
 }
 
 /* The donut/gauge center text (`PieOptions::center_text`/
- * `RadialOptions::center_text`): two `<tspan>`s, the primary value drawn
- * larger/bolder than the secondary caption below it -- same two-tier
- * text-color pairing `card/style.css` uses for a title versus its
- * description.
- *
- * Sizing differs from the other chart text in two ways:
- *  - it never shrinks below its authored size in logical units
- *    (`max(1, scale)`): the center number belongs to the gauge graphic, so
- *    when the chart is shown larger than its viewBox (a 300x300 radial across
- *    a ~590px card) it grows with the donut instead of being halved by the
- *    text compensation and looking lost in the big hole (the other text --
- *    ticks, labels -- is compensated down to its authored pixel size);
- *  - on a narrow container, where the scale grows up to 2.5x but the hole
- *    does not, it is clamped to what fits the hole -- the primitive publishes
- *    `--dx-chart-center-{primary,secondary}-max` (center_text.rs) -- so a
- *    3-digit number never overflows it. */
+ * `RadialOptions::center_text`), shadcn's `<Label>` markup: the primary
+ * value bold in the foreground colour -- `text-3xl` in a donut, `text-4xl`
+ * in a radial gauge, `text-2xl` in the half-turn gauge -- over a muted
+ * caption at the inherited `text-xs`. The primitive publishes
+ * `--dx-chart-center-{primary,secondary}-max` (center_text.rs), the largest
+ * size that fits the hole, so a chart narrower than its usual 250px never
+ * overflows it. */
 .dx-chart [data-slot="chart-pie-center-text"] {
   fill: var(--secondary-color-5);
-  font-size: min(
-    calc(var(--dx-text-sm) * max(1, var(--dx-chart-text-scale, 1))),
-    var(--dx-chart-center-secondary-max, 9999px)
-  );
+  font-size: min(var(--dx-text-xs), var(--dx-chart-center-secondary-max, 9999px));
   pointer-events: none;
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
-  fill: var(--secondary-color-4);
-  font-size: min(
-    calc(var(--dx-text-2xl) * max(1, var(--dx-chart-text-scale, 1))),
-    var(--dx-chart-center-primary-max, 9999px)
-  );
+  fill: var(--secondary-color-1);
+  font-size: min(var(--dx-text-3xl), var(--dx-chart-center-primary-max, 9999px));
   font-weight: 700;
 }
 
-/* RadialBar's own optional background track (`RadialOptions::grid`) --
- * a muted full-sweep arc drawn behind each ring's own value arc, the
- * radial-chart equivalent of Pie/Cartesian's "grid" concept (shadcn spells
- * this two different ways -- a `RadialBar background` prop versus a
- * `PolarGrid` element -- this crate unifies both as one boolean). */
-.dx-chart [data-slot="chart-polar-grid"] {
-  fill: var(--dx-chart-grid);
+.dx-chart [data-slot="chart-pie-center-text"][data-layout="gauge"] tspan:first-child {
+  font-size: min(var(--dx-text-4xl), var(--dx-chart-center-primary-max, 9999px));
+}
+
+.dx-chart [data-slot="chart-pie-center-text"][data-layout="half-gauge"] tspan:first-child {
+  font-size: min(var(--dx-text-2xl), var(--dx-chart-center-primary-max, 9999px));
+}
+
+/* RadialBar's muted fills, shadcn's `fill-muted`: the per-bar background
+ * track (`RadialOptions::background`, `<RadialBar background>`) and the
+ * full-turn ring of `RadialGrid::Annulus` (`<PolarGrid polarRadius=...
+ * className="first:fill-muted last:fill-background">`). */
+.dx-chart [data-slot="chart-radial-background"],
+.dx-chart [data-slot="chart-radial-annulus"] {
+  fill: var(--primary-color-5);
+}
+
+/* A pie's per-slice legend (shadcn's `chart-pie-legend`: `flex-wrap gap-2
+ * *:basis-1/4 *:justify-center`): four items to a row, centred. */
+.dx-chart[data-kind="pie"] [data-slot="chart-legend"] {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--dx-space-2);
+}
+
+.dx-chart[data-kind="pie"] [data-slot="chart-legend-item"] {
+  flex-basis: 25%;
+  justify-content: center;
+}
+
+/* Load animation: once the chart's svg is `data-animate="true"` (set after
+ * its first measured client render), the arcs sweep in from the start angle
+ * the way Recharts' pie and radial bars do. The arcs sit under a mask whose
+ * one stroke runs around the centre from `start_angle` to `end_angle`
+ * (`pathLength="1"`); growing its dash from 0 to 1 reveals them as a wedge.
+ * The labels fade in after the sweep (Recharts shows them once its
+ * animation ends). Without the attribute (server render, no JS) or under
+ * reduced motion, nothing animates and the mask is fully open. */
+@media (prefers-reduced-motion: no-preference) {
+  .dx-chart [data-slot="chart-svg"][data-animate="true"] [data-slot="chart-sweep-mask"] path {
+    animation: dx-chart-sweep 1500ms var(--dx-motion-ease) both;
+  }
+
+  .dx-chart [data-slot="chart-svg"][data-animate="true"] [data-slot="chart-arc-labels"] {
+    animation: dx-chart-fade-in var(--dx-motion-duration-slower) var(--dx-motion-ease) 1500ms both;
+  }
+}
+
+@keyframes dx-chart-sweep {
+  from {
+    stroke-dasharray: 0 1;
+  }
+
+  to {
+    stroke-dasharray: 1 0;
+  }
+}
+
+@keyframes dx-chart-fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* ---------------------------------------------------------------------- *

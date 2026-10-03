@@ -1,0 +1,104 @@
+{
+  "name": "chart-bar-multiple",
+  "variant": "multiple",
+  "title": "Bar Chart - Multiple",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 80
+    },
+    {
+      "month": "February",
+      "desktop": 305,
+      "mobile": 200
+    },
+    {
+      "month": "March",
+      "desktop": 237,
+      "mobile": 120
+    },
+    {
+      "month": "April",
+      "desktop": 73,
+      "mobile": 190
+    },
+    {
+      "month": "May",
+      "desktop": 209,
+      "mobile": 130
+    },
+    {
+      "month": "June",
+      "desktop": 214,
+      "mobile": 140
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)"
+    }
+  },
+  "chart": {
+    "kind": "bar",
+    "margin": null,
+    "layout": null,
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "desktop",
+      "type": null,
+      "fill": "var(--color-desktop)",
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": 4,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    },
+    {
+      "dataKey": "mobile",
+      "type": null,
+      "fill": "var(--color-mobile)",
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": 4,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": {
+    "vertical": false,
+    "horizontal": true
+  },
+  "xAxis": {
+    "dataKey": "month",
+    "type": null,
+    "hide": false,
+    "tickMargin": 10,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": null,
+  "tooltip": {
+    "cursor": false,
+    "indicator": "dashed",
+    "hideLabel": false,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [],
+  "activeIndex": null
+}

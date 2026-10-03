@@ -59,156 +59,159 @@ use dioxus::prelude::*;
 
 use super::super::layout::SeriesRenderContext;
 use super::super::pointer::Sector;
+use super::pie::frame;
 
+use crate::chart::engine::polar::{recharts_angle, Radius};
 use crate::chart::engine::radar::{
-    category_angles, grid_polygon_path, point_radial, radar_series_path, radial_scale, sector_path,
+    angle_tick_anchor, category_angles, grid_polygon_path, point_radial, radar_series_path,
+    radial_scale, sector_path, RadarTick,
 };
-use crate::chart::engine::scale::fmt_num;
-use crate::chart::nice_domain;
+use crate::chart::engine::scale::{fmt_decimal, fmt_num, nice_ticks};
+
+/// Recharts' `PolarAngleAxis` `tickSize`: tick labels sit this far beyond
+/// the outer radius.
+const ANGLE_TICK_OFFSET: f64 = 8.0;
+/// Recharts' `PolarRadiusAxis` default `tickCount`.
+const RADIUS_TICK_COUNT: usize = 5;
+/// shadcn's `dot={{ r: 4 }}`.
+const DOT_RADIUS: f64 = 4.0;
+/// shadcn's custom two-line tick lifts the top label this far
+/// (`chart-radar-label-custom`: `y + (index === 0 ? -10 : 0)`).
+const CUSTOM_TICK_TOP_LIFT: f64 = 10.0;
 
 /// Which grid rings/spokes a [`RadarOptions`]-configured radar chart draws
-/// -- shadcn's `PolarGrid` `gridType`/`radialLines`/`className` combinations,
-/// one variant per distinct combination its own demos actually use. Default:
-/// [`RadarGrid::Polygon`] (shadcn's own `<PolarGrid />` default: polygon
-/// rings + spokes, no fill).
+/// -- shadcn's `PolarGrid` `gridType`/`radialLines`/`polarRadius`/
+/// `className` combinations, one variant per combination its demos use.
+/// Rings sit at the radius axis' ticks (Recharts: exactly five, `0`
+/// included -- see [`RadarOptions`]). Default: [`RadarGrid::Polygon`].
 #[derive(Clone, PartialEq, Debug, Default)]
 pub enum RadarGrid {
-    /// Straight-sided polygon rings at each magnitude tick, plus a spoke
-    /// per category. shadcn's `chart-radar-default`/`-dots`/`-multiple`/
-    /// `-legend`/`-icons`/`-label-custom`/`-lines-only`/`-radius`.
+    /// `<PolarGrid />`: polygon rings plus a spoke per category.
     #[default]
     Polygon,
-    /// Circular rings instead of polygon rings, still with spokes.
-    /// shadcn's `chart-radar-grid-circle`.
+    /// `<PolarGrid radialLines={false} />`: polygon rings, no spokes
+    /// (`chart-radar-lines-only`).
+    PolygonNoLines,
+    /// `gridType="circle"`: circular rings, with spokes.
     Circle,
-    /// Circular rings + spokes, with every ring's own interior tinted using
-    /// the first configured series' color (`PolarGrid`'s
-    /// `className="fill-(--color-desktop) opacity-20"`, `gridType="circle"`).
-    /// shadcn's `chart-radar-grid-circle-fill`.
+    /// Circular rings + spokes, every ring and spoke tinted with the first
+    /// series' color at 20% opacity (`className="fill-(--color-desktop)
+    /// opacity-20"`). `chart-radar-grid-circle-fill`.
     CircleFill,
-    /// Circular rings, no spokes (`radialLines={false}`). shadcn's
-    /// `chart-radar-grid-circle-no-lines`.
+    /// Circular rings, no spokes. `chart-radar-grid-circle-no-lines`.
     CircleNoLines,
-    /// Polygon rings + spokes, tinted the same way as [`Self::CircleFill`]
-    /// (`PolarGrid`'s default `gridType="polygon"` with the same
-    /// `className`). shadcn's `chart-radar-grid-fill`.
+    /// Polygon rings + spokes, tinted like [`Self::CircleFill`].
+    /// `chart-radar-grid-fill`.
     Fill,
-    /// No grid at all (no `<PolarGrid />` rendered). shadcn's
-    /// `chart-radar-grid-none`.
+    /// No grid. `chart-radar-grid-none`.
     None,
-    /// Caller-specified ring values (in the chart's own data domain, not
-    /// pixels -- mapped through the same radial scale as every series) and
-    /// whether spokes are drawn, in place of the default nice-tick ring
-    /// set -- shadcn's `chart-radar-grid-custom`
+    /// Polygon rings at caller-given radii **in px** (Recharts'
+    /// `polarRadius`), with or without spokes -- `chart-radar-grid-custom`
     /// (`<PolarGrid radialLines={false} polarRadius={[90]} />`).
     Custom {
-        /// Ring values, in the chart's own value domain.
-        values: Vec<f64>,
+        /// Ring radii, px.
+        polar_radius: Vec<f64>,
         /// Whether to draw a spoke per category.
         spokes: bool,
     },
 }
 
-/// Configuration for [`crate::chart::ChartKind::Radar`].
+/// Configuration for [`crate::chart::ChartKind::Radar`] -- Recharts
+/// `RadarChart`/`Radar`/`PolarAngleAxis`/`PolarRadiusAxis` props.
+///
+/// The radius axis is Recharts' `PolarRadiusAxis`: domain `[0, auto]` with
+/// exactly five "nice" ticks (`engine::scale::nice_ticks`; `0..320` step
+/// 80 for shadcn's data), so a vertex's radius is `value / 320 * outer`.
 #[derive(Clone, PartialEq, Debug)]
 pub struct RadarOptions {
     /// Which grid rings/spokes to draw.
     pub grid: RadarGrid,
-    /// Fill opacity for every series' own closed polygon
-    /// (`path[data-slot="chart-radar-area"]`) -- there is no separate
-    /// fill/stroke path pair the way Area has; the same path is both
-    /// filled (this value, as a direct `fill-opacity` SVG presentation
-    /// attribute -- a per-chart *configurable* value, unlike Area's fixed
-    /// CSS `.4`, so it cannot live in the themed stylesheet) and stroked.
-    /// shadcn's own `fillOpacity={0.6}`.
-    pub fill_opacity: f64,
-    /// Draw a `circle[data-slot="chart-dot"]` at every defined vertex.
-    /// shadcn's `dot={{ r: 4, fillOpacity: 1 }}`.
+    /// Each series' `fillOpacity`, by configured-series position. A series
+    /// without an entry is opaque (`1.0`), Recharts' default -- shadcn's
+    /// two-series demos give only the first `<Radar>` `fillOpacity={0.6}`,
+    /// so the second is drawn opaque on top: `vec![0.6]`.
+    pub fill_opacity: Vec<f64>,
+    /// Draw a dot (`r` 4) at every defined vertex -- shadcn's `dot={{ r: 4,
+    /// fillOpacity: 1 }}`.
     pub dots: bool,
-    /// Force [`Self::fill_opacity`] to `0.0` regardless of its own value,
-    /// and document the intent -- shadcn's `chart-radar-lines-only`
-    /// (`fillOpacity={0}`, an explicit `stroke`).
+    /// Outline-only polygons: no fill, a 2px stroke in the series color --
+    /// shadcn's `chart-radar-lines-only` (`fillOpacity={0}`,
+    /// `strokeWidth={2}`). Without it a polygon has no stroke (Recharts'
+    /// default).
     pub lines_only: bool,
-    /// The outermost ring's radius, as a fraction `(0.0, 1.0]` of the
-    /// available half-extent (`min(width, height) / 2`, minus rim-label
-    /// margin when [`Self::axis_labels`] is set).
-    pub outer_radius: f64,
-    /// Draw each category's label around the rim
-    /// (`g[data-slot="chart-axis"][data-axis="angle"]`) -- shadcn's
-    /// `<PolarAngleAxis dataKey="month" />`.
+    /// `outerRadius`. Default [`Radius::DEFAULT_OUTER`] (`80%` of the max
+    /// radius: 96px in shadcn's 250px square).
+    pub outer_radius: Radius,
+    /// `<PolarAngleAxis dataKey=... />`: each category's label 8px beyond
+    /// the rim, anchored away from the centre.
     pub axis_labels: bool,
+    /// `<PolarRadiusAxis angle={..} />`: the radius axis' tick values drawn
+    /// along the spoke at this angle (Recharts degrees, `0` = three
+    /// o'clock), each rotated to read along it -- `chart-radar-radius`
+    /// (`angle={60}`).
+    pub radius_axis: Option<f64>,
+    /// Replace the category labels with custom two-line ticks, one per
+    /// category (`chart-radar-label-custom`) -- see [`RadarTick`].
+    pub ticks: Option<Vec<RadarTick>>,
 }
 
 impl Default for RadarOptions {
     fn default() -> Self {
         Self {
             grid: RadarGrid::default(),
-            fill_opacity: 0.6,
+            fill_opacity: Vec::new(),
             dots: false,
             lines_only: false,
-            outer_radius: 0.8,
+            outer_radius: Radius::DEFAULT_OUTER,
             axis_labels: true,
+            radius_axis: None,
+            ticks: None,
         }
     }
 }
 
-/// The five ring values every non-[`RadarGrid::Custom`] grid variant draws
-/// rings at: [`crate::chart::LinearScale::ticks`]'s "nice" values over the
-/// chart's own value domain (`scale.domain`), matching this crate's
-/// Cartesian y-axis's own `y_tick_count` default of 5
-/// (`components::chart::ChartProps::y_tick_count`) -- a radar's magnitude
-/// axis is the same kind of scale, just drawn as rings instead of
-/// horizontal lines.
-fn nice_ring_values(scale: &crate::chart::LinearScale) -> Vec<f64> {
-    scale.ticks(5)
-}
-
-/// The radar's own plot geometry: its center, outermost ring radius and
-/// value -> radius scale. Shared by [`render`] (the marks) and [`anchors`]
-/// (the keyboard tooltip anchors), so the two cannot disagree.
+/// The radar's own plot geometry: its center, outermost ring radius, the
+/// radius axis' ticks and the value -> radius scale. Shared by [`render`]
+/// (the marks) and [`anchors`] (the keyboard tooltip anchors), so the two
+/// cannot disagree.
 struct RadarGeometry {
     cx: f64,
     cy: f64,
     outer_radius: f64,
+    ticks: Vec<f64>,
     scale: crate::chart::LinearScale,
 }
 
 fn geometry(ctx: &SeriesRenderContext, opts: &RadarOptions) -> RadarGeometry {
-    let cx = ctx.width / 2.0;
-    let cy = ctx.height / 2.0;
-    let half_extent = ctx.width.min(ctx.height) / 2.0;
-    // Leave room for the rim category labels outside the outermost ring.
-    let label_margin = if opts.axis_labels {
-        24.0 * ctx.text_scale
-    } else {
-        0.0
-    };
-    let outer_radius =
-        ((half_extent - label_margin).max(0.0) * opts.outer_radius.clamp(0.0, 1.0)).max(1.0);
-
-    // The value domain across every series' every value -- always includes
-    // 0.0 (`nice_domain`), same reasoning as a bar/area chart's y-axis: a
-    // radar's radius must never float away from zero.
-    let (lo, hi) = ctx
+    let frame = frame(ctx);
+    let outer_radius = opts.outer_radius.resolve(frame.max_radius).max(1.0);
+    let max = ctx
         .data
         .iter()
-        .flat_map(|d| d.values.iter().flatten().copied())
-        .fold((0.0f64, 0.0f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
-    let domain = nice_domain(lo, hi);
-    let scale = radial_scale(domain, outer_radius);
+        .flat_map(|d| {
+            d.values
+                .iter()
+                .take(ctx.config.series.len())
+                .flatten()
+                .copied()
+        })
+        .filter(|v| v.is_finite())
+        .fold(0.0f64, f64::max);
+    let ticks = nice_ticks(0.0, max, RADIUS_TICK_COUNT);
+    let top = ticks.last().copied().filter(|t| *t > 0.0).unwrap_or(1.0);
     RadarGeometry {
-        cx,
-        cy,
+        cx: frame.cx,
+        cy: frame.cy,
         outer_radius,
-        scale,
+        ticks,
+        scale: radial_scale((0.0, top), outer_radius),
     }
 }
 
-/// Each category's keyboard tooltip anchor, in the chart's logical SVG
-/// units: the vertex of the category's largest value on its own spoke (the
-/// center for a category with no values). A pointer hover instead follows
-/// the pointer (`Follow::Pointer`), so these only place a tooltip the
-/// keyboard opened.
+/// Each category's keyboard tooltip anchor, in px: the vertex of the
+/// category's largest value on its own spoke (the center for a category
+/// with no values). A pointer hover instead follows the pointer
+/// (`Follow::Pointer`), so these only place a tooltip the keyboard opened.
 pub(crate) fn anchors(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Vec<(f64, f64)> {
     let RadarGeometry { cx, cy, scale, .. } = geometry(ctx, opts);
     category_angles(ctx.data.len())
@@ -254,19 +257,16 @@ pub(crate) fn sectors(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Vec<Sec
         .collect()
 }
 
-/// Render every configured series' closed polygon, this family's own grid/
-/// spokes/rim labels, and the angular hit-sectors that drive hover -- see
-/// the module doc for why all of this (not just the per-series marks) is
-/// this file's own responsibility.
+/// Render the grid, every configured series' closed polygon, the angle and
+/// radius axes and the angular hit-sectors -- see the module doc for why
+/// all of this (not just the per-series marks) is this file's job.
 pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element {
-    // See the module doc's "Hover" section for why a second `use_chart()`
-    // call here (not `ctx.active_index`) is correct and safe.
-
     let n = ctx.data.len();
     let RadarGeometry {
         cx,
         cy,
         outer_radius,
+        ticks,
         scale,
     } = geometry(ctx, opts);
 
@@ -277,24 +277,22 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
         0.0
     };
 
-    let fill_opacity = if opts.lines_only {
-        0.0
-    } else {
-        opts.fill_opacity
-    };
-
-    // Grid ring radii (pixels) + spokes/shape/fill flags, per `opts.grid`.
-    let (ring_values, draw_spokes, ring_is_circle, ring_fill): (Vec<f64>, bool, bool, bool) =
+    // Grid ring radii (px) + spokes/shape/fill flags, per `opts.grid`.
+    let tick_radii: Vec<f64> = ticks.iter().map(|t| scale.scale(*t)).collect();
+    let (ring_radii, draw_spokes, ring_is_circle, ring_fill): (Vec<f64>, bool, bool, bool) =
         match &opts.grid {
             RadarGrid::None => (Vec::new(), false, false, false),
-            RadarGrid::Polygon => (nice_ring_values(&scale), true, false, false),
-            RadarGrid::Circle => (nice_ring_values(&scale), true, true, false),
-            RadarGrid::CircleFill => (nice_ring_values(&scale), true, true, true),
-            RadarGrid::CircleNoLines => (nice_ring_values(&scale), false, true, false),
-            RadarGrid::Fill => (nice_ring_values(&scale), true, false, true),
-            RadarGrid::Custom { values, spokes } => (values.clone(), *spokes, false, false),
+            RadarGrid::Polygon => (tick_radii, true, false, false),
+            RadarGrid::PolygonNoLines => (tick_radii, false, false, false),
+            RadarGrid::Circle => (tick_radii, true, true, false),
+            RadarGrid::CircleFill => (tick_radii, true, true, true),
+            RadarGrid::CircleNoLines => (tick_radii, false, true, false),
+            RadarGrid::Fill => (tick_radii, true, false, true),
+            RadarGrid::Custom {
+                polar_radius,
+                spokes,
+            } => (polar_radius.clone(), *spokes, false, false),
         };
-    let ring_radii: Vec<f64> = ring_values.iter().map(|v| scale.scale(*v)).collect();
     let first_series_color = ctx
         .config
         .series
@@ -327,6 +325,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                                 key: "{i}",
                                 "data-slot": "chart-grid-ring",
                                 "data-fill": if ring_fill { "true" },
+                                "data-radius": "{fmt_num(r)}",
                                 d: "{grid_polygon_path(&angles, r)}",
                             }
                         }
@@ -339,6 +338,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                                     line {
                                         key: "{i}",
                                         "data-slot": "chart-grid-spoke",
+                                        "data-fill": if ring_fill { "true" },
                                         x1: "0",
                                         y1: "0",
                                         x2: "{fmt_num(x)}",
@@ -355,16 +355,21 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                 g { "data-slot": "chart-axis", "data-axis": "angle",
                     for (i , (angle , datum)) in angles.iter().copied().zip(ctx.data.iter()).enumerate() {
                         {
-                            let (x, y) = point_radial(angle, outer_radius + 12.0 * ctx.text_scale);
-                            rsx! {
-                                text {
-                                    key: "{i}",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(x)}",
-                                    y: "{fmt_num(y)}",
-                                    "text-anchor": "middle",
-                                    "{datum.label}"
-                                }
+                            let (x, y) = point_radial(angle, outer_radius + ANGLE_TICK_OFFSET);
+                            let (anchor, dy) = angle_tick_anchor(angle);
+                            match opts.ticks.as_ref().and_then(|t| t.get(i)) {
+                                Some(tick) => render_custom_tick(i, x, y, anchor, tick),
+                                None => rsx! {
+                                    text {
+                                        key: "{i}",
+                                        "data-index": "{i}",
+                                        x: "{fmt_num(x)}",
+                                        y: "{fmt_num(y)}",
+                                        "text-anchor": anchor,
+                                        dy,
+                                        "{datum.label}"
+                                    }
+                                },
                             }
                         }
                     }
@@ -375,6 +380,11 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                 {
                     let values: Vec<Option<f64>> = ctx.series_values(s);
                     let d = radar_series_path(&values, &scale);
+                    let fill_opacity = if opts.lines_only {
+                        0.0
+                    } else {
+                        opts.fill_opacity.get(s).copied().unwrap_or(1.0)
+                    };
                     rsx! {
                         g {
                             key: "{series.key}",
@@ -382,6 +392,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                             style: "--series-color: var(--color-{series.slot()})",
                             path {
                                 "data-slot": "chart-radar-area",
+                                "data-lines-only": opts.lines_only.then_some("true"),
                                 d: "{d}",
                                 "fill-opacity": "{fmt_num(fill_opacity)}",
                             }
@@ -397,7 +408,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                                                     "data-index": "{i}",
                                                     cx: "{fmt_num(x)}",
                                                     cy: "{fmt_num(y)}",
-                                                    r: "3",
+                                                    r: "{fmt_num(DOT_RADIUS)}",
                                                 }
                                             }
                                         }
@@ -409,13 +420,40 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                 }
             }
 
-            // The whole hover mechanism -- one angular wedge per category,
-            // no coordinate math (`$S/chart-api.md`'s rule for the
-            // Cartesian hit-bands, reused here for a wedge instead of a
-            // band; see `engine::radar::sector_path`'s own doc). Drawn
-            // last (on top) so a wedge always wins the pointer over any
-            // mark beneath it, same DOM-order convention as the Cartesian
-            // families' own `chart-hit-bands` group.
+            if let Some(angle_deg) = opts.radius_axis {
+                g { "data-slot": "chart-axis", "data-axis": "radius",
+                    for (i , t) in ticks.iter().copied().enumerate() {
+                        {
+                            // Recharts angle -> this module's (radians, 0 at
+                            // the top, clockwise), then rotate the text to
+                            // read along the spoke (`rotate(90 - angle)`).
+                            let a = recharts_angle(angle_deg);
+                            let (x, y) = point_radial(a, scale.scale(t));
+                            let rotate = format!(
+                                "rotate({}, {}, {})",
+                                fmt_num(90.0 - angle_deg),
+                                fmt_num(x),
+                                fmt_num(y)
+                            );
+                            rsx! {
+                                text {
+                                    key: "{i}",
+                                    x: "{fmt_num(x)}",
+                                    y: "{fmt_num(y)}",
+                                    transform: "{rotate}",
+                                    "text-anchor": "middle",
+                                    "{fmt_decimal(t, 2)}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The whole hover mechanism -- one angular wedge per category
+            // (see `engine::radar::sector_path`'s own doc). Drawn last (on
+            // top), same DOM-order convention as the Cartesian families'
+            // own `chart-hit-bands` group.
             g { "data-slot": "chart-hit-bands",
                 for (i , angle) in angles.iter().copied().enumerate() {
                     {
@@ -435,6 +473,40 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/// One custom two-line angle tick (`RadarOptions::ticks`), shadcn's
+/// `chart-radar-label-custom` markup: the first line's runs as `<tspan>`s
+/// (muted ones `data-muted`), the caption a muted `<tspan>` one line below,
+/// and the top label lifted 10px so its two lines clear the grid.
+fn render_custom_tick(i: usize, x: f64, y: f64, anchor: &'static str, tick: &RadarTick) -> Element {
+    let y = if i == 0 && tick.caption.is_some() {
+        y - CUSTOM_TICK_TOP_LIFT
+    } else {
+        y
+    };
+    rsx! {
+        text {
+            key: "{i}",
+            "data-index": "{i}",
+            "data-custom": "true",
+            x: "{fmt_num(x)}",
+            y: "{fmt_num(y)}",
+            "text-anchor": anchor,
+            for (k , (part , muted)) in tick.parts.iter().enumerate() {
+                tspan { key: "{k}", "data-muted": muted.then_some("true"), "{part}" }
+            }
+            if let Some(caption) = &tick.caption {
+                tspan {
+                    "data-caption": "true",
+                    "data-muted": "true",
+                    x: "{fmt_num(x)}",
+                    dy: "1rem",
+                    "{caption}"
                 }
             }
         }
@@ -569,7 +641,7 @@ mod tests {
     fn custom_grid_draws_exactly_the_given_rings() {
         let html = render(RadarOptions {
             grid: RadarGrid::Custom {
-                values: vec![50.0],
+                polar_radius: vec![50.0],
                 spokes: false,
             },
             ..Default::default()
@@ -582,7 +654,7 @@ mod tests {
     fn lines_only_forces_zero_fill_opacity() {
         let html = render(RadarOptions {
             lines_only: true,
-            fill_opacity: 0.6, // deliberately non-zero -- lines_only must still win
+            fill_opacity: vec![0.6], // deliberately non-zero -- lines_only must still win
             ..Default::default()
         });
         assert!(html.contains(r#"fill-opacity="0""#));
@@ -703,5 +775,91 @@ mod tests {
             html.contains("East"),
             "expected the active (index 1) category's label: {html}"
         );
+    }
+
+    /// `name="value"` of every element carrying `slot`, in document order.
+    fn attrs(html: &str, slot: &str, name: &str) -> Vec<f64> {
+        let needle = format!(r#"data-slot="{slot}""#);
+        html.match_indices(&needle)
+            .filter_map(|(at, _)| {
+                let tag_end = html[at..].find('>')? + at;
+                let tag = &html[at..tag_end];
+                let key = format!(r#"{name}=""#);
+                let start = tag.find(&key)? + key.len();
+                tag[start..].split('"').next()?.parse().ok()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn circle_rings_sit_at_five_recharts_ticks() {
+        // max 103 -> nice ticks 0, 30, 60, 90, 120: five rings incl. r = 0.
+        let html = render(RadarOptions {
+            grid: RadarGrid::Circle,
+            ..Default::default()
+        });
+        let radii = attrs(&html, "chart-grid-ring", "r");
+        assert_eq!(radii.len(), 5, "{html}");
+        assert_eq!(radii[0], 0.0);
+        let outer = radii[4];
+        assert!((radii[2] - outer / 2.0).abs() < 1e-3, "{radii:?}");
+    }
+
+    #[test]
+    fn series_fill_opacity_is_per_series_and_defaults_to_opaque() {
+        let html = render(RadarOptions {
+            fill_opacity: vec![0.6],
+            ..Default::default()
+        });
+        assert!(html.contains(r#"fill-opacity="0.6""#), "{html}");
+        assert!(html.contains(r#"fill-opacity="1""#), "{html}");
+    }
+
+    #[test]
+    fn angle_labels_are_anchored_away_from_the_centre() {
+        let html = render(RadarOptions::default());
+        // North (top) middle, East start, South middle, West end.
+        assert!(html.contains(r#"text-anchor="start""#), "{html}");
+        assert!(html.contains(r#"text-anchor="end""#), "{html}");
+        assert!(html.contains(r#"dy="0.71em""#), "{html}");
+    }
+
+    #[test]
+    fn radius_axis_draws_the_five_tick_values_along_its_angle() {
+        let html = render(RadarOptions {
+            radius_axis: Some(60.0),
+            ..Default::default()
+        });
+        assert!(html.contains(r#"data-axis="radius""#), "{html}");
+        assert!(html.contains("rotate(30, "), "{html}");
+        assert!(html.contains(">120<"), "{html}");
+    }
+
+    #[test]
+    fn custom_ticks_replace_the_category_labels() {
+        let ticks = (0..4)
+            .map(|i| RadarTick {
+                parts: vec![(format!("{i}"), false), ("/".into(), true)],
+                caption: Some(format!("M{i}")),
+            })
+            .collect();
+        let html = render(RadarOptions {
+            ticks: Some(ticks),
+            ..Default::default()
+        });
+        assert_eq!(html.matches(r#"data-custom="true""#).count(), 4, "{html}");
+        assert!(html.contains(">M2<"), "{html}");
+        let axis = &html[html.find(r#"data-axis="angle""#).unwrap()..];
+        let axis = &axis[..axis.find("</g>").unwrap()];
+        assert!(!axis.contains("North"), "{axis}");
+    }
+
+    #[test]
+    fn dots_have_recharts_radius_four() {
+        let html = render(RadarOptions {
+            dots: true,
+            ..Default::default()
+        });
+        assert!(html.contains(r#"r="4""#), "{html}");
     }
 }

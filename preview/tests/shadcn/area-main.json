@@ -1,0 +1,86 @@
+{
+  "name": "chart-area-default",
+  "variant": "main",
+  "title": "Area Chart",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186
+    },
+    {
+      "month": "February",
+      "desktop": 305
+    },
+    {
+      "month": "March",
+      "desktop": 237
+    },
+    {
+      "month": "April",
+      "desktop": 73
+    },
+    {
+      "month": "May",
+      "desktop": 209
+    },
+    {
+      "month": "June",
+      "desktop": 214
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    }
+  },
+  "chart": {
+    "kind": "area",
+    "margin": {
+      "left": 12,
+      "right": 12
+    },
+    "layout": null,
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "desktop",
+      "type": "natural",
+      "fill": "var(--color-desktop)",
+      "fillOpacity": 0.4,
+      "stackId": null,
+      "radius": null,
+      "strokeWidth": null,
+      "dot": null,
+      "activeDot": null
+    }
+  ],
+  "grid": {
+    "vertical": false,
+    "horizontal": true
+  },
+  "xAxis": {
+    "dataKey": "month",
+    "type": null,
+    "hide": false,
+    "tickMargin": 8,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": null,
+  "tooltip": {
+    "cursor": false,
+    "indicator": "line",
+    "hideLabel": false,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [],
+  "activeIndex": null
+}

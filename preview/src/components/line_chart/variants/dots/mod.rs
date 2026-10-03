@@ -1,11 +1,14 @@
+//! shadcn's `chart-line-dots`: a dot on every point (`LineOptions::dots`,
+//! r = 3), doubled on the active point.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// One series with a dot at every data point (`show_dots: true`).
-fn generate_data() -> Vec<ChartDatum> {
-    const MONTHS: [(&str, f64); 6] = [
+/// The chart's rows, `(month, desktop)`.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
+    const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),
         ("February", 305.0),
         ("March", 237.0),
@@ -13,20 +16,22 @@ fn generate_data() -> Vec<ChartDatum> {
         ("May", 209.0),
         ("June", 214.0),
     ];
-    MONTHS
-        .iter()
-        .map(|(label, desktop)| ChartDatum {
+    ROWS.iter()
+        .map(|&(label, desktop)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*desktop)],
+            values: vec![Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The one series drawn.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
-
     rsx! {
         Card {
             CardHeader {
@@ -34,10 +39,12 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data: generate_data(), kind: ChartKind::Line,
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Line,
                     Chart {
                         aria_label: "Visitors by month, desktop",
-                        x_label: "Month",
+                        margin: ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE },
+                        curve: Curve::Natural,
+                        cursor: false,
                         line: LineOptions {
                             dots: true,
                             ..Default::default()

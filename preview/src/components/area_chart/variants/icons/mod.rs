@@ -1,37 +1,42 @@
+//! shadcn's `chart-area-icons`: the stacked chart with an icon per series
+//! (`ChartSeries::icon`), shown in the legend and the tooltip.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{TrendingDown, TrendingUp};
 
-/// The stacked two-series chart with an icon per series (`ChartSeries::icon`:
-/// `TrendingDown` for desktop, `TrendingUp` for mobile), shown in the legend
-/// and tooltip.
-fn generate_data() -> Vec<ChartDatum> {
+/// The chart's rows, `(month, mobile, desktop)`, values in config order.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
-        ("January", 186.0, 80.0),
-        ("February", 305.0, 200.0),
-        ("March", 237.0, 120.0),
-        ("April", 73.0, 190.0),
-        ("May", 209.0, 130.0),
-        ("June", 214.0, 140.0),
+        ("January", 80.0, 186.0),
+        ("February", 200.0, 305.0),
+        ("March", 120.0, 237.0),
+        ("April", 190.0, 73.0),
+        ("May", 130.0, 209.0),
+        ("June", 140.0, 214.0),
     ];
     ROWS.iter()
-        .map(|&(label, desktop, mobile)| ChartDatum {
+        .map(|&(label, mobile, desktop)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(desktop), Some(mobile)],
+            values: vec![Some(mobile), Some(desktop)],
             ..Default::default()
         })
         .collect()
 }
 
+/// The series, in draw (and stacking) order: the first is the bottom layer.
+pub(crate) fn chart_config() -> ChartConfig {
+    let mut config = ChartConfig::new()
+        .series("mobile", "Mobile", "var(--dx-chart-2)")
+        .series("desktop", "Desktop", "var(--dx-chart-1)");
+    config.series[0].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })));
+    config.series[1].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingDown {} })));
+    config
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let mut config = ChartConfig::new()
-        .series("desktop", "Desktop", "var(--dx-chart-1)")
-        .series("mobile", "Mobile", "var(--dx-chart-2)");
-    config.series[0].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingDown {} })));
-    config.series[1].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })));
-
     rsx! {
         AreaChartGallery {
             Card {
@@ -40,12 +45,15 @@ pub fn Demo() -> Element {
                     CardDescription { "Showing total visitors for the last 6 months" }
                 }
                 CardContent {
-                    ChartContainer { config, data: generate_data(), kind: ChartKind::Area,
+                    ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Area,
                         Chart {
-                            aria_label: "Visitors by month, desktop and mobile, stacked",
+                            aria_label: "Visitors by month, mobile and desktop, stacked",
+                            margin: ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE },
                             stacked: true,
+                            curve: Curve::Natural,
+                            cursor: false,
                         }
-                        ChartTooltip {}
+                        ChartTooltip { indicator: TooltipIndicator::Line }
                         ChartLegend {}
                     }
                 }

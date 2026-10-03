@@ -1,40 +1,61 @@
 //! Defines the [`Chart`] component: the actual SVG drawing surface.
 //!
-//! ## Stage-2 chart round: an orchestrator over per-family renderers
+//! ## Sizing contract (Recharts `ResponsiveContainer` semantics)
 //!
-//! As of the stage-2 chart round's `s2-refactor` lane, this component no
-//! longer draws any one family's marks itself. It:
-//! 1. resolves this render's effective `stacked` flag and computes the
-//!    shared plot geometry via `super::layout::build` (margins, scales,
-//!    y ticks, stack spans -- see that module's own doc);
-//! 2. dispatches on [`ChartKind`] to exactly one of
-//!    [`super::series::area`]/[`super::series::bar`]/
-//!    [`super::series::line`]/[`super::series::pie`]/
-//!    [`super::series::radar`]/[`super::series::radial`]'s own `render` for
-//!    the actual marks;
-//! 3. for the three `ChartKind::is_cartesian` kinds only, additionally
-//!    renders the grid, axes, hover cursor, and hit-bands (via
-//!    `super::layout` for the first two, inline here for the last two --
-//!    small enough, and specific enough to `Chart`'s own wrapper/state, that
-//!    factoring them out bought nothing); the three polar/radial **stub**
-//!    kinds get none of that (a Cartesian grid behind a shape that isn't
-//!    Cartesian would be actively misleading, not merely unfinished) --
-//!    just the dispatched mark group and a reduced data table (category +
-//!    first configured series' value, via
-//!    [`crate::chart::engine::table::table_rows_single_series`], plus a
-//!    `Percent` column for [`ChartKind::Pie`] specifically via
-//!    [`crate::chart::engine::table::table_rows_pie`] -- a pie slice's
-//!    share of the whole is exactly what its wedge angle already encodes
-//!    visually, landed alongside `s2-polar`'s own `series::pie` since a
-//!    pie-shaped data table is that lane's own deliverable, not a stub)
-//!    until each remaining stub's owning lane replaces its own mark group
-//!    (see [`super::series`]'s own module doc for the ownership map).
+//! **One user unit is one CSS pixel, always.** The svg's `viewBox` is the
+//! chart's own measured size, so every length a chart is authored with --
+//! [`ChartMargin`], bar radius, stroke width, dot radius, label offset, a
+//! polar radius -- renders at exactly that many pixels, the way shadcn/ui's
+//! Recharts charts do. Text is never scaled or compensated.
 //!
-//! Every other behavior -- the wrapper `div`/keyboard layer, the SVG root,
-//! the hidden data table's shape for the three real kinds -- is unchanged
-//! from before this split; see this module's own tests, which this lane
-//! kept green unmodified as the no-behavior-change proof (plus new tests
-//! for the three stub kinds, which did not exist before).
+//! - **Width** = the wrapper's measured content-box width (min 100px).
+//! - **Height** = [`ChartProps::height`] when given (a fixed-height,
+//!   fluid-width chart: shadcn's `h-[250px]` hero), otherwise width /
+//!   [`ChartProps::aspect`] rounded to a whole px (Recharts reads the
+//!   container's integer `clientHeight`) -- by default 16/9 for Area/Bar/Line (shadcn's
+//!   `aspect-video`) and 1 for Pie/Radar/RadialBar (`aspect-square`; the
+//!   themed stylesheet caps a polar chart's container at 250px, shadcn's
+//!   `max-h-[250px] mx-auto`).
+//! - **Before measuring** (the server render and the first client render,
+//!   which therefore agree byte for byte -- no hydration mismatch) the size
+//!   is [`ChartProps::width`] (default 369 Cartesian / 250 polar: shadcn's
+//!   3-column card) by the same height rule. That render already fills its
+//!   container: in aspect mode the svg is `width: 100%; height: auto`, a
+//!   uniform scale of the final drawing; in fixed-height mode it is exactly
+//!   `height` px tall and stretched across (`preserveAspectRatio="none"`,
+//!   text hidden until measured -- `data-measured="false"`).
+//! - **A legend lives inside that box**, as in Recharts (whose `<Legend>`
+//!   shrinks the plot by its own height): with a `ChartLegend` in the same
+//!   container, the svg is the box minus the legend's block size and the
+//!   legend takes the rest, so a card is as tall with a legend as without.
+//!   The legend's measured size is used once known; before that the
+//!   container's children say whether there is one and
+//!   [`ChartProps::legend_size`] (default [`DEFAULT_LEGEND_SIZE`], one row)
+//!   how big it is -- the same answer on the server and the first client
+//!   render. Radar and RadialBar keep their whole square (see
+//!   `legend_reserve`).
+//! - Every series renderer reads the resolved px size and the plot rect
+//!   from `layout::SeriesRenderContext` (`width`, `height`, `plot_*`; for
+//!   polar kinds the plot rect is the box inset by the margin).
+//!
+//! ## What this component does
+//!
+//! 1. resolves the size (above), the effective `stacked` flag, and the
+//!    shared plot geometry via `super::layout::build` (Recharts margins,
+//!    axis bands, category/value scales, ticks, stack spans);
+//! 2. dispatches on [`ChartKind`] to exactly one family's `render` in
+//!    [`super::series`] for the marks;
+//! 3. for the three Cartesian kinds additionally renders the grid, axes,
+//!    hover cursor and hit bands; the polar kinds get just their marks and a
+//!    reduced data table (category + first series' value; plus a `Percent`
+//!    column for [`ChartKind::Pie`]).
+//!
+//! After the first measured client render the svg carries
+//! `data-animate="true"` (unless [`ChartProps::animate`] is off), which the
+//! themed stylesheet turns into Recharts' load animation -- bars grow from
+//! the baseline, lines and areas reveal left to right -- once, never under
+//! `prefers-reduced-motion`, and never on the server render (no JS: the
+//! final drawing).
 
 use std::rc::Rc;
 
@@ -48,10 +69,67 @@ use super::{layout, series};
 use crate::chart::context::{is_touch, use_chart, ChartLayout, Follow};
 use crate::chart::engine::scale::fmt_num;
 use crate::chart::engine::table::{table_rows, table_rows_pie, table_rows_single_series};
-use crate::chart::{BandScale, ChartKind, Curve, LinearScale};
+use crate::chart::{ChartKind, Curve};
 use crate::dioxus_attributes::attributes;
 use crate::direction::{use_direction, Direction, HorizontalNav};
 use crate::merge_attributes;
+
+/// The space between the chart box's edges and its plot, in CSS px --
+/// Recharts' `margin` prop. Axis bands (30px for a shown x axis, 60px for a
+/// shown y axis) are reserved *inside* it, as Recharts does. Values may be
+/// negative (shadcn's `chart-area-axes` pulls the y axis in with `left: -20`).
+///
+/// `Default` is Recharts' own default, 5px on every side. A Recharts
+/// `margin={{ left: 12, right: 12 }}` replaces the whole default (the sides
+/// it omits are 0), so its port is `ChartMargin { left: 12.0, right: 12.0,
+/// ..ChartMargin::NONE }`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct ChartMargin {
+    /// Top margin, px.
+    pub top: f64,
+    /// Right margin, px.
+    pub right: f64,
+    /// Bottom margin, px.
+    pub bottom: f64,
+    /// Left margin, px.
+    pub left: f64,
+}
+
+impl ChartMargin {
+    /// No margin on any side -- the base for a partial Recharts margin.
+    pub const NONE: Self = Self::all(0.0);
+
+    /// The same margin on every side.
+    pub const fn all(px: f64) -> Self {
+        Self {
+            top: px,
+            right: px,
+            bottom: px,
+            left: px,
+        }
+    }
+}
+
+impl Default for ChartMargin {
+    /// Recharts' default: 5px on every side.
+    fn default() -> Self {
+        Self::all(5.0)
+    }
+}
+
+/// The initial width (px) of a Cartesian chart before it is measured:
+/// shadcn's 3-column card content box (369 x 208 at 16/9).
+pub const DEFAULT_CARTESIAN_WIDTH: f64 = 369.0;
+/// The initial width (px) of a polar chart before it is measured: shadcn's
+/// `max-h-[250px]` square.
+pub const DEFAULT_POLAR_WIDTH: f64 = 250.0;
+/// The legend's block size (px) assumed before it is measured: one row of
+/// shadcn's `ChartLegendContent` (`pt-3` + a 16px `text-xs` line).
+pub const DEFAULT_LEGEND_SIZE: f64 = 28.0;
+/// Default width / height of a Cartesian chart (shadcn's `aspect-video`).
+pub const DEFAULT_CARTESIAN_ASPECT: f64 = 16.0 / 9.0;
+/// Default width / height of a polar chart (shadcn's `aspect-square`).
+pub const DEFAULT_POLAR_ASPECT: f64 = 1.0;
 
 /// The props for the [`Chart`] component.
 #[derive(Props, Clone, PartialEq)]
@@ -66,166 +144,135 @@ pub struct ChartProps {
     #[props(default)]
     pub description: Option<String>,
 
-    /// The chart's logical width -- the `viewBox`'s own width, and the
-    /// coordinate space every length in the chart's props (radii, insets,
-    /// gaps) is expressed in. The SVG scales to fit its container (the
-    /// themed wrapper's `width: 100%; height: auto`), so this sets the
-    /// aspect ratio and the layout, not a pixel size. On a container
-    /// narrower or wider than this the text is compensated to keep its
-    /// authored size (see [`text_scale`]) instead of shrinking or growing
-    /// with the drawing.
-    #[props(default = 600.0)]
-    pub width: f64,
-
-    /// The chart's logical height -- the `viewBox`'s own height, in the same
-    /// coordinate space as [`Self::width`]; the SVG scales both together to
-    /// fit its container.
-    #[props(default = 300.0)]
-    pub height: f64,
-
-    /// Fixed-height, fluid-width mode (shadcn's `h-[250px]` +
-    /// Recharts' `ResponsiveContainer`): once the container's width is
-    /// measured, the chart's logical width *is* that width (1 logical unit =
-    /// 1 CSS px) and [`Self::height`] is rendered at exactly that many CSS
-    /// px, so the drawing is never scaled and text keeps its authored size
-    /// (the text compensation is `1`). Use it for a full-width "hero" chart
-    /// that should be the same height at 390px and at 1440px, where a fixed
-    /// aspect ratio cannot be (a 700x170 viewBox is ~300px tall on a desktop
-    /// card but ~40px tall on a phone). Axis tick thinning then uses the real
-    /// width.
-    ///
-    /// [`Self::width`] is still what the server render and the first client
-    /// render use (nothing is measured yet, so there is no hydration
-    /// mismatch). That pre-measure render is already `height` px tall and
-    /// fills the container's width: its viewBox is stretched to the box
-    /// (`preserveAspectRatio="none"`, `data-measured="false"`), which keeps
-    /// every mark where the measured render will put it (the height is exact,
-    /// and x positions are proportional) -- the stylesheet hides the text,
-    /// which a non-uniform stretch would distort, until the measured render
-    /// replaces it, so before the wasm loads there is no left-aligned strip
-    /// or shrunken 5px text, and adopting the measured width does not move
-    /// the page. Off by default -- an existing chart is unchanged.
-    ///
-    /// Cartesian kinds only ([`ChartKind::Area`], [`ChartKind::Bar`] --
-    /// vertical and horizontal -- and [`ChartKind::Line`]); ignored for
-    /// pie, radar and radial charts, whose caller-authored radii and insets
-    /// are expressed in the fixed logical coordinate space and must keep
-    /// scaling with it.
+    /// The width in CSS px used before the container is measured (the server
+    /// render and the first client render). Once measured, the chart is
+    /// always exactly as wide as its container. Default: 369 for
+    /// Area/Bar/Line, 250 for Pie/Radar/RadialBar. See the module doc's
+    /// sizing contract.
     #[props(default)]
-    pub fit_width: bool,
+    pub width: Option<f64>,
+
+    /// A fixed height in CSS px: the chart is then fluid in width and exactly
+    /// this tall at every container width (shadcn's `h-[250px]` hero
+    /// charts). `None` (the default) derives the height from the width and
+    /// [`Self::aspect`].
+    #[props(default)]
+    pub height: Option<f64>,
+
+    /// Width / height when [`Self::height`] is not set. Default 16/9 for
+    /// Area/Bar/Line (shadcn's `aspect-video`), 1 for Pie/Radar/RadialBar.
+    #[props(default)]
+    pub aspect: Option<f64>,
+
+    /// Recharts' `margin`, in CSS px -- see [`ChartMargin`].
+    #[props(default)]
+    pub margin: ChartMargin,
+
+    /// The block size (CSS px) a `ChartLegend` in the same container is
+    /// assumed to take before it is measured (the server render and the
+    /// first client render). Like Recharts, the legend is drawn inside the
+    /// chart box and the plot gives up that room on the legend's side, so the
+    /// box is the same with or without a legend. Defaults to
+    /// [`DEFAULT_LEGEND_SIZE`] (one row of shadcn's `ChartLegendContent`);
+    /// set it for a legend that wraps. Once measured, the legend's own size
+    /// is used. Ignored when the container holds no `ChartLegend`.
+    #[props(default)]
+    pub legend_size: Option<f64>,
 
     /// Stack each datum's series values instead of drawing them
-    /// independently. Only [`ChartKind::Area`] and [`ChartKind::Bar`] have
-    /// a stacking construction -- silently ignored for every other kind,
-    /// [`ChartKind::Line`] included (a "stacked line chart" isn't a
-    /// standard construction, matching shadcn/Recharts' own scope). Kept
-    /// on `ChartProps` itself, not duplicated onto `AreaOptions`/
-    /// `BarOptions`, since it applies to both -- see
-    /// [`super::series`]'s own module doc.
+    /// independently, in config order (the first series at the bottom, as
+    /// Recharts stacks in declaration order). Area and Bar only.
     #[props(default)]
     pub stacked: bool,
 
-    /// The line/area interpolation. Applies to [`ChartKind::Area`] and
-    /// [`ChartKind::Line`] (every kind with a drawn edge to interpolate);
-    /// kept on `ChartProps` itself for the same reason as
-    /// [`Self::stacked`] -- see [`super::series`]'s own module doc.
+    /// The line/area interpolation (Recharts' `type`). Area and Line only.
     #[props(default = Curve::Monotone)]
     pub curve: Curve,
 
-    /// Show horizontal gridlines at each y tick. `ChartKind::is_cartesian`
-    /// kinds only.
+    /// Show gridlines at each value tick (shadcn's `<CartesianGrid
+    /// vertical={false} />`; vertical lines for horizontal bars).
+    /// Cartesian kinds only.
     #[props(default = true)]
     pub show_grid: bool,
 
-    /// Show x-axis category labels. `ChartKind::is_cartesian` kinds only.
+    /// Show the x axis: category labels on a vertical chart, value labels
+    /// on horizontal bars. Reserves a 30px band below the plot. Cartesian
+    /// kinds only.
     #[props(default = true)]
     pub show_x_axis: bool,
 
-    /// Show y-axis value labels. Off by default, matching shadcn's own
-    /// demos (the tooltip/hidden table carry exact values instead).
-    /// `ChartKind::is_cartesian` kinds only.
+    /// Show the y axis: value labels on a vertical chart, category labels
+    /// on horizontal bars. Reserves a 60px band left of the plot. Off by
+    /// default, matching shadcn's demos. Cartesian kinds only.
     #[props(default)]
     pub show_y_axis: bool,
 
-    /// The x-axis category column's header: rendered as the hidden data
-    /// table's corner `<th scope="col">` (top-left cell, above the row
-    /// headers). Not part of the original `$S/chart-api.md` sketch, which
-    /// left that cell empty (`th {}`) -- an empty `<th>` has no accessible
-    /// name, which axe's `empty-table-header` rule (`best-practice` tag)
-    /// correctly flags as a real defect on every scan, not a false
-    /// positive: a screen-reader user browsing the table by column has no
-    /// way to tell what the first column *is*. Defaults to `"Category"`,
-    /// a neutral header that fits any chart's x-axis regardless of what
-    /// the data actually represents (dates, labels, ...); callers with a
-    /// more specific axis (e.g. `"Date"`) should override it.
+    /// The x-axis category column's header in the hidden data table (its
+    /// top-left `<th scope="col">`). Defaults to `"Category"`.
     #[props(default = "Category".to_string())]
     pub x_label: String,
 
-    /// Format an x-axis category label. Defaults to its first 3 characters
+    /// Format a category label. Defaults to its first 3 characters
     /// (shadcn's own demo convention, e.g. `"January"` -> `"Jan"`).
-    /// `ChartKind::is_cartesian` kinds only.
+    /// Cartesian kinds only.
     #[props(default)]
     pub x_tick_format: Option<Callback<String, String>>,
 
-    /// The maximum number of x-axis tick *labels* to draw, regardless of
-    /// how many data points the chart has. A dense chart (e.g. 90 daily
-    /// data points) would otherwise draw one `<text>` per datum and
-    /// overlap them into an unreadable smear; this labels only every
-    /// `ceil(n / count)`-th datum (always including the first), leaving
-    /// every hit band, mark and hidden-table row exactly as before -- this
-    /// only thins the *visible tick labels*, never the underlying
-    /// per-datum data or interactivity.
-    ///
-    /// This is an *upper bound*: the count actually drawn is
-    /// `min(max_x_ticks, floor(plot_width / (longest_label_width + 8)))`,
-    /// never below 1, so a narrow chart (a phone, or any container narrower
-    /// than `width`) draws fewer labels instead of overlapping them. The
-    /// longest label's width is estimated, not measured -- 12px axis text at
-    /// ~0.6em per ASCII glyph (a full em for any other character), times the
-    /// narrow-container text compensation (see [`Self::width`]; `1` on the
-    /// server and first render) -- so the server render and the client agree
-    /// for the same width. It is an
-    /// estimate: an unusually wide font can still crowd, in which case
-    /// shorten the labels with `x_tick_format` or lower `max_x_ticks`.
-    /// `ChartKind::is_cartesian` kinds only.
-    #[props(default = 12)]
-    pub max_x_ticks: usize,
+    /// The minimum gap in px between two category labels (Recharts'
+    /// `minTickGap`, default 5). Labels are thinned the way Recharts' default
+    /// `interval="preserveEnd"` does: the last category is always labelled,
+    /// and walking back from it, a label is drawn only where it clears the
+    /// previous one by this gap and fits inside the chart -- from estimated
+    /// text widths, so the server and the client agree. Hidden labels never
+    /// affect the data, marks or hover. Cartesian kinds only.
+    #[props(default = 5.0)]
+    pub min_tick_gap: f64,
 
-    /// Target number of y-axis ticks (see [`crate::chart::LinearScale::ticks`]
-    /// -- the actual count can differ slightly, same as d3's own `ticks`).
-    /// `ChartKind::is_cartesian` kinds only.
+    /// The distance in px between a tick label and the plot edge beyond the
+    /// 6px tick size (Recharts' `tickMargin`; shadcn's demos use 8, bar
+    /// demos 10). Cartesian kinds only.
+    #[props(default = 8.0)]
+    pub tick_margin: f64,
+
+    /// The number of value ticks (Recharts' `tickCount`, default 5): exactly
+    /// this many "nice" values ([`crate::chart::nice_ticks`]), and the value
+    /// axis spans first..last tick. Cartesian kinds only.
     #[props(default = 5)]
     pub y_tick_count: usize,
 
+    /// Draw the hover cursor (Recharts' `<Tooltip cursor>`, on by default):
+    /// a 1px vertical line at the active point on Area/Line charts, a muted
+    /// band behind the active category on bar charts. shadcn's demos mostly
+    /// turn it off (`cursor={false}`). Cartesian kinds only.
+    #[props(default = true)]
+    pub cursor: bool,
+
+    /// Play the load animation once after the chart is first measured in
+    /// the browser (Recharts' `isAnimationActive`). Never on the server
+    /// render, never under `prefers-reduced-motion` (the themed stylesheet).
+    #[props(default = true)]
+    pub animate: bool,
+
     /// Enable arrow-key/Home/End/Escape stepping of the active index on
-    /// this chart's own focusable wrapper (see the module doc for why the
-    /// wrapper, not `ChartContainer`, hosts this). Tier-3 opinion, cited to
+    /// this chart's own focusable wrapper. Tier-3 opinion, cited to
     /// Recharts' `accessibilityLayer` -- additive to, never a replacement
-    /// for, the hidden data table every chart always renders regardless of
-    /// this prop.
+    /// for, the hidden data table every chart always renders.
     #[props(default = true)]
     pub keyboard: bool,
 
     /// Show the tooltip already open at this datum index until the user
     /// interacts (shadcn's `defaultIndex`): the server render and the first
-    /// client render both have it open -- anchored at the data point, placed
-    /// by the same flip/clamp rules as a keyboard-driven one (the position is
-    /// resolved once the box has been measured in the browser; until then the
-    /// open tooltip is laid out but hidden). The first hover, key press or
-    /// tap takes over, and when the tooltip closes (pointer leaves, blur,
-    /// Escape) it is closed for good. Read once, on mount: changing it later
-    /// does not move an open tooltip. An index past the data's end is
-    /// ignored. [`crate::chart::ChartTooltip`] must come after this
-    /// `Chart` among its siblings (as in every example) so it sees the index
-    /// on the server's single render pass.
+    /// client render both have it open. The first hover, key press or tap
+    /// takes over, and when the tooltip closes it is closed for good. Read
+    /// once, on mount. An index past the data's end is ignored.
+    /// [`crate::chart::ChartTooltip`] must come after this `Chart` among its
+    /// siblings so it sees the index on the server's single render pass.
     #[props(default)]
     pub default_index: Option<usize>,
 
     /// The text direction for the keyboard layer's ArrowLeft/ArrowRight
-    /// swap, matching every other direction-aware component in this crate
-    /// (`Slider`, `Select`, ...): a local override that wins over the
-    /// nearest [`crate::direction::DirectionProvider`], or LTR if neither
-    /// is present.
+    /// swap: a local override that wins over the nearest
+    /// [`crate::direction::DirectionProvider`], or LTR if neither is present.
     #[props(default)]
     pub dir: Option<Direction>,
 
@@ -241,24 +288,21 @@ pub struct ChartProps {
     #[props(default)]
     pub line: LineOptions,
 
-    /// [`ChartKind::Pie`]'s own options. **Stub** -- see
-    /// [`super::series::pie`].
+    /// [`ChartKind::Pie`]'s own options.
     #[props(default)]
     pub pie: PieOptions,
 
-    /// [`ChartKind::Radar`]'s own options. **Stub** -- see
-    /// [`super::series::radar`].
+    /// [`ChartKind::Radar`]'s own options.
     #[props(default)]
     pub radar: RadarOptions,
 
-    /// [`ChartKind::RadialBar`]'s own options -- see
-    /// [`super::series::radial`].
+    /// [`ChartKind::RadialBar`]'s own options.
     #[props(default)]
     pub radial: RadialOptions,
 
     /// Additional attributes to apply to the chart's own wrapper element
-    /// (see the module doc: `Chart` renders one `div[data-slot="chart"]`
-    /// around its `svg` and hidden `table`, and this is that div).
+    /// (`Chart` renders one `div[data-slot="chart"]` around its `svg` and
+    /// hidden `table`, and this is that div).
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
 }
@@ -267,11 +311,11 @@ pub struct ChartProps {
 ///
 /// Renders the chart's actual drawing surface: an accessible SVG (grid,
 /// axes, one mark per configured series, the hover cursor, and the
-/// invisible per-datum hit bands for the three `ChartKind::is_cartesian`
-/// kinds; a single placeholder mark group for the three polar/radial stub
-/// kinds, see the module doc) plus a real, visually-hidden `<table>`
+/// invisible per-datum hit bands for the three Cartesian kinds; the polar
+/// families' own marks otherwise) plus a real, visually-hidden `<table>`
 /// mirroring the same data, both inside one `div[data-slot="chart"]`
-/// wrapper. Must be rendered inside a [`crate::chart::ChartContainer`].
+/// wrapper. Must be rendered inside a [`crate::chart::ChartContainer`]. See
+/// the module doc for the sizing contract (1 unit = 1 CSS px).
 ///
 /// ## Hover, touch and the tooltip's position
 ///
@@ -279,18 +323,17 @@ pub struct ChartProps {
 /// `components::pointer`): client coordinates minus the wrapper's bounding
 /// rect, read fresh per event, give the pointer's position in the chart
 /// box. A category chart (Area/Bar/Line) resolves the nearest category from
-/// that position, hides the tooltip outside the plot, and works unchanged
-/// for a finger dragging across it; the polar families' own wedges/arcs set
-/// the active index when entered. `ChartTooltip` then positions itself from
-/// the pointer and the active datum's anchor. A mouse leaving closes the
-/// tooltip; a finger lifting does not -- a tapped tooltip stays until the
-/// wrapper loses focus (a tap elsewhere, or Tab).
+/// that position (the nearest point on Area/Line, the band on bars), hides
+/// the tooltip outside the plot, and works unchanged for a finger dragging
+/// across it; the polar families resolve the sector under the pointer.
+/// `ChartTooltip` then positions itself from the pointer and the active
+/// datum's anchor. A mouse leaving closes the tooltip; a finger lifting does
+/// not -- a tapped tooltip stays until the wrapper loses focus.
 ///
-/// A pointer result that arrives after the tooltip closed (a `pointerleave`,
-/// blur or key press while the bounding rect was still being read) is
-/// discarded, never reopening it. Under an ancestor `transform: scale(..)` or
-/// CSS `zoom` the pointer's screen-pixel position is mapped onto the chart
-/// box's layout pixels, so the tooltip still lands at the pointer.
+/// A pointer result that arrives after the tooltip closed is discarded,
+/// never reopening it. Under an ancestor `transform: scale(..)` or CSS
+/// `zoom` the pointer's screen-pixel position is mapped onto the chart box's
+/// layout pixels, so the tooltip still lands at the pointer.
 ///
 /// Giving [`ChartProps::default_index`] shows the tooltip open at that datum
 /// from the first render (shadcn's `defaultIndex`) until the user interacts;
@@ -298,86 +341,51 @@ pub struct ChartProps {
 /// focus does not). On an Area or Line chart the active datum also gets a dot
 /// on every series (`data-slot="chart-active-dot"`, Recharts' `activeDot`).
 ///
-/// ## Wrapper element, stated plainly (see the module doc for the reason)
+/// ## Wrapper element
 ///
 /// This component's own top-level element is a `div`, not the `svg`
 /// itself: [`ChartProps::keyboard`]'s `tabindex`/`role="group"`/
 /// `aria-roledescription`/`aria-label` land on that wrapper `div`, and
 /// [`ChartProps::attributes`] merges onto it too. The `svg` itself stays
-/// non-focusable (`role="img"` only) and is a plain child, alongside the
-/// hidden `table`.
+/// non-focusable (`role="img"` only).
 ///
 /// ## A11y contract (`dev-docs/research/chart-2026-09-19.md` §2.5/§6.4)
 ///
-/// 1. `svg[role="img"][aria-label]` + `<title>`/`<desc>` -- a single
-///    indivisible graphic (WAI-ARIA Graphics Module 1.0's own definition
-///    of `img`), not a claim of internal navigability.
-/// 2. A real `<table>` mirroring the chart's data -- the actual
-///    screen-reader "browse the data" mechanism, native and free, and the
-///    reason this component never *requires* the keyboard layer below to
-///    be usable.
-/// 3. Optional (this prop, default on) sighted-keyboard stepping of the
-///    active index -- tier-3 opinion, mirroring Recharts'
-///    `accessibilityLayer` (`recharts/recharts` commit
-///    `86ad3632ff3f83a742001ae6fc079dd27961a2a4`,
-///    `src/state/keyboardEventsMiddleware.ts`): ArrowRight/ArrowLeft move
-///    the active index by one (direction-aware via
-///    [`crate::direction::use_direction`], matching that file's own
-///    `selectChartDirection` RTL handling), Home/End jump to the first/
-///    last datum, Escape clears it. Deliberately narrower than Recharts'
-///    version: no `role="application"` (a heavy-handed escape hatch this
-///    report's research recommends against -- it suppresses a screen
-///    reader's own browse-mode navigation for the rest of the page, which
-///    point 2 above makes unnecessary here anyway) and no "Enter pins the
-///    tooltip open" behavior (not requested by `$S/chart-api.md`).
+/// 1. `svg[role="img"][aria-label]` + `<title>`/`<desc>`.
+/// 2. A real `<table>` mirroring the chart's data -- the screen-reader
+///    "browse the data" mechanism.
+/// 3. Optional (default on) sighted-keyboard stepping of the active index,
+///    mirroring Recharts' `accessibilityLayer`: ArrowRight/ArrowLeft move
+///    the active index by one (direction-aware), Home/End jump to the first/
+///    last datum, Escape clears it. No `role="application"`.
 ///
-/// **Known Dioxus limitation (not a bug here, and not fixable from inside
-/// this component):** `dioxus-html` 0.7.9 has no SVG-namespaced `<title>`
-/// element, only the HTML one, so the `<title>` this component renders
-/// inside its `<svg>` gets created without the SVG namespace when Dioxus
-/// builds the DOM directly (confirmed by reading `dioxus-web`'s own
-/// `create_template_node`: a `None` namespace calls plain
-/// `document.createElement`, never `createElementNS`) -- e.g. on a
-/// CSR-only dev-server page load. This does not affect this repo's actual
-/// deployed site: it is SSR + hydrate, and a browser's own HTML parser
-/// (per the HTML5 "foreign content" spec -- `title` is not in its
-/// HTML-breakout list) correctly parses a `<title>` nested in `<svg>` in
-/// the *source text* as an SVG title regardless of what Dioxus's own
-/// per-element namespace table says, and hydration reuses that
-/// already-correct node rather than recreating it. `aria-label` on the
-/// `svg` (an attribute, not an element -- no namespace ambiguity) already
-/// provides a working accessible name either way.
+/// **Known Dioxus limitation:** `dioxus-html` 0.7.9 has no SVG-namespaced
+/// `<title>` element, so the `<title>` inside the `<svg>` is created without
+/// the SVG namespace on a CSR-only render. SSR + hydrate (this repo's site)
+/// is unaffected, and `aria-label` on the `svg` provides the accessible name
+/// either way.
 ///
 /// ## Styling
 ///
-/// The [`Chart`] component defines the following data attributes you can
-/// use to control styling (every element is otherwise unstyled --
-/// `data-slot` is this crate's own convention for a themed wrapper to
-/// select on):
 /// - `data-slot="chart"`: the wrapper div.
-/// - `data-slot="chart-svg"`: the SVG root.
+/// - `data-slot="chart-svg"`: the SVG root; `data-measured="true"|"false"`,
+///   `data-fit="width"` (fixed-height mode), `data-animate="true"` (after
+///   the first measured client render, unless `animate` is off),
+///   `data-bars="horizontal"`, and an inline `--dx-chart-zero` (the value
+///   axis' zero, px) for the bar animation's origin.
 /// - `data-slot="chart-grid"`/`"chart-axis"` (`data-axis="x"|"y"`) --
-///   `ChartKind::is_cartesian` kinds only.
+///   Cartesian kinds only.
 /// - `data-slot="chart-series"[data-series=<key>]`: one per configured
 ///   series, wrapping that series' own `"chart-area"`/`"chart-line"`/
-///   `"chart-bar"`/`"chart-dot"` marks (`data-index` on the per-datum ones)
-///   -- `ChartKind::is_cartesian` kinds. [`ChartKind::Pie`] renders
-///   `"chart-arc"[data-index][data-series?]` slices instead (`data-series`
-///   only for a stacked, multi-ring pie -- see `series::pie`'s own module
-///   doc). The two remaining polar/radial stub kinds still render one
-///   `data-slot="chart-series"[data-kind=<kind>]` placeholder group (no
-///   `data-series`) until their own owning lane replaces it.
+///   `"chart-bar"`/`"chart-dot"` marks (`data-index` on the per-datum ones).
 /// - `data-slot="chart-active-dots"` > `"chart-active-dot"[data-series]
-///   [data-index]`: the hovered datum's dot on each series (Area, and Line
-///   unless it draws its own dots) -- its fill is `--series-color`.
-/// - `data-measured="true"|"false"` on the svg in [`ChartProps::fit_width`]
-///   mode: `false` until the container has been measured.
+///   [data-index]`: the hovered datum's dot on each series.
 /// - `data-slot="chart-cursor"` (`"chart-cursor-line"` for Area/Line,
-///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]"` --
-///   `ChartKind::is_cartesian` kinds only.
+///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]
+///   [data-x]` (`data-x`: the category's own position, svg px).
 /// - `data-slot="chart-data"`: the hidden data table, inside a
 ///   `data-slot="chart-data-wrapper"` div that carries the visually-hidden
-///   clamp (a table box ignores `width`/`overflow` clamps).
+///   clamp.
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
     let ctx = use_chart();
@@ -390,12 +398,9 @@ pub fn Chart(props: ChartProps) -> Element {
 
     // The wrapper's measured content-box width (CSS px), written only by
     // `onresize` in a browser (a ResizeObserver reports once on observe, so
-    // this also covers mount; one measure, one box, everywhere). `None` --
-    // always the case during SSR and the first client render -- means
-    // `text_scale == 1`, so the first client render is byte-identical to the
-    // server HTML (no hydration mismatch); the measured width is adopted by
-    // the re-render that follows. The layout itself always uses the props'
-    // own `width`x`height`: only the text compensation depends on it.
+    // this also covers mount). `None` -- always the case during SSR and the
+    // first client render -- means the props' initial size, so the first
+    // client render is byte-identical to the server HTML.
     let mut measured_width = use_signal(|| None::<f64>);
     // The wrapper's mounted handle, whose bounding rect each pointer event
     // reads fresh (see `pointer.rs`).
@@ -408,38 +413,30 @@ pub fn Chart(props: ChartProps) -> Element {
     let ChartSize {
         width,
         height,
-        text_scale,
-        fit,
+        fixed_height,
         pending,
     } = ChartSize::resolve(
+        kind,
         props.width,
         props.height,
-        props.fit_width && is_cartesian,
+        props.aspect,
         measured_width(),
-    );
+    )
+    .without_legend(legend_reserve(
+        kind,
+        (ctx.legend)(),
+        (ctx.has_legend)(),
+        props.legend_size,
+    ));
 
-    // Only Area and Bar have a stacking construction -- see
-    // `ChartProps::stacked`'s own doc. Every computation below reads this
-    // resolved value, not the raw prop, so the rule can't be forgotten in
-    // just one branch. (Pre-stage-2 this was a deny-list,
-    // `!matches!(kind, Line)`, which -- now that `ChartKind` has three more
-    // variants -- would have silently started "stacking" a brand new kind
-    // unless every call site remembered to re-exclude it by hand. An
-    // allow-list is the construction that can't do that: a kind added
-    // later is un-stacked by default until someone deliberately opts it
-    // in here.)
+    // Only Area and Bar have a stacking construction -- an allow-list, so a
+    // kind added later is un-stacked until someone opts it in here.
     let stacked = props.stacked && matches!(kind, ChartKind::Area | ChartKind::Bar);
-    // §4(c) of the stage-2 chart-round handoff: `components::layout::build`
-    // needs the *effective* family's own stack mode, not a chart-wide
-    // constant, so a percent-stacked ("100%"/"expand") chart's shared grid
-    // lines/y-axis ticks/tooltip anchor agree with its marks. Only
-    // `AreaOptions` has a `stack_mode` field today (`BarOptions` is still
-    // `s2-bar`'s empty stub) -- every other kind, and `Bar` until its own
-    // field lands, keeps today's exact `StackMode::Normal` behavior.
     let stack_mode = match kind {
         ChartKind::Area => props.area.stack_mode,
         _ => crate::chart::StackMode::Normal,
     };
+    let horizontal_bars = matches!(kind, ChartKind::Bar) && props.bar.horizontal;
 
     let n = data.len();
     // `default_index`: open from the very first render (server and client
@@ -453,11 +450,12 @@ pub fn Chart(props: ChartProps) -> Element {
     let ctx_layout = layout::build(layout::LayoutParams {
         width,
         height,
-        text_scale,
+        margin: props.margin,
         show_x_axis: props.show_x_axis,
         show_y_axis: props.show_y_axis,
         y_tick_count: props.y_tick_count,
         kind,
+        horizontal: horizontal_bars,
         stacked,
         stack_mode,
         curve: props.curve,
@@ -468,22 +466,10 @@ pub fn Chart(props: ChartProps) -> Element {
     });
 
     // Share this render's tooltip anchors (and how the tooltip follows the
-    // pointer) for `ChartTooltip`'s benefit -- see `ChartLayout`'s own doc
-    // for why a plain write here (not an effect) is correct: it depends only
-    // on this component's own props, so recomputing and re-setting every
-    // render is cheap and right, and `Signal`'s equality check keeps it a
-    // no-op once stable. Every family answers the same three questions in
-    // the same units (`(x, y)` per datum in the chart's logical units, a
-    // `Follow` rule, and how to find the datum under a pointer), so
-    // `ChartTooltip` and the pointer handler below have no per-`ChartKind`
-    // branch of their own.
-    let horizontal_bars = matches!(kind, ChartKind::Bar) && props.bar.horizontal;
-    let plot = (
-        ctx_layout.plot_x0,
-        ctx_layout.plot_y0,
-        ctx_layout.plot_x1,
-        ctx_layout.plot_y1,
-    );
+    // pointer) for `ChartTooltip`'s benefit -- a plain write here (not an
+    // effect): it depends only on this component's own inputs, and
+    // `Signal`'s equality check keeps it a no-op once stable.
+    let plot = ctx_layout.plot();
     // The top of the tallest mark at datum `i` (the stacked top when
     // stacked), in data units -- where a tooltip anchored to the data point
     // hangs from.
@@ -510,43 +496,27 @@ pub fn Chart(props: ChartProps) -> Element {
     };
     let polar_hit = |sectors: Vec<Sector>| HitTest::Sectors {
         view: (width, height),
+        center: ((plot.0 + plot.2) / 2.0, (plot.1 + plot.3) / 2.0),
         sectors: sectors.into(),
     };
     let (anchors, follow, hit): (Vec<(f64, f64)>, Follow, HitTest) = if width > 0.0 && height > 0.0
     {
         match kind {
-            ChartKind::Bar if horizontal_bars => {
-                // Categories run down the y axis; the value axis is x.
-                let rows = BandScale {
-                    count: n.max(1),
-                    range: (ctx_layout.plot_y0, ctx_layout.plot_y1),
-                    padding: layout::BAND_PADDING,
-                };
-                let values = LinearScale {
-                    domain: ctx_layout.y_scale.domain,
-                    range: (ctx_layout.plot_x0, ctx_layout.plot_x1),
-                };
-                (
-                    (0..n)
-                        .map(|i| (values.scale(top_value(i)), rows.center(i)))
-                        .collect(),
-                    Follow::PointerX,
-                    HitTest::Categories {
-                        axis: Axis::Y,
-                        band: rows,
-                        plot,
-                        view: (width, height),
-                    },
-                )
-            }
+            ChartKind::Bar if horizontal_bars => (
+                (0..n)
+                    .map(|i| (ctx_layout.y_scale.scale(top_value(i)), ctx_layout.xs[i]))
+                    .collect(),
+                Follow::PointerX,
+                HitTest::Categories {
+                    axis: Axis::Y,
+                    band: ctx_layout.x_scale,
+                    plot,
+                    view: (width, height),
+                },
+            ),
             ChartKind::Area | ChartKind::Line | ChartKind::Bar => (
                 (0..n)
-                    .map(|i| {
-                        (
-                            ctx_layout.x_scale.center(i),
-                            ctx_layout.y_scale.scale(top_value(i)),
-                        )
-                    })
+                    .map(|i| (ctx_layout.xs[i], ctx_layout.y_scale.scale(top_value(i))))
                     .collect(),
                 Follow::PointerY,
                 HitTest::Categories {
@@ -596,16 +566,9 @@ pub fn Chart(props: ChartProps) -> Element {
         slice_rows,
     }));
 
-    // `ChartKind::Pie` gets its own row shape (value + percent-of-total --
-    // `s2-polar`'s own deliverable, `engine::table::table_rows_pie`'s doc):
-    // a slice's share of the whole is exactly what its wedge angle already
-    // encodes visually, so the hidden table should carry it too. RadialBar
-    // keeps the generic single-series reduction -- "percent of the total"
-    // isn't a meaningful reading of a radial bar's own value the way it is
-    // for a pie slice. Radar gets the full per-category-per-series table
-    // via `has_full_table()` (§4(b) of the stage-2 handoff) -- it is
-    // non-Cartesian but, unlike Pie/RadialBar, genuinely holds one value
-    // per series per category.
+    // Pie gets its own row shape (value + percent of the total), Radar the
+    // full per-category-per-series table, RadialBar the single-series
+    // reduction.
     let rows = if kind.has_full_table() {
         table_rows(&data)
     } else if matches!(kind, ChartKind::Pie) {
@@ -628,6 +591,8 @@ pub fn Chart(props: ChartProps) -> Element {
         ChartKind::Line => !(props.line.dots || props.line.dot.is_some()),
         _ => false,
     };
+    let show_category_axis = ctx_layout.category_axis_shown(props.show_x_axis, props.show_y_axis);
+    let show_value_axis = ctx_layout.value_axis_shown(props.show_x_axis, props.show_y_axis);
 
     let wrapper_role = props.keyboard.then_some("group");
     let wrapper_roledescription = props.keyboard.then_some("chart");
@@ -637,19 +602,9 @@ pub fn Chart(props: ChartProps) -> Element {
     // touch tooltip learns the user tapped elsewhere.
     let wrapper_tabindex = if props.keyboard { 0 } else { -1 };
 
-    // `data-slot`/`role`/`aria-roledescription`/`tabindex`/`data-direction`
-    // are structural/aria wiring this component owns -- e.g. `data-slot`
-    // is the very selector the themed stylesheet's whole ruleset hangs
-    // off, and `role`/`aria-roledescription`/`tabindex` together form the
-    // keyboard-navigable-group contract `ChartProps::keyboard`'s own doc
-    // describes -- not overridable presentation. `merge_attributes`
-    // (`scripts/check-attr-spread-collision.sh`'s own fix, replacing a raw
-    // `..props.attributes` beside these as plain literals) makes "owned
-    // wins" explicit and SSR/CSR-consistent instead of accidental; `class`
-    // still concatenates regardless (`merge_attributes`'s own rule), and
-    // `onkeydown` stays a literal on the element itself, never routed
-    // through `merge_attributes` (it isn't an attribute value merge could
-    // meaningfully resolve).
+    // Structural/aria wiring this component owns wins over a caller's
+    // same-named attribute (`merge_attributes`, owned last); `class` still
+    // concatenates.
     let owned = attributes!(div {
         "data-slot": "chart",
         role: wrapper_role,
@@ -658,6 +613,7 @@ pub fn Chart(props: ChartProps) -> Element {
         "data-direction": direction.as_str(),
     });
     let merged = merge_attributes(vec![props.attributes, owned]);
+    let animate = (props.animate && !pending).then_some("true");
 
     rsx! {
         div {
@@ -691,8 +647,7 @@ pub fn Chart(props: ChartProps) -> Element {
             },
             // Keyboard focus (Tab) shows the first point at once, like
             // shadcn's `accessibilityLayer`. A pointer-initiated focus
-            // (`pointerdown` came first) does not: the pointer already picks
-            // its own datum, and a tap-focus must not jump to the first one.
+            // (`pointerdown` came first) does not.
             onfocus: move |_| {
                 let from_pointer = *pointer_focus.peek();
                 pointer_focus.set(false);
@@ -711,8 +666,7 @@ pub fn Chart(props: ChartProps) -> Element {
             },
             // The browser took the touch over (a page scroll): drop it.
             onpointercancel: move |_| ctx.clear(),
-            // Focus left the chart (tab away, or a tap elsewhere -- a tap on
-            // the chart focuses its wrapper): close whatever is open.
+            // Focus left the chart: close whatever is open.
             onblur: move |_| {
                 pointer_focus.set(false);
                 ctx.clear();
@@ -722,8 +676,6 @@ pub fn Chart(props: ChartProps) -> Element {
                     return;
                 }
                 let key = evt.key();
-                // The keyboard now drives: the tooltip hangs off the data
-                // point, not a stale pointer position.
                 let take_over = || ctx.take_over_by_keyboard();
                 if key == Key::Home {
                     take_over();
@@ -757,28 +709,20 @@ pub fn Chart(props: ChartProps) -> Element {
                 role: "img",
                 "aria-label": "{props.aria_label}",
                 view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
-                style: svg_style(text_scale, fit.then_some(props.height)),
-                // Fit mode, pre-measure: stretch the props-width viewBox to the
-                // container (height is already exact, so only x is scaled --
-                // marks land where the measured render puts them, text is
-                // hidden by the stylesheet meanwhile). Measured: the viewBox
-                // is the box, `meet` is then an identity (and a safe fallback
-                // under the minimum logical width).
-                preserve_aspect_ratio: fit.then_some(if pending { "none" } else { "xMinYMin meet" }),
-                "data-fit": fit.then_some("width"),
-                "data-measured": fit.then_some(if pending { "false" } else { "true" }),
+                style: svg_style(fixed_height.then_some(height), ctx_layout.zero_y),
+                // Fixed-height mode, pre-measure: stretch the initial-width
+                // viewBox across the container (the height is already exact,
+                // so only x is scaled; text is hidden by the stylesheet
+                // meanwhile). Measured, the viewBox IS the box.
+                preserve_aspect_ratio: (fixed_height && pending).then_some("none"),
+                "data-fit": fixed_height.then_some("width"),
+                "data-measured": if pending { "false" } else { "true" },
+                "data-animate": animate,
                 // Which way touch may scrub (`touch-action` in the themed
                 // stylesheet): a horizontal bar chart scrubs along y.
                 "data-bars": horizontal_bars.then_some("horizontal"),
-                // The drawing is NOT mirrored under `dir="rtl"` (x grows
-                // rightward, the y axis sits on the left, only keyboard
-                // navigation follows `dir`), so its text must not flip
-                // either: SVG `text-anchor: start`/`end` are relative to the
-                // text's own direction, and an inherited `rtl` would swap
-                // every anchored label (y ticks would run into the plot,
-                // x ticks and value labels would shift off their marks).
-                // Pinned once here, on the root, so every text a family draws
-                // inherits it -- axis ticks, value labels, rim and arc labels.
+                // The drawing is NOT mirrored under `dir="rtl"`, so its text
+                // must not flip either: pinned once here, on the root.
                 "direction": "ltr",
 
                 title { "{props.aria_label}" }
@@ -790,94 +734,59 @@ pub fn Chart(props: ChartProps) -> Element {
                     if props.show_grid {
                         {layout::render_grid(&ctx_layout)}
                     }
-                    if props.show_x_axis {
-                        {layout::render_x_axis(&ctx_layout, &props.x_tick_format, props.max_x_ticks)}
+                    if show_category_axis {
+                        {
+                            layout::render_category_axis(
+                                &ctx_layout,
+                                &props.x_tick_format,
+                                props.min_tick_gap,
+                                props.tick_margin,
+                            )
+                        }
                     }
-                    if props.show_y_axis {
-                        {layout::render_y_axis(&ctx_layout)}
+                    if show_value_axis {
+                        {layout::render_value_axis(&ctx_layout, props.tick_margin)}
+                    }
+                    // Recharts draws the tooltip cursor below the marks.
+                    g { "data-slot": "chart-cursor",
+                        if props.cursor {
+                            if let Some(i) = active_index().filter(|i| *i < n) {
+                                {render_cursor(&ctx_layout, kind, i)}
+                            }
+                        }
                     }
                 }
 
                 {marks}
 
                 if is_cartesian {
-                    g { "data-slot": "chart-cursor",
-                        if let Some(i) = active_index() {
-                            if i < n {
-                                if horizontal_bars {
-                                    // A horizontal bar's category band runs
-                                    // along y, spanning the plot's width.
-                                    {
-                                        let rows = BandScale {
-                                            count: n.max(1),
-                                            range: (ctx_layout.plot_y0, ctx_layout.plot_y1),
-                                            padding: layout::BAND_PADDING,
-                                        };
-                                        let (by, bh) = rows.band(i);
-                                        rsx! {
-                                            rect {
-                                                "data-slot": "chart-cursor-rect",
-                                                x: "{fmt_num(ctx_layout.plot_x0)}",
-                                                y: "{fmt_num(by)}",
-                                                width: "{fmt_num(ctx_layout.plot_x1 - ctx_layout.plot_x0)}",
-                                                height: "{fmt_num(bh)}",
-                                            }
-                                        }
-                                    }
-                                } else if matches!(kind, ChartKind::Bar) {
-                                    {
-                                        let (bx, bw) = ctx_layout.x_scale.band(i);
-                                        rsx! {
-                                            rect {
-                                                "data-slot": "chart-cursor-rect",
-                                                x: "{fmt_num(bx)}",
-                                                y: "{fmt_num(ctx_layout.plot_y0)}",
-                                                width: "{fmt_num(bw)}",
-                                                height: "{fmt_num(ctx_layout.plot_y1 - ctx_layout.plot_y0)}",
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    {
-                                        let cx = ctx_layout.x_scale.center(i);
-                                        rsx! {
-                                            line {
-                                                "data-slot": "chart-cursor-line",
-                                                x1: "{fmt_num(cx)}",
-                                                x2: "{fmt_num(cx)}",
-                                                y1: "{fmt_num(ctx_layout.plot_y0)}",
-                                                y2: "{fmt_num(ctx_layout.plot_y1)}",
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     // The hovered point's dot on every series (shadcn's
-                    // Recharts `activeDot`), above the marks and the cursor.
-                    // A line chart that draws its own dots enlarges the
-                    // active one instead (`series::line`).
+                    // Recharts `activeDot`), above the marks. A line chart
+                    // that draws its own dots enlarges the active one
+                    // instead (`series::line`).
                     if show_active_dots {
                         {series::active_dot::render(&ctx_layout)}
                     }
 
-                    // Hit bands are no longer what drives hover (the pointer
-                    // handler on the wrapper resolves the nearest category
-                    // from coordinates -- `pointer.rs`); they stay as the
-                    // stable per-datum hit regions tests and styles address.
+                    // The stable per-datum hit regions tests and styles
+                    // address (hover itself is resolved from coordinates,
+                    // `pointer.rs`): each category's band, kept inside the
+                    // svg box, with the category's own position as `data-x`.
                     // A horizontal bar chart draws its own, along y
-                    // (`series::bar`), so these columns would be stale.
+                    // (`series::bar`).
                     g { "data-slot": "chart-hit-bands",
                         for i in 0..(if horizontal_bars { 0 } else { n }) {
                             {
                                 let (bx, bw) = ctx_layout.x_scale.band(i);
+                                let x0 = bx.max(0.0);
+                                let bw = ((bx + bw).min(width) - x0).max(0.0);
+                                let bx = x0;
                                 rsx! {
                                     rect {
                                         key: "{i}",
                                         "data-slot": "chart-hit-band",
                                         "data-index": "{i}",
+                                        "data-x": "{fmt_num(ctx_layout.xs[i])}",
                                         x: "{fmt_num(bx)}",
                                         y: "{fmt_num(ctx_layout.plot_y0)}",
                                         width: "{fmt_num(bw)}",
@@ -894,12 +803,8 @@ pub fn Chart(props: ChartProps) -> Element {
 
             // The visually-hidden clamp lives on this WRAPPER, never on the
             // table: a `table` box cannot shrink below its min-content
-            // width, so `width: 1px; overflow: hidden` on the table itself
-            // does nothing and the (clipped but still laid-out) table widens
-            // the page at phone widths -- while changing its `display` to
-            // `block` would strip its table semantics in WebKit/VoiceOver.
-            // A block-level wrapper honours the clamp and leaves the table a
-            // normal `display: table`.
+            // width, and changing its `display` would strip its table
+            // semantics in WebKit/VoiceOver.
             div { "data-slot": "chart-data-wrapper",
                 table { "data-slot": "chart-data",
                     caption { "{props.aria_label}" }
@@ -942,129 +847,151 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
+/// The hover cursor at datum `i` (Recharts' default tooltip cursor, as
+/// shadcn styles it): a full-height line through the point on Area/Line, a
+/// band over the whole category on bars (across the plot for horizontal
+/// bars).
+fn render_cursor(ctx: &layout::SeriesRenderContext, kind: ChartKind, i: usize) -> Element {
+    let (x0, y0, x1, y1) = ctx.plot();
+    if matches!(kind, ChartKind::Bar) {
+        let (start, size) = ctx.x_scale.band(i);
+        let (x, y, w, h) = if ctx.horizontal {
+            (x0, start, x1 - x0, size)
+        } else {
+            (start, y0, size, y1 - y0)
+        };
+        rsx! {
+            rect {
+                "data-slot": "chart-cursor-rect",
+                x: "{fmt_num(x)}",
+                y: "{fmt_num(y)}",
+                width: "{fmt_num(w)}",
+                height: "{fmt_num(h)}",
+            }
+        }
+    } else {
+        let cx = fmt_num(ctx.xs[i]);
+        rsx! {
+            line {
+                "data-slot": "chart-cursor-line",
+                x1: "{cx}",
+                x2: "{cx}",
+                y1: "{fmt_num(y0)}",
+                y2: "{fmt_num(y1)}",
+            }
+        }
+    }
+}
+
 /// Whether a focus event opens the tooltip at the first point: only focus the
-/// keyboard moved there (a Tab, or a programmatic focus -- `:focus-visible`'s
-/// own heuristic), on a chart whose keyboard layer is on and that has data.
-/// Focus a pointer caused (`from_pointer`: its `pointerdown` came first) never
-/// does -- the pointer picks its own datum, and a tap must not jump to the
-/// first one.
+/// keyboard moved there, on a chart whose keyboard layer is on and that has
+/// data. Focus a pointer caused (`from_pointer`) never does.
 fn focus_opens_tooltip(from_pointer: bool, keyboard: bool, n: usize) -> bool {
     !from_pointer && keyboard && n > 0
 }
 
-/// The narrowest logical width [`ChartSize::resolve`] follows in fit mode: a
-/// container narrower than this (a collapsed or hidden one) still gets a
-/// layout with a positive plot, drawn scaled down instead.
-const MIN_FIT_WIDTH: f64 = 100.0;
+/// The narrowest width [`ChartSize::resolve`] follows: a container narrower
+/// than this (a collapsed or hidden one) still gets a layout with a positive
+/// plot, drawn scaled down instead.
+const MIN_WIDTH: f64 = 100.0;
 
-/// The chart's effective logical size for one render, and the text scale that
-/// goes with it -- the single place the three props that decide it
-/// (`width`/`height`, `fit_width`) and the measured container width combine.
+/// The chart's size in CSS px for one render -- the single place the sizing
+/// props and the measured container width combine (see the module doc).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ChartSize {
     width: f64,
     height: f64,
-    text_scale: f64,
-    /// Whether fit mode is in effect (requested *and* a Cartesian kind).
-    fit: bool,
-    /// Fit mode with no usable measurement yet (the server and the first
-    /// client render): drawn from the props' size, stretched to the box.
+    /// [`ChartProps::height`] was given: a fixed height, fluid width.
+    fixed_height: bool,
+    /// No usable measurement yet (the server and the first client render):
+    /// drawn at the initial width.
     pending: bool,
 }
 
 impl ChartSize {
-    /// Default mode: the props' own `width`x`height`, with the text
-    /// compensated for the measured width ([`text_scale`]). Fit mode (`fit`
-    /// already includes the Cartesian check) with a usable measurement: the
-    /// logical width is the measured width and the text scale is `1`.
-    /// Unmeasured (SSR, first client render) fit mode falls back to the
-    /// props' size with scale `1`, exactly the default mode's unmeasured
-    /// render, so the server HTML and the first client render agree.
-    fn resolve(width: f64, height: f64, fit: bool, measured: Option<f64>) -> Self {
-        let usable = measured.filter(|m| m.is_finite() && *m > 0.0);
-        match (fit, usable) {
-            (true, Some(m)) => ChartSize {
-                width: m.max(MIN_FIT_WIDTH),
-                height,
-                text_scale: 1.0,
-                fit,
-                pending: false,
-            },
-            _ => ChartSize {
-                width,
-                height,
-                text_scale: if fit {
-                    1.0
-                } else {
-                    text_scale(width, measured)
-                },
-                fit,
-                pending: fit,
-            },
+    fn resolve(
+        kind: ChartKind,
+        width: Option<f64>,
+        height: Option<f64>,
+        aspect: Option<f64>,
+        measured: Option<f64>,
+    ) -> Self {
+        let polar = !kind.is_cartesian();
+        let positive = |v: f64| v.is_finite() && v > 0.0;
+        let initial = width.filter(|w| positive(*w)).unwrap_or(if polar {
+            DEFAULT_POLAR_WIDTH
+        } else {
+            DEFAULT_CARTESIAN_WIDTH
+        });
+        let aspect = aspect.filter(|a| positive(*a)).unwrap_or(if polar {
+            DEFAULT_POLAR_ASPECT
+        } else {
+            DEFAULT_CARTESIAN_ASPECT
+        });
+        let fixed = height.filter(|h| positive(*h));
+        let usable = measured.filter(|m| positive(*m));
+        let width = usable.map_or(initial, |m| m.max(MIN_WIDTH));
+        ChartSize {
+            width,
+            // Whole px, like the `clientHeight` Recharts' ResponsiveContainer
+            // reads (shadcn's 369px card: 208, not 207.56).
+            height: fixed.unwrap_or((width / aspect).round()),
+            fixed_height: fixed.is_some(),
+            pending: usable.is_none(),
         }
     }
 }
 
-/// The SVG's inline style: the text scale variable, plus (fit mode) the fixed
-/// CSS height that beats the stylesheet's `height: auto`.
-fn svg_style(text_scale: f64, fixed_height: Option<f64>) -> String {
+/// How much of the chart box a `ChartLegend` in the same container takes
+/// (Recharts draws its legend inside the `ResponsiveContainer` box and the
+/// plot gives up the legend's height): its measured box once known, else --
+/// the server render and the first client render, which must agree -- the
+/// assumed `initial` size when the container has a legend. Area, Bar, Line
+/// and Pie only: Recharts centres Radar and RadialBar on the whole box
+/// (`formatAxisMap`) and shadcn's radar demos cancel their legend with
+/// negative margins, so those keep their full square with the legend after.
+fn legend_reserve(
+    kind: ChartKind,
+    measured: Option<f64>,
+    has_legend: bool,
+    initial: Option<f64>,
+) -> f64 {
+    if matches!(kind, ChartKind::Radar | ChartKind::RadialBar) {
+        return 0.0;
+    }
+    measured.unwrap_or_else(|| {
+        if has_legend {
+            initial
+                .filter(|s| s.is_finite() && *s >= 0.0)
+                .unwrap_or(DEFAULT_LEGEND_SIZE)
+        } else {
+            0.0
+        }
+    })
+}
+
+impl ChartSize {
+    /// The svg's share of the box once the legend's `reserve` px are taken
+    /// out (the legend sits in the container right above or below the svg,
+    /// so svg + legend is the box the sizing props asked for). Never less
+    /// than half the box, so a runaway legend cannot collapse the plot.
+    fn without_legend(self, reserve: f64) -> Self {
+        let reserve = reserve.clamp(0.0, (self.height / 2.0).floor());
+        Self {
+            height: self.height - reserve,
+            ..self
+        }
+    }
+}
+
+/// The SVG's inline style: the value axis' zero (the bar animation's
+/// origin), plus -- fixed-height mode -- the CSS height that beats the
+/// stylesheet's `height: auto`.
+fn svg_style(fixed_height: Option<f64>, zero: f64) -> String {
+    let zero = format!("--dx-chart-zero: {}px", fmt_num(zero));
     match fixed_height {
-        Some(h) => format!(
-            "--dx-chart-text-scale: {}; height: {}px",
-            fmt_num(text_scale),
-            fmt_num(h)
-        ),
-        None => format!("--dx-chart-text-scale: {}", fmt_num(text_scale)),
-    }
-}
-
-/// The largest text compensation [`text_scale`] applies: beyond a 2.5x
-/// shrink the drawing no longer has room for proportionally larger text, so
-/// text is allowed to render smaller than authored instead. (Margins scale
-/// with the text, so at the cap a default 600-wide chart keeps a ~17% left
-/// margin and a ~20% bottom margin -- the plot stays usable at a 320px
-/// viewport, where the container is ~240-270px.)
-const MAX_TEXT_SCALE: f64 = 2.5;
-
-/// The smallest text compensation [`text_scale`] applies: a chart shown more
-/// than 2x *larger* than its logical size (a 300x300 radar stretched across a
-/// 1200px card) draws text at half its logical size, rendering at the
-/// authored CSS size instead of 2x it.
-const MIN_TEXT_SCALE: f64 = 0.5;
-
-/// Computed scales within this distance of `1` snap to exactly `1`
-/// (`|1 - s| < 5%`), in either direction: a ~5% shrink or growth (e.g. a 592px
-/// card around a 600 chart) leaves text visually at its authored size, and
-/// compensating it would only shave labels off the desktop layout for no
-/// legibility gain.
-const TEXT_SCALE_DEADZONE: f64 = 0.05;
-
-/// The text compensation scale `s`: how much larger than authored (in the
-/// chart's logical units) text is drawn so it renders at its authored CSS
-/// size when the SVG is shown `k = measured / width` times its logical size.
-/// `s = clamp(1 / k, MIN_TEXT_SCALE, MAX_TEXT_SCALE)`, symmetric around `1`:
-/// above 1 on a container narrower than the viewBox (text would shrink with
-/// the drawing), below 1 on one wider (text would grow with it), snapped to
-/// exactly `1` within [`TEXT_SCALE_DEADZONE`] of it. `1` also when the width
-/// is unmeasured (SSR, first client render, `None`) or unusable (non-finite
-/// or non-positive) -- so the server HTML and the first client render agree.
-///
-/// Published to CSS as `--dx-chart-text-scale` on the SVG, which the themed
-/// stylesheet multiplies into every chart text's `font-size`, and read by
-/// the layout (tick-count estimate, axis margins) in logical units. Only
-/// *text* is compensated: every geometry length stays in the logical
-/// coordinate space and scales with the drawing.
-fn text_scale(width: f64, measured: Option<f64>) -> f64 {
-    match measured {
-        Some(m) if m.is_finite() && m > 0.0 && width.is_finite() && width > 0.0 => {
-            let s = (width / m).clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE);
-            if (1.0 - s).abs() < TEXT_SCALE_DEADZONE {
-                1.0
-            } else {
-                s
-            }
-        }
-        _ => 1.0,
+        Some(h) => format!("{zero}; height: {}px", fmt_num(h)),
+        None => zero,
     }
 }
 
@@ -1115,7 +1042,7 @@ mod tests {
         #[props(default = true)]
         keyboard: bool,
         #[props(default)]
-        fit_width: bool,
+        height: Option<f64>,
         #[props(default)]
         default_index: Option<usize>,
         #[props(default)]
@@ -1135,7 +1062,7 @@ mod tests {
                     description: "A test chart",
                     stacked: props.stacked,
                     keyboard: props.keyboard,
-                    fit_width: props.fit_width,
+                    height: props.height,
                     default_index: props.default_index,
                     line: crate::chart::LineOptions {
                         dots: props.line_dots,
@@ -1158,12 +1085,12 @@ mod tests {
         render_with(kind, stacked, keyboard, false)
     }
 
-    fn render_with(kind: ChartKind, stacked: bool, keyboard: bool, fit_width: bool) -> String {
+    fn render_with(kind: ChartKind, stacked: bool, keyboard: bool, fixed_height: bool) -> String {
         render_props(HarnessProps {
             kind,
             stacked,
             keyboard,
-            fit_width,
+            height: fixed_height.then_some(250.0),
             default_index: None,
             line_dots: false,
             with_tooltip: false,
@@ -1182,171 +1109,180 @@ mod tests {
             kind,
             stacked: false,
             keyboard: true,
-            fit_width: false,
+            height: None,
             default_index,
             line_dots,
             with_tooltip: true,
         })
     }
 
-    #[test]
-    fn text_scale_is_the_inverse_shrink_factor_clamped() {
-        // 600 logical shown at 400 CSS px: k = 2/3, s = 1.5.
-        assert!((text_scale(600.0, Some(400.0)) - 1.5).abs() < 1e-9);
-        // 600 shown at 300: s = 2 (under the cap now).
-        assert_eq!(text_scale(600.0, Some(300.0)), 2.0);
-        // 600 shown at 240: exactly the 2.5 cap; beyond it stays there
-        // (390 phone: 600 -> 229).
-        assert_eq!(text_scale(600.0, Some(240.0)), MAX_TEXT_SCALE);
-        assert_eq!(text_scale(600.0, Some(229.0)), MAX_TEXT_SCALE);
-        assert_eq!(text_scale(600.0, Some(1.0)), MAX_TEXT_SCALE);
+    #[component]
+    fn LegendHarness(legend: bool, legend_size: Option<f64>) -> Element {
+        let config = use_signal(sample_config);
+        let data = use_signal(sample_data);
+        rsx! {
+            ChartContainer { config, data, kind: ChartKind::Area,
+                Chart { aria_label: "Visitors", legend_size }
+                if legend {
+                    crate::chart::ChartLegend {}
+                }
+            }
+        }
     }
 
-    #[test]
-    fn text_scale_shrinks_text_on_a_container_wider_than_the_viewbox() {
-        // A 300x300 radar stretched across a 592px card: text is drawn at
-        // ~half size in logical units so it renders at its authored size.
-        let s = text_scale(300.0, Some(592.0));
-        assert!((s - 300.0 / 592.0).abs() < 1e-9, "{s}");
-        assert!(s < 1.0);
-        // A default 600x300 chart in a 1200px container.
-        assert_eq!(text_scale(600.0, Some(1200.0)), 0.5);
-        // The shrink is floored: a hugely wider container stays at the floor.
-        assert_eq!(text_scale(300.0, Some(5000.0)), MIN_TEXT_SCALE);
-        // Symmetric around 1: width/m and m/width mirror each other.
-        let (up, down) = (
-            text_scale(600.0, Some(400.0)),
-            text_scale(400.0, Some(600.0)),
+    /// The y of the lowest gridline (the plot's bottom edge).
+    fn plot_bottom(legend: bool, legend_size: Option<f64>) -> (String, f64) {
+        let mut dom = VirtualDom::new_with_props(
+            LegendHarness,
+            LegendHarnessProps {
+                legend,
+                legend_size,
+            },
         );
-        assert!((up * down - 1.0).abs() < 1e-9, "{up} * {down}");
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let grid = &html[html.find(r#"data-slot="chart-grid""#).unwrap()..];
+        let grid = &grid[..grid.find("</g>").unwrap()];
+        let bottom = grid
+            .match_indices(r#"y1=""#)
+            .map(|(at, key)| {
+                let v = &grid[at + key.len()..];
+                v[..v.find('"').unwrap()].parse::<f64>().unwrap()
+            })
+            .fold(f64::NEG_INFINITY, f64::max);
+        (html, bottom)
     }
 
     #[test]
-    fn text_scale_is_one_when_unmeasured_or_unusable() {
-        assert_eq!(text_scale(600.0, None), 1.0);
-        assert_eq!(text_scale(600.0, Some(600.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(0.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(-5.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(f64::NAN)), 1.0);
-        assert_eq!(text_scale(600.0, Some(f64::INFINITY)), 1.0);
-        assert_eq!(text_scale(0.0, Some(300.0)), 1.0);
-        assert_eq!(text_scale(-600.0, Some(300.0)), 1.0);
-        assert_eq!(text_scale(f64::NAN, Some(300.0)), 1.0);
+    fn a_legend_takes_its_room_inside_the_chart_box_from_the_first_render() {
+        // Recharts draws the legend inside the chart box: svg + legend is
+        // the 369x208 box and the plot gives up the legend's height -- known
+        // on the server render already, so hydration finds the same tree.
+        let (plain, without) = plot_bottom(false, None);
+        let (with_html, with) = plot_bottom(true, None);
+        assert!(plain.contains(r#"viewBox="0 0 369 208""#), "{plain}");
+        assert!(
+            with_html.contains(r#"viewBox="0 0 369 180""#),
+            "{with_html}"
+        );
+        assert_eq!(without - with, DEFAULT_LEGEND_SIZE);
+        // A wrapping legend declares its own initial size.
+        let (_, wrapped) = plot_bottom(true, Some(52.0));
+        assert_eq!(without - wrapped, 52.0);
+        // Without a legend in the container the hint is ignored.
+        assert_eq!(plot_bottom(false, Some(52.0)).1, without);
     }
 
     #[test]
-    fn text_scale_dead_zone_is_symmetric() {
-        // Narrower: a 592px card around a 600 chart.
-        assert_eq!(text_scale(600.0, Some(592.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(572.0)), 1.0);
-        assert!(text_scale(600.0, Some(570.0)) > 1.0);
-        // Wider: the same 5% in the other direction.
-        assert_eq!(text_scale(600.0, Some(608.0)), 1.0);
-        assert_eq!(text_scale(600.0, Some(630.0)), 1.0);
-        assert!(text_scale(600.0, Some(640.0)) < 1.0);
-        assert_eq!(text_scale(600.0, Some(900.0)), 600.0 / 900.0);
+    fn the_measured_legend_wins_over_the_assumed_one() {
+        let measured = Some;
+        let area = ChartKind::Area;
+        assert_eq!(legend_reserve(area, None, false, None), 0.0);
+        assert_eq!(legend_reserve(area, None, true, None), DEFAULT_LEGEND_SIZE);
+        assert_eq!(legend_reserve(area, None, true, Some(52.0)), 52.0);
+        assert_eq!(legend_reserve(area, measured(52.0), true, Some(28.0)), 52.0);
+        // A legend wrapped in a component of another name is still measured.
+        assert_eq!(legend_reserve(area, measured(30.0), false, None), 30.0);
+        assert_eq!(legend_reserve(ChartKind::Pie, None, true, None), 28.0);
+        // Radar/RadialBar keep their whole square (see `legend_reserve`).
+        for kind in [ChartKind::Radar, ChartKind::RadialBar] {
+            assert_eq!(legend_reserve(kind, measured(28.0), true, None), 0.0);
+        }
+        let s = ChartSize::resolve(area, None, None, None, None).without_legend(28.0);
+        assert_eq!((s.width, s.height), (369.0, 180.0));
+        let s = ChartSize::resolve(area, None, Some(250.0), None, Some(900.0)).without_legend(28.0);
+        assert_eq!((s.width, s.height, s.fixed_height), (900.0, 222.0, true));
+        let s = ChartSize::resolve(area, None, None, None, None).without_legend(500.0);
+        assert_eq!(s.height, 104.0, "never below half the box");
     }
 
     #[test]
-    fn first_render_uses_the_props_size_so_it_matches_ssr() {
-        // Nothing is measured during SSR / the first client render, so the
-        // viewBox is exactly the props' default 600x300.
+    fn first_render_uses_the_initial_size_so_it_matches_ssr() {
+        // Nothing is measured during SSR / the first client render: a
+        // Cartesian chart is shadcn's 369px card at 16/9, a polar one 250x250.
         let html = render(ChartKind::Line, false, true);
-        assert!(html.contains(r#"viewBox="0 0 600 300""#), "{html}");
-        // ...and the text compensation starts at 1 (no hydration mismatch).
-        assert!(html.contains("--dx-chart-text-scale: 1"), "{html}");
-    }
-
-    #[test]
-    fn default_mode_size_follows_the_props_and_compensates_text() {
-        // Unmeasured: props size, scale 1.
-        let s = ChartSize::resolve(600.0, 300.0, false, None);
-        assert_eq!(
-            (s.width, s.height, s.text_scale, s.fit),
-            (600.0, 300.0, 1.0, false)
-        );
-        // Measured narrower: the logical size does NOT follow, the text does.
-        let s = ChartSize::resolve(600.0, 300.0, false, Some(300.0));
-        assert_eq!((s.width, s.height, s.text_scale), (600.0, 300.0, 2.0));
-    }
-
-    #[test]
-    fn fit_mode_logical_width_is_the_measured_width_at_scale_one() {
-        for measured in [390.0, 642.0, 1068.0, 1440.0] {
-            let s = ChartSize::resolve(700.0, 250.0, true, Some(measured));
-            assert_eq!(s.width, measured, "1 logical unit = 1 CSS px");
-            assert_eq!(s.height, 250.0, "height is the prop, in CSS px");
-            assert_eq!(s.text_scale, 1.0, "no compensation: nothing is scaled");
-            assert!(s.fit);
+        assert!(html.contains(r#"viewBox="0 0 369 208""#), "{html}");
+        assert!(html.contains(r#"data-measured="false""#), "{html}");
+        // No animation on the server render (no JS: the final drawing).
+        assert!(!html.contains("data-animate"), "{html}");
+        for kind in [ChartKind::Pie, ChartKind::Radar, ChartKind::RadialBar] {
+            let html = render(kind, false, true);
+            assert!(html.contains(r#"viewBox="0 0 250 250""#), "{kind:?}");
         }
     }
 
     #[test]
-    fn fit_mode_unmeasured_uses_the_props_width_like_ssr() {
-        let s = ChartSize::resolve(700.0, 250.0, true, None);
-        assert_eq!((s.width, s.height, s.text_scale), (700.0, 250.0, 1.0));
-        // An unusable measurement is "unmeasured", never a collapsed chart.
+    fn aspect_mode_tracks_the_measured_width_at_one_unit_per_px() {
+        for measured in [329.0, 369.0, 642.0, 1286.0] {
+            let s = ChartSize::resolve(ChartKind::Area, None, None, None, Some(measured));
+            assert_eq!(s.width, measured, "1 unit = 1 CSS px");
+            assert_eq!(s.height, (measured * 9.0 / 16.0).round(), "whole px");
+            assert!(!s.fixed_height && !s.pending);
+            let p = ChartSize::resolve(ChartKind::Pie, None, None, None, Some(measured));
+            assert_eq!((p.width, p.height), (measured, measured), "polar square");
+        }
+        // A caller's own aspect.
+        let s = ChartSize::resolve(ChartKind::Bar, None, None, Some(2.0), Some(400.0));
+        assert_eq!((s.width, s.height), (400.0, 200.0));
+    }
+
+    #[test]
+    fn fixed_height_mode_is_fluid_in_width_only() {
+        for measured in [390.0, 642.0, 1068.0, 1440.0] {
+            let s = ChartSize::resolve(
+                ChartKind::Area,
+                Some(700.0),
+                Some(250.0),
+                None,
+                Some(measured),
+            );
+            assert_eq!((s.width, s.height), (measured, 250.0));
+            assert!(s.fixed_height && !s.pending);
+        }
+    }
+
+    #[test]
+    fn unmeasured_uses_the_initial_width_and_never_collapses() {
+        let s = ChartSize::resolve(ChartKind::Area, Some(700.0), Some(250.0), None, None);
+        assert_eq!((s.width, s.height, s.pending), (700.0, 250.0, true));
         for bad in [0.0, -3.0, f64::NAN, f64::INFINITY] {
-            let s = ChartSize::resolve(700.0, 250.0, true, Some(bad));
+            let s = ChartSize::resolve(ChartKind::Bar, None, None, None, Some(bad));
+            assert_eq!(s.width, DEFAULT_CARTESIAN_WIDTH, "{bad}");
+            assert!(s.pending, "{bad}");
+            // Unusable props fall back to the defaults too.
+            let s = ChartSize::resolve(ChartKind::Bar, Some(bad), Some(bad), Some(bad), None);
             assert_eq!(
-                (s.width, s.height, s.text_scale),
-                (700.0, 250.0, 1.0),
+                (s.width, s.fixed_height),
+                (DEFAULT_CARTESIAN_WIDTH, false),
                 "{bad}"
             );
         }
-        // Fit mode never applies the narrow-container text compensation, even
-        // for the props-size fallback.
-        assert_eq!(
-            ChartSize::resolve(1000.0, 250.0, true, None).text_scale,
-            1.0
-        );
     }
 
     #[test]
-    fn fit_mode_keeps_a_positive_plot_in_a_tiny_container() {
-        let s = ChartSize::resolve(700.0, 250.0, true, Some(12.0));
-        assert_eq!(s.width, MIN_FIT_WIDTH);
+    fn a_tiny_container_keeps_a_positive_plot() {
+        let s = ChartSize::resolve(ChartKind::Line, None, Some(250.0), None, Some(12.0));
+        assert_eq!(s.width, MIN_WIDTH);
     }
 
     #[test]
-    fn fit_width_ssr_uses_the_props_width_and_a_fixed_css_height() {
+    fn fixed_height_ssr_is_stretched_to_the_box_with_its_text_held_back() {
         let html = render_with(ChartKind::Area, false, true, true);
-        // First render: the props' default 600x300 viewBox, as without fit...
-        assert!(html.contains(r#"viewBox="0 0 600 300""#), "{html}");
-        assert!(html.contains("--dx-chart-text-scale: 1"), "{html}");
-        // ...but the svg is already exactly `height` CSS px tall and, being
-        // unmeasured, stretched across the box (nothing left-aligned, no
-        // shrunken text) with its text held back until the measured render.
-        assert!(html.contains("height: 300px"), "{html}");
+        assert!(html.contains(r#"viewBox="0 0 369 250""#), "{html}");
+        assert!(html.contains("height: 250px"), "{html}");
         assert!(html.contains(r#"preserveAspectRatio="none""#), "{html}");
         assert!(html.contains(r#"data-fit="width""#), "{html}");
         assert!(html.contains(r#"data-measured="false""#), "{html}");
     }
 
     #[test]
-    fn fit_mode_is_pending_until_a_usable_width_is_measured() {
-        for measured in [None, Some(0.0), Some(-1.0), Some(f64::NAN)] {
-            let s = ChartSize::resolve(700.0, 250.0, true, measured);
-            assert!(s.pending, "{measured:?}");
+    fn aspect_mode_ssr_is_a_uniform_scale_of_the_final_drawing() {
+        for kind in [ChartKind::Area, ChartKind::Bar, ChartKind::Line] {
+            let html = render(kind, false, true);
+            assert!(!html.contains("data-fit"), "{kind:?}");
+            assert!(!html.contains("preserveAspectRatio"), "{kind:?}");
+            assert!(!html.contains("height: "), "{kind:?}: {html}");
         }
-        let s = ChartSize::resolve(700.0, 250.0, true, Some(390.0));
-        assert!(!s.pending, "measured");
-        // Only fit mode can be pending: the default mode never is.
-        assert!(!ChartSize::resolve(600.0, 300.0, false, None).pending);
-    }
-
-    #[test]
-    fn a_measured_fit_chart_is_not_stretched() {
-        // The svg attrs are a pure function of `pending`: a measured chart
-        // (viewBox == box) uses `meet`, an identity there, as a safe fallback
-        // below the minimum logical width. Pinned through the one place both
-        // come from.
-        let (pending, measured) = (
-            ChartSize::resolve(700.0, 250.0, true, None),
-            ChartSize::resolve(700.0, 250.0, true, Some(1230.0)),
-        );
-        assert!(pending.pending && pending.width == 700.0);
-        assert!(!measured.pending && measured.width == 1230.0);
     }
 
     #[test]
@@ -1466,52 +1402,29 @@ mod tests {
     }
 
     #[test]
-    fn the_default_render_is_unchanged_by_the_fit_prop_existing() {
-        for kind in [ChartKind::Area, ChartKind::Bar, ChartKind::Line] {
-            let html = render(kind, false, true);
-            assert!(!html.contains("data-fit"), "{kind:?}");
-            assert!(!html.contains("preserveAspectRatio"), "{kind:?}");
-            assert!(!html.contains("height: 300px"), "{kind:?}");
-            assert!(
-                html.contains(r#"style="--dx-chart-text-scale: 1""#),
-                "{kind:?}: {html}"
-            );
-        }
+    fn the_cursor_prop_turns_the_hover_cursor_off() {
+        let on = render_default(ChartKind::Area, Some(1), false);
+        assert!(on.contains("chart-cursor-line"), "{on}");
+        let mut dom = VirtualDom::new(NoCursorHarness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let off = dioxus_ssr::render(&dom);
+        assert!(off.contains(r#"data-slot="chart-cursor""#), "{off}");
+        assert!(!off.contains("chart-cursor-rect"), "{off}");
+        // The tooltip and the bar's own data are unaffected.
+        assert!(off.contains(r#"data-state="open""#), "{off}");
     }
 
-    #[test]
-    fn fit_width_is_ignored_for_polar_kinds() {
-        for kind in [ChartKind::Pie, ChartKind::Radar, ChartKind::RadialBar] {
-            // The container's `data-chart="dxc-N"` id is per instance; blank it.
-            let strip = |html: String| {
-                let at = html.find("data-chart=\"").expect("container id") + 12;
-                let end = at + html[at..].find('"').unwrap();
-                format!("{}{}", &html[..at], &html[end..])
-            };
-            let fit = strip(render_with(kind, false, true, true));
-            let plain = strip(render(kind, false, true));
-            assert_eq!(
-                fit, plain,
-                "{kind:?}: fit_width must not change a polar chart"
-            );
-            assert!(!fit.contains("data-fit"), "{kind:?}");
+    #[component]
+    fn NoCursorHarness() -> Element {
+        let config = use_signal(sample_config);
+        let data = use_signal(sample_data);
+        rsx! {
+            ChartContainer { config, data, kind: ChartKind::Bar,
+                Chart { aria_label: "T", cursor: false, default_index: 1 }
+                ChartTooltip {}
+            }
         }
-    }
-
-    #[test]
-    fn fit_width_ticks_use_the_real_width() {
-        // The tick budget reads the effective logical width: a fit chart
-        // measured at 229px thins like a 229-wide chart in the test above.
-        let narrow = ChartSize::resolve(600.0, 250.0, true, Some(229.0));
-        let wide = ChartSize::resolve(600.0, 250.0, true, Some(1068.0));
-        assert_eq!(narrow.width, 229.0);
-        assert_eq!(wide.width, 1068.0);
-        let budget = |w: f64| {
-            // Same inputs `render_x_axis` uses: plot span, 3-char labels, scale 1.
-            layout::x_tick_budget(12, w - 16.0, layout::estimated_text_width("D00"), 1.0)
-        };
-        assert_eq!(budget(narrow.width), 7);
-        assert_eq!(budget(wide.width), 12);
     }
 
     #[test]
@@ -1645,15 +1558,15 @@ mod tests {
     }
 
     /// Props for a second, more configurable test harness (`x_label`/
-    /// `max_x_ticks`/an arbitrary data length) -- kept separate from
+    /// `min_tick_gap`/an arbitrary data length) -- kept separate from
     /// [`Harness`] above so every existing test's fixed 2-datum shape is
     /// untouched.
     #[derive(Clone, PartialEq, Props)]
     struct AxisHarnessProps {
         #[props(default = 2)]
         data_len: usize,
-        #[props(default = 12)]
-        max_x_ticks: usize,
+        #[props(default = 5.0)]
+        min_tick_gap: f64,
         #[props(default = "Category".to_string())]
         x_label: String,
         #[props(default = 600.0)]
@@ -1681,23 +1594,23 @@ mod tests {
                 Chart {
                     aria_label: "Visitors by month",
                     x_label: props.x_label.clone(),
-                    max_x_ticks: props.max_x_ticks,
+                    min_tick_gap: props.min_tick_gap,
                     width: props.width,
                 }
             }
         }
     }
 
-    fn render_axis(data_len: usize, max_x_ticks: usize, x_label: &str) -> String {
-        render_axis_at(data_len, max_x_ticks, x_label, 600.0)
+    fn render_axis(data_len: usize, min_tick_gap: f64, x_label: &str) -> String {
+        render_axis_at(data_len, min_tick_gap, x_label, 600.0)
     }
 
-    fn render_axis_at(data_len: usize, max_x_ticks: usize, x_label: &str, width: f64) -> String {
+    fn render_axis_at(data_len: usize, min_tick_gap: f64, x_label: &str, width: f64) -> String {
         let mut dom = VirtualDom::new_with_props(
             AxisHarness,
             AxisHarnessProps {
                 data_len,
-                max_x_ticks,
+                min_tick_gap,
                 x_label: x_label.to_string(),
                 width,
             },
@@ -1709,7 +1622,7 @@ mod tests {
 
     #[test]
     fn table_corner_header_can_be_overridden() {
-        let html = render_axis(2, 12, "Date");
+        let html = render_axis(2, 5.0, "Date");
         assert!(
             html.contains(r#"<th scope="col">Date</th>"#),
             "expected the overridden corner header: {html}"
@@ -1717,66 +1630,30 @@ mod tests {
     }
 
     #[test]
-    fn x_axis_tick_labels_are_thinned_for_a_dense_chart() {
-        let html = render_axis(90, 12, "Category");
-        // Bound the search to the x-axis group's own children so a
-        // coincidental substring match elsewhere (e.g. the hidden table,
-        // which always mirrors every datum's full, untruncated label)
-        // can't produce a false pass -- `data-axis="x"` is this group's
-        // own attribute and appears nowhere else.
-        let start = html
-            .find(r#"data-axis="x""#)
-            .expect("x-axis group should be present when show_x_axis is on");
-        let after_open = &html[start..];
-        let end = after_open
-            .find("</g>")
-            .expect("x-axis group should close with </g>");
-        let axis_group = &after_open[..end];
-
+    fn x_axis_tick_labels_are_thinned_from_the_end_for_a_dense_chart() {
+        let html = render_axis(90, 5.0, "Category");
+        let axis_group = axis_group(&html, "x");
         let tick_labels = axis_group.matches("<text ").count();
-        assert!(
-            tick_labels <= 12,
-            "expected at most max_x_ticks=12 rendered tick labels for 90 data points, got {tick_labels}: {axis_group}"
-        );
-        // Matches x_tick_step(90, 12) == 8 exactly: ceil(90/8) == 12.
-        assert_eq!(tick_labels, 12);
-        // The first datum's label is always kept (default 3-char
-        // truncation of "D00 full label" is "D00").
-        assert!(
-            axis_group.contains("D00"),
-            "expected the first datum's tick label to survive thinning: {axis_group}"
-        );
-        // A thinned-away datum's label must NOT appear (index 1 falls
-        // between kept indices 0 and 8).
-        assert!(
-            !axis_group.contains("D01"),
-            "index 1 should have been thinned out: {axis_group}"
-        );
-
-        // Every hit band stays per-datum -- thinning only removes axis
-        // *labels*, never data or interactivity.
+        assert!(tick_labels > 1 && tick_labels < 90, "{axis_group}");
+        // Recharts' `preserveEnd`: the LAST datum is always labelled.
+        assert!(axis_group.contains("D89"), "{axis_group}");
+        // Thinning only removes labels, never data or interactivity.
         assert_eq!(html.matches(r#"data-slot="chart-hit-band""#).count(), 90);
     }
 
     /// The number of `<text>` tick labels in the x-axis group of `html`.
     fn x_tick_label_count(html: &str) -> usize {
-        let start = html.find(r#"data-axis="x""#).expect("x-axis group");
-        let after_open = &html[start..];
-        let end = after_open.find("</g>").expect("x-axis group closes");
-        after_open[..end].matches("<text ").count()
+        axis_group(html, "x").matches("<text ").count()
     }
 
     #[test]
-    fn x_axis_tick_count_also_shrinks_to_fit_a_narrow_width() {
-        // 90 points, max 12, 3-char labels ("D00": ~21.6 + 8 gap = ~30 per label).
-        let wide = x_tick_label_count(&render_axis_at(90, 12, "Category", 600.0));
-        let narrow = x_tick_label_count(&render_axis_at(90, 12, "Category", 229.0));
-        // This harness draws no y axis, so the plot spans `width - 16`.
-        // Wide plot (584) fits 19 labels, so `max_x_ticks` stays the bound.
-        assert_eq!(wide, 12);
-        // Narrow plot (213) fits floor(213 / 29.6) = 7 -> step 13 -> 7 labels.
-        assert_eq!(narrow, 7);
-        assert!(narrow < wide);
+    fn x_axis_tick_count_follows_the_width_and_the_min_tick_gap() {
+        // The initial width stands in for a measured one.
+        let wide = x_tick_label_count(&render_axis_at(90, 5.0, "Category", 1200.0));
+        let narrow = x_tick_label_count(&render_axis_at(90, 5.0, "Category", 300.0));
+        assert!(narrow < wide, "{narrow} !< {wide}");
+        let gappy = x_tick_label_count(&render_axis_at(90, 32.0, "Category", 1200.0));
+        assert!(gappy < wide, "{gappy} !< {wide}");
     }
 
     #[test]
@@ -1978,9 +1855,10 @@ mod tests {
         assert!(!tags.is_empty(), "{html}");
         for tag in tags {
             assert!(tag.contains(r#"text-anchor="end""#), "{tag}");
-            assert!(tag.contains(r#"dominant-baseline="central""#), "{tag}");
-            // Right edge 8 units left of the plot (margin 40, scale 1).
-            assert!(tag.contains(r#"x="32""#), "{tag}");
+            assert!(tag.contains(r#"dy="0.355em""#), "{tag}");
+            // Right edge tickSize 6 + tickMargin 8 left of the plot (margin
+            // 5 + the 60px y-axis band).
+            assert!(tag.contains(r#"x="51""#), "{tag}");
         }
     }
 

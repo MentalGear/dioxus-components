@@ -1,41 +1,38 @@
+//! shadcn's `chart-line-label-custom`: one series over browsers with no x
+//! axis; `LineLabels::Custom` labels each point with its browser's name.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// `LineLabels::Custom` labels each point with text you choose, here the
-/// category name. The callback only receives the point index, so it looks the
-/// text up in the chart data.
-fn generate_data() -> Vec<ChartDatum> {
-    const MONTHS: [(&str, f64); 6] = [
-        ("January", 186.0),
-        ("February", 305.0),
-        ("March", 237.0),
-        ("April", 73.0),
-        ("May", 209.0),
-        ("June", 214.0),
+/// The chart's rows, `(browser, visitors, color)`: each point's dot takes
+/// its browser's color (`ChartDatum::color`).
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
+    const ROWS: [(&str, f64, &str); 5] = [
+        ("Chrome", 275.0, "var(--dx-chart-1)"),
+        ("Safari", 200.0, "var(--dx-chart-2)"),
+        ("Firefox", 187.0, "var(--dx-chart-3)"),
+        ("Edge", 173.0, "var(--dx-chart-4)"),
+        ("Other", 90.0, "var(--dx-chart-5)"),
     ];
-    MONTHS
-        .iter()
-        .map(|(label, desktop)| ChartDatum {
+    ROWS.iter()
+        .map(|&(label, visitors, color)| ChartDatum {
             label: label.to_string(),
-            values: vec![Some(*desktop)],
-            ..Default::default()
+            values: vec![Some(visitors)],
+            color: Some(color.to_string()),
         })
         .collect()
 }
 
+/// The one series drawn.
+pub(crate) fn chart_config() -> ChartConfig {
+    ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-2)")
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
-    let data = generate_data();
-    let category_labels: Vec<String> = data.iter().map(|d| d.label.clone()).collect();
-    let custom_label = LineLabels::Custom(Callback::new(move |i: usize| {
-        category_labels
-            .get(i)
-            .map(|label| label.chars().take(3).collect::<String>())
-            .unwrap_or_default()
-    }));
+    let names: Vec<String> = chart_data().into_iter().map(|d| d.label).collect();
 
     rsx! {
         Card {
@@ -44,18 +41,20 @@ pub fn Demo() -> Element {
                 CardDescription { "January - June 2024" }
             }
             CardContent {
-                ChartContainer { config, data, kind: ChartKind::Line,
+                ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Line,
                     Chart {
-                        aria_label: "Visitors by month, desktop, labelled by month",
-                        show_grid: false,
+                        aria_label: "Visitors by browser",
+                        margin: ChartMargin { top: 24.0, left: 24.0, right: 24.0, ..ChartMargin::NONE },
                         show_x_axis: false,
-                        show_y_axis: false,
+                        curve: Curve::Natural,
+                        cursor: false,
                         line: LineOptions {
                             dots: true,
-                            labels: custom_label,
+                            labels: LineLabels::Custom(Callback::new(move |i: usize| names[i].clone())),
                             ..Default::default()
                         },
                     }
+                    ChartTooltip { indicator: TooltipIndicator::Line, name_key: "Visitors", hide_label: true }
                 }
             }
             CardFooter { class: "dx-chart-footer",

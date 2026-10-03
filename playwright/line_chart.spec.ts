@@ -143,20 +143,25 @@ test.describe("Line chart", () => {
     await expect(scope.locator('[data-slot="chart-dot"]')).toHaveCount(0);
   });
 
-  test("label: draws one value label above each point, grid and y-axis hidden", async ({
+  test("label: draws one value label above each point over shadcn's grid and x axis", async ({
     page,
   }) => {
+    // shadcn's `chart-line-label` keeps its `CartesianGrid` and `XAxis`.
     const scope = frame(page, "label");
     await expect(scope.locator('[data-slot="chart-label"]')).toHaveCount(6);
-    await expect(scope.locator('[data-slot="chart-grid"]')).toHaveCount(0);
+    await expect(scope.locator('[data-slot="chart-grid"]')).toHaveCount(1);
+    await expect(scope.locator('[data-axis="x"]')).toHaveCount(1);
     await expect(scope.locator('[data-axis="y"]')).toHaveCount(0);
   });
 
-  test("label_custom: labels every point with its own category name", async ({ page }) => {
+  test("label_custom: labels every point with its own browser name", async ({ page }) => {
+    // shadcn's `chart-line-label-custom`: five browsers, labelled with the
+    // config label ("Chrome"), and no x axis.
     const scope = frame(page, "label_custom");
     const labels = scope.locator('[data-slot="chart-label"]');
-    await expect(labels).toHaveCount(6);
-    await expect(labels.first()).toHaveText("Jan");
+    await expect(labels).toHaveCount(5);
+    await expect(labels.first()).toHaveText("Chrome");
+    await expect(scope.locator('[data-axis="x"]')).toHaveCount(0);
   });
 
   test.describe("Axe automated scan", () => {

@@ -1,0 +1,100 @@
+{
+  "name": "chart-line-dots",
+  "variant": "dots",
+  "title": "Line Chart - Dots",
+  "data": [
+    {
+      "month": "January",
+      "desktop": 186,
+      "mobile": 80
+    },
+    {
+      "month": "February",
+      "desktop": 305,
+      "mobile": 200
+    },
+    {
+      "month": "March",
+      "desktop": 237,
+      "mobile": 120
+    },
+    {
+      "month": "April",
+      "desktop": 73,
+      "mobile": 190
+    },
+    {
+      "month": "May",
+      "desktop": 209,
+      "mobile": 130
+    },
+    {
+      "month": "June",
+      "desktop": 214,
+      "mobile": 140
+    }
+  ],
+  "config": {
+    "desktop": {
+      "label": "Desktop",
+      "color": "var(--chart-1)"
+    },
+    "mobile": {
+      "label": "Mobile",
+      "color": "var(--chart-2)"
+    }
+  },
+  "chart": {
+    "kind": "line",
+    "margin": {
+      "left": 12,
+      "right": 12
+    },
+    "layout": null,
+    "stackOffset": null
+  },
+  "series": [
+    {
+      "dataKey": "desktop",
+      "type": "natural",
+      "fill": null,
+      "fillOpacity": null,
+      "stackId": null,
+      "radius": null,
+      "strokeWidth": 2,
+      "dot": {
+        "fill": "var(--color-desktop)"
+      },
+      "activeDot": {
+        "r": 6
+      }
+    }
+  ],
+  "grid": {
+    "vertical": false,
+    "horizontal": true
+  },
+  "xAxis": {
+    "dataKey": "month",
+    "type": null,
+    "hide": false,
+    "tickMargin": 8,
+    "minTickGap": null,
+    "tickCount": null
+  },
+  "yAxis": null,
+  "tooltip": {
+    "cursor": false,
+    "indicator": "dot",
+    "hideLabel": true,
+    "hideIndicator": false,
+    "nameKey": null,
+    "labelKey": null,
+    "labelFormatter": false
+  },
+  "legend": false,
+  "gradient": false,
+  "cells": false,
+  "labelLists": [],
+  "activeIndex": null
+}

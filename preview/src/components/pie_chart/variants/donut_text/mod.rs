@@ -7,9 +7,9 @@ fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
         ("Safari", 200.0, "var(--dx-chart-2)"),
-        ("Firefox", 187.0, "var(--dx-chart-3)"),
+        ("Firefox", 287.0, "var(--dx-chart-3)"),
         ("Edge", 173.0, "var(--dx-chart-4)"),
-        ("Other", 90.0, "var(--dx-chart-5)"),
+        ("Other", 190.0, "var(--dx-chart-5)"),
     ]
     .into_iter()
     .map(|(browser, visitors, color)| ChartDatum {
@@ -24,11 +24,27 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// A donut with the grand total centered in its hole (`center_text`).
+/// `1125.0` as `"1,125"` (JavaScript's `toLocaleString()`).
+fn thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A donut with the grand total in its hole (`center_text`).
 #[component]
 pub fn Demo() -> Element {
     let data = chart_data();
-    let total: f64 = data.iter().filter_map(|d| d.values.first().copied().flatten()).sum();
+    let total: f64 = data
+        .iter()
+        .filter_map(|d| d.values.first().copied().flatten())
+        .sum();
 
     rsx! {
         Card {
@@ -41,8 +57,8 @@ pub fn Demo() -> Element {
                     Chart {
                         aria_label: "Visitors by browser",
                         pie: PieOptions {
-                            inner_radius: 60.0,
-                            center_text: Some((format!("{total:.0}"), "Visitors".to_string())),
+                            inner_radius: Radius::Px(60.0),
+                            center_text: Some((thousands(total), "Visitors".to_string())),
                             ..Default::default()
                         },
                     }

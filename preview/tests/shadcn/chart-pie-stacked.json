@@ -1,0 +1,229 @@
+{
+  "name": "chart-pie-stacked",
+  "title": "Pie Chart - Stacked",
+  "description": "January - June 2024",
+  "footer": [
+    "Trending up by 5.2% this month",
+    "Showing total visitors for the last 6 months"
+  ],
+  "containerClass": "mx-auto aspect-square max-h-[250px]",
+  "data": null,
+  "desktopData": [
+    {
+      "month": "january",
+      "desktop": 186,
+      "fill": "var(--color-january)"
+    },
+    {
+      "month": "february",
+      "desktop": 305,
+      "fill": "var(--color-february)"
+    },
+    {
+      "month": "march",
+      "desktop": 237,
+      "fill": "var(--color-march)"
+    },
+    {
+      "month": "april",
+      "desktop": 173,
+      "fill": "var(--color-april)"
+    },
+    {
+      "month": "may",
+      "desktop": 209,
+      "fill": "var(--color-may)"
+    }
+  ],
+  "mobileData": [
+    {
+      "month": "january",
+      "mobile": 80,
+      "fill": "var(--color-january)"
+    },
+    {
+      "month": "february",
+      "mobile": 200,
+      "fill": "var(--color-february)"
+    },
+    {
+      "month": "march",
+      "mobile": 120,
+      "fill": "var(--color-march)"
+    },
+    {
+      "month": "april",
+      "mobile": 190,
+      "fill": "var(--color-april)"
+    },
+    {
+      "month": "may",
+      "mobile": 130,
+      "fill": "var(--color-may)"
+    }
+  ],
+  "config": {
+    "visitors": {
+      "label": "Visitors"
+    },
+    "desktop": {
+      "label": "Desktop"
+    },
+    "mobile": {
+      "label": "Mobile"
+    },
+    "january": {
+      "label": "January",
+      "color": "var(--chart-1)"
+    },
+    "february": {
+      "label": "February",
+      "color": "var(--chart-2)"
+    },
+    "march": {
+      "label": "March",
+      "color": "var(--chart-3)"
+    },
+    "april": {
+      "label": "April",
+      "color": "var(--chart-4)"
+    },
+    "may": {
+      "label": "May",
+      "color": "var(--chart-5)"
+    }
+  },
+  "tooltip": {
+    "hideLabel": false,
+    "indicator": "line",
+    "nameKey": "month",
+    "labelKey": "visitors"
+  },
+  "legend": false,
+  "centerLabel": null,
+  "pies": [
+    {
+      "dataKey": "desktop",
+      "nameKey": null,
+      "innerRadius": null,
+      "outerRadius": 60,
+      "startAngle": null,
+      "endAngle": null,
+      "paddingAngle": null,
+      "cornerRadius": null,
+      "labelLine": null,
+      "label": false,
+      "activeShape": false
+    },
+    {
+      "dataKey": "mobile",
+      "nameKey": null,
+      "innerRadius": 70,
+      "outerRadius": 90,
+      "startAngle": null,
+      "endAngle": null,
+      "paddingAngle": null,
+      "cornerRadius": null,
+      "labelLine": null,
+      "label": false,
+      "activeShape": false
+    }
+  ],
+  "labelList": [],
+  "activeIndex": null,
+  "halo": false,
+  "rendered": {
+    "width": 250,
+    "height": 250,
+    "cx": 125,
+    "cy": 125,
+    "sectors": [
+      {
+        "background": false,
+        "fill": "var(--color-january)",
+        "outer": 60,
+        "inner": 0,
+        "start": 0,
+        "sweep": 60.32
+      },
+      {
+        "background": false,
+        "fill": "var(--color-february)",
+        "outer": 60,
+        "inner": 0,
+        "start": 60.32,
+        "sweep": 98.92
+      },
+      {
+        "background": false,
+        "fill": "var(--color-march)",
+        "outer": 60,
+        "inner": 0,
+        "start": 159.24,
+        "sweep": 76.86
+      },
+      {
+        "background": false,
+        "fill": "var(--color-april)",
+        "outer": 60,
+        "inner": 0,
+        "start": 236.11,
+        "sweep": 56.11
+      },
+      {
+        "background": false,
+        "fill": "var(--color-may)",
+        "outer": 60,
+        "inner": 0,
+        "start": 292.22,
+        "sweep": 67.78
+      },
+      {
+        "background": false,
+        "fill": "var(--color-january)",
+        "outer": 90,
+        "inner": 70,
+        "start": 0,
+        "sweep": 40
+      },
+      {
+        "background": false,
+        "fill": "var(--color-february)",
+        "outer": 90,
+        "inner": 70,
+        "start": 40,
+        "sweep": 100
+      },
+      {
+        "background": false,
+        "fill": "var(--color-march)",
+        "outer": 90,
+        "inner": 70,
+        "start": 140,
+        "sweep": 60
+      },
+      {
+        "background": false,
+        "fill": "var(--color-april)",
+        "outer": 90,
+        "inner": 70,
+        "start": 200,
+        "sweep": 95
+      },
+      {
+        "background": false,
+        "fill": "var(--color-may)",
+        "outer": 90,
+        "inner": 70,
+        "start": 295,
+        "sweep": 65
+      }
+    ],
+    "rings": [],
+    "spokes": 0,
+    "polygons": [],
+    "dots": [],
+    "texts": [],
+    "labelLines": 0
+  }
+}

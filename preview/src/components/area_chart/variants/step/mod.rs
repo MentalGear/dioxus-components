@@ -1,11 +1,13 @@
+//! shadcn's `chart-area-step`: the default chart drawn as midpoint steps
+//! (`Curve::Step`); the series' icon replaces the tooltip swatch.
+
 use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
-use dioxus_icons::lucide::TrendingUp;
+use dioxus_icons::lucide::{Activity, TrendingUp};
 
-/// The default data drawn as steps (`curve: Curve::Step`) instead of a smoothed
-/// curve.
-fn generate_data() -> Vec<ChartDatum> {
+/// The chart's rows, `(month, desktop)`, values in config order.
+pub(crate) fn chart_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),
         ("February", 305.0),
@@ -23,10 +25,16 @@ fn generate_data() -> Vec<ChartDatum> {
         .collect()
 }
 
+/// The series, in draw (and stacking) order: the first is the bottom layer.
+pub(crate) fn chart_config() -> ChartConfig {
+    let mut config = ChartConfig::new()
+        .series("desktop", "Desktop", "var(--dx-chart-1)");
+    config.series[0].icon = Some(ChartIcon(Callback::new(|()| rsx! { Activity {} })));
+    config
+}
+
 #[component]
 pub fn Demo() -> Element {
-    let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
-
     rsx! {
         AreaChartGallery {
             Card {
@@ -35,8 +43,13 @@ pub fn Demo() -> Element {
                     CardDescription { "Showing total visitors for the last 6 months" }
                 }
                 CardContent {
-                    ChartContainer { config, data: generate_data(), kind: ChartKind::Area,
-                        Chart { aria_label: "Visitors by month, desktop", curve: Curve::Step }
+                    ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Area,
+                        Chart {
+                            aria_label: "Visitors by month, desktop",
+                            margin: ChartMargin { left: 12.0, right: 12.0, ..ChartMargin::NONE },
+                            curve: Curve::Step,
+                            cursor: false,
+                        }
                         ChartTooltip { hide_label: true }
                     }
                 }

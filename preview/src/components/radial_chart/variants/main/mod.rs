@@ -2,7 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Five browsers' visitor counts, one concentric ring each.
+/// Visitor counts per browser.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -24,6 +24,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
+/// One ring per browser from radius 30 to 110, each sweeping counter-clockwise
+/// from three o'clock in proportion to the largest value, over a muted track.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -35,10 +37,13 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::RadialBar,
                     Chart {
-                        width: 300.0,
-                        height: 300.0,
                         aria_label: "Visitors by browser",
-                        radial: RadialOptions { inner_radius: 30.0, ..Default::default() },
+                        radial: RadialOptions {
+                            inner_radius: Radius::Px(30.0),
+                            outer_radius: Radius::Px(110.0),
+                            background: true,
+                            ..Default::default()
+                        },
                     }
                     ChartTooltip { hide_label: true }
                 }

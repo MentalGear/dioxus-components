@@ -24,7 +24,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// `active_index: Some(0)` keeps the first slice grown, regardless of hover.
+/// The first slice held active: drawn 10px further out, its hole unchanged.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -38,7 +38,7 @@ pub fn Demo() -> Element {
                     Chart {
                         aria_label: "Visitors by browser",
                         pie: PieOptions {
-                            inner_radius: 60.0,
+                            inner_radius: Radius::Px(60.0),
                             active_index: Some(0),
                             ..Default::default()
                         },

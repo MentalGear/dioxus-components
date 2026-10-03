@@ -101,10 +101,11 @@ pub fn Demo() -> Element {
                         // `x_tick_format` keeps only the first 3 characters of
                         // a label, which would turn every "Apr 1".."Jun 30"
                         // tick into "Apr"/"May"/"Jun", so the full label is
-                        // used. `max_x_ticks` thins 90 days to about 8 ticks
-                        // and leaves the 7-day view labelled daily.
+                        // used. Labels closer than `min_tick_gap` are skipped
+                        // (keeping the last), so 90 days thin out while the
+                        // 7-day view stays labelled daily.
                         x_tick_format: |label: String| label,
-                        max_x_ticks: 8,
+                        min_tick_gap: 32.0,
                         x_label: "Date",
                     }
                     ChartTooltip {}
