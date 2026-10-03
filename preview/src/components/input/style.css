@@ -1,21 +1,30 @@
-/* Input Styles */
+/* Input Styles -- Nova input (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
+ * `.cn-input`): h-8, px-2.5 py-1, `rounded-lg`, transparent in light and
+ * `input/30` in dark, 1px `input` border, `ring-3 ring-ring/50` + `border-ring`
+ * on focus, `text-sm` (16px on touch, below).
+ *
+ * The 1px border is drawn as an inset box-shadow, not `border`: `InputGroup`
+ * strips its control's chrome with `box-shadow: none`, and that reset must
+ * keep working. */
 .dx-input {
   position: relative;
   display: flex;
+  height: 2rem;
   box-sizing: border-box;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: var(--dx-space-1);
-  padding: var(--dx-space-2) var(--dx-space-3);
+  padding: var(--dx-space-1) 0.625rem;
   border: none;
   border-radius: var(--dx-radius-lg);
-  border-radius: calc(var(--dx-radius-lg));
   background: none;
-  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
+  background-color: var(--light, transparent)
+    var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
   box-shadow: inset 0 0 0 1px var(--dx-input);
   color: var(--dx-foreground);
+  font-size: var(--dx-text-sm);
   gap: var(--dx-space-1);
+  outline: none;
   transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
@@ -23,17 +32,43 @@
   color: var(--dx-muted-foreground);
 }
 
-.dx-input:disabled {
-  color: var(--dx-muted-foreground);
-  cursor: not-allowed;
+.dx-input::file-selector-button {
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dx-foreground);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  margin-inline-end: var(--dx-space-2);
 }
 
+/* Same `muted` fill the other full-width fields (combobox, textarea) use for
+ * hover and focus, so fields agree. Nova itself has no input hover fill. */
 .dx-input:hover:not(:disabled),
 .dx-input:focus-visible {
-  background: var(--light, var(--dx-accent-alt))
-    var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
-  color: var(--dx-accent-foreground);
-  outline: none;
+  background-color: var(--dx-muted);
+}
+
+.dx-input:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
+}
+
+.dx-input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px
+      var(--light, var(--dx-destructive))
+      var(--dark, color-mix(in oklab, var(--dx-destructive) 50%, transparent)),
+    0 0 0 3px
+      var(--light, color-mix(in oklab, var(--dx-destructive) 20%, transparent))
+      var(--dark, color-mix(in oklab, var(--dx-destructive) 40%, transparent));
+}
+
+.dx-input:disabled {
+  background-color: var(--light, color-mix(in oklab, var(--dx-input) 50%, transparent))
+    var(--dark, color-mix(in oklab, var(--dx-input) 80%, transparent));
+  color: var(--dx-muted-foreground);
+  cursor: not-allowed;
+  opacity: var(--dx-opacity-disabled);
 }
 
 /*

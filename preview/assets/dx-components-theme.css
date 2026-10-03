@@ -131,7 +131,11 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-popover-foreground: var(--popover-foreground, var(--secondary-color-4));
 
   /* Actions */
-  --dx-primary: var(--primary, var(--secondary-color-1));
+  /* Nova: `--primary` is pure black in light, oklch(0.922) = #e5e5e5 in dark
+   (shadcn globals.css). Was the ramp's `secondary-color-1` (#000 | #fafafa);
+   only the dark half moves (#fafafa -> #e5e5e5), which is also what the
+   primary button/badge already rendered through `--dx-primary-alt`. */
+  --dx-primary: var(--primary, var(--light, #000) var(--dark, #e5e5e5));
   --dx-primary-foreground: var(--primary-foreground, var(--primary-color));
   --dx-secondary: var(--secondary, var(--primary-color-5));
   --dx-secondary-foreground: var(--secondary-foreground, var(--secondary-color-1));
@@ -154,10 +158,13 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-muted-alt: var(--primary-color-3);
   --dx-accent-alt: var(--primary-color-4);
   --dx-accent-alt-2: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-5));
-  --dx-primary-alt: var(--secondary-color-2);
+  --dx-primary-alt: var(--dx-primary); /* collapsed (phase B): was #0d0d0d | #e6e6e6, now the base role */
   --dx-foreground-alt: var(--secondary-color-3);
   --dx-foreground-alt-2: var(--secondary-color-1);
-  --dx-border-alt: var(--primary-color-7);
+  /* `-strong` is the documented role (hover borders, checkbox ring); `-alt`
+   * stays as an alias until the other component dirs are renamed. */
+  --dx-border-strong: var(--primary-color-7);
+  --dx-border-alt: var(--dx-border-strong);
   --dx-border-alt-2: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
   --dx-destructive-alt: var(--secondary-error-color);
 
@@ -186,14 +193,18 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-sidebar-border: var(--sidebar-border, var(--primary-color-6));
   --dx-sidebar-ring: var(--sidebar-ring, var(--primary-color-7));
 
-  /* Radius base. shadcn derives its whole radius scale from one `--radius`;
-   * ours already equals that derivation at 0.5rem (sm = base - 0.25rem,
-   * md = base - 0.125rem, lg = base, xl = base + 0.25rem, 2xl = base +
-   * 0.5rem). Phase A only introduces the base: the `--dx-radius-*` scale
-   * below stays literal until phase B rewires it onto this token (that
-   * rewiring is computed-style-identical but needs
-   * scripts/check-css-literals.sh taught to read calc() tokens first). */
-  --dx-radius: var(--radius, 0.5rem);
+  /* Radius base. shadcn derives its whole radius scale from one `--radius`
+   * (apps/v4/app/globals.css, shadcn-ui/ui@295a1f1: `--radius: 0.625rem`,
+   * `--radius-sm: calc(var(--radius) * 0.6)`, md 0.8, lg 1, xl 1.4, 2xl 1.8,
+   * 3xl 2.2, 4xl 2.6). The `--dx-radius-*` scale below is that derivation,
+   * rooted at `--dx-radius`, so a host `--radius` (or a pasted shadcn theme)
+   * drives every corner in the library.
+   *
+   * Note for `scripts/check-css-literals.sh`: it skips tokens that contain
+   * `var(`, so the derived radius steps are invisible to it and a literal
+   * `border-radius: 0.5rem` in a component is no longer caught. The gate needs
+   * a rule that resolves `calc(var(--dx-radius) * k)` at the default base. */
+  --dx-radius: var(--radius, 0.625rem);
 
   /* Type scale (docs/backlog.md row 31a). Grounded in the `font-size`
    * literals already used across the 46 themed components' `style.css` +
@@ -244,20 +255,23 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-space-24: 6rem;    /* 96px */
   --dx-space-32: 8rem;    /* 128px */
 
-  /* Radius scale. `--dx-radius-lg` (8px) is the dominant literal by a wide
-   * margin (52 of 137 `border-radius` declarations survey-wide); the other
-   * steps are the next most common values actually present.
-   * `--dx-radius-full` covers both `9999px` and `999px` (pill/circle caps
-   * -- no layout depends on the exact number). `50%` (avatar circles) is
-   * left off this scale on purpose -- it isn't a length. */
-  --dx-radius-xs: 0.125rem;  /* 2px -- also covers the popover/tooltip arrow's 0.1rem corner as a near-miss */
-  --dx-radius-sm: 0.25rem;   /* 4px */
-  --dx-radius-md: 0.375rem;  /* 6px */
-  --dx-radius-lg: 0.5rem;    /* 8px -- dominant default */
-  --dx-radius-xl: 0.75rem;   /* 12px */
-  --dx-radius-2xl: 1rem;     /* 16px */
-  --dx-radius-3xl: 1.5rem;   /* 24px */
-  --dx-radius-full: 9999px;  /* pill / circle caps */
+  /* Radius scale -- shadcn's, rooted at `--dx-radius` (10px at the default
+   * base). The right-hand column is the default-base value; before phase B
+   * the scale was xs 2 / sm 4 / md 6 / lg 8 / xl 12 / 2xl 16 / 3xl 24px.
+   * `--dx-radius-xs` has no shadcn counterpart (0.2 x base = 2px at the
+   * default, unchanged); `--dx-radius-4xl` is new (Nova's badge/pill radius).
+   * `--dx-radius-full` covers both `9999px` and `999px` (pill/circle caps --
+   * no layout depends on the exact number). `50%` (avatar circles) is left
+   * off this scale on purpose -- it isn't a length. */
+  --dx-radius-xs: calc(var(--dx-radius) * 0.2);  /* 2px */
+  --dx-radius-sm: calc(var(--dx-radius) * 0.6);  /* 6px */
+  --dx-radius-md: calc(var(--dx-radius) * 0.8);  /* 8px */
+  --dx-radius-lg: var(--dx-radius);              /* 10px -- dominant default */
+  --dx-radius-xl: calc(var(--dx-radius) * 1.4);  /* 14px */
+  --dx-radius-2xl: calc(var(--dx-radius) * 1.8); /* 18px */
+  --dx-radius-3xl: calc(var(--dx-radius) * 2.2); /* 22px */
+  --dx-radius-4xl: calc(var(--dx-radius) * 2.6); /* 26px */
+  --dx-radius-full: 9999px;                      /* pill / circle caps */
 
   /* Elevation (box-shadow). `box-shadow` is also used for two things that
    * are NOT elevation -- a 1px inset "border replacement" technique, and
@@ -267,8 +281,10 @@ html[data-theme="light"] [class~="dxc-system"] {
    * `hover_card` independently): a drop shadow is a depth cue that reads
    * as noise on a dark surface, so it turns off (`none`) in dark mode
    * rather than getting a dark-tuned replacement. */
-  --dx-shadow-sm: var(--dark, none) var(--light, 0 1px 2px rgb(0 0 0 / 18%));
-  --dx-shadow-md: var(--dark, none) var(--light, 0 2px 10px rgb(0 0 0 / 18%));
+  /* sm and md are Tailwind v4's own `shadow-sm` / `shadow-md` (what Nova's
+   * tabs trigger and select content use); lg and up are unchanged. */
+  --dx-shadow-sm: var(--dark, none) var(--light, 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%));
+  --dx-shadow-md: var(--dark, none) var(--light, 0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%));
   --dx-shadow-lg: var(--dark, none) var(--light, 0 4px 12px rgb(0 0 0 / 15%));
   --dx-shadow-xl: var(--dark, none) var(--light, 0 4px 20px rgb(0 0 0 / 20%));
   --dx-shadow-2xl: var(--dark, none) var(--light, 0 12px 32px -20px rgb(0 0 0 / 35%));
@@ -361,6 +377,18 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-opacity-disabled: 0.5;
   --dx-ring-width: 2px;
   --dx-ring: 0 0 0 var(--dx-ring-width) var(--dx-ring-color);
+
+  /* Nova's resting edge: `ring-1 ring-foreground/10` on card, dialog, popover
+   * and select content (they carry no border and, for card/dialog, no drop
+   * shadow). `-color` is for components that must draw it as a `border`
+   * (a UA `[popover]` reset or a layered drop shadow rules out a box-shadow
+   * list: `--dx-shadow-*` resolves to `none` in dark mode, and `none` is not
+   * valid inside a comma-separated box-shadow list). */
+  --dx-ring-subtle-color: color-mix(in oklab, var(--dx-foreground) 10%, transparent);
+  --dx-ring-subtle: 0 0 0 1px var(--dx-ring-subtle-color);
+  /* Nova's focus ring: `ring-3 ring-ring/50` (the `border-ring` half is a
+   * per-component `border-color`/inset shadow). */
+  --dx-ring-focus: 0 0 0 3px color-mix(in oklab, var(--dx-ring-color) 50%, transparent);
 }
 
 /* ============================================================================

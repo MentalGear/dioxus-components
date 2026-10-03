@@ -1,3 +1,9 @@
+/* Nova tabs (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
+ * `.cn-tabs*`): a 32px `muted` pill with 3px inner padding (`rounded-lg`),
+ * triggers `rounded-md` with a 1px transparent border, `px-1.5 py-0.5`,
+ * `text-sm` medium, `foreground/60` text (muted-foreground in dark), the
+ * active one on `background` with `shadow-sm` (a `border-input` + `input/30`
+ * fill in dark), and `ring-3 ring-ring/50` + `border-ring` on focus. */
 .dx-tabs {
     display: flex;
     width: 100%;
@@ -8,70 +14,96 @@
 .dx-tabs-list {
     display: flex;
     width: fit-content;
+    height: 2rem;
     box-sizing: border-box;
-    flex: 1;
+    flex: none;
     flex-direction: row;
-    padding: var(--dx-space-1);
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
     border: none;
     border-radius: var(--dx-radius-lg);
-    gap: var(--dx-space-1);
+    color: var(--dx-muted-foreground);
 }
 
 [data-variant="default"] .dx-tabs-list {
-    background: var(--dx-accent-alt-2);
+    background: var(--dx-muted);
 }
 
 .dx-tabs-trigger {
-    padding: var(--dx-space-1) var(--dx-space-2);
-    border: none;
-    border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
+    position: relative;
+    display: inline-flex;
+    height: calc(100% - 1px);
+    box-sizing: border-box;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 0.125rem 0.375rem;
+    border: 1px solid transparent;
+    border-radius: var(--dx-radius-md);
     background: none;
-    color: var(--dx-muted-foreground);
+    color: var(--light, color-mix(in oklab, var(--dx-foreground) 60%, transparent))
+        var(--dark, var(--dx-muted-foreground));
     cursor: pointer;
+    font-family: inherit;
+    font-size: var(--dx-text-sm);
+    font-weight: 500;
+    gap: 0.375rem;
+    outline: none;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
     touch-action: manipulation;
+    transition-duration: var(--dx-motion-duration-base);
+    transition-property: color, background-color, border-color, box-shadow;
+    transition-timing-function: var(--dx-motion-ease-standard);
+    white-space: nowrap;
+}
+
+.dx-tabs-trigger svg {
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.dx-tabs-trigger svg:not([class*="size-"]) {
+    width: 1rem;
+    height: 1rem;
 }
 
 [data-variant="default"] .dx-tabs-trigger[data-state="active"] {
-    background-color: var(--light, var(--primary-color))
-        var(--dark, var(--primary-color-6));
-    box-shadow: var(--dark, inset 0 0 0 1px var(--dx-border-alt))
-        var(--light, 0 1px 2px rgb(0 0 0 / 18%));
+    border-color: var(--dark, var(--dx-input));
+    background-color: var(--light, var(--dx-background))
+        var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
+    box-shadow: var(--dx-shadow-sm);
 }
 
 .dx-tabs-trigger[data-state="active"] {
-    color: var(--dx-accent-foreground);
+    color: var(--dx-foreground);
 }
 
 .dx-tabs-trigger[data-disabled="true"] {
-    color: var(--dx-muted-foreground);
     cursor: not-allowed;
+    opacity: var(--dx-opacity-disabled);
 }
 
-/* Sweep fix (calendar-state lane, same class as calendar/style.css's day
-   hover -- see that file's rule for the full :where() rationale): a plain
-   hover must never outrank the active tab's own [data-state="active"] color
-   (--secondary-color-1, chosen to read as "this one is active") with this
-   file's plain --secondary-color-3 hover tint -- confirmed live, before this
-   fix, clicking a tab left the pointer on it and the active tab's text
-   silently reverted to the same shade any hovered, non-active tab gets,
-   i.e. exactly the calendar bug, on `tabs` instead of `calendar`.
-   :focus-visible is kept OUT of the :where() and as its own rule on
-   purpose: this component has no separate focus ring/outline anywhere in
-   this file, so this color change is its ONLY focus indicator, and it must
-   keep enough specificity to outrank [data-state="active"] the way it
-   already did (both one class + one attribute/pseudo-class; this rule
-   staying textually after the active-state rule above breaks the tie in
-   its favor, unchanged from before this fix) -- an active, keyboard-focused
-   tab SHOULD still visibly show focus, per the lane brief's "keep
-   focus-visible rings visible on selected days". */
+/* A plain hover must never outrank the active tab's own
+   [data-state="active"] colour, so it is kept at zero specificity with
+   :where() (same class of bug as calendar/style.css's day hover: clicking a
+   tab leaves the pointer on it, and a hover tint with normal specificity
+   would repaint the active tab). Hover and active now resolve to the same
+   `foreground`, but the guard stays so a retuned active colour cannot
+   regress. */
 :where(.dx-tabs-trigger:hover:not([data-disabled="true"])) {
-    color: var(--dx-foreground-alt);
+    color: var(--dx-foreground);
 }
 
+/* `focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50
+   focus-visible:outline-1 focus-visible:outline-ring`. Kept out of the
+   :where() so it outranks [data-state="active"]'s border and shadow. */
 .dx-tabs-trigger:focus-visible {
-    color: var(--dx-foreground-alt);
+    border-color: var(--dx-ring-color);
+    box-shadow: var(--dx-ring-focus);
+    color: var(--dx-foreground);
+    outline: 1px solid var(--dx-ring-color);
 }
 
 .dx-tabs-content {
@@ -81,10 +113,9 @@
 }
 
 [data-variant="default"] .dx-tabs-content-themed {
-    border: 1px solid var(--dx-input);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-lg);
     background: var(--dx-card);
-    box-shadow: var(--light, 0 1px 2px rgb(0 0 0 / 18%)) var(--dark, none);
 }
 
 .dx-tabs-content[data-state="inactive"] {
