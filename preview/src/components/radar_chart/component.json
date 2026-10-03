@@ -1,6 +1,6 @@
 {
   "name": "radar_chart",
-  "description": "A radar (spider) chart family built on the shared chart engine, with polygon/circle grid, dot, fill, legend, and icon variants.",
+  "description": "Radar (spider) charts with polygon or circle grids, dots, fills, a legend and series icons.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [],

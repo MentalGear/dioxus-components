@@ -1,6 +1,6 @@
-Bar charts compare values across categories. This page is a gallery of bar configurations built from the [Chart](/component/?name=chart) package (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) and `Card` for the surrounding frame. Installing this component adds `chart` and `card` for you.
+Bar charts compare values across categories. This page is a gallery of bar configurations built from the [Chart](/component/chart/) package (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) and `Card` for the surrounding frame. Installing this component adds `chart` and `card` for you.
 
-## Usage
+## Quick start
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
@@ -30,7 +30,7 @@ Bar-specific settings live in `bar: BarOptions { .. }` on `Chart`:
 
 For per-bar colors, set `ChartDatum::color` on each datum, for example one color for positive values and another for negative ones. Bar charts always draw a zero line, so mixed positive and negative values have a visible baseline.
 
-## Variants
+## Demos
 
 - **Default** — one series.
 - **Multiple** — two series grouped side by side.
@@ -45,4 +45,4 @@ For per-bar colors, set `ChartDatum::color` on each datum, for example one color
 
 ## Accessibility
 
-Bar charts follow the shared [Chart](/component/?name=chart) behavior: a named SVG image, a hidden data table with every value, and arrow-key, `Home`, `End` and `Escape` stepping through bars on the focusable wrapper.
+Bar charts follow the shared [Chart](/component/chart/) behavior: a named SVG image, a hidden data table with every value, and arrow-key, `Home`, `End` and `Escape` stepping through bars on the focusable wrapper.

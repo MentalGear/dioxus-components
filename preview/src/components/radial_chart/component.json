@@ -1,6 +1,6 @@
 {
   "name": "radial_chart",
-  "description": "Radial bar charts, built from the Chart package's arc-based (RadialBar) kind -- no separate primitive.",
+  "description": "Radial bar charts: ring stacks, grid tracks, labels, custom arc shapes, stacking and a center label.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

@@ -1,4 +1,4 @@
-`ChartTooltip` and `ChartLegend` are the optional pieces of a [Chart](/component/?name=chart) that tell a reader what each series and value means. This page shows each option on its own: the indicator shape, hiding the label or indicator, a fixed heading, label and value formatters, per-series icons, and fully custom rows. Nothing extra is installed; it is the same `ChartTooltip` that ships with `chart`.
+`ChartTooltip` and `ChartLegend` are the optional pieces of a [Chart](/component/chart/) that tell a reader what each series and value means. This page shows each option on its own: the indicator shape, hiding the label or indicator, a fixed heading, label and value formatters, per-series icons, and fully custom rows. Nothing extra is installed; it is the same `ChartTooltip` that ships with `chart`.
 
 Place `ChartTooltip {}` as a sibling of `Chart` inside the `ChartContainer`. It shows the label and one row per series for the active data point, which is the point under the pointer or the one the keyboard has stepped to. It is hidden from assistive technology (`aria-hidden`) because the chart's data table is the accessible source of the same numbers.
 

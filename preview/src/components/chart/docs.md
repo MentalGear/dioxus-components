@@ -1,8 +1,8 @@
 Chart draws themed, accessible SVG charts from plain data. It covers area, bar, line, pie, radar and radial-bar charts with one set of building blocks: describe your series in a `ChartConfig`, supply one `ChartDatum` per category, and compose `ChartContainer`, `Chart`, and optionally `ChartTooltip` and `ChartLegend`. There is no charting library behind it and no injected markup — every mark is ordinary Dioxus RSX, so charts server-render and hydrate like any other component.
 
-The other chart pages are galleries built on this same package: [Area chart](/component/?name=area_chart), [Bar chart](/component/?name=bar_chart), [Line chart](/component/?name=line_chart), [Pie chart](/component/?name=pie_chart), [Radar chart](/component/?name=radar_chart), [Radial chart](/component/?name=radial_chart), and [Chart tooltip](/component/?name=chart_tooltip). Install the `chart` package once and use any of them.
+The other chart pages are galleries built on this same package: [Area chart](/component/area_chart/), [Bar chart](/component/bar_chart/), [Line chart](/component/line_chart/), [Pie chart](/component/pie_chart/), [Radar chart](/component/radar_chart/), [Radial chart](/component/radial_chart/), and [Chart tooltip](/component/chart_tooltip/). Install the `chart` package once and use any of them.
 
-## Usage
+## Quick start
 
 ```rust
 // Series, in draw order (also the legend and tooltip row order). `color` is
@@ -83,6 +83,6 @@ A chart is a picture, so it comes with a real data table for anyone who cannot s
 
 ## Dense x-axes
 
-By default every category gets an x-axis label, which turns a chart with many points (say 90 daily values) into an unreadable smear. `max_x_ticks` (default `12`) limits how many labels are drawn: the chart labels every n-th category, where n is the number of categories divided by `max_x_ticks`, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
+With many points (say 90 daily values) a label under every category would be an unreadable smear, so a chart draws at most 12 x-axis labels. `max_x_ticks` (default `12`) sets that limit: the chart labels every n-th category, where n is the number of categories divided by `max_x_ticks`, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
 
 The limit is a count, not a measurement of text width, so very long labels on a narrow screen can still collide even under the limit. Shorten them with `x_tick_format` or lower `max_x_ticks`.

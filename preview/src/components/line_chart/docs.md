@@ -1,6 +1,6 @@
-Line charts show how values change across an ordered set of categories, such as months or dates. This page is a gallery of line configurations built from the [Chart](/component/?name=chart) package; install `chart` and you have everything. The Chart page explains the shared `ChartConfig` and `ChartDatum` model, colors and accessibility.
+Line charts show how values change across an ordered set of categories, such as months or dates. This page is a gallery of line configurations built from the [Chart](/component/chart/) package; install `chart` and you have everything. The Chart page explains the shared `ChartConfig` and `ChartDatum` model, colors and accessibility.
 
-## Usage
+## Quick start
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
@@ -32,7 +32,7 @@ Line-specific settings live in `line: LineOptions { .. }` on `Chart`:
 - `labels` draws a text label above each point: `LineLabels::Value` shows the point's value, and `LineLabels::Custom(callback)` calls your callback with the point index so you can label by category or anything else.
 - `stroke_width` sets the line thickness (default `2`).
 
-## Variants
+## Demos
 
 - **Default** — one series, no dots.
 - **Linear** and **Step** — the same data with `Curve::Linear` and `Curve::Step`.

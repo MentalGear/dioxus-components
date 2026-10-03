@@ -1,6 +1,6 @@
 The NavigationMenu component displays a collection of links and disclosure panels for site navigation.
 
-Unlike [Navbar](/component/?name=navbar), which implements the APG Menu and
+Unlike [Navbar](/component/navbar/), which implements the APG Menu and
 Menubar pattern (`role="menubar"`/`"menu"`/`"menuitem"`, roving `tabindex`),
 NavigationMenu implements the APG Disclosure (Show/Hide) Navigation
 pattern: plain links and `button[aria-expanded][aria-controls]` disclosure
@@ -8,7 +8,7 @@ triggers, with no menu role anywhere. Every trigger and link keeps its
 native tab stop, so Tab/Shift+Tab move through them (and, once a panel is
 open, through its links) in DOM order -- there is no roving-focus
 collection to manage. Use this component for real site navigation; use
-Navbar (or [Menubar](/component/?name=menubar)) when you need the fuller
+Navbar (or [Menubar](/component/menubar/)) when you need the fuller
 menu-button keyboard contract.
 
 ## Component Structure

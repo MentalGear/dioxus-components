@@ -29,4 +29,4 @@ Table {
 }
 ```
 
-`TableHead` defaults to `scope="col"`; pass `scope: "row"` to use it as a row header instead. `TableRow` accepts an optional `selected: ReadSignal<bool>` prop that sets `data-state="selected"` for row-selection styling — used by the [Data Table](/component/?name=data_table&) composition pattern, which builds sorting, filtering, pagination, and row selection on top of this component.
+`TableHead` defaults to `scope="col"`; pass `scope: "row"` to use it as a row header instead. `TableRow` accepts an optional `selected: ReadSignal<bool>` prop that sets `data-state="selected"` for row-selection styling — used by the [Data Table](/component/data_table/) composition pattern, which builds sorting, filtering, pagination, and row selection on top of this component.

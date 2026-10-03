@@ -1,6 +1,6 @@
-Area charts show how one or more values change across categories, with the region under the line filled in. Use them for totals over time, or stack several series to show how a whole is made up. This page is a gallery of the shapes an area chart usually takes; every piece it uses (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) comes from the [Chart](/component/?name=chart&) package, which is the one package you install.
+Area charts show how one or more values change across categories, with the region under the line filled in. Use them for totals over time, or stack several series to show how a whole is made up. This page is a gallery of the shapes an area chart usually takes; every piece it uses (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) comes from the [Chart](/component/chart/) package, which is the one package you install.
 
-## Usage
+## Quick start
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
@@ -32,7 +32,7 @@ ChartContainer { config, data, kind: ChartKind::Area,
 - `show_y_axis: true` and `y_tick_count` show the y-axis and control how many ticks it gets. The y-axis is off by default; the tooltip and the data table carry exact values.
 - A series can have an icon: set `icon: Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })))` on a `ChartSeries`. `ChartLegend` and `ChartTooltip` show it in place of the color swatch.
 
-## Variants
+## Demos
 
 - **Default** — one series with the default smooth curve.
 - **Linear** and **Step** — the same data with `Curve::Linear` and `Curve::Step`.
@@ -46,4 +46,4 @@ ChartContainer { config, data, kind: ChartKind::Area,
 
 ## Accessibility
 
-Area charts have the same accessibility behavior as every [Chart](/component/?name=chart&): the SVG is a named image (`role="img"` with a `<title>`), a visually hidden data table lists every value, and a focusable wrapper lets keyboard users step through points with the arrow keys, `Home`, `End` and `Escape`. Legend swatches have `role="graphics-symbol"` and the series label as their name. See the Chart page for details.
+Area charts have the same accessibility behavior as every [Chart](/component/chart/): the SVG is a named image (`role="img"` with a `<title>`), a visually hidden data table lists every value, and a focusable wrapper lets keyboard users step through points with the arrow keys, `Home`, `End` and `Escape`. Legend swatches have `role="graphics-symbol"` and the series label as their name. See the Chart page for details.

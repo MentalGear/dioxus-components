@@ -2,7 +2,7 @@ A slideshow of slides that the user pages through with Previous/Next buttons, th
 
 Slides snap into place with CSS scroll snapping, so touch and trackpad scrolling are native. Everything below is opt-in; a carousel with only `CarouselPrevious`, `CarouselNext` and `CarouselContent` needs no configuration.
 
-## Usage
+## Quick start
 
 ```rust
 Carousel { aria_label: "Featured photos",

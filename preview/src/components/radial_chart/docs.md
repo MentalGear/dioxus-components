@@ -1,6 +1,6 @@
-Radial charts draw each value as a bar wrapped around a circle, which suits a handful of progress-style measures or a single gauge. They are the other arc-based member of the [Chart](/component/?name=chart) family: `kind: ChartKind::RadialBar` plus a `RadialOptions` value. Like [Pie chart](/component/?name=pie_chart), there is nothing extra to install; `chart` is everything a radial chart needs.
+Radial charts draw each value as a bar wrapped around a circle, which suits a handful of progress-style measures or a single gauge. They are the other arc-based member of the [Chart](/component/chart/) family: `kind: ChartKind::RadialBar` plus a `RadialOptions` value. Like [Pie chart](/component/pie_chart/), there is nothing extra to install; `chart` is everything a radial chart needs.
 
-## Usage
+## Quick start
 
 ```rust
 let config = ChartConfig::new()
@@ -20,7 +20,7 @@ ChartContainer { config, data, kind: ChartKind::RadialBar,
         radial: RadialOptions {
             inner_radius: 30.0, // where the innermost ring starts
             outer_radius: 110.0, // 0.0 sizes it from the chart automatically
-            start_angle: 0.0,   // radians; 0.0 is three o'clock
+            start_angle: 0.0,   // radians; 0.0 is twelve o'clock, clockwise
             end_angle: std::f64::consts::TAU, // may exceed a full turn
             corner_radius: 0.0,
             grid: false,        // a muted background track behind each ring
@@ -38,15 +38,15 @@ Each ring is scaled against the largest value in the data, so the biggest value 
 ## Options
 
 - `inner_radius` should normally be above zero; otherwise the innermost ring starts at a single point and its length is hard to judge. `outer_radius` defaults to `0.0`, which fits the ring stack to the chart's size.
-- `start_angle` and `end_angle` set the sweep in radians, where `0.0` is three o'clock. Shift both to rotate the chart (a start of `-FRAC_PI_2` is twelve o'clock), or make the sweep longer than a full turn so the ends of the first and last rings do not touch.
+- `start_angle` and `end_angle` set the sweep in radians, where `0.0` is twelve o'clock and angles increase clockwise. Shift both to rotate the chart (a start of `FRAC_PI_2` is three o'clock, `-FRAC_PI_2` nine o'clock), or make the sweep longer than a full turn so the ends of the first and last rings do not touch.
 - `grid: true` draws a muted full-sweep track behind every ring.
-- `labels` takes the same `PieLabels` values as the pie chart (`None`, `Value`, `Percent`, `List`) and prints text on each ring.
+- `labels` takes the same `PieLabels` values as the pie chart (`None`, `Value`, `Percent`, `List`) and prints each label along its ring, starting just inside the ring's start.
 - `center_text` writes a two-line total in the hole, which is the usual way to make a gauge. It needs `inner_radius` above zero.
 - `stacked: true` puts every configured series' value for the first datum into one ring, end to end. It only makes sense with two or more series.
 
 Rings are `path[data-slot="chart-arc"]` elements with `data-index`, `data-start-angle` and `data-end-angle`, the same shape the pie chart uses, so one stylesheet can cover both.
 
-## Variants
+## Demos
 
 - **Simple** — five rings, one per browser.
 - **Label** — each ring's category name drawn on its arc.
@@ -57,4 +57,4 @@ Rings are `path[data-slot="chart-arc"]` elements with `data-index`, `data-start-
 
 ## Accessibility
 
-Radial charts share the [Chart](/component/?name=chart) behavior: the SVG is a named image (`role="img"`), and a visually hidden data table lists every ring's category and value for assistive technology. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the rings.
+Radial charts share the [Chart](/component/chart/) behavior: the SVG is a named image (`role="img"`), and a visually hidden data table lists every ring's category and value for assistive technology. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the rings.

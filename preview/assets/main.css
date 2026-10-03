@@ -1562,21 +1562,40 @@ summary,
 }
 
 @media (width <= 760px) {
+  /* One compact row at phone widths (measured 54px at 360/390 vs 151px when
+   * it wrapped to three rows): no wrapping, tighter gaps, and the brand
+   * wordmark visually hidden -- the logo stays as the home link, and the
+   * text stays in the accessibility tree. */
   .dx-navbar-inner {
     width: 100%;
-    flex-wrap: wrap;
-    padding-right: 1rem;
-    padding-left: 1rem;
-    gap: 0.75rem;
+    flex-wrap: nowrap;
+    padding-right: var(--dx-space-4);
+    padding-left: var(--dx-space-4);
+    gap: 0.5rem;
   }
 
   .dx-navbar-utilities {
-    flex-wrap: wrap;
+    min-width: 0;
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    gap: 0.75rem;
   }
 
   .dx-navbar-primary {
-    flex-wrap: wrap;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+  }
+
+  .dx-navbar-brand span {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* The mobile drawer itself (sidebar-wrapper -> Sheet, `data-mobile="true"`)
@@ -1593,9 +1612,11 @@ summary,
     border-left: none;
   }
 
+  /* Keep a 16px side gutter: with `0` inline padding the h1 and prose sat
+   * flush against the screen edge on /docs/ and every component page. */
   .dx-docs-page,
   .dx-component-page {
-    padding: 1.5rem 0 4rem;
+    padding: 1.5rem var(--dx-space-4) 4rem;
   }
 
   .dx-docs-page-header h1,

@@ -1241,7 +1241,7 @@ fn DocsLayout(
                                     span { "{cat.label()}" }
                                 }
                                 SidebarMenu {
-                                    for component in components::DEMOS.iter().filter(|c| components::category_of(c.name) == cat) {
+                                    for component in components::demos_in_category(cat) {
                                         SidebarMenuItem { key: "{component.name}",
                                             SidebarMenuButton {
                                                 is_active: active == DocsNavActive::Component(component.name),
@@ -1395,6 +1395,39 @@ fn ComponentDemoPath(iframe: Option<bool>, dark_mode: Option<bool>, name: String
     }
 }
 
+/// The `h2` headings `ComponentHighlight` renders itself around each
+/// component's `docs.md`. A `docs.md` must not add an `h2` with one of these
+/// texts (the page would show it twice); `docs_md_has_no_template_h2` below
+/// enforces that, so the list is the single source for both.
+const PAGE_HEADING_INSTALLATION: &str = "Installation";
+const PAGE_HEADING_USAGE: &str = "Usage notes";
+const PAGE_HEADING_VARIANTS: &str = "Variants";
+#[cfg(test)]
+const TEMPLATE_H2_HEADINGS: [&str; 3] = [
+    PAGE_HEADING_INSTALLATION,
+    PAGE_HEADING_USAGE,
+    PAGE_HEADING_VARIANTS,
+];
+
+/// Prefixes the app base path (`dx --base-path`, e.g. `/dioxus-components`)
+/// onto root-absolute `href="/..."` links in the build-time rendered
+/// `docs.md` HTML. `build.rs` bakes that HTML before the base path is
+/// known, and a root-absolute href otherwise escapes the base path when
+/// opened in a new tab or without JS (it hit `host/component/...`, a 404,
+/// on the Pages deploy). Uses the router's own prefix -- the same value
+/// every `Link` prepends -- so server and client render identically.
+fn prefix_internal_hrefs(docs: &'static str) -> String {
+    prefix_root_absolute_hrefs(docs, &router().prefix().unwrap_or_default())
+}
+
+fn prefix_root_absolute_hrefs(html: &str, prefix: &str) -> String {
+    let prefix = prefix.trim_end_matches('/');
+    if prefix.is_empty() {
+        return html.to_string();
+    }
+    html.replace("href=\"/", &format!("href=\"{prefix}/"))
+}
+
 #[component]
 fn ComponentHighlight(demo: ComponentDemoData) -> Element {
     let ComponentDemoData {
@@ -1434,7 +1467,7 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                 }
                 section { class: "dx-component-section",
                     div { class: "dx-component-section-heading",
-                        h2 { "Installation" }
+                        h2 { "{PAGE_HEADING_INSTALLATION}" }
                         p { "Use the CLI command for the common path, or copy the component files manually." }
                     }
                     details { class: "dx-component-manual-install dx-component-manual-install-code",
@@ -1444,16 +1477,16 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                 }
                 section { class: "dx-component-section dx-docs-prose",
                     div { class: "dx-component-section-heading",
-                        h2 { "Usage notes" }
+                        h2 { "{PAGE_HEADING_USAGE}" }
                     }
                     div { class: "dx-component-description",
-                        div { dangerous_inner_html: docs }
+                        div { dangerous_inner_html: prefix_internal_hrefs(docs) }
                     }
                 }
                 if !variants.is_empty() {
                     section { class: "dx-component-section",
                         div { class: "dx-component-section-heading",
-                            h2 { "Variants" }
+                            h2 { "{PAGE_HEADING_VARIANTS}" }
                             p { "Alternative examples for common configurations." }
                         }
                         for variant in variants {
@@ -2992,5 +3025,86 @@ mod variant_title_tests {
         assert_eq!(variant_title("virtual_many"), "virtual many");
         assert_eq!(variant_title("multi_month"), "multi month");
         assert_eq!(variant_title("sizes"), "sizes");
+    }
+}
+
+#[cfg(test)]
+mod docs_tests {
+    use super::TEMPLATE_H2_HEADINGS;
+
+    /// Every `## ` heading of a `docs.md`, ignoring fenced code blocks.
+    fn h2_headings(markdown: &str) -> Vec<&str> {
+        let mut in_fence = false;
+        let mut headings = Vec::new();
+        for line in markdown.lines() {
+            if line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+            } else if !in_fence {
+                if let Some(text) = line.strip_prefix("## ") {
+                    headings.push(text.trim().trim_end_matches(':').trim());
+                }
+            }
+        }
+        headings
+    }
+
+    #[test]
+    fn root_absolute_hrefs_gain_the_base_path() {
+        let html = r##"<a href="/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##;
+        assert_eq!(
+            super::prefix_root_absolute_hrefs(html, "/dioxus-components"),
+            r##"<a href="/dioxus-components/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##
+        );
+        assert_eq!(super::prefix_root_absolute_hrefs(html, ""), html);
+        assert_eq!(super::prefix_root_absolute_hrefs(html, "/"), html);
+    }
+
+    #[test]
+    fn docs_md_has_no_template_h2() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
+        let mut checked = 0;
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(&root).unwrap().flatten() {
+            let path = entry.path().join("docs.md");
+            let Ok(markdown) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            checked += 1;
+            for heading in h2_headings(&markdown) {
+                if TEMPLATE_H2_HEADINGS
+                    .iter()
+                    .any(|reserved| reserved.eq_ignore_ascii_case(heading))
+                {
+                    offenders.push(format!("{}: `## {heading}`", path.display()));
+                }
+            }
+        }
+        assert!(checked > 0, "found no docs.md under {}", root.display());
+        assert!(
+            offenders.is_empty(),
+            "docs.md repeats an h2 the component page template already renders \
+             (rename it, e.g. `Demos` / `Quick start`):\n{}",
+            offenders.join("\n")
+        );
+    }
+
+    #[test]
+    fn docs_md_has_no_root_absolute_query_links() {
+        // `/component/?name=x` is the legacy JS-redirect route; build.rs
+        // rewrites it, but keep the sources on the canonical form too.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(&root).unwrap().flatten() {
+            let path = entry.path().join("docs.md");
+            if let Ok(markdown) = std::fs::read_to_string(&path) {
+                if markdown.contains("](/component/?") {
+                    offenders.push(path.display().to_string());
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "use `](/component/<name>/)`, not the legacy query form, in: {offenders:?}"
+        );
     }
 }

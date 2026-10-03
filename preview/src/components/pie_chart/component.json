@@ -1,6 +1,6 @@
 {
   "name": "pie_chart",
-  "description": "Pie and donut charts, built from the Chart package's arc-based (Pie) kind -- no separate primitive.",
+  "description": "Pie and donut charts: slice labels, a legend, an active slice, a center total, stacked rings and an interactive picker.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

@@ -101,6 +101,21 @@ pub fn category_of(name: &str) -> ComponentCategory {
     }
 }
 
+/// The `DEMOS` entries of one sidebar group, in sidebar order: `DEMOS` order
+/// (alphabetical), except that a group's overview page leads it. Only
+/// `chart` is one today; it would otherwise sort between `bar chart` and
+/// `chart tooltip`, burying the page the other chart pages point to. A
+/// stable sort on a boolean key keeps every other entry where it was, and
+/// leaves the gallery/Demos grids (which iterate `DEMOS` directly) alone.
+pub fn demos_in_category(cat: ComponentCategory) -> Vec<&'static ComponentDemoData> {
+    let mut demos: Vec<_> = DEMOS
+        .iter()
+        .filter(|demo| category_of(demo.name) == cat)
+        .collect();
+    demos.sort_by_key(|demo| demo.name != "chart");
+    demos
+}
+
 macro_rules! examples {
     ($($name:ident $(($kind:ident))? $([$($variant:ident),*])?),* $(,)?) => {
         $(

@@ -1,6 +1,6 @@
-Pie charts show how a whole divides into parts, and donut charts do the same with a hole in the middle that can hold a total. They are the arc-based members of the [Chart](/component/?name=chart) family: the same `ChartContainer`, `Chart`, `ChartTooltip` and `ChartLegend`, with `kind: ChartKind::Pie` and a `PieOptions` value that shapes the slices. Installing `chart` is everything a pie or donut needs; this page is a gallery of that mode.
+Pie charts show how a whole divides into parts, and donut charts do the same with a hole in the middle that can hold a total. They are the arc-based members of the [Chart](/component/chart/) family: the same `ChartContainer`, `Chart`, `ChartTooltip` and `ChartLegend`, with `kind: ChartKind::Pie` and a `PieOptions` value that shapes the slices. Installing `chart` is everything a pie or donut needs; this page is a gallery of that mode.
 
-## Usage
+## Quick start
 
 ```rust
 let config = ChartConfig::new()
@@ -24,7 +24,6 @@ ChartContainer { config, data, kind: ChartKind::Pie,
             labels: PieLabels::None, // None | Value | Percent | List(Vec<String>)
             active_index: None,      // hold one slice in its highlighted state
             center_text: None,       // Some((primary, secondary)), donuts only
-            ..Default::default()
         },
     }
     ChartTooltip {}
@@ -42,7 +41,7 @@ With a single series, each datum is one slice and `ChartLegend` lists one entry 
 - Hovering a slice, or stepping to it with the keyboard, highlights it the same way.
 - Each slice is a `path[data-slot="chart-arc"]` with `data-index`, `data-start-angle` and `data-end-angle` (in radians) if you need the raw layout numbers in your own CSS or scripts.
 
-## Variants
+## Demos
 
 - **Simple** — a plain five-slice pie.
 - **Separator none** — the same pie; slices are drawn without a separator stroke.
@@ -57,4 +56,4 @@ With a single series, each datum is one slice and `ChartLegend` lists one entry 
 
 ## Accessibility
 
-A pie chart has the same accessibility behavior as every [Chart](/component/?name=chart): the SVG is a named image, and the visually hidden data table lists each slice's category, its value and its percent of the total, so screen reader users read the numbers instead of an attempt to describe wedges. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the slices.
+A pie chart has the same accessibility behavior as every [Chart](/component/chart/): the SVG is a named image, and the visually hidden data table lists each slice's category, its value and its percent of the total, so screen reader users read the numbers instead of an attempt to describe wedges. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the slices.
