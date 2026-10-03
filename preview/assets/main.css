@@ -795,6 +795,50 @@ summary,
   line-height: 1.6;
 }
 
+/* Tables in prose: the wrapper (added in `preview/build.rs`) is the scroll
+ * container, so a wide table scrolls inside its own box at phone widths. */
+.dx-docs-prose .dx-docs-table-scroll {
+  max-width: 100%;
+  margin: 0 0 1.1rem;
+  overflow-x: auto;
+}
+
+.dx-docs-prose table {
+  min-width: 100%;
+  border-collapse: collapse;
+  color: var(--secondary-color-4);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.dx-docs-prose th,
+.dx-docs-prose td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--primary-color-6);
+  text-align: start;
+  vertical-align: top;
+}
+
+.dx-docs-prose th {
+  background-color: var(--primary-color-2);
+  color: var(--secondary-color-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dx-docs-prose tbody tr:nth-child(even) td {
+  background-color: var(--primary-color-1);
+}
+
+.dx-docs-prose td code {
+  padding: 0.15em 0.4em;
+  border-radius: 0.25rem;
+  background-color: var(--primary-color-2);
+  color: var(--secondary-color-3);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+}
+
 /* Inline links in prose */
 .dx-docs-prose .dx-docs-section a {
   color: var(--highlight-color-tertiary);
@@ -1388,6 +1432,34 @@ summary,
   max-width: 100%;
 }
 
+/* Bare chart demos (`.dx-chart` as the frame's direct child, e.g. the
+ * `chart` page's Bar/Line/Stacked variants) and chart demos wrapped in a
+ * `Card` (the `*_chart` galleries) both shrink-wrapped to ~300-450px inside
+ * the wide frame: the frame is a centred flex column and the chart's own
+ * content is a `width: 100%` svg, so there is no intrinsic width to wrap to.
+ * Give them one shared comfortable width instead: the frame's full width up
+ * to 40rem (`area_chart` wraps its Card in a `display: contents` gallery div,
+ * hence the third/fourth selectors; the wrapper itself is sized too so the
+ * rule also holds if it renders as an ordinary block). `width` is explicit
+ * next to `max-width` (scripts/check-demo-wrapper-width.sh, row 94). */
+.dx-component-preview-frame > .dx-chart,
+.dx-component-preview-frame > .dx-card:has(.dx-chart),
+.dx-component-preview-frame > .dx-area-chart-gallery:has(.dx-chart),
+.dx-component-preview-frame > .dx-area-chart-gallery > .dx-card:has(.dx-chart) {
+  width: 100%;
+  max-width: 40rem;
+}
+
+/* A bare chart sits straight on the dotted frame canvas; give it the same
+ * surface the `Card`-wrapped demos have so its axis labels stay legible. */
+.dx-component-preview-frame > .dx-chart {
+  box-sizing: border-box;
+  padding: var(--dx-space-4);
+  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-radius: var(--dx-radius-2xl);
+  background-color: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+}
+
 /* Footer */
 .dx-preview-footer {
   display: flex;
@@ -1542,7 +1614,12 @@ summary,
     grid-template-columns: 1fr;
   }
 
+  /* `overflow: hidden`: a thumbnail whose demo has a fixed inline `min-width`
+   * wider than the card (the Resizable demo's 450px group) must clip inside
+   * its own box, not widen the page. Desktop keeps the base `overflow:
+   * visible`. */
   .dx-component-card-preview {
+    overflow: hidden;
     min-height: 7rem;
     padding: 1.25rem;
   }
@@ -1551,6 +1628,23 @@ summary,
     width: 100%;
     padding-right: 1rem;
     padding-left: 1rem;
+  }
+
+  /* The desktop footer insets (4.5rem a side, two 1.4fr/1fr columns) leave
+   * ~100px for the link columns at 390px, so the two nav headings overlap.
+   * Stack the brand above the nav and use phone-sized gutters. */
+  .dx-footer-inner {
+    padding: var(--dx-space-8) var(--dx-space-4);
+    gap: var(--dx-space-8);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-footer-nav {
+    gap: var(--dx-space-6);
+  }
+
+  .dx-footer-base {
+    padding: var(--dx-space-4) var(--dx-space-4) var(--dx-space-6);
   }
 }
 
