@@ -49,7 +49,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::chart::context::{ChartContext, Cursor};
-use crate::chart::BandScale;
+use crate::chart::CategoryScale;
 
 /// Which way a category chart's categories run.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -104,17 +104,21 @@ pub(crate) enum HitTest {
     /// Nearest category on `axis` within the plot rectangle.
     Categories {
         axis: Axis,
-        /// The category scale, in the chart's logical units.
-        band: BandScale,
-        /// The plot rectangle `(x0, y0, x1, y1)`, logical units.
+        /// The category scale (points for Area/Line, bands for bars), in
+        /// the chart's px.
+        band: CategoryScale,
+        /// The plot rectangle `(x0, y0, x1, y1)`, in the chart's px.
         plot: (f64, f64, f64, f64),
-        /// The chart's logical size (the viewBox), used to map the
-        /// pointer's CSS pixels into logical units.
+        /// The chart's size (the viewBox), used to map the pointer's CSS
+        /// pixels into the chart's px (an identity once measured, but not
+        /// under a scaled ancestor or before the first measurement).
         view: (f64, f64),
     },
-    /// The first [`Sector`] around the viewBox center containing the pointer.
+    /// The first [`Sector`] around `center` containing the pointer.
     Sectors {
         view: (f64, f64),
+        /// The polar center in the chart's px (the plot rect's center).
+        center: (f64, f64),
         sectors: Rc<[Sector]>,
     },
 }
@@ -148,8 +152,12 @@ impl HitTest {
             } => {
                 let lx = px * view.0 / box_size.0;
                 let ly = py * view.1 / box_size.1;
+                // Half a px of slack: the first and last points sit ON the
+                // plot's edges, and a pointer exactly there must not round
+                // out of it.
                 let (x0, y0, x1, y1) = *plot;
-                if lx < x0 || lx > x1 || ly < y0 || ly > y1 {
+                const SLACK: f64 = 0.5;
+                if lx < x0 - SLACK || lx > x1 + SLACK || ly < y0 - SLACK || ly > y1 + SLACK {
                     return Hit::Outside;
                 }
                 let along = match axis {
@@ -158,9 +166,13 @@ impl HitTest {
                 };
                 band.nearest_index(along).map_or(Hit::Outside, Hit::Index)
             }
-            Self::Sectors { view, sectors } => {
-                let dx = px * view.0 / box_size.0 - view.0 / 2.0;
-                let dy = py * view.1 / box_size.1 - view.1 / 2.0;
+            Self::Sectors {
+                view,
+                center,
+                sectors,
+            } => {
+                let dx = px * view.0 / box_size.0 - center.0;
+                let dy = py * view.1 / box_size.1 - center.1;
                 let r = dx.hypot(dy);
                 let theta = dx.atan2(-dy);
                 sectors
@@ -270,11 +282,11 @@ mod tests {
     fn columns() -> HitTest {
         HitTest::Categories {
             axis: Axis::X,
-            band: BandScale {
+            band: CategoryScale::Band(crate::chart::BandScale {
                 count: 4,
                 range: (8.0, 592.0),
                 padding: 0.2,
-            },
+            }),
             plot: (8.0, 8.0, 592.0, 270.0),
             view: (600.0, 300.0),
         }
@@ -314,14 +326,35 @@ mod tests {
     }
 
     #[test]
+    fn area_and_line_snap_to_the_nearest_point_edge_to_edge() {
+        // shadcn's area default: plot 12..357, points 69px apart, the first
+        // ON the left edge.
+        let t = HitTest::Categories {
+            axis: Axis::X,
+            band: CategoryScale::Point(crate::chart::PointScale {
+                count: 6,
+                range: (12.0, 357.0),
+            }),
+            plot: (12.0, 0.0, 357.0, 178.0),
+            view: (369.0, 208.0),
+        };
+        let b = (369.0, 208.0);
+        assert_eq!(t.resolve(13.0, 50.0, b), Hit::Index(0));
+        assert_eq!(t.resolve(47.0, 50.0, b), Hit::Index(1));
+        assert_eq!(t.resolve(356.0, 50.0, b), Hit::Index(5));
+        assert_eq!(t.resolve(11.7, 50.0, b), Hit::Index(0), "on the edge");
+        assert_eq!(t.resolve(5.0, 50.0, b), Hit::Outside, "left margin");
+    }
+
+    #[test]
     fn rows_resolve_along_y() {
         let t = HitTest::Categories {
             axis: Axis::Y,
-            band: BandScale {
+            band: CategoryScale::Band(crate::chart::BandScale {
                 count: 5,
                 range: (8.0, 292.0),
                 padding: 0.2,
-            },
+            }),
             plot: (8.0, 8.0, 592.0, 292.0),
             view: (600.0, 300.0),
         };
@@ -428,6 +461,7 @@ mod tests {
         // 300x300 chart shown 1:1; center (150,150). Two half-ring sectors.
         let t = HitTest::Sectors {
             view: (300.0, 300.0),
+            center: (150.0, 150.0),
             sectors: Rc::from(vec![
                 Sector {
                     index: 0,

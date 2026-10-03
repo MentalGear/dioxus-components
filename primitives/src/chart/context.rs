@@ -213,6 +213,16 @@ pub struct ChartContext {
     /// Orders the async pointer measurements against closes -- see
     /// [`PointerGate`]. Not reactive (nothing renders from it).
     pub(crate) gate: CopyValue<PointerGate>,
+    /// The legend's measured border-box block size (CSS px), written by
+    /// `ChartLegend`'s own `onresize` (`None` until measured -- always, on
+    /// the server -- and after the legend unmounts). `Chart` gives this much
+    /// of its box to the legend.
+    pub(crate) legend: Signal<Option<f64>>,
+    /// Whether the container's children include a `ChartLegend` -- known
+    /// from the children themselves on every render (server and client
+    /// alike), so the chart can reserve the legend's room before anything
+    /// is measured. See `ChartContainer`.
+    pub(crate) has_legend: Signal<bool>,
 }
 
 impl ChartContext {

@@ -19,12 +19,10 @@ use dioxus::prelude::*;
 use super::super::layout::SeriesRenderContext;
 use crate::chart::engine::scale::fmt_num;
 
-/// The dot's radius in logical units at text scale `1` (shadcn: `r: 4`). It is
-/// multiplied by the text scale, like the other fixed-size marks, so it keeps
-/// its CSS size when the drawing is shown smaller than its viewBox.
+/// The dot's radius in px (Recharts' default `activeDot`, `r: 4`).
 pub(crate) const ACTIVE_DOT_RADIUS: f64 = 4.0;
 
-/// Series `s`'s point at datum `i`, in the chart's logical units, or `None`
+/// Series `s`'s point at datum `i`, in the chart's px, or `None`
 /// when that series has no value there (a gap draws no dot): the value's own
 /// position, or -- stacked -- the top edge of its band.
 pub(crate) fn point(ctx: &SeriesRenderContext, s: usize, i: usize) -> Option<(f64, f64)> {
@@ -42,7 +40,7 @@ pub(crate) fn point(ctx: &SeriesRenderContext, s: usize, i: usize) -> Option<(f6
 /// datum is active.
 pub(crate) fn render(ctx: &SeriesRenderContext) -> Element {
     let active = ctx.active_index.filter(|i| *i < ctx.xs.len());
-    let radius = fmt_num(ACTIVE_DOT_RADIUS * ctx.text_scale);
+    let radius = fmt_num(ACTIVE_DOT_RADIUS);
     rsx! {
         g { "data-slot": "chart-active-dots",
             if let Some(i) = active {
@@ -93,11 +91,12 @@ mod tests {
         build(LayoutParams {
             width: 600.0,
             height: 300.0,
-            text_scale: 1.0,
+            margin: crate::chart::ChartMargin::default(),
             show_x_axis: true,
             show_y_axis: false,
             y_tick_count: 5,
             kind: ChartKind::Area,
+            horizontal: false,
             stacked,
             stack_mode: StackMode::Normal,
             curve: Curve::Linear,

@@ -460,8 +460,10 @@ pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
 
 /// The tooltip's assumed size (CSS px) until its own `onresize` has
 /// reported one: roughly a label plus one row at the stylesheet's
-/// `min-width`. Only the flip/clamp decision on the very first open uses it.
-const ESTIMATED_TIP_SIZE: (f64, f64) = (152.0, 56.0);
+/// `min-width` (shadcn's 128px tooltip, padding included: 128 x 48 for a
+/// label and one row). Only the flip/clamp decision on the very first open
+/// uses it.
+const ESTIMATED_TIP_SIZE: (f64, f64) = (128.0, 48.0);
 
 /// The point the tooltip hangs off, in CSS px from the chart box's
 /// top-left: the active datum's own anchor (`anchor_pct`, percent of the
@@ -767,6 +769,9 @@ mod tests {
     }
 
     fn probe_value(html: &str, name: &str) -> f64 {
+        // Search from the probe itself: the chart's hit bands carry a
+        // `data-x` of their own.
+        let html = &html[html.find(r#"data-probe="anchor""#).expect("probe")..];
         let key = format!(r#"{name}=""#);
         let start = html.find(&key).expect("probe attr") + key.len();
         let end = html[start..].find('"').expect("closing quote") + start;
@@ -778,8 +783,7 @@ mod tests {
     /// midpoint of the plot range regardless of padding, and one value
     /// equal to the (nice-rounded) domain's own max scales to the exact
     /// top of the plot. Cross-checks `Chart`'s anchor arithmetic against its
-    /// default 600x300/margin layout without re-deriving its internal
-    /// margin constants here.
+    /// default initial size and Recharts margin.
     #[test]
     fn open_anchor_is_the_exact_band_center_and_top_value_percent() {
         #[component]
@@ -806,12 +810,14 @@ mod tests {
         dom.rebuild_in_place();
         dom.render_immediate(&mut NoOpMutations);
         let html = dioxus_ssr::render(&dom);
-        // x: the lone band's center is exactly the plot's own midpoint
-        // ((8 + 592) / 2 = 300), 50% of the 600-wide viewBox.
+        // x: a lone point sits at the plot's own midpoint ((5 + 364) / 2 =
+        // 184.5), 50% of the initial 369px width.
         assert_eq!(probe_value(&html, "data-x"), 50.0);
-        // y: nice_domain(0, 100) is exactly (0, 100), so the value 100
-        // scales to exactly the plot's top (y = 8 of 300), i.e. 8/300*100.
-        assert!((probe_value(&html, "data-y") - 8.0 / 300.0 * 100.0).abs() < 1e-9);
+        // y: the nice ticks of (0, 100) are 0, 25, ..., 100, so the value 100
+        // scales to exactly the plot's top (the 5px default margin of a
+        // 369 x 208 chart).
+        let height = (369.0f64 * 9.0 / 16.0).round();
+        assert!((probe_value(&html, "data-y") - 5.0 / height * 100.0).abs() < 1e-9);
     }
 
     #[test]

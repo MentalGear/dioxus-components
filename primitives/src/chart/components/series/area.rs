@@ -68,8 +68,14 @@ pub struct AreaOptions {
     pub gradient: bool,
     /// Fill opacity for every series' area path (the line stroke itself is
     /// always fully opaque). Matches shadcn's own demos' own literal
-    /// `fillOpacity={0.4}`.
+    /// `fillOpacity={0.4}` (Recharts' own default, without that prop, is
+    /// `0.6` -- `chart-area-interactive`).
     pub fill_opacity: f64,
+    /// Per-series fill opacity, in config order, overriding
+    /// [`Self::fill_opacity`] for the series it covers -- one `<Area
+    /// fillOpacity>` per series in Recharts (`chart-area-stacked-expand`'s
+    /// `other` series is `0.1`).
+    pub series_fill_opacity: Vec<f64>,
     /// Skip a `None` value instead of breaking the drawn area/line there --
     /// shadcn/Recharts' own `connectNulls`. Non-stacked marks only (a
     /// stacked area already draws one unbroken shape across every datum
@@ -87,6 +93,7 @@ impl Default for AreaOptions {
         Self {
             gradient: false,
             fill_opacity: 0.4,
+            series_fill_opacity: Vec::new(),
             connect_nulls: false,
             stack_mode: StackMode::default(),
         }
@@ -142,7 +149,12 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &AreaOptions) -> Element {
 }
 
 fn render_one(ctx: &SeriesRenderContext, s: usize, opts: &AreaOptions, fill: &str) -> Element {
-    let fill_opacity = fmt_num(opts.fill_opacity);
+    let fill_opacity = fmt_num(
+        opts.series_fill_opacity
+            .get(s)
+            .copied()
+            .unwrap_or(opts.fill_opacity),
+    );
     if ctx.stacked {
         let n = ctx.xs.len();
         // `ctx.y_scale`/`ctx.stacked_spans` already reflect `opts.stack_mode`

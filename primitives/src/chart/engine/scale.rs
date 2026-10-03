@@ -368,6 +368,245 @@ pub fn nice_domain(min: f64, max: f64) -> (f64, f64) {
     .domain
 }
 
+/// Recharts' `getNiceTickValues([min, max], tick_count)` -- the y-axis tick
+/// algorithm every shadcn/ui Cartesian chart uses (a Recharts `YAxis`'s
+/// default `tickCount` is 5, with or without a visible axis). Unlike d3's
+/// `nice()` + `ticks()` pair, it returns **exactly** `tick_count` values and
+/// the axis domain is their first..last value, so the top gridline is the
+/// plot's top edge:
+///
+/// - `step = ceil(rough / 10^d / s) * s * 10^d` with `rough = (max - min) /
+///   (tick_count - 1)`, `d` its digit count and `s = 0.1` when `d == 1`, else
+///   `0.05` -- then grown by one `s` unit at a time until the ticks
+///   (anchored on `0` when the range spans it, else on the midpoint snapped
+///   to a step multiple) cover `[min, max]` in at most `tick_count` values;
+///   leftover slots are added above (below, for an all-negative range).
+///
+/// The caller passes the data extent; `min`/`max` are first widened to
+/// include `0` (Recharts' default `domain={[0, "auto"]}`, extended to the
+/// data). Values are exact decimal multiples (no `0.30000000000000004`).
+/// Golden values are the ones measured on shadcn's own rendered grids:
+///
+/// ```
+/// use dioxus_primitives::chart::nice_ticks;
+///
+/// assert_eq!(nice_ticks(0.0, 305.0, 5), vec![0.0, 80.0, 160.0, 240.0, 320.0]);
+/// assert_eq!(nice_ticks(-209.0, 214.0, 5), vec![-300.0, -150.0, 0.0, 150.0, 300.0]);
+/// assert_eq!(nice_ticks(0.0, 1.0, 5), vec![0.0, 0.25, 0.5, 0.75, 1.0]);
+/// ```
+pub fn nice_ticks(min: f64, max: f64, tick_count: usize) -> Vec<f64> {
+    let count = tick_count.max(2);
+    let lo = min.min(0.0);
+    let hi = max.max(0.0);
+    if !lo.is_finite() || !hi.is_finite() {
+        return (0..count).map(|i| i as f64).collect();
+    }
+    if lo == hi {
+        // `getTickOfSingleValue` for the only reachable case (both 0):
+        // integer steps with 0 at `floor((count - 1) / 2)` from the start.
+        let middle = ((count - 1) / 2) as f64;
+        let start = lo + middle - ((count - 1) / 2) as f64;
+        return (0..count).map(|i| start + i as f64).collect();
+    }
+    let mut correction = 0u32;
+    loop {
+        let step = NiceStep::new((hi - lo) / (count - 1) as f64, correction);
+        let step_f = step.value();
+        // The anchor tick, in whole steps from zero.
+        let middle_steps = if lo <= 0.0 && hi >= 0.0 {
+            0i64
+        } else {
+            let mid = (lo + hi) / 2.0;
+            // `mid - mid % step`, i.e. truncated toward zero to a multiple.
+            (mid / step_f).trunc() as i64
+        };
+        let middle = step.times(middle_steps);
+        let below = ceil_tolerant((middle - lo) / step_f).max(0.0) as i64;
+        let up = ceil_tolerant((hi - middle) / step_f).max(0.0) as i64;
+        let scale_count = (below + up + 1) as usize;
+        if scale_count > count && correction < 1000 {
+            correction += 1;
+            continue;
+        }
+        let spare = count.saturating_sub(scale_count) as i64;
+        let (below, up) = if hi > 0.0 {
+            (below, up + spare)
+        } else {
+            (below + spare, up)
+        };
+        return (middle_steps - below..=middle_steps + up)
+            .map(|k| step.times(k))
+            .collect();
+    }
+}
+
+/// `ceil`, forgiving the last-ulp error of a float quotient that is
+/// mathematically an integer (`0.25 / 0.05`), which Recharts computes with
+/// `decimal.js` and therefore never sees.
+fn ceil_tolerant(x: f64) -> f64 {
+    (x - 1e-9).ceil()
+}
+
+/// A [`nice_ticks`] step, kept as `units * 10^exp` (integer `units`) so every
+/// tick is an exact decimal: `step.times(k)` multiplies integers first and
+/// applies the power of ten once, the same "divide, don't multiply by a
+/// fraction" rule as [`tick_spec`].
+#[derive(Clone, Copy, Debug)]
+struct NiceStep {
+    units: i64,
+    exp: i32,
+}
+
+impl NiceStep {
+    /// Recharts' `getFormatStep(rough, true, correction)`.
+    fn new(rough: f64, correction: u32) -> Self {
+        if rough <= 0.0 || !rough.is_finite() {
+            return NiceStep { units: 1, exp: 0 };
+        }
+        let digits = rough.log10().floor() as i32 + 1;
+        // Ratio unit 0.1 for a one-digit step, else 0.05: `units` counts
+        // 0.05s (as 5s of 10^(digits-2)) or 0.1s (as 1s of 10^(digits-1)).
+        let (unit, exp) = if digits == 1 {
+            (1i64, digits - 1)
+        } else {
+            (5i64, digits - 2)
+        };
+        let ratio = rough / pow10(exp) / unit as f64;
+        let k = ceil_tolerant(ratio) as i64 + correction as i64;
+        NiceStep {
+            units: k * unit,
+            exp,
+        }
+    }
+
+    fn value(self) -> f64 {
+        self.times(1)
+    }
+
+    fn times(self, k: i64) -> f64 {
+        let n = (self.units * k) as f64;
+        if self.exp >= 0 {
+            n * pow10(self.exp)
+        } else {
+            n / pow10(-self.exp)
+        }
+    }
+}
+
+fn pow10(e: i32) -> f64 {
+    10f64.powi(e)
+}
+
+/// A point scale (d3 `scalePoint`, Recharts' category axis for Area/Line):
+/// `count` positions spread evenly from `range.0` to `range.1` inclusive --
+/// the first category sits ON the plot's left edge and the last on its right
+/// edge (a single category sits in the middle).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct PointScale {
+    /// The number of points.
+    pub count: usize,
+    /// The output interval; `range.0` is point 0.
+    pub range: (f64, f64),
+}
+
+impl PointScale {
+    /// Distance between neighbouring points (the whole range for one point).
+    pub fn step(&self) -> f64 {
+        let (r0, r1) = self.range;
+        if self.count > 1 {
+            (r1 - r0) / (self.count - 1) as f64
+        } else {
+            r1 - r0
+        }
+    }
+
+    /// Position of point `i`.
+    ///
+    /// ```
+    /// use dioxus_primitives::chart::PointScale;
+    ///
+    /// let s = PointScale { count: 6, range: (12.0, 357.0) };
+    /// assert_eq!(s.center(0), 12.0);
+    /// assert_eq!(s.center(1), 81.0);
+    /// assert_eq!(s.center(5), 357.0);
+    /// ```
+    pub fn center(&self, i: usize) -> f64 {
+        let (r0, r1) = self.range;
+        if self.count > 1 {
+            r0 + self.step() * i as f64
+        } else {
+            (r0 + r1) / 2.0
+        }
+    }
+}
+
+/// A Cartesian chart's category axis: a [`BandScale`] for bars (each
+/// category owns a band, bars sit inside it) or a [`PointScale`] for area and
+/// line charts (each category is a point, first and last on the plot edges --
+/// Recharts' rule for both).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CategoryScale {
+    /// Bars: one band per category.
+    Band(BandScale),
+    /// Area/line: one point per category, edge to edge.
+    Point(PointScale),
+}
+
+impl CategoryScale {
+    /// The category's position: the band's center, or the point.
+    pub fn center(&self, i: usize) -> f64 {
+        match self {
+            Self::Band(b) => b.center(i),
+            Self::Point(p) => p.center(i),
+        }
+    }
+
+    /// The `(start, width)` region that belongs to category `i`: the band
+    /// itself, or for a point the step centered on it (so the region's
+    /// center is always the category's position; the first and last
+    /// points' regions reach half a step past the plot's edges).
+    pub fn band(&self, i: usize) -> (f64, f64) {
+        match self {
+            Self::Band(b) => b.band(i),
+            Self::Point(p) => {
+                if p.count <= 1 {
+                    let (r0, r1) = (p.range.0.min(p.range.1), p.range.0.max(p.range.1));
+                    return (r0, r1 - r0);
+                }
+                let step = p.step().abs();
+                (p.center(i) - step / 2.0, step)
+            }
+        }
+    }
+
+    /// The category whose position is nearest `pos` (clamped to the ends);
+    /// `None` only with no categories or a non-finite `pos`.
+    pub fn nearest_index(&self, pos: f64) -> Option<usize> {
+        match self {
+            Self::Band(b) => b.nearest_index(pos),
+            Self::Point(p) => {
+                if p.count == 0 || !pos.is_finite() {
+                    return None;
+                }
+                let step = p.step();
+                if p.count == 1 || step == 0.0 || !step.is_finite() {
+                    return Some(0);
+                }
+                let i = ((pos - p.range.0) / step).round();
+                Some(i.clamp(0.0, (p.count - 1) as f64) as usize)
+            }
+        }
+    }
+
+    /// The number of categories.
+    pub fn count(&self) -> usize {
+        match self {
+            Self::Band(b) => b.count,
+            Self::Point(p) => p.count,
+        }
+    }
+}
+
 /// Format a number to at most `decimals` places: trailing zeros and a
 /// trailing `.` trimmed, and `-0` normalized to `0` (a value that rounds to
 /// exactly zero from the negative side, e.g. a scale of a tiny negative
@@ -716,5 +955,88 @@ mod tests {
         // slightly *below* 1.005, so it rounds down like 1.004999... would
         // -- not the "1.01" naive decimal intuition suggests.
         assert_eq!(fmt_decimal(1.005, 2), "1");
+    }
+
+    // -- nice_ticks: Recharts getNiceTickValues, golden values measured on
+    // shadcn's rendered gridlines (parity probes, 5 ticks unless noted) ----
+
+    #[test]
+    fn nice_ticks_match_the_shadcn_gridlines() {
+        use super::nice_ticks;
+        let cases: &[(f64, f64, usize, &[f64])] = &[
+            // area/line/bar default data, max 305
+            (0.0, 305.0, 5, &[0.0, 80.0, 160.0, 240.0, 320.0]),
+            // stacked area/bar, max 505
+            (0.0, 505.0, 5, &[0.0, 150.0, 300.0, 450.0, 600.0]),
+            // the tooltip gallery's stacked bars, max 950
+            (0.0, 950.0, 5, &[0.0, 250.0, 500.0, 750.0, 1000.0]),
+            // bar-negative
+            (-209.0, 214.0, 5, &[-300.0, -150.0, 0.0, 150.0, 300.0]),
+            // dots-colors / bar-mixed, max 275
+            (0.0, 275.0, 5, &[0.0, 70.0, 140.0, 210.0, 280.0]),
+            // line/bar interactive desktop (499) and mobile (530)
+            (0.0, 499.0, 5, &[0.0, 150.0, 300.0, 450.0, 600.0]),
+            (0.0, 530.0, 5, &[0.0, 150.0, 300.0, 450.0, 600.0]),
+            // stacked-expand
+            (0.0, 1.0, 5, &[0.0, 0.25, 0.5, 0.75, 1.0]),
+            // area-axes: `YAxis tickCount={3}`, max 505
+            (0.0, 505.0, 3, &[0.0, 300.0, 600.0]),
+            // a one-digit rough step uses the 0.1 ratio unit
+            (0.0, 10.0, 5, &[0.0, 3.0, 6.0, 9.0, 12.0]),
+        ];
+        for (min, max, count, want) in cases {
+            assert_eq!(
+                &nice_ticks(*min, *max, *count),
+                want,
+                "[{min}, {max}] x{count}"
+            );
+        }
+    }
+
+    #[test]
+    fn nice_ticks_always_return_exactly_the_count_and_cover_the_data() {
+        use super::nice_ticks;
+        for max in [1.0, 7.0, 42.0, 99.0, 305.0, 1234.0, 0.3, 98765.0] {
+            for count in [2usize, 3, 5, 6] {
+                let t = nice_ticks(0.0, max, count);
+                assert_eq!(t.len(), count, "max {max} count {count}: {t:?}");
+                assert!(t[0] <= 0.0 && *t.last().unwrap() >= max, "{t:?}");
+            }
+        }
+        // All negative: leftovers go below.
+        let t = nice_ticks(-305.0, -10.0, 5);
+        assert_eq!(t, vec![-320.0, -240.0, -160.0, -80.0, 0.0]);
+        // Flat zero data still yields a usable, increasing set.
+        let t = nice_ticks(0.0, 0.0, 5);
+        assert_eq!(t.len(), 5);
+        assert!(t.windows(2).all(|w| w[1] > w[0]));
+    }
+
+    #[test]
+    fn point_scale_spans_edge_to_edge_and_snaps_to_the_nearest_point() {
+        use super::{CategoryScale, PointScale};
+        // shadcn's area/line default: plot 12..357, six points 69px apart.
+        let p = PointScale {
+            count: 6,
+            range: (12.0, 357.0),
+        };
+        let xs: Vec<f64> = (0..6).map(|i| p.center(i)).collect();
+        assert_eq!(xs, vec![12.0, 81.0, 150.0, 219.0, 288.0, 357.0]);
+        let c = CategoryScale::Point(p);
+        assert_eq!(c.nearest_index(0.0), Some(0));
+        assert_eq!(c.nearest_index(46.4), Some(0));
+        assert_eq!(c.nearest_index(46.6), Some(1));
+        assert_eq!(c.nearest_index(1e9), Some(5));
+        // A point's region is the step centered on it.
+        assert_eq!(c.band(0), (-22.5, 69.0));
+        assert_eq!(c.band(1), (46.5, 69.0));
+        // One point sits mid-range and owns all of it.
+        let one = CategoryScale::Point(PointScale {
+            count: 1,
+            range: (0.0, 100.0),
+        });
+        assert_eq!(one.center(0), 50.0);
+        assert_eq!(one.band(0), (0.0, 100.0));
+        assert_eq!(one.nearest_index(3.0), Some(0));
     }
 }

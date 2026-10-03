@@ -1,477 +1,484 @@
 //! The [`ChartKind::Bar`](crate::chart::ChartKind::Bar) family: discrete
-//! bars, grouped side-by-side per series unless stacked. Ported (stage-2
-//! `s2-refactor` lane) from `components::chart`'s own `SeriesMarks`; this
-//! lane (`s2-bar`) then extended it with [`BarOptions`]'s four fields --
-//! see each field's own doc, and this module's "Horizontal orientation"
-//! section below for the one genuinely tricky part.
+//! bars, grouped side by side per series unless stacked, vertical or
+//! horizontal -- sized, rounded and highlighted the way Recharts' `<Bar>`
+//! does it (what shadcn/ui's bar charts render):
 //!
-//! See `components::layout` for the scale/margin math this reads via
-//! [`SeriesRenderContext`].
+//! - **Sizing** (`getBarPosition`): each category owns an unpadded band
+//!   (`components::layout`); the bars are inset by
+//!   [`BarOptions::category_gap`] (Recharts' `barCategoryGap`, 10%) of the
+//!   band on each side, grouped bars are [`BarOptions::bar_gap`] px apart
+//!   (`barGap`, 4), and the bar size is truncated to whole px. A stack is one
+//!   bar. One series on shadcn's 369px card: 47px bars in 59.8px bands.
+//! - **Radius** ([`BarRadius`], Recharts' `radius`): uniform or per corner
+//!   (`[tl, tr, br, bl]`), clamped to half the bar, per series
+//!   ([`BarOptions::series_radius`]) so a stack can round only its outer
+//!   ends (shadcn: bottom segment `[0, 0, 4, 4]`, top `[4, 4, 0, 0]`).
+//! - **Active bar** ([`BarOptions::active_index`]): `data-active="true"`,
+//!   which the themed stylesheet draws as shadcn's `chart-bar-active` --
+//!   0.8 fill opacity and a dashed outline in the bar's own color; the other
+//!   bars are unchanged.
+//! - **Labels**: [`BarOptions::value_labels`] (`<LabelList position="top"
+//!   offset={12}>`), [`BarOptions::category_labels`] (the category name just
+//!   beyond the bar's end in the bar's color -- `chart-bar-negative`), and
+//!   [`BarOptions::inside_labels`] (`chart-bar-label-custom`).
 //!
-//! ## Deviation from `$S/stage2-common.md`'s illustrative `BarOptions`
-//! sketch, stated plainly
+//! Horizontal bars ([`BarOptions::horizontal`]) read the same scales: the
+//! layout puts the category scale down y and the value scale across x
+//! (`SeriesRenderContext::horizontal`), so the bars, the category labels
+//! (`components::layout`, on the y axis), the grid, the cursor and the hit
+//! test agree by construction. This family draws its own row hit bands.
 //!
-//! The brief that dispatched this lane sketched `BarOptions { orientation:
-//! Orientation::{Vertical,Horizontal}, radius, labels: BarLabels::{None,
-//! Value, Inside...}, active_index, stack_mode }` -- written before
-//! `s2-refactor`'s actual commit landed. Two real constraints from that
-//! landed commit change the concrete shape:
-//!
-//! - **No new public enum can live in this file.** `components::series::
-//!   mod.rs` hand-lists this family's re-export (`pub use bar::BarOptions;`
-//!   only, not `pub use bar::*;`) and is owned "`s2-refactor` only,
-//!   forever" (that file's own module doc) -- a brand new `pub enum`
-//!   defined here would type-check locally but never become reachable from
-//!   outside `dioxus_primitives` (Rust module privacy: `components` itself
-//!   is a private `mod`, reached only through the specific `pub use` chains
-//!   each ancestor module chose to write) without an edit to that
-//!   permanently-frozen file. Every new field below is therefore a
-//!   primitive type (`bool`, `Option<usize>`) that needs no re-export of
-//!   its own -- `horizontal` mirrors `Slider`'s own `horizontal: bool`
-//!   naming (`primitives/src/slider.rs`) rather than introducing an
-//!   `Orientation` enum, and `LineOptions::dots: bool`
-//!   (`components::series::line`, landed the same commit) is the same
-//!   family's own precedent for "a plain bool, not a new enum, where one
-//!   would also have worked."
-//! - **No `stack_mode` field**: stacking stayed a shared `ChartProps::
-//!   stacked` concern for Area+Bar (`components::series::mod`'s own module
-//!   doc, "Shared vs. per-family props, decided here"), not duplicated
-//!   onto either family's own `*Options`. This family reads the already-
-//!   resolved `ctx.stacked`/`ctx.stacked_spans` exactly as it did before
-//!   this lane's changes; nothing here re-litigates that decision.
-//! - **No `radius` field**: an SVG `rect` only has one uniform `rx` (already
-//!   applied by the shared `chart/style.css`'s `[data-slot="chart-bar"] {
-//!   rx: var(--dx-radius-xs); }`), so a per-instance override needs a
-//!   hand-built rounded-rect path, not a `rect` attribute -- tracked as a
-//!   follow-up (see `preview/src/components/bar_chart/variants/
-//!   stacked_legend/mod.rs`'s own doc comment for the concrete shadcn
-//!   behavior it would reproduce: differential per-corner rounding at each
-//!   stack's outer edge), not built in this pass.
-//!
-//! ## Horizontal orientation: what's genuinely computed here vs. what
-//! chart.rs still assumes
-//!
-//! [`SeriesRenderContext`] itself never learns about [`BarOptions::
-//! horizontal`] -- `components::layout::build` is called by `chart.rs`
-//! (owned "`s2-refactor` only, forever") BEFORE `chart.rs` ever dispatches
-//! to this family's `render`, with no per-family option threaded through,
-//! so `ctx.x_scale`/`ctx.y_scale`/margins stay exactly what a VERTICAL
-//! Cartesian chart would compute regardless of this option. Adding a
-//! `LayoutParams`/`SeriesRenderContext` field for this would need a
-//! `chart.rs` call-site edit this lane cannot make -- flagged as a proposed
-//! construction under "requests for the refactor owner" in
-//! `$S/stage2-lanes.md` rather than applied here.
-//!
-//! Given that constraint, this file computes its OWN second pair of scales
-//! locally, purely from `ctx`'s already-public fields (`plot_x0..plot_x1`,
-//! `plot_y0..plot_y1`, and `ctx.y_scale.domain` -- the value domain
-//! `layout::build` already nice-rounded, reused as-is): a [`BandScale`] over
-//! the *y*-pixel range for categories, and a [`LinearScale`] over the
-//! *x*-pixel range for values. This makes the bars themselves, this
-//! family's own category-axis labels, and this family's own hit-bands all
-//! genuinely correct for a horizontal layout -- verified by
-//! `playwright/bar_chart.spec.ts`'s `horizontal` suite (bar width > height,
-//! category labels positioned at the y-axis edge, hover tracks the bar
-//! under the pointer).
-//!
-//! `chart.rs` is orientation-aware for the two pieces it still owns: it
-//! skips its own vertical hit-band columns for a horizontal chart (this
-//! family draws row bands instead, below), draws the hover cursor band
-//! along the active row, and resolves hover from the pointer's nearest row
-//! (`components::pointer`). The tooltip anchors at the row's bar end and
-//! follows the pointer along x (`Follow::PointerX`).
+//! A per-datum [`crate::chart::ChartDatum::color`] sets the bar's own
+//! `--series-color` inline, so its fill, its active outline and its
+//! category label all follow it.
 
 use dioxus::prelude::*;
 
-use super::super::layout::{
-    effective_tick_count, x_tick_step, SeriesRenderContext, BAND_PADDING, TICK_LABEL_LINE_HEIGHT,
-};
-use crate::chart::engine::geometry::bar_extent;
+use super::super::layout::SeriesRenderContext;
 use crate::chart::engine::scale::fmt_num;
-use crate::chart::{BandScale, LinearScale};
 
-/// Padding between grouped (non-stacked, multi-series) bars sharing one
-/// category band. Bar-only (grouped-bar sub-positioning is this family's
-/// own concern), unlike `components::layout`'s `BAND_PADDING`, which every
-/// family's outer per-category band scale shares.
-const GROUP_PADDING: f64 = 0.15;
+/// Gap between a bar's end and its value label (shadcn's `chart-bar-label`:
+/// `offset={12}`).
+const VALUE_LABEL_OFFSET: f64 = 12.0;
+/// Gap between a bar's end and its category label (Recharts' `LabelList`
+/// default `offset`, 5 -- `chart-bar-negative`).
+const CATEGORY_LABEL_OFFSET: f64 = 5.0;
+/// Inset/gap of the two `inside_labels` texts (`chart-bar-label-custom`:
+/// `offset={8}`).
+const INSIDE_LABEL_OFFSET: f64 = 8.0;
 
-/// Pixel gap between a bar's own edge and a label placed just outside it
-/// (`BarOptions::value_labels`, and the value half of `inside_labels`) or
-/// just inside it (the category half of `inside_labels`) -- shadcn's own
-/// demos use a comparable `offset={8}`/`offset={12}` in the same unit
-/// family (SVG user units here, px there).
-const LABEL_OFFSET: f64 = 8.0;
+/// A bar's corner radii in px, Recharts' `radius` (`[tl, tr, br, bl]`, in
+/// screen orientation). Each is clamped to half the bar's width and height.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct BarRadius {
+    /// Top-left corner radius, px.
+    pub top_left: f64,
+    /// Top-right corner radius, px.
+    pub top_right: f64,
+    /// Bottom-right corner radius, px.
+    pub bottom_right: f64,
+    /// Bottom-left corner radius, px.
+    pub bottom_left: f64,
+}
 
-/// [`crate::chart::ChartKind::Bar`]'s own options. See this module's own
-/// doc for why every field here is a primitive type rather than the new
-/// enums `$S/stage2-common.md`'s illustrative sketch named.
-#[derive(Clone, PartialEq, Debug, Default)]
+impl BarRadius {
+    /// Square corners (Recharts' default).
+    pub const NONE: Self = Self::all(0.0);
+
+    /// The same radius on every corner (`radius={8}`).
+    pub const fn all(r: f64) -> Self {
+        Self::corners(r, r, r, r)
+    }
+
+    /// Per corner, Recharts' array order (`radius={[tl, tr, br, bl]}`).
+    pub const fn corners(
+        top_left: f64,
+        top_right: f64,
+        bottom_right: f64,
+        bottom_left: f64,
+    ) -> Self {
+        Self {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
+    }
+
+    fn uniform(&self) -> Option<f64> {
+        let r = self.top_left;
+        (self.top_right == r && self.bottom_right == r && self.bottom_left == r).then_some(r)
+    }
+}
+
+impl From<f64> for BarRadius {
+    fn from(r: f64) -> Self {
+        Self::all(r)
+    }
+}
+
+/// [`crate::chart::ChartKind::Bar`]'s own options.
+#[derive(Clone, PartialEq, Debug)]
 pub struct BarOptions {
-    /// Draw bars horizontally (a category axis running top-to-bottom,
-    /// values running left-to-right) instead of the default vertical
-    /// layout -- shadcn's `chart-bar-horizontal`/`-mixed`/`-label-custom`.
-    /// See this module's own doc for what is and is not fully correct
-    /// under this option today.
+    /// Draw bars horizontally (categories top to bottom, values left to
+    /// right) -- Recharts' `layout="vertical"` (shadcn's
+    /// `chart-bar-horizontal`/`-mixed`/`-label-custom`). The category labels
+    /// are then the y axis (`show_y_axis`).
     pub horizontal: bool,
 
-    /// Draw each datum's own value just outside its bar's far end (shadcn's
-    /// `chart-bar-label`: `<LabelList position="top" .../>`). Ignored on a
-    /// stacked chart (shadcn never combines the two either).
+    /// Every bar's corner radius (Recharts' `radius`; default square).
+    pub radius: BarRadius,
+
+    /// Per-series radius, in config order, overriding [`Self::radius`] for
+    /// the series it covers -- one `<Bar radius>` per series in Recharts, so
+    /// a stack rounds only its outer ends (shadcn's stacked demos: the
+    /// bottom series `[0, 0, 4, 4]`, the top one `[4, 4, 0, 0]`).
+    pub series_radius: Vec<BarRadius>,
+
+    /// The gap on each side of a category's bars, as a fraction of the
+    /// category's band (Recharts' `barCategoryGap`, default 10%).
+    pub category_gap: f64,
+
+    /// The gap in px between grouped bars of one category (Recharts'
+    /// `barGap`, default 4).
+    pub bar_gap: f64,
+
+    /// Draw each bar's value just beyond its end (shadcn's `chart-bar-label`:
+    /// `<LabelList position="top" offset={12}>`). Not on a stacked chart.
     pub value_labels: bool,
 
-    /// Draw the datum's category label INSIDE the bar near its start (in a
-    /// color meant to read against the bar's own fill) plus its value just
-    /// outside the bar's far end -- shadcn's `chart-bar-label-custom`.
-    /// Takes precedence over `value_labels` when both are set (shadcn's own
-    /// demo never sets both). Ignored on a stacked chart.
+    /// Draw each datum's category name just beyond its bar's end -- above a
+    /// positive bar, below a negative one -- in the bar's own color (shadcn's
+    /// `chart-bar-negative`: `<LabelList position="top" dataKey="month">`).
+    /// Not on a stacked chart.
+    pub category_labels: bool,
+
+    /// Draw the category name INSIDE the bar near its start (in the card's
+    /// background color) plus the value just beyond its end -- shadcn's
+    /// `chart-bar-label-custom`. Takes precedence over the other two label
+    /// options. Not on a stacked chart.
     pub inside_labels: bool,
 
-    /// Highlight exactly the bar at this datum index: that rect (every
-    /// series' segment of it, for a grouped/stacked multi-series chart)
-    /// gets `data-active="true"`; every other bar gets `data-active=
-    /// "false"`, for a themed stylesheet to dim via
-    /// `[data-slot="chart-bar"]:not([data-active="true"])` -- shadcn's
-    /// `chart-bar-active`.
+    /// Highlight the bar at this datum index (every series' bar there):
+    /// `data-active="true"`, drawn by the themed stylesheet as shadcn's
+    /// `chart-bar-active` (0.8 fill opacity + a dashed outline in the bar's
+    /// own color). Every other bar is `data-active="false"` and unchanged.
     pub active_index: Option<usize>,
 }
 
-/// Render every configured series' bars, in config order, plus (when
-/// [`BarOptions::horizontal`]) this family's own category-axis labels and
-/// hit-bands -- see the module doc for why those two are this family's own
-/// job under that option, not `components::layout`'s or `chart.rs`'s.
+impl Default for BarOptions {
+    fn default() -> Self {
+        Self {
+            horizontal: false,
+            radius: BarRadius::NONE,
+            series_radius: Vec::new(),
+            category_gap: 0.1,
+            bar_gap: 4.0,
+            value_labels: false,
+            category_labels: false,
+            inside_labels: false,
+            active_index: None,
+        }
+    }
+}
+
+/// Recharts' `getBarPosition` for one category band `(start, size)` holding
+/// `groups` side-by-side bars: `(offset of bar 0 from the band start, bar
+/// size, distance between consecutive bars' starts)`. The bar size is
+/// truncated to whole px when above 1, exactly as Recharts does
+/// (`realBarSize >>= 0`), so a lone bar on shadcn's 59.83px band is 47px.
+pub(crate) fn bar_slots(
+    band_size: f64,
+    groups: usize,
+    category_gap: f64,
+    bar_gap: f64,
+) -> (f64, f64, f64) {
+    let groups = groups.max(1) as f64;
+    let offset = band_size * category_gap;
+    let mut gap = bar_gap;
+    if band_size - 2.0 * offset - (groups - 1.0) * gap <= 0.0 {
+        gap = 0.0;
+    }
+    let mut size = (band_size - 2.0 * offset - (groups - 1.0) * gap) / groups;
+    if size > 1.0 {
+        size = size.trunc();
+    }
+    (offset, size.max(0.0), size.max(0.0) + gap)
+}
+
+/// One bar's resting geometry in px, screen-oriented (`w`, `h` >= 0), plus
+/// which end is its value end (for labels).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BarRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    /// The value is below zero: the bar grows down (vertical) or left
+    /// (horizontal) from the baseline.
+    negative: bool,
+}
+
+/// Render every configured series' bars, in config order (later series on
+/// top), plus horizontal bars' own row hit bands.
 pub(crate) fn render(ctx: &SeriesRenderContext, opts: &BarOptions) -> Element {
     let series_count = ctx.config.series.len();
-    let n = ctx.xs.len();
-
-    if opts.horizontal {
-        // See the module doc: a second, LOCAL pair of scales -- a category
-        // BandScale over the y-pixel range, a value LinearScale (same
-        // already-nice-rounded domain `ctx.y_scale` used) over the x-pixel
-        // range -- computed once here and threaded through every helper
-        // below, rather than 5 separate recomputations.
-        let category_scale = BandScale {
-            count: n.max(1),
-            range: (ctx.plot_y0, ctx.plot_y1),
-            padding: BAND_PADDING,
-        };
-        let value_scale = LinearScale {
-            domain: ctx.y_scale.domain,
-            range: (ctx.plot_x0, ctx.plot_x1),
-        };
-        let zero_x = value_scale.scale(0.0);
-
-        rsx! {
-            for (s , series) in ctx.config.series.iter().enumerate() {
-                g {
-                    key: "{series.key}",
-                    "data-slot": "chart-series",
-                    "data-series": "{series.slot()}",
-                    style: "--series-color: var(--color-{series.slot()})",
-                    {render_horizontal_series(ctx, opts, s, series_count, &category_scale, &value_scale, zero_x)}
-                }
+    let groups = if ctx.stacked { 1 } else { series_count };
+    rsx! {
+        for (s , series) in ctx.config.series.iter().enumerate() {
+            g {
+                key: "{series.key}",
+                "data-slot": "chart-series",
+                "data-series": "{series.slot()}",
+                style: "--series-color: var(--color-{series.slot()})",
+                {render_series(ctx, opts, s, groups)}
             }
-            {render_horizontal_category_labels(ctx, &category_scale)}
-            {render_horizontal_hit_bands(ctx, &category_scale)}
+        }
+        if ctx.horizontal {
+            {render_horizontal_hit_bands(ctx)}
+        }
+    }
+}
+
+/// Bar `i` of series `s`, or `None` for a missing value (a stacked gap still
+/// draws its zero-height cell, like Recharts).
+fn bar_rect(
+    ctx: &SeriesRenderContext,
+    opts: &BarOptions,
+    s: usize,
+    i: usize,
+    groups: usize,
+) -> Option<(BarRect, f64)> {
+    let (band_start, band_size) = ctx.x_scale.band(i);
+    let (offset, size, pitch) = bar_slots(band_size, groups, opts.category_gap, opts.bar_gap);
+    let slot = if ctx.stacked { 0 } else { s };
+    let along = band_start + offset + pitch * slot as f64;
+    let (v0, v1, value) = if ctx.stacked {
+        let (v0, v1) = *ctx.stacked_spans.get(i)?.get(s)?;
+        (
+            v0,
+            v1,
+            ctx.data[i].values.get(s).copied().flatten().unwrap_or(0.0),
+        )
+    } else {
+        let v = ctx.data[i].values.get(s).copied().flatten()?;
+        (0.0, v, v)
+    };
+    let (p0, p1) = (ctx.y_scale.scale(v0), ctx.y_scale.scale(v1));
+    let (lo, hi) = (p0.min(p1), p0.max(p1));
+    let negative = v1 < v0;
+    let rect = if ctx.horizontal {
+        BarRect {
+            x: lo,
+            y: along,
+            w: hi - lo,
+            h: size,
+            negative,
         }
     } else {
-        rsx! {
-            for (s , series) in ctx.config.series.iter().enumerate() {
-                g {
-                    key: "{series.key}",
-                    "data-slot": "chart-series",
-                    "data-series": "{series.slot()}",
-                    style: "--series-color: var(--color-{series.slot()})",
-                    {render_vertical_series(ctx, opts, s, series_count)}
+        BarRect {
+            x: along,
+            y: lo,
+            w: size,
+            h: hi - lo,
+            negative,
+        }
+    };
+    Some((rect, value))
+}
+
+fn render_series(ctx: &SeriesRenderContext, opts: &BarOptions, s: usize, groups: usize) -> Element {
+    let n = ctx.xs.len();
+    let radius = opts.series_radius.get(s).copied().unwrap_or(opts.radius);
+    let labels = !ctx.stacked;
+    rsx! {
+        for i in 0..n {
+            if let Some((rect, value)) = bar_rect(ctx, opts, s, i, groups) {
+                {
+                    let style = ctx.data[i].color.as_ref().map(|c| format!("--series-color: {c}"));
+                    let active = opts.active_index == Some(i);
+                    rsx! {
+                        {render_shape(rect, radius, i, active, style)}
+                        if labels {
+                            {render_labels(ctx, opts, rect, i, value)}
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/// Format a value for a label -- the hidden table's own up-to-2-decimals
-/// rule (`engine::scale::fmt_decimal`), matching every other number this
-/// crate renders directly into markup.
+/// The bar itself: a `rect` (with `rx`/`ry` for a uniform radius) or, for
+/// per-corner radii, Recharts' rounded-rect `path`.
+fn render_shape(
+    rect: BarRect,
+    radius: BarRadius,
+    i: usize,
+    active: bool,
+    style: Option<String>,
+) -> Element {
+    let max = (rect.w / 2.0).min(rect.h / 2.0).max(0.0);
+    match radius.uniform() {
+        Some(r) => {
+            let r = r.min(max).max(0.0);
+            let rx = (r > 0.0).then(|| fmt_num(r));
+            rsx! {
+                rect {
+                    key: "{i}",
+                    "data-slot": "chart-bar",
+                    "data-index": "{i}",
+                    "data-active": active,
+                    x: "{fmt_num(rect.x)}",
+                    y: "{fmt_num(rect.y)}",
+                    width: "{fmt_num(rect.w)}",
+                    height: "{fmt_num(rect.h)}",
+                    rx: rx.clone(),
+                    ry: rx,
+                    style,
+                }
+            }
+        }
+        None => {
+            let d = rounded_rect_path(rect, radius);
+            rsx! {
+                path {
+                    key: "{i}",
+                    "data-slot": "chart-bar",
+                    "data-index": "{i}",
+                    "data-active": active,
+                    d: "{d}",
+                    style,
+                }
+            }
+        }
+    }
+}
+
+/// Recharts' `getRectanglePath` for a per-corner radius (each clamped to
+/// half the bar), traced clockwise from the top-left corner.
+fn rounded_rect_path(rect: BarRect, radius: BarRadius) -> String {
+    let BarRect { x, y, w, h, .. } = rect;
+    let max = (w / 2.0).min(h / 2.0).max(0.0);
+    let [tl, tr, br, bl] = [
+        radius.top_left,
+        radius.top_right,
+        radius.bottom_right,
+        radius.bottom_left,
+    ]
+    .map(|r| r.clamp(0.0, max));
+    let f = fmt_num;
+    let mut d = format!("M{} {}", f(x), f(y + tl));
+    if tl > 0.0 {
+        d += &format!(" A{r} {r} 0 0 1 {} {}", f(x + tl), f(y), r = f(tl));
+    }
+    d += &format!(" L{} {}", f(x + w - tr), f(y));
+    if tr > 0.0 {
+        d += &format!(" A{r} {r} 0 0 1 {} {}", f(x + w), f(y + tr), r = f(tr));
+    }
+    d += &format!(" L{} {}", f(x + w), f(y + h - br));
+    if br > 0.0 {
+        d += &format!(" A{r} {r} 0 0 1 {} {}", f(x + w - br), f(y + h), r = f(br));
+    }
+    d += &format!(" L{} {}", f(x + bl), f(y + h));
+    if bl > 0.0 {
+        d += &format!(" A{r} {r} 0 0 1 {} {}", f(x), f(y + h - bl), r = f(bl));
+    }
+    d + " Z"
+}
+
+/// Format a value for a label -- up to 2 decimals, like every other number
+/// this crate renders into markup.
 fn fmt_value(v: f64) -> String {
     crate::chart::engine::scale::fmt_decimal(v, 2)
 }
 
-/// One series' vertical bars (the original, pre-stage-2 layout): grouped
-/// side by side per category unless `ctx.stacked`.
-fn render_vertical_series(
+/// The label(s) [`BarOptions`] asks for on one bar.
+fn render_labels(
     ctx: &SeriesRenderContext,
     opts: &BarOptions,
-    s: usize,
-    series_count: usize,
+    rect: BarRect,
+    i: usize,
+    value: f64,
 ) -> Element {
-    let n = ctx.xs.len();
-    if ctx.stacked {
-        rsx! {
-            for i in 0..n {
-                {
-                    let (bar_x, bar_w) = ctx.x_scale.band(i);
-                    let (y0_raw, y1_raw) = ctx.stacked_spans[i][s];
-                    let y0 = ctx.y_scale.scale(y0_raw);
-                    let y1 = ctx.y_scale.scale(y1_raw);
-                    let (rect_y, rect_h) = if y1 <= y0 { (y1, y0 - y1) } else { (y0, y1 - y0) };
-                    let is_active = Some(i) == opts.active_index;
-                    rsx! {
-                        rect {
-                            key: "{i}",
-                            "data-slot": "chart-bar",
-                            "data-index": "{i}",
-                            "data-active": is_active,
-                            x: "{fmt_num(bar_x)}",
-                            y: "{fmt_num(rect_y)}",
-                            width: "{fmt_num(bar_w)}",
-                            height: "{fmt_num(rect_h)}",
-                        }
-                    }
-                }
+    let category = ctx.data[i].label.clone();
+    if opts.inside_labels {
+        // Category inside the bar's start, value beyond its end.
+        let (ix, iy, vx, vy, anchor, dy) = if ctx.horizontal {
+            let cy = rect.y + rect.h / 2.0;
+            (
+                rect.x + INSIDE_LABEL_OFFSET,
+                cy,
+                rect.x + rect.w + INSIDE_LABEL_OFFSET,
+                cy,
+                "start",
+                "0.355em",
+            )
+        } else {
+            let cx = rect.x + rect.w / 2.0;
+            (
+                cx,
+                rect.y + rect.h - INSIDE_LABEL_OFFSET,
+                cx,
+                rect.y - INSIDE_LABEL_OFFSET,
+                "middle",
+                "0",
+            )
+        };
+        return rsx! {
+            text {
+                "data-slot": "chart-label",
+                "data-position": "inside",
+                "data-index": "{i}",
+                x: "{fmt_num(ix)}",
+                y: "{fmt_num(iy)}",
+                dy,
+                "text-anchor": anchor,
+                {category}
             }
-        }
-    } else {
-        let values = ctx.series_values(s);
-        rsx! {
-            for i in 0..n {
-                if let Some(v) = values[i] {
-                    {
-                        let (outer_x, outer_w) = ctx.x_scale.band(i);
-                        let inner = BandScale {
-                            count: series_count.max(1),
-                            range: (outer_x, outer_x + outer_w),
-                            padding: GROUP_PADDING,
-                        };
-                        let (bar_x, bar_w) = inner.band(s);
-                        let y1 = ctx.y_scale.scale(v);
-                        let (rect_y, rect_h) = bar_extent(y1, ctx.zero_y);
-                        let color = ctx.data[i].color.clone();
-                        let fill_style = color.map(|c| format!("fill: {c}"));
-                        let is_active = Some(i) == opts.active_index;
-                        let center_x = bar_x + bar_w / 2.0;
-                        rsx! {
-                            rect {
-                                key: "{i}",
-                                "data-slot": "chart-bar",
-                                "data-index": "{i}",
-                                "data-active": is_active,
-                                x: "{fmt_num(bar_x)}",
-                                y: "{fmt_num(rect_y)}",
-                                width: "{fmt_num(bar_w)}",
-                                height: "{fmt_num(rect_h)}",
-                                style: fill_style,
-                            }
-                            if opts.inside_labels {
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-position": "inside",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(center_x)}",
-                                    y: "{fmt_num(rect_y + LABEL_OFFSET + 4.0)}",
-                                    "text-anchor": "middle",
-                                    style: "fill: var(--primary-color-1)",
-                                    {ctx.data[i].label.clone()}
-                                }
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-position": "value",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(center_x)}",
-                                    y: "{fmt_num(rect_y - LABEL_OFFSET / 2.0)}",
-                                    "text-anchor": "middle",
-                                    {fmt_value(v)}
-                                }
-                            } else if opts.value_labels {
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(center_x)}",
-                                    y: "{fmt_num(rect_y - LABEL_OFFSET / 2.0)}",
-                                    "text-anchor": "middle",
-                                    {fmt_value(v)}
-                                }
-                            }
-                        }
-                    }
-                }
+            text {
+                "data-slot": "chart-label",
+                "data-position": "value",
+                "data-index": "{i}",
+                x: "{fmt_num(vx)}",
+                y: "{fmt_num(vy)}",
+                dy,
+                "text-anchor": anchor,
+                {fmt_value(value)}
             }
-        }
+        };
     }
-}
-
-/// One series' horizontal bars -- see the module doc for `category_scale`/
-/// `value_scale`'s own construction. Grouped side by side per category
-/// unless `ctx.stacked`, mirroring [`render_vertical_series`]'s own split
-/// with x/y (and band/linear) swapped throughout.
-#[allow(clippy::too_many_arguments)]
-fn render_horizontal_series(
-    ctx: &SeriesRenderContext,
-    opts: &BarOptions,
-    s: usize,
-    series_count: usize,
-    category_scale: &BandScale,
-    value_scale: &LinearScale,
-    zero_x: f64,
-) -> Element {
-    let n = ctx.xs.len();
-    if ctx.stacked {
-        rsx! {
-            for i in 0..n {
-                {
-                    let (bar_y, bar_h) = category_scale.band(i);
-                    let (x0_raw, x1_raw) = ctx.stacked_spans[i][s];
-                    let x0 = value_scale.scale(x0_raw);
-                    let x1 = value_scale.scale(x1_raw);
-                    let (rect_x, rect_w) = if x1 <= x0 { (x1, x0 - x1) } else { (x0, x1 - x0) };
-                    let is_active = Some(i) == opts.active_index;
-                    rsx! {
-                        rect {
-                            key: "{i}",
-                            "data-slot": "chart-bar",
-                            "data-index": "{i}",
-                            "data-active": is_active,
-                            x: "{fmt_num(rect_x)}",
-                            y: "{fmt_num(bar_y)}",
-                            width: "{fmt_num(rect_w)}",
-                            height: "{fmt_num(bar_h)}",
-                        }
-                    }
-                }
-            }
-        }
+    let (text, offset, position) = if opts.category_labels {
+        (category, CATEGORY_LABEL_OFFSET, "category")
+    } else if opts.value_labels {
+        (fmt_value(value), VALUE_LABEL_OFFSET, "value")
     } else {
-        let values = ctx.series_values(s);
-        rsx! {
-            for i in 0..n {
-                if let Some(v) = values[i] {
-                    {
-                        let (outer_y, outer_h) = category_scale.band(i);
-                        let inner = BandScale {
-                            count: series_count.max(1),
-                            range: (outer_y, outer_y + outer_h),
-                            padding: GROUP_PADDING,
-                        };
-                        let (bar_y, bar_h) = inner.band(s);
-                        let x1 = value_scale.scale(v);
-                        let (rect_x, rect_w) = bar_extent(x1, zero_x);
-                        let color = ctx.data[i].color.clone();
-                        let fill_style = color.map(|c| format!("fill: {c}"));
-                        let is_active = Some(i) == opts.active_index;
-                        let center_y = bar_y + bar_h / 2.0;
-                        rsx! {
-                            rect {
-                                key: "{i}",
-                                "data-slot": "chart-bar",
-                                "data-index": "{i}",
-                                "data-active": is_active,
-                                x: "{fmt_num(rect_x)}",
-                                y: "{fmt_num(bar_y)}",
-                                width: "{fmt_num(rect_w)}",
-                                height: "{fmt_num(bar_h)}",
-                                style: fill_style,
-                            }
-                            if opts.inside_labels {
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-position": "inside",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(rect_x + LABEL_OFFSET)}",
-                                    y: "{fmt_num(center_y)}",
-                                    "dominant-baseline": "central",
-                                    style: "fill: var(--primary-color-1)",
-                                    {ctx.data[i].label.clone()}
-                                }
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-position": "value",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(rect_x + rect_w + LABEL_OFFSET)}",
-                                    y: "{fmt_num(center_y)}",
-                                    "dominant-baseline": "central",
-                                    {fmt_value(v)}
-                                }
-                            } else if opts.value_labels {
-                                text {
-                                    "data-slot": "chart-label",
-                                    "data-index": "{i}",
-                                    x: "{fmt_num(rect_x + rect_w + LABEL_OFFSET)}",
-                                    y: "{fmt_num(center_y)}",
-                                    "dominant-baseline": "central",
-                                    {fmt_value(v)}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// This family's own category-axis labels for a horizontal chart --
-/// shadcn's `<YAxis type="category">`. Ported here (not `components::
-/// layout::render_x_axis`/`render_y_axis`, which `chart.rs` calls
-/// unconditionally with no orientation awareness -- see the module doc)
-/// specifically so a horizontal demo can set `show_x_axis`/`show_y_axis:
-/// false` (matching shadcn's own choice: every horizontal demo hides both
-/// of Recharts' default axes and supplies its own category `YAxis`) and
-/// still get correctly-positioned, correctly-styled category labels: this
-/// reuses the SAME `data-slot="chart-axis"` selector `chart/style.css`
-/// already styles (`fill`/`font-size`), so no new CSS is needed for the
-/// text to look right, only for the different attribute value on this
-/// group.
-fn render_horizontal_category_labels(
-    ctx: &SeriesRenderContext,
-    category_scale: &BandScale,
-) -> Element {
-    // Rows are stacked top-to-bottom, so a dense category axis overlaps by
-    // *height*, not width: thin to the row budget the plot height can hold
-    // (first label always kept, every n-th after it), same stride rule as the
-    // x axis. Unlike a vertical `Chart`'s x axis there is no `max_x_ticks`
-    // cap here -- only the height bound.
-    let budget = effective_tick_count(
-        usize::MAX,
-        ctx.plot_y1 - ctx.plot_y0,
-        TICK_LABEL_LINE_HEIGHT * ctx.text_scale,
-    );
-    let tick_step = x_tick_step(ctx.data.len(), budget);
+        return rsx! {};
+    };
+    // Beyond the bar's value end: above (right of) a positive bar, below
+    // (left of) a negative one.
+    let (x, y, anchor, dy) = match (ctx.horizontal, rect.negative) {
+        (false, false) => (rect.x + rect.w / 2.0, rect.y - offset, "middle", "0"),
+        (false, true) => (
+            rect.x + rect.w / 2.0,
+            rect.y + rect.h + offset,
+            "middle",
+            "0.71em",
+        ),
+        (true, false) => (
+            rect.x + rect.w + offset,
+            rect.y + rect.h / 2.0,
+            "start",
+            "0.355em",
+        ),
+        (true, true) => (rect.x - offset, rect.y + rect.h / 2.0, "end", "0.355em"),
+    };
     rsx! {
-        g { "data-slot": "chart-axis", "data-axis": "category",
-            for (i , datum) in ctx.data.iter().enumerate() {
-                if i % tick_step == 0 {
-                    text {
-                        key: "{i}",
-                        "data-index": "{i}",
-                        x: "{fmt_num(ctx.plot_x0 - 8.0 * ctx.text_scale)}",
-                        y: "{fmt_num(category_scale.center(i))}",
-                        "text-anchor": "end",
-                        "dominant-baseline": "central",
-                        {datum.label.chars().take(3).collect::<String>()}
-                    }
-                }
-            }
+        text {
+            "data-slot": "chart-label",
+            "data-position": position,
+            "data-index": "{i}",
+            x: "{fmt_num(x)}",
+            y: "{fmt_num(y)}",
+            dy,
+            "text-anchor": anchor,
+            {text}
         }
     }
 }
 
-/// This family's own hit-bands for a horizontal chart: full-width strips
-/// positioned by the category band scale (along y), one per datum. They
-/// are the stable per-datum hit regions tests and styles address; hover
-/// itself is resolved from the pointer's coordinates by `Chart`'s wrapper
-/// (`components::pointer`, nearest category along y), the same mechanism as
-/// the vertical charts.
-///
-/// Deliberately marked `data-orientation="horizontal"`, distinct from
-/// `chart.rs`'s own `[data-slot="chart-hit-band"]` columns (which `Chart`
-/// no longer renders for a horizontal bar chart) so a stylesheet can tell
-/// the two layouts apart.
-fn render_horizontal_hit_bands(ctx: &SeriesRenderContext, category_scale: &BandScale) -> Element {
+/// This family's own hit bands for a horizontal chart: full-width strips,
+/// one per category row (`data-orientation="horizontal"`, distinct from
+/// `Chart`'s own vertical columns, which it does not draw for horizontal
+/// bars). Hover itself is resolved from the pointer's coordinates
+/// (`components::pointer`).
+fn render_horizontal_hit_bands(ctx: &SeriesRenderContext) -> Element {
     let n = ctx.xs.len();
     rsx! {
         g { "data-slot": "chart-hit-bands", "data-orientation": "horizontal",
             for i in 0..n {
                 {
-                    let (by, bh) = category_scale.band(i);
+                    let (by, bh) = ctx.x_scale.band(i);
                     rsx! {
                         rect {
                             key: "{i}",
@@ -529,7 +536,7 @@ mod tests {
                     stacked: props.stacked,
                     bar: props.bar.clone(),
                     show_x_axis: !props.bar.horizontal,
-                    show_y_axis: false,
+                    show_y_axis: props.bar.horizontal,
                 }
             }
         }
@@ -624,7 +631,7 @@ mod tests {
             },
             stacked: false,
         });
-        assert!(html.contains(r#"data-axis="category""#));
+        assert!(html.contains(r#"data-axis="y""#));
         assert!(
             html.contains(">chr<"),
             "expected a truncated category label: {html}"
@@ -719,8 +726,8 @@ mod tests {
             bar: BarOptions::default(),
             stacked: false,
         });
-        assert!(html.contains("fill: var(--dx-chart-1)"));
-        assert!(html.contains("fill: var(--dx-chart-2)"));
+        assert!(html.contains("--series-color: var(--dx-chart-1)"));
+        assert!(html.contains("--series-color: var(--dx-chart-2)"));
     }
 
     #[test]
@@ -743,9 +750,8 @@ mod tests {
             bar: BarOptions::default(),
             stacked: false,
         });
-        // The zero line itself is drawn (ChartKind::Bar, layout::render_grid).
-        assert!(html.contains(r#"data-slot="chart-zero-line""#));
-        let zero_y = attr_f64_after(&html, r#"data-slot="chart-zero-line""#, "y1");
+        // The value axis' zero, published on the svg for the animation.
+        let zero_y = zero_px(&html);
 
         // Two `data-slot="chart-bar"` rects (in DOM/config order, so
         // `rects[0]` is January and `rects[1]` is February): `chart.rs`'s
@@ -850,14 +856,112 @@ mod tests {
             .unwrap_or_else(|_| panic!("non-numeric {attr} in: {fragment}"))
     }
 
-    /// Like [`attr_f64`], but searches the whole `html` starting from the
-    /// first occurrence of `marker` (used to scope a search to one
-    /// specific element, e.g. the zero-line, without assuming a following
-    /// element ordering).
-    fn attr_f64_after(html: &str, marker: &str, attr: &str) -> f64 {
-        let start = html
-            .find(marker)
-            .unwrap_or_else(|| panic!("marker {marker} not found in: {html}"));
-        attr_f64(&html[start..], attr)
+    /// The svg's `--dx-chart-zero` (the value axis' zero, px).
+    fn zero_px(html: &str) -> f64 {
+        let start = html.find("--dx-chart-zero: ").expect("zero var") + "--dx-chart-zero: ".len();
+        let rest = &html[start..];
+        rest[..rest.find("px").unwrap()].parse().unwrap()
+    }
+
+    #[test]
+    fn bar_slots_match_recharts_get_bar_position() {
+        // shadcn bar-default: one series on a 59.833px band -> 5.983px
+        // offset, a 47px bar.
+        let (offset, size, _) = bar_slots(359.0 / 6.0, 1, 0.1, 4.0);
+        assert!((offset - 5.9833).abs() < 1e-3);
+        assert_eq!(size, 47.0);
+        // bar-multiple: two 21px bars, 4px apart.
+        let (_, size, pitch) = bar_slots(359.0 / 6.0, 2, 0.1, 4.0);
+        assert_eq!((size, pitch), (21.0, 25.0));
+        // bar-interactive hero: 91 bars on 1262px -> 11px.
+        assert_eq!(bar_slots(1262.0 / 91.0, 1, 0.1, 4.0).1, 11.0);
+        // Too narrow for the gap: the gap is dropped, never negative.
+        let (_, size, pitch) = bar_slots(4.0, 3, 0.1, 4.0);
+        assert!(size >= 0.0 && pitch == size);
+    }
+
+    #[test]
+    fn rounded_rect_path_rounds_only_the_given_corners_and_clamps() {
+        let r = BarRect {
+            x: 10.0,
+            y: 20.0,
+            w: 47.0,
+            h: 43.4,
+            negative: false,
+        };
+        // shadcn's stacked bottom segment `[0, 0, 4, 4]`.
+        assert_eq!(
+            rounded_rect_path(r, BarRadius::corners(0.0, 0.0, 4.0, 4.0)),
+            "M10 20 L57 20 L57 59.4 A4 4 0 0 1 53 63.4 L14 63.4 A4 4 0 0 1 10 59.4 Z"
+        );
+        // A radius larger than half the bar is clamped to it.
+        let thin = BarRect {
+            x: 0.0,
+            y: 0.0,
+            w: 6.0,
+            h: 100.0,
+            negative: false,
+        };
+        assert!(rounded_rect_path(thin, BarRadius::corners(8.0, 8.0, 0.0, 0.0)).contains("A3 3"));
+    }
+
+    #[test]
+    fn a_uniform_radius_is_a_rect_with_rx_and_corners_are_a_path() {
+        let html = render(HarnessProps {
+            config: config_one(),
+            data: sample_data(),
+            bar: BarOptions {
+                radius: BarRadius::all(8.0),
+                ..Default::default()
+            },
+            stacked: false,
+        });
+        assert!(html.contains(r#"rx="8""#), "{html}");
+        let html = render(HarnessProps {
+            config: config_two(),
+            data: sample_data(),
+            bar: BarOptions {
+                series_radius: vec![
+                    BarRadius::corners(0.0, 0.0, 4.0, 4.0),
+                    BarRadius::corners(4.0, 4.0, 0.0, 0.0),
+                ],
+                ..Default::default()
+            },
+            stacked: true,
+        });
+        assert_eq!(
+            html.matches(r#"<path data-slot="chart-bar""#).count(),
+            4,
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn category_labels_sit_beyond_the_bar_end_in_its_color() {
+        let data = vec![
+            ChartDatum {
+                label: "January".to_string(),
+                values: vec![Some(186.0)],
+                color: Some("var(--dx-chart-1)".to_string()),
+            },
+            ChartDatum {
+                label: "March".to_string(),
+                values: vec![Some(-207.0)],
+                color: Some("var(--dx-chart-2)".to_string()),
+            },
+        ];
+        let html = render(HarnessProps {
+            config: config_one(),
+            data,
+            bar: BarOptions {
+                category_labels: true,
+                ..Default::default()
+            },
+            stacked: false,
+        });
+        assert_eq!(html.matches(r#"data-position="category""#).count(), 2);
+        assert!(html.contains(">January<") && html.contains(">March<"));
+        // The negative bar's label hangs below it.
+        assert!(html.contains(r#"dy="0.71em""#), "{html}");
     }
 }

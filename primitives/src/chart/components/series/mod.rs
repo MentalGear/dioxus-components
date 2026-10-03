@@ -68,7 +68,7 @@ pub mod radar;
 pub mod radial;
 
 pub use area::AreaOptions;
-pub use bar::BarOptions;
+pub use bar::{BarOptions, BarRadius};
 // `line`'s own nested extension-point types (`DotContext`/`DotRenderer`/
 // `LineLabels`, stage-2 `s2-line`), not just `LineOptions` itself: this
 // file's own module doc lists it as `s2-refactor`-owned forever, but a

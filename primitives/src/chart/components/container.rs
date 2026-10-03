@@ -1,5 +1,6 @@
 //! Defines the [`ChartContainer`] component.
 
+use dioxus::core::DynamicNode;
 use dioxus::prelude::*;
 
 use crate::chart::config::ChartConfig;
@@ -106,6 +107,18 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let box_size = use_signal(|| None::<(f64, f64)>);
     let tip_size = use_signal(|| None::<(f64, f64)>);
     let gate = use_hook(|| CopyValue::new(PointerGate::default()));
+    let legend = use_signal(|| None::<f64>);
+    // Does this chart have a legend? Read off the children themselves (a
+    // `ChartLegend` component among them, at any `if`/`for` depth), so the
+    // server render and the first client render agree and `Chart` can
+    // reserve the legend's room before anything is measured -- the chart
+    // box is then the same size before and after hydration. Written here,
+    // before any child renders, and only when it changes.
+    let mut has_legend = use_signal(|| false);
+    let legend_present = props.children.as_ref().is_ok_and(contains_legend);
+    if *has_legend.peek() != legend_present {
+        has_legend.set(legend_present);
+    }
 
     use_context_provider(|| ChartContext {
         id,
@@ -118,6 +131,8 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
         box_size,
         tip_size,
         gate,
+        legend,
+        has_legend,
     });
 
     let kind_str = use_memo(move || (props.kind)().as_str());
@@ -179,6 +194,22 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
             {props.children}
         }
     }
+}
+
+/// Whether `node` renders a `ChartLegend` (this crate's or a themed
+/// wrapper of the same name) among its dynamic children, looking through
+/// `if`/`for` fragments. Components are always dynamic nodes, so the
+/// template's static part never needs a look.
+fn contains_legend(node: &VNode) -> bool {
+    node.dynamic_nodes.iter().any(|dynamic| match dynamic {
+        // The name as written at the call site, path included
+        // (`chart::ChartLegend`): compare its last segment.
+        DynamicNode::Component(component) => {
+            component.name.rsplit("::").next().map(str::trim) == Some("ChartLegend")
+        }
+        DynamicNode::Fragment(nodes) => nodes.iter().any(contains_legend),
+        _ => false,
+    })
 }
 
 #[cfg(test)]

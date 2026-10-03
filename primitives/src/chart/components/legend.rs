@@ -85,6 +85,28 @@ pub fn ChartLegend(props: ChartLegendProps) -> Element {
     let config = (ctx.config)();
     let kind = (ctx.kind)();
 
+    // Publish this legend's own box for `Chart`, which reserves that room
+    // inside the chart box (Recharts' legend lives inside the chart and
+    // shrinks the plot). Forgotten again when the legend goes away.
+    let mut legend_box = ctx.legend;
+    use_drop(move || {
+        if let Ok(mut slot) = legend_box.try_write() {
+            *slot = None;
+        }
+    });
+    let onresize = move |evt: ResizeEvent| {
+        let Ok(size) = evt.data().get_border_box_size() else {
+            return;
+        };
+        if !(size.height.is_finite() && size.height >= 0.0) {
+            return;
+        }
+        let next = Some(size.height.round());
+        if *legend_box.peek() != next {
+            legend_box.set(next);
+        }
+    };
+
     // `data-slot`/`data-align` are structural wiring, not overridable
     // presentation -- `data-slot` is the selector the themed stylesheet's
     // whole ruleset hangs off, and `data-align` is what
@@ -115,9 +137,17 @@ pub fn ChartLegend(props: ChartLegendProps) -> Element {
     // series-keyed loop unchanged below).
     let per_datum =
         matches!(kind, ChartKind::Pie | ChartKind::RadialBar) && config.series.len() <= 1;
+    // Series items in Recharts' legend order: its `<Legend>` sorts the payload
+    // by value (`itemSorter="value"`, the series key), not by draw order --
+    // shadcn's stacked area legends read "Desktop, Mobile" although
+    // `mobile` is drawn (and configured) first. Stable, so equal keys keep
+    // config order.
+    let mut legend_series: Vec<_> = config.series.iter().collect();
+    legend_series.sort_by(|a, b| a.key.cmp(&b.key));
 
     rsx! {
         ul {
+            onresize,
             ..merged,
 
             if per_datum {
@@ -149,7 +179,7 @@ pub fn ChartLegend(props: ChartLegendProps) -> Element {
                     }
                 }
             } else {
-                for series in config.series.iter() {
+                for series in legend_series {
                     li {
                         key: "{series.key}",
                         "data-slot": "chart-legend-item",
@@ -247,6 +277,30 @@ mod tests {
             "one swatch per series"
         );
         assert!(html.contains("--series-color: var(--color-desktop)"));
+    }
+
+    #[test]
+    fn series_items_are_listed_by_key_like_rechartss_legend() {
+        // Drawn (and configured) mobile first, as shadcn's stacked area
+        // demos are; listed Desktop, Mobile, as their legends read.
+        #[component]
+        fn Reversed() -> Element {
+            let config = use_signal(|| {
+                ChartConfig::new()
+                    .series("mobile", "Mobile", "var(--dx-chart-2)")
+                    .series("desktop", "Desktop", "var(--dx-chart-1)")
+            });
+            let data = use_signal(Vec::<ChartDatum>::new);
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Area, ChartLegend {} }
+            }
+        }
+        let mut dom = VirtualDom::new(Reversed);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let desktop = html.find(r#"data-series="desktop""#).unwrap();
+        let mobile = html.find(r#"data-series="mobile""#).unwrap();
+        assert!(desktop < mobile, "{html}");
     }
 
     #[test]

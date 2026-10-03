@@ -1,88 +1,69 @@
-//! Shared Cartesian plot geometry: the margin constants, the scale
-//! construction, and the grid/axis rendering `components::chart` used to do
-//! inline, plus [`SeriesRenderContext`] -- the read-only bundle every
-//! series family's own `render` (`components::series::{area,bar,line,
-//! pie,radar,radial}`) receives. Factored out of `chart.rs` in the stage-2
-//! chart round's `s2-refactor` lane specifically so this geometry has one
-//! home shared by every family, instead of six copies drifting apart.
+//! Shared plot geometry: margins and axis bands, the category/value scale
+//! construction, and the grid/axis rendering, plus [`SeriesRenderContext`]
+//! -- the read-only bundle every series family's own `render`
+//! (`components::series::{area,bar,line,pie,radar,radial}`) receives.
 //!
-//! Only [`ChartKind::is_cartesian`] kinds (Area/Bar/Line) actually use the
-//! grid/axis renderers here -- see `components::chart`'s own module doc for
-//! why the polar/radial stub kinds skip them entirely rather than drawing a
-//! Cartesian grid behind a shape that isn't Cartesian.
+//! Everything here is in CSS pixels: the chart's svg is always drawn at its
+//! measured size (`components::chart`'s sizing contract), so a margin, a
+//! tick offset or a label gap is the same number of pixels Recharts uses.
+//!
+//! The geometry follows Recharts (what shadcn/ui's charts render), rule for
+//! rule:
+//! - **Plot rect** = the chart box inset by [`ChartMargin`] (default 5 on
+//!   every side), minus a 30px x-axis band at the bottom when the x axis is
+//!   shown and a 60px y-axis band at the left when the y axis is shown
+//!   (Recharts' `XAxis height` / `YAxis width` defaults). Polar kinds get the
+//!   margin box alone.
+//! - **Category axis**: a [`PointScale`] for Area/Line (first and last
+//!   category ON the plot's edges) and an unpadded [`BandScale`] for Bar
+//!   (bars are inset inside their band by `series::bar`).
+//! - **Value axis**: [`nice_ticks`] (Recharts' `getNiceTickValues`, exactly
+//!   `y_tick_count` ticks), and the domain is the first..last tick.
+//! - **Category tick labels**: Recharts' default `interval="preserveEnd"`
+//!   with `minTickGap` ([`preserve_end_ticks`]), laid out from estimated text
+//!   widths so the server and the client agree.
+//!
+//! Horizontal bars ([`LayoutParams::horizontal`]) swap the two axes: the
+//! category scale runs down y, the value scale across x, the y-axis band
+//! holds the category labels and the x-axis band the value labels -- one
+//! geometry, so the bars, grid, cursor, hit test and tooltip anchors agree.
 
 use dioxus::prelude::*;
 
+use super::chart::ChartMargin;
 use crate::chart::engine::scale::{fmt_decimal, fmt_num};
 use crate::chart::{
-    stack_with_mode, BandScale, ChartConfig, ChartDatum, ChartKind, Curve, LinearScale, StackMode,
+    nice_ticks, stack_with_mode, BandScale, CategoryScale, ChartConfig, ChartDatum, ChartKind,
+    Curve, LinearScale, PointScale, StackMode,
 };
 use crate::direction::Direction;
 
-/// Fixed MVP layout constants (logical SVG units, scaled visually by CSS --
-/// see `components::chart`'s own module doc). Not configurable yet: this
-/// repo's other multi-part primitives (e.g. `Resizable`) don't expose
-/// pixel-tuning props either, preferring a themed wrapper's CSS for that;
-/// the same holds here once a need for it is demonstrated.
-const MARGIN_TOP: f64 = 8.0;
-const MARGIN_RIGHT: f64 = 8.0;
-const MARGIN_BOTTOM_WITH_AXIS: f64 = 24.0;
-const MARGIN_BOTTOM_BARE: f64 = 8.0;
-const MARGIN_LEFT_WITH_AXIS: f64 = 40.0;
-const MARGIN_LEFT_BARE: f64 = 8.0;
-/// Fraction of one category's step left as a gap around/between its bars
-/// (or, for Line/Area, simply how far a hit band's edge sits from its
-/// neighbor's -- the point positions themselves are the band *centers*
-/// either way, so this only visibly matters for `Bar`).
-///
-/// `pub(crate)`, not private: `components::series::bar` (s2-bar-owned, same
-/// as this file) reuses this exact value when it builds its own *second*
-/// band scale for a horizontal bar's category axis (this module's own
-/// `x_scale`/`y_scale` stay Cartesian-only -- see that file's module doc for
-/// why horizontal orientation is computed locally there rather than
-/// threaded through `LayoutParams`/`SeriesRenderContext`), so the two
-/// orientations' category spacing matches exactly rather than drifting via
-/// two independently-tuned literals.
-pub(crate) const BAND_PADDING: f64 = 0.2;
+/// Height of the x-axis band below the plot when the x axis is shown
+/// (Recharts' `XAxis` default `height`).
+pub(crate) const X_AXIS_HEIGHT: f64 = 30.0;
+/// Width of the y-axis band left of the plot when the y axis is shown
+/// (Recharts' `YAxis` default `width`).
+pub(crate) const Y_AXIS_WIDTH: f64 = 60.0;
+/// Recharts' `tickSize`: the tick line's length, by which every tick label
+/// is offset from the plot edge even when the tick line itself is hidden
+/// (`tickLine={false}`, every shadcn demo), before `tickMargin` is added.
+pub(crate) const TICK_SIZE: f64 = 6.0;
 
-/// The inputs [`build`] needs to compute a [`SeriesRenderContext`] --
-/// bundled into one struct rather than a long parameter list (clippy's
-/// `too_many_arguments`, and simple readability: this is every one of
-/// `Chart`'s own props/resolved-state values that geometry depends on).
+/// The inputs [`build`] needs to compute a [`SeriesRenderContext`].
 pub(crate) struct LayoutParams<'a> {
+    /// The svg's size in CSS px (measured, or the initial size before that).
     pub width: f64,
     pub height: f64,
-    /// The text compensation scale (`0.5..=2.5`, see `chart::text_scale`):
-    /// how many logical units one CSS pixel of axis text occupies once the
-    /// chart is rendered at a different size than its logical `width` --
-    /// above 1 in a narrower container, below 1 in a wider one. `1.0` on the
-    /// server, the first client render and any container within ~5% of
-    /// `width`.
-    pub text_scale: f64,
+    pub margin: ChartMargin,
     pub show_x_axis: bool,
     pub show_y_axis: bool,
     pub y_tick_count: usize,
     pub kind: ChartKind,
-    /// Already resolved by the caller to this render's *effective* stacking
-    /// (e.g. `props.stacked && matches!(kind, Area | Bar)`) -- this module
-    /// applies no kind-based gating of its own.
+    /// Horizontal bars: categories down the y axis, values across x.
+    pub horizontal: bool,
+    /// Already resolved by the caller to this render's *effective* stacking.
     pub stacked: bool,
-    /// Which [`stack_with_mode`] mode `stacked`'s spans use -- ignored
-    /// entirely when `stacked` is `false`. Defaults to
-    /// [`StackMode::Normal`] (`#[derive(Default)]` on `StackMode` itself),
-    /// so every existing call site that doesn't set this field keeps
-    /// today's exact behavior. Stage-2 chart round, §4(c) of the handoff:
-    /// before this field existed, `AreaOptions::stack_mode ==
-    /// StackMode::Expand` was read by `series::area::render` alone, which
-    /// recomputed its own local percent spans + a local `(0.0,
-    /// 1.0)`-domain scale for the marks -- correct for the marks
-    /// themselves, but `Chart`'s shared grid lines/y-axis ticks/tooltip
-    /// vertical anchor still read the raw, non-percent `y_scale` this
-    /// struct computes, and visually disagreed with a percent-stacked
-    /// chart. Once a caller threads its own `AreaOptions`/`BarOptions`
-    /// `stack_mode` through to this field, `y_scale`/`stacked_spans` here
-    /// reflect the same mode the marks use, and the family's own `render`
-    /// can read them instead of recomputing a local copy.
+    /// Which [`stack_with_mode`] mode `stacked`'s spans use.
     pub stack_mode: StackMode,
     pub curve: Curve,
     pub dir: Direction,
@@ -93,122 +74,139 @@ pub(crate) struct LayoutParams<'a> {
 
 /// Shared read-only context every series family's `render` needs: the
 /// scales and plot geometry [`build`] computed once for this render, plus
-/// the chart's own data/config/active index. Lives in the Dioxus-facing
-/// `components` layer (unlike `engine`, nothing here is bound by that
-/// module's upstreaming seam -- see its doc) even though none of today's
-/// fields actually name a `dioxus` type.
-///
-/// Deliberately holds owned `config`/`data` (cheap: a chart's series/datum
-/// counts are always small) rather than borrowing, so a family's `render`
-/// signature stays a plain `fn(&SeriesRenderContext, &XOptions) -> Element`
-/// with no lifetime parameter to thread through `rsx!`'s own closures.
+/// the chart's own data/config/active index. All lengths are CSS px.
 pub(crate) struct SeriesRenderContext {
-    // `kind`/`dir`/`active_index`/`width`/`height` are read by no family's
-    // `render` today (Area/Bar/Line need none of them; the three stub
-    // families ignore `ctx` entirely) -- `#[allow(dead_code)]` because
-    // `pub(crate)` visibility lets rustc see that whole-crate truth and
-    // warn on it, unlike a fully `pub` struct's fields (unprovably unused,
-    // so exempt by default). Kept anyway: `$S/stage2-common.md`'s own spec
-    // for this struct names exactly these fields (plus the ones already
-    // read below), reserved for a family that needs them -- e.g. a future
-    // dimmed-when-inactive mark (`active_index`), an RTL-mirrored polar
-    // layout (`dir`), or an arc/polygon geometry computed from the SVG's
-    // own center (`width`/`height`) -- not yet, but by construction rather
-    // than by re-adding them under time pressure later.
     #[allow(dead_code)]
     pub kind: ChartKind,
-    /// See [`LayoutParams::text_scale`]; axis margins and label offsets are
-    /// multiplied by it so scaled-up text keeps its room.
-    pub text_scale: f64,
     pub config: ChartConfig,
     pub data: Vec<ChartDatum>,
     #[allow(dead_code)]
     pub dir: Direction,
-    /// The currently hovered/keyboard-focused datum index, read-only here
-    /// -- only `Chart`'s own hit-bands (still rendered by `chart.rs`
-    /// itself, not any family) write it.
-    #[allow(dead_code)]
+    /// The currently hovered/keyboard-focused datum index.
     pub active_index: Option<usize>,
-    #[allow(dead_code)]
+    /// The svg's size in CSS px for this render.
     pub width: f64,
-    #[allow(dead_code)]
     pub height: f64,
+    /// The resolved Recharts margin.
+    #[allow(dead_code)]
+    pub margin: ChartMargin,
     pub plot_x0: f64,
     pub plot_x1: f64,
     pub plot_y0: f64,
     pub plot_y1: f64,
-    pub x_scale: BandScale,
+    /// Horizontal bars (see [`LayoutParams::horizontal`]).
+    pub horizontal: bool,
+    /// The category scale: along x, or along y for horizontal bars.
+    pub x_scale: CategoryScale,
+    /// The value scale: its range runs up the plot (bottom to top), or for
+    /// horizontal bars across it (left to right).
     pub y_scale: LinearScale,
+    /// The value ticks ([`nice_ticks`]); the value domain is first..last.
     pub y_ticks: Vec<f64>,
     /// `y_scale.scale(0.0)` -- every non-stacked Area/Bar baseline.
     pub zero_y: f64,
-    /// Each datum's x position (band centers), aligned to `data`.
+    /// Each datum's category position (`x_scale.center(i)`), aligned to
+    /// `data`.
     pub xs: Vec<f64>,
     pub curve: Curve,
     pub stacked: bool,
-    /// [`stack()`]'s output, one row per datum, empty when not stacking.
+    /// [`stack_with_mode`]'s output, one row per datum, empty when not
+    /// stacking.
     pub stacked_spans: Vec<Vec<(f64, f64)>>,
 }
 
 impl SeriesRenderContext {
     /// Series `s`'s raw value for every datum, `None` when a datum has no
-    /// entry for it at all (a shorter `values` list than the config's
-    /// series count -- defensive, never panics). Shared by every
-    /// non-stacked family's `render` (`series::{area,bar,line}`) --
-    /// pure data extraction, not per-family drawing logic, so unlike the
-    /// per-series marks loop itself (deliberately NOT factored out here --
-    /// each family's loop body differs enough that sharing it would cost
-    /// more clarity than it saves), this one small helper is worth sharing.
+    /// entry for it at all.
     pub(crate) fn series_values(&self, s: usize) -> Vec<Option<f64>> {
         self.data
             .iter()
             .map(|d| d.values.get(s).copied().flatten())
             .collect()
     }
+
+    /// The plot rect `(x0, y0, x1, y1)`.
+    pub(crate) fn plot(&self) -> (f64, f64, f64, f64) {
+        (self.plot_x0, self.plot_y0, self.plot_x1, self.plot_y1)
+    }
+
+    /// Whether category labels are drawn for this layout given the two axis
+    /// flags: the x axis carries them on a vertical chart, the y axis on
+    /// horizontal bars.
+    pub(crate) fn category_axis_shown(&self, show_x_axis: bool, show_y_axis: bool) -> bool {
+        if self.horizontal {
+            show_y_axis
+        } else {
+            show_x_axis
+        }
+    }
+
+    /// Whether value labels are drawn (the other axis).
+    pub(crate) fn value_axis_shown(&self, show_x_axis: bool, show_y_axis: bool) -> bool {
+        if self.horizontal {
+            show_x_axis
+        } else {
+            show_y_axis
+        }
+    }
 }
 
-/// Compute this render's [`SeriesRenderContext`]: margins (from
-/// `show_x_axis`/`show_y_axis`), the x [`BandScale`]/y [`LinearScale`] (via
-/// [`crate::chart::nice_domain`]), y ticks, and (when `stacked`) the
-/// [`stack()`] spans every stacked Area/Bar mark reads. Ported unchanged
-/// from `Chart`'s own body (pre-stage-2-refactor) -- see
-/// `components::chart`'s tests for the behavior this must keep producing
-/// bit-for-bit.
+/// Compute this render's [`SeriesRenderContext`] -- see the module doc for
+/// the Recharts rules it follows.
 pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
-    // Axis margins hold text, so they grow with the compensated text size
-    // (`s == 1` -- desktop, SSR -- leaves every value exactly as authored);
-    // the bare margins hold no text and stay put.
-    let s = p.text_scale;
-    let margin_left = if p.show_y_axis {
-        MARGIN_LEFT_WITH_AXIS * s
-    } else {
-        MARGIN_LEFT_BARE
-    };
-    let margin_bottom = if p.show_x_axis {
-        MARGIN_BOTTOM_WITH_AXIS * s
-    } else {
-        MARGIN_BOTTOM_BARE
-    };
-    let plot_x0 = margin_left;
-    let plot_x1 = p.width - MARGIN_RIGHT;
-    let plot_y0 = MARGIN_TOP;
-    let plot_y1 = p.height - margin_bottom;
+    let cartesian = p.kind.is_cartesian();
+    let horizontal = p.horizontal && matches!(p.kind, ChartKind::Bar);
+    let m = p.margin;
+    let left = m.left
+        + if cartesian && p.show_y_axis {
+            Y_AXIS_WIDTH
+        } else {
+            0.0
+        };
+    let bottom = m.bottom
+        + if cartesian && p.show_x_axis {
+            X_AXIS_HEIGHT
+        } else {
+            0.0
+        };
+    let plot_x0 = left;
+    let plot_x1 = (p.width - m.right).max(plot_x0);
+    let plot_y0 = m.top;
+    let plot_y1 = (p.height - bottom).max(plot_y0);
 
     let n = p.data.len();
-    let x_scale = BandScale {
-        count: n.max(1),
-        range: (plot_x0, plot_x1),
-        padding: BAND_PADDING,
+    let x_scale = match (p.kind, horizontal) {
+        (ChartKind::Area | ChartKind::Line, _) => CategoryScale::Point(PointScale {
+            count: n.max(1),
+            range: (plot_x0, plot_x1),
+        }),
+        (_, true) => CategoryScale::Band(BandScale {
+            count: n.max(1),
+            range: (plot_y0, plot_y1),
+            padding: 0.0,
+        }),
+        _ => CategoryScale::Band(BandScale {
+            count: n.max(1),
+            range: (plot_x0, plot_x1),
+            padding: 0.0,
+        }),
     };
     let xs: Vec<f64> = (0..n).map(|i| x_scale.center(i)).collect();
 
     let (y_min, y_max) = y_extent(p.config, p.data, p.stacked, p.stack_mode);
-    let y_domain = crate::chart::nice_domain(y_min, y_max);
+    let y_ticks = nice_ticks(y_min, y_max, p.y_tick_count.max(2));
+    let domain = (
+        y_ticks.first().copied().unwrap_or(0.0),
+        y_ticks.last().copied().unwrap_or(1.0),
+    );
     let y_scale = LinearScale {
-        domain: y_domain,
-        range: (plot_y1, plot_y0),
+        domain,
+        range: if horizontal {
+            (plot_x0, plot_x1)
+        } else {
+            (plot_y1, plot_y0)
+        },
     };
-    let y_ticks = y_scale.ticks(p.y_tick_count);
     let zero_y = y_scale.scale(0.0);
 
     let stacked_spans: Vec<Vec<(f64, f64)>> = if p.stacked {
@@ -220,17 +218,18 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
 
     SeriesRenderContext {
         kind: p.kind,
-        text_scale: p.text_scale,
         config: p.config.clone(),
         data: p.data.to_vec(),
         dir: p.dir,
         active_index: p.active_index,
         width: p.width,
         height: p.height,
+        margin: m,
         plot_x0,
         plot_x1,
         plot_y0,
         plot_y1,
+        horizontal,
         x_scale,
         y_scale,
         y_ticks,
@@ -242,11 +241,9 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
     }
 }
 
-/// The y-domain input before [`crate::chart::nice_domain`]: the min/max
-/// across every configured series' values, or (for `stacked`) across
-/// [`stack_with_mode`]'s own per-row spans -- a stacked chart's axis must
-/// span the *cumulative* (or, under [`StackMode::Expand`], the normalized
-/// 0..1) totals, not each series' own raw values.
+/// The value-axis data extent: the min/max across every configured series'
+/// values, or (for `stacked`) across [`stack_with_mode`]'s own per-row
+/// spans. [`nice_ticks`] widens it to include zero.
 fn y_extent(
     config: &ChartConfig,
     data: &[ChartDatum],
@@ -274,87 +271,36 @@ fn y_extent(
     (lo, hi)
 }
 
-/// Render `g[data-slot="chart-grid"]`: one horizontal line per y tick, plus
-/// (`ChartKind::Bar` only) an explicit `line[data-slot="chart-zero-line"]`
-/// at the baseline.
-///
-/// The zero line is gated on `ctx.kind == ChartKind::Bar` specifically,
-/// not drawn for every kind that happens to share this grid renderer
-/// (Area/Line too): [`crate::chart::nice_domain`] always includes `0.0` in
-/// the y domain, so `ctx.zero_y` is always a real, valid pixel position
-/// regardless of kind, but a explicit baseline line is only useful where a
-/// mark's own visual weight actually starts *from* zero (a bar) --
-/// `$S/stage2-common.md`'s own brief for this lane names the `negative`
-/// bar-chart variant's "zero line drawn" requirement specifically. Gating
-/// here, on a field every kind's `render_grid` call already receives,
-/// keeps this change from altering Area/Line's rendered output at all
-/// (verified: `ctx.kind` is a plain match, not a new parameter neither
-/// `s2-area` nor `s2-line`'s own call sites need to know about), rather
-/// than risking a shared-infrastructure behavior change those lanes did
-/// not ask for and have not verified against.
+/// Render `g[data-slot="chart-grid"]`: one line per value tick -- horizontal
+/// lines on a vertical chart (shadcn's `<CartesianGrid vertical={false} />`),
+/// vertical lines for horizontal bars (`<CartesianGrid horizontal={false} />`).
 pub(crate) fn render_grid(ctx: &SeriesRenderContext) -> Element {
+    let ticks = grid_ticks(ctx);
     rsx! {
         g { "data-slot": "chart-grid",
-            for y_tick in ctx.y_ticks.iter().copied() {
-                line {
-                    key: "{y_tick}",
-                    x1: "{fmt_num(ctx.plot_x0)}",
-                    x2: "{fmt_num(ctx.plot_x1)}",
-                    y1: "{fmt_num(ctx.y_scale.scale(y_tick))}",
-                    y2: "{fmt_num(ctx.y_scale.scale(y_tick))}",
-                }
-            }
-            if matches!(ctx.kind, ChartKind::Bar) {
-                line {
-                    "data-slot": "chart-zero-line",
-                    x1: "{fmt_num(ctx.plot_x0)}",
-                    x2: "{fmt_num(ctx.plot_x1)}",
-                    y1: "{fmt_num(ctx.zero_y)}",
-                    y2: "{fmt_num(ctx.zero_y)}",
-                }
-            }
-        }
-    }
-}
-
-/// Render `g[data-slot="chart-axis"][data-axis="x"]`: one tick label per
-/// datum whose index survives [`x_tick_step`]'s thinning. The label budget is
-/// [`effective_tick_count`]: `max_x_ticks`, further capped so the labels fit
-/// the plot's own width (see that fn for the estimate).
-pub(crate) fn render_x_axis(
-    ctx: &SeriesRenderContext,
-    x_tick_format: &Option<Callback<String, String>>,
-    max_x_ticks: usize,
-) -> Element {
-    let labels: Vec<String> = ctx
-        .data
-        .iter()
-        .map(|datum| format_x_tick(&datum.label, x_tick_format))
-        .collect();
-    let longest = labels
-        .iter()
-        .map(|l| estimated_text_width(l))
-        .fold(0.0, f64::max);
-    let budget = x_tick_budget(
-        max_x_ticks,
-        ctx.plot_x1 - ctx.plot_x0,
-        longest,
-        ctx.text_scale,
-    );
-    let tick_step = x_tick_step(ctx.data.len(), budget);
-    rsx! {
-        g { "data-slot": "chart-axis", "data-axis": "x",
-            for (i , label) in labels.into_iter().enumerate() {
-                if i % tick_step == 0 {
-                    text {
-                        key: "{i}",
-                        "data-index": "{i}",
-                        x: "{fmt_num(ctx.x_scale.center(i))}",
-                        y: "{fmt_num(ctx.plot_y1 + 16.0 * ctx.text_scale)}",
-                        // Centered on the band/point it labels (an unanchored
-                        // SVG text starts AT x, i.e. half a label to the right).
-                        "text-anchor": "middle",
-                        {label}
+            for tick in ticks {
+                {
+                    let at = fmt_num(ctx.y_scale.scale(tick));
+                    if ctx.horizontal {
+                        rsx! {
+                            line {
+                                key: "{tick}",
+                                x1: "{at}",
+                                x2: "{at}",
+                                y1: "{fmt_num(ctx.plot_y0)}",
+                                y2: "{fmt_num(ctx.plot_y1)}",
+                            }
+                        }
+                    } else {
+                        rsx! {
+                            line {
+                                key: "{tick}",
+                                x1: "{fmt_num(ctx.plot_x0)}",
+                                x2: "{fmt_num(ctx.plot_x1)}",
+                                y1: "{at}",
+                                y2: "{at}",
+                            }
+                        }
                     }
                 }
             }
@@ -362,30 +308,137 @@ pub(crate) fn render_x_axis(
     }
 }
 
-/// Render `g[data-slot="chart-axis"][data-axis="y"]`: one tick label per y
-/// tick.
-pub(crate) fn render_y_axis(ctx: &SeriesRenderContext) -> Element {
-    rsx! {
-        g { "data-slot": "chart-axis", "data-axis": "y",
-            for y_tick in ctx.y_ticks.iter().copied() {
-                text {
-                    key: "{y_tick}",
-                    x: "{fmt_num(ctx.plot_x0 - 8.0 * ctx.text_scale)}",
-                    y: "{fmt_num(ctx.y_scale.scale(y_tick))}",
-                    // Right-aligned against the plot edge and vertically
-                    // centered on its gridline (an unanchored text starts at
-                    // x and sits on its baseline, i.e. runs INTO the plot).
-                    "text-anchor": "end",
-                    "dominant-baseline": "central",
-                    {fmt_decimal(y_tick, 2)}
+/// The height Recharts measures a hidden y axis' tick text at when it thins
+/// the horizontal gridlines: `getStringSize` renders the text in a probe
+/// span on `document.body`, outside the chart's `text-xs`, so it is the
+/// page's body line (16px * 1.5).
+const GRID_TICK_SIZE: f64 = 24.0;
+
+/// Recharts' default `minTickGap`.
+const GRID_TICK_GAP: f64 = 5.0;
+
+/// The value ticks that get a gridline. Recharts' `CartesianGrid` thins a
+/// vertical chart's horizontal lines like the (hidden) y axis' labels --
+/// [`preserve_end_ticks`] over the whole svg height with
+/// [`GRID_TICK_SIZE`] -- and then puts the plot's two edges back
+/// (`getCoordinatesOfGrid`). So a short plot (a legend's room taken out of a
+/// 208px card: ticks 37.5px apart) loses the line just below the top one,
+/// exactly as shadcn's legend charts do; 42px apart keeps every line.
+fn grid_ticks(ctx: &SeriesRenderContext) -> Vec<f64> {
+    let n = ctx.y_ticks.len();
+    if ctx.horizontal || n < 3 {
+        return ctx.y_ticks.clone();
+    }
+    let coords: Vec<f64> = ctx.y_ticks.iter().map(|t| ctx.y_scale.scale(*t)).collect();
+    let sizes = vec![GRID_TICK_SIZE; n];
+    let shown = preserve_end_ticks(&coords, &sizes, 0.0, ctx.height, GRID_TICK_GAP);
+    ctx.y_ticks
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i == 0 || *i == n - 1 || shown.iter().any(|(s, _)| s == i))
+        .map(|(_, tick)| *tick)
+        .collect()
+}
+
+/// Render the category tick labels: below the plot on a vertical chart
+/// (`data-axis="x"`), left of it for horizontal bars (`data-axis="y"`),
+/// thinned by [`preserve_end_ticks`] with `min_tick_gap`.
+pub(crate) fn render_category_axis(
+    ctx: &SeriesRenderContext,
+    format: &Option<Callback<String, String>>,
+    min_tick_gap: f64,
+    tick_margin: f64,
+) -> Element {
+    let labels: Vec<String> = ctx
+        .data
+        .iter()
+        .map(|datum| format_x_tick(&datum.label, format))
+        .collect();
+    if ctx.horizontal {
+        let sizes = vec![AXIS_LINE_HEIGHT; labels.len()];
+        let shown = preserve_end_ticks(&ctx.xs, &sizes, 0.0, ctx.height, min_tick_gap);
+        let x = fmt_num(ctx.plot_x0 - TICK_SIZE - tick_margin);
+        rsx! {
+            g { "data-slot": "chart-axis", "data-axis": "y",
+                for (i , y) in shown {
+                    text {
+                        key: "{i}",
+                        "data-index": "{i}",
+                        x: "{x}",
+                        y: "{fmt_num(y)}",
+                        dy: "0.355em",
+                        "text-anchor": "end",
+                        {labels[i].clone()}
+                    }
+                }
+            }
+        }
+    } else {
+        let sizes: Vec<f64> = labels.iter().map(|l| estimated_text_width(l)).collect();
+        let shown = preserve_end_ticks(&ctx.xs, &sizes, 0.0, ctx.width, min_tick_gap);
+        let y = fmt_num(ctx.plot_y1 + TICK_SIZE + tick_margin);
+        rsx! {
+            g { "data-slot": "chart-axis", "data-axis": "x",
+                for (i , x) in shown {
+                    text {
+                        key: "{i}",
+                        "data-index": "{i}",
+                        x: "{fmt_num(x)}",
+                        y: "{y}",
+                        // Recharts' `verticalAnchor="start"`: the cap height
+                        // hangs from `y`.
+                        dy: "0.71em",
+                        "text-anchor": "middle",
+                        {labels[i].clone()}
+                    }
                 }
             }
         }
     }
 }
 
-/// Format an x-axis category label: the caller's own formatter if given,
-/// else its first 3 characters (shadcn's own demo convention).
+/// Render the value tick labels: left of the plot on a vertical chart
+/// (`data-axis="y"`, end-anchored and centered on each gridline), below it
+/// for horizontal bars (`data-axis="x"`).
+pub(crate) fn render_value_axis(ctx: &SeriesRenderContext, tick_margin: f64) -> Element {
+    if ctx.horizontal {
+        let y = fmt_num(ctx.plot_y1 + TICK_SIZE + tick_margin);
+        rsx! {
+            g { "data-slot": "chart-axis", "data-axis": "x",
+                for tick in ctx.y_ticks.iter().copied() {
+                    text {
+                        key: "{tick}",
+                        x: "{fmt_num(ctx.y_scale.scale(tick))}",
+                        y: "{y}",
+                        dy: "0.71em",
+                        "text-anchor": "middle",
+                        {fmt_decimal(tick, 2)}
+                    }
+                }
+            }
+        }
+    } else {
+        let x = fmt_num(ctx.plot_x0 - TICK_SIZE - tick_margin);
+        rsx! {
+            g { "data-slot": "chart-axis", "data-axis": "y",
+                for tick in ctx.y_ticks.iter().copied() {
+                    text {
+                        key: "{tick}",
+                        x: "{x}",
+                        y: "{fmt_num(ctx.y_scale.scale(tick))}",
+                        // Recharts' `verticalAnchor="middle"`.
+                        dy: "0.355em",
+                        "text-anchor": "end",
+                        {fmt_decimal(tick, 2)}
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Format a category label: the caller's own formatter if given, else its
+/// first 3 characters (shadcn's own demo convention).
 fn format_x_tick(label: &str, format: &Option<Callback<String, String>>) -> String {
     match format {
         Some(cb) => cb.call(label.to_string()),
@@ -393,199 +446,276 @@ fn format_x_tick(label: &str, format: &Option<Callback<String, String>>) -> Stri
     }
 }
 
-/// Axis label font size in CSS px (`--dx-text-xs` = 0.75rem). In a chart
-/// rendered narrower than its logical width the text is drawn `text_scale`
-/// times larger in logical units (see `chart::text_scale`), so a label's
-/// logical width is its estimate here times that scale.
+/// Axis label font size in CSS px (`--dx-text-xs` = 0.75rem).
 const AXIS_FONT_PX: f64 = 12.0;
-/// Average advance of one ASCII glyph, as a fraction of the font size
-/// (measured: "Apr 14" at 12px is ~44px wide, i.e. ~0.61em per glyph).
-const ASCII_GLYPH_EM: f64 = 0.6;
-/// Advance of any non-ASCII glyph (CJK, emoji, ...), as a fraction of the font
-/// size -- full-width in the worst case, so the estimate errs on thinning.
-const WIDE_GLYPH_EM: f64 = 1.0;
-/// Empty space kept between two adjacent tick labels, in user units.
-const TICK_LABEL_GAP: f64 = 8.0;
-/// Vertical pitch one stacked (y-axis category) label needs, in user units: a
-/// 12px font at a ~16px line height. Used by a horizontal bar's category
-/// labels, whose spacing runs top-to-bottom.
-pub(crate) const TICK_LABEL_LINE_HEIGHT: f64 = 16.0;
+/// The height one axis label occupies along a vertical category axis.
+const AXIS_LINE_HEIGHT: f64 = 16.0;
+
+/// Advance width of one glyph as a fraction of the font size -- Helvetica/
+/// Arial metrics, which the UI sans-serifs (Geist, Inter, system-ui) track
+/// to within a few percent ("Jun 30" at 12px: 36px). Non-ASCII glyphs count
+/// as a full em, so the estimate errs on thinning.
+fn glyph_em(c: char) -> f64 {
+    match c {
+        '0'..='9' => 0.556,
+        ' ' | '.' | ',' | ':' | ';' | '!' | '/' | '\'' | 'f' | 't' | 'I' => 0.278,
+        'i' | 'j' | 'l' => 0.222,
+        'r' | '-' | '(' | ')' => 0.333,
+        'm' | 'M' => 0.833,
+        'w' => 0.722,
+        'W' => 0.944,
+        '%' => 0.889,
+        'c' | 'k' | 's' | 'v' | 'x' | 'y' | 'z' | 'J' => 0.5,
+        'a'..='z' => 0.556,
+        'A'..='Z' => 0.667,
+        c if c.is_ascii() => 0.6,
+        _ => 1.0,
+    }
+}
 
 /// Estimated rendered width of one axis label at [`AXIS_FONT_PX`], without a
 /// DOM measurement -- a pure function of the string, so SSR and the client
-/// agree for the same width.
+/// agree for the same width. (Recharts measures the real text; this is the
+/// one place we estimate.)
 pub(crate) fn estimated_text_width(label: &str) -> f64 {
-    label
-        .chars()
-        .map(|c| {
-            if c.is_ascii() {
-                ASCII_GLYPH_EM
-            } else {
-                WIDE_GLYPH_EM
-            }
-        })
-        .sum::<f64>()
-        * AXIS_FONT_PX
+    label.chars().map(glyph_em).sum::<f64>() * AXIS_FONT_PX
 }
 
-/// The number of tick labels an axis span can hold without overlap:
-/// `min(max_ticks, floor(span / pitch))`, never below 1 (the first label is
-/// always drawn). `pitch` is the space one label needs along the axis: the
-/// *longest* label's estimated width plus [`TICK_LABEL_GAP`] for an x axis,
-/// [`TICK_LABEL_LINE_HEIGHT`] for a y-category axis -- so the result is
-/// conservative; `max_ticks` stays a hard upper bound. A non-finite or
-/// non-positive span yields 1.
-pub(crate) fn effective_tick_count(max_ticks: usize, span: f64, pitch: f64) -> usize {
-    let pitch = pitch.max(1.0);
-    let fit = if span.is_finite() && span > 0.0 {
-        (span / pitch).floor() as usize
-    } else {
-        0
-    };
-    max_ticks.min(fit).max(1)
-}
-
-/// The x-axis label budget: `max_x_ticks` capped by what `span` (the plot
-/// width, logical units) holds of labels `longest` px wide (see
-/// [`estimated_text_width`]) plus [`TICK_LABEL_GAP`], all drawn
-/// `text_scale` times larger in logical units. At `text_scale == 1`
-/// (desktop, SSR) this is the plain CSS-px computation.
-pub(crate) fn x_tick_budget(max_x_ticks: usize, span: f64, longest: f64, text_scale: f64) -> usize {
-    effective_tick_count(max_x_ticks, span, (longest + TICK_LABEL_GAP) * text_scale)
-}
-
-/// The x-axis tick-label stride (see `ChartProps::max_x_ticks`): label
-/// datum `i` only when `i % x_tick_step(..) == 0`, so at most `max_x_ticks`
-/// labels are drawn regardless of `n`, always including the first datum
-/// (`i == 0`). Takes the already width-capped budget from
-/// [`effective_tick_count`] -- a pure function so the "at most that many
-/// labels" guarantee is unit-testable independent of any SSR render.
-pub(crate) fn x_tick_step(n: usize, max_x_ticks: usize) -> usize {
+/// Recharts' tick-label thinning for its default `interval="preserveEnd"`
+/// (`getTicksEnd` + `isVisible`): walk from the LAST tick backwards; the last
+/// one is shifted inward if it would overflow `end` (and drawn at the
+/// shifted position); a tick is shown when its label (`sizes[i]` wide along
+/// the axis, centered on its coordinate) fits between `start` and the
+/// previously shown label minus `min_gap`. Returns `(index, drawn
+/// coordinate)` of every shown tick, in index order. `start..end` is the
+/// whole chart box along the axis (Recharts' axis `viewBox`), so a first
+/// label may sit in the margin but never past the svg's edge.
+pub(crate) fn preserve_end_ticks(
+    coords: &[f64],
+    sizes: &[f64],
+    start: f64,
+    end: f64,
+    min_gap: f64,
+) -> Vec<(usize, f64)> {
+    let n = coords.len().min(sizes.len());
     if n == 0 {
-        return 1;
+        return Vec::new();
     }
-    n.div_ceil(max_x_ticks.max(1))
+    let sign = if n >= 2 && coords[1] < coords[0] {
+        -1.0
+    } else {
+        1.0
+    };
+    let (start, mut end) = if sign > 0.0 {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    let mut shown = Vec::new();
+    for i in (0..n).rev() {
+        let size = sizes[i];
+        let mut coord = coords[i];
+        if i == n - 1 {
+            let gap = sign * (coord + sign * size / 2.0 - end);
+            if gap > 0.0 {
+                coord -= gap * sign;
+            }
+        }
+        let fits = sign * (coord - sign * size / 2.0 - start) >= -1e-9
+            && sign * (coord + sign * size / 2.0 - end) <= 1e-9;
+        if fits {
+            end = coord - sign * (size / 2.0 + min_gap);
+            shown.push((i, coord));
+        }
+    }
+    shown.reverse();
+    shown
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn x_tick_step_keeps_the_rendered_count_at_or_under_max_x_ticks() {
-        // The stride itself, and the classic pagination identity it relies
-        // on (`ceil(n / ceil(n / max)) <= max` for positive integers): the
-        // rendered tick count is `ceil(n / x_tick_step(n, max))`, so no
-        // input can ever render more than `max_x_ticks` labels.
-        for n in [0usize, 1, 2, 11, 12, 13, 29, 90, 91, 1000] {
-            for max in [1usize, 3, 5, 12, 50] {
-                let step = x_tick_step(n, max);
-                assert!(step >= 1, "step must be >= 1 for n={n} max={max}");
-                let rendered = if n == 0 { 0 } else { n.div_ceil(step) };
-                assert!(
-                    rendered <= max,
-                    "n={n} max={max} step={step} rendered={rendered} exceeds max_x_ticks"
-                );
-            }
-        }
-        // Concrete cases named in the API doc/commit message.
-        assert_eq!(x_tick_step(2, 12), 1);
-        assert_eq!(x_tick_step(90, 12), 8);
-        assert_eq!(x_tick_step(0, 12), 1);
-        assert_eq!(x_tick_step(10, 0), 10);
+    fn ctx_for(kind: ChartKind, horizontal: bool, width: f64, height: f64) -> SeriesRenderContext {
+        let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
+        let data: Vec<ChartDatum> = [186.0, 305.0, 237.0, 73.0, 209.0, 214.0]
+            .iter()
+            .map(|v| ChartDatum {
+                label: "Month".to_string(),
+                values: vec![Some(*v)],
+                ..Default::default()
+            })
+            .collect();
+        build(LayoutParams {
+            width,
+            height,
+            margin: ChartMargin {
+                left: 12.0,
+                right: 12.0,
+                ..ChartMargin::NONE
+            },
+            show_x_axis: true,
+            show_y_axis: false,
+            y_tick_count: 5,
+            kind,
+            horizontal,
+            stacked: false,
+            stack_mode: StackMode::Normal,
+            curve: Curve::Natural,
+            dir: Direction::Ltr,
+            active_index: None,
+            config: &config,
+            data: &data,
+        })
     }
 
     #[test]
-    fn estimated_text_width_scales_with_glyph_count() {
+    fn area_default_plot_and_points_match_shadcn() {
+        // chart-area-default at 369x208: plot x 12..357, y 0..178, points
+        // 12, 81, ..., 357, five gridlines 0..320.
+        let c = ctx_for(ChartKind::Area, false, 369.0, 208.0);
+        assert_eq!(c.plot(), (12.0, 0.0, 357.0, 178.0));
+        assert_eq!(c.xs, vec![12.0, 81.0, 150.0, 219.0, 288.0, 357.0]);
+        assert_eq!(c.y_ticks, vec![0.0, 80.0, 160.0, 240.0, 320.0]);
+        assert_eq!(c.y_scale.scale(320.0), 0.0);
+        assert_eq!(c.y_scale.scale(0.0), 178.0);
+        // shadcn's first point: 186 -> y 74.538.
+        assert!((c.y_scale.scale(186.0) - 74.538).abs() < 1e-3);
+    }
+
+    #[test]
+    fn bar_default_bands_match_shadcn() {
+        // chart-bar-default: default margin 5, plot 5..364 x 5..173.
+        let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
+        let data: Vec<ChartDatum> = (0..6)
+            .map(|_| ChartDatum {
+                label: "M".into(),
+                values: vec![Some(305.0)],
+                ..Default::default()
+            })
+            .collect();
+        let c = build(LayoutParams {
+            width: 369.0,
+            height: 208.0,
+            margin: ChartMargin::default(),
+            show_x_axis: true,
+            show_y_axis: false,
+            y_tick_count: 5,
+            kind: ChartKind::Bar,
+            horizontal: false,
+            stacked: false,
+            stack_mode: StackMode::Normal,
+            curve: Curve::Linear,
+            dir: Direction::Ltr,
+            active_index: None,
+            config: &config,
+            data: &data,
+        });
+        assert_eq!(c.plot(), (5.0, 5.0, 364.0, 173.0));
+        let (x, w) = c.x_scale.band(0);
+        assert_eq!(x, 5.0);
+        assert!((w - 59.833).abs() < 1e-3);
+    }
+
+    #[test]
+    fn horizontal_bars_put_categories_down_y_and_values_across_x() {
+        let c = ctx_for(ChartKind::Bar, true, 369.0, 208.0);
+        assert!(c.horizontal);
+        assert!(c.x_scale.center(0) < c.x_scale.center(1));
+        assert!(c.xs.iter().all(|y| *y >= c.plot_y0 && *y <= c.plot_y1));
+        assert_eq!(c.y_scale.scale(0.0), c.plot_x0);
+        assert_eq!(c.y_scale.scale(320.0), c.plot_x1);
+    }
+
+    #[test]
+    fn y_axis_and_x_axis_reserve_recharts_bands() {
+        let config = ChartConfig::new().series("a", "A", "red");
+        let data = vec![ChartDatum {
+            label: "x".into(),
+            values: vec![Some(1.0)],
+            ..Default::default()
+        }];
+        let c = build(LayoutParams {
+            width: 369.0,
+            height: 208.0,
+            margin: ChartMargin {
+                left: -20.0,
+                right: 12.0,
+                ..ChartMargin::NONE
+            },
+            show_x_axis: true,
+            show_y_axis: true,
+            y_tick_count: 3,
+            kind: ChartKind::Area,
+            horizontal: false,
+            stacked: false,
+            stack_mode: StackMode::Normal,
+            curve: Curve::Linear,
+            dir: Direction::Ltr,
+            active_index: None,
+            config: &config,
+            data: &data,
+        });
+        // chart-area-axes: `margin={{ left: -20, right: 12 }}` + YAxis -> x0 40.
+        assert_eq!(c.plot(), (40.0, 0.0, 357.0, 178.0));
+    }
+
+    #[test]
+    fn estimated_text_width_tracks_ui_sans_metrics() {
         assert_eq!(estimated_text_width(""), 0.0);
-        // 6 ASCII glyphs * 0.6em * 12px.
-        assert!((estimated_text_width("Apr 14") - 43.2).abs() < 1e-9);
-        // A non-ASCII glyph counts as a full em.
+        assert!((estimated_text_width("Jun 30") - 36.0).abs() < 0.5);
         assert!((estimated_text_width("\u{4e00}") - 12.0).abs() < 1e-9);
     }
 
     #[test]
-    fn effective_tick_count_is_the_max_when_the_span_is_wide() {
-        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
-        // 592 wide chart -> 544 plot span: room for 10, so max 8 stays 8.
-        assert_eq!(effective_tick_count(8, 544.0, pitch), 8);
-        // A huge span never exceeds `max_ticks`.
-        assert_eq!(effective_tick_count(12, 10_000.0, pitch), 12);
+    fn preserve_end_keeps_the_last_label_and_thins_backwards() {
+        // Ten labels 20px apart, 30px wide, gap 5: every other one fits.
+        let coords: Vec<f64> = (0..10).map(|i| 20.0 + 20.0 * i as f64).collect();
+        let sizes = vec![30.0; 10];
+        let shown = preserve_end_ticks(&coords, &sizes, 0.0, 220.0, 5.0);
+        let idx: Vec<usize> = shown.iter().map(|(i, _)| *i).collect();
+        assert_eq!(idx, vec![1, 3, 5, 7, 9]);
+        // The last label is never dropped; when it would overflow the box it
+        // is drawn shifted inward.
+        let shown = preserve_end_ticks(&coords, &sizes, 0.0, 200.0, 5.0);
+        assert_eq!(shown.last().unwrap(), &(9, 185.0));
     }
 
     #[test]
-    fn effective_tick_count_shrinks_on_a_narrow_span() {
-        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
-        // 229 wide chart -> 181 plot span; 350 -> 302.
-        assert_eq!(effective_tick_count(8, 181.0, pitch), 3);
-        assert_eq!(effective_tick_count(8, 302.0, pitch), 5);
-        assert!(effective_tick_count(12, 181.0, pitch) < 12);
+    fn preserve_end_keeps_every_month_of_the_six_month_demos() {
+        // chart-area-default: every month label is drawn.
+        let c = ctx_for(ChartKind::Area, false, 369.0, 208.0);
+        let sizes: Vec<f64> = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
+            .iter()
+            .map(|l| estimated_text_width(l))
+            .collect();
+        assert_eq!(preserve_end_ticks(&c.xs, &sizes, 0.0, 369.0, 5.0).len(), 6);
     }
 
     #[test]
-    fn effective_tick_count_shrinks_for_longer_labels() {
-        let short = estimated_text_width("Apr") + TICK_LABEL_GAP;
-        let long = estimated_text_width("September 14") + TICK_LABEL_GAP;
-        let (a, b) = (
-            effective_tick_count(12, 500.0, short),
-            effective_tick_count(12, 500.0, long),
-        );
-        assert!(b < a, "longer labels must yield fewer ticks ({b} !< {a})");
-    }
-
-    #[test]
-    fn effective_tick_count_never_drops_below_one() {
-        assert_eq!(effective_tick_count(8, 0.0, 50.0), 1);
-        assert_eq!(effective_tick_count(8, -5.0, 50.0), 1);
-        assert_eq!(effective_tick_count(8, f64::NAN, 50.0), 1);
-        assert_eq!(effective_tick_count(8, 10.0, 500.0), 1);
-        // ...but a zero `max_ticks` still floors at 1 like `x_tick_step`.
-        assert_eq!(effective_tick_count(0, 500.0, 50.0), 1);
-    }
-
-    #[test]
-    fn narrow_width_thins_the_drawn_labels_so_adjacent_ones_clear_the_pitch() {
-        // The end-to-end invariant: after thinning, adjacent drawn labels are
-        // at least one pitch apart (datum spacing * step >= pitch).
-        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
-        for span in [120.0, 181.0, 302.0, 544.0] {
-            let n = 90usize;
-            let count = effective_tick_count(8, span, pitch);
-            let step = x_tick_step(n, count);
-            let spacing = span / n as f64 * step as f64;
-            assert!(
-                spacing >= pitch,
-                "span={span} step={step} spacing={spacing}"
-            );
+    fn preserve_end_gives_the_shadcn_hero_its_18_labels() {
+        // chart-line-interactive at 1286px: margin 12, 91 daily points,
+        // labels "Apr 1".."Jun 30", `minTickGap={32}`: shadcn draws 18 labels,
+        // the last one "Jun 30".
+        let p = PointScale {
+            count: 91,
+            range: (12.0, 1274.0),
+        };
+        let mut labels = Vec::new();
+        for (month, days) in [("Apr", 30), ("May", 31), ("Jun", 30)] {
+            for d in 1..=days {
+                labels.push(format!("{month} {d}"));
+            }
         }
-    }
-
-    #[test]
-    fn x_tick_budget_main_demo_at_desktop_and_phone_text_scale() {
-        // Main demo: 90 daily points, `max_x_ticks: 8`, longest label
-        // "Apr 14"-like (6 chars), 592-wide chart with no y axis (plot 576).
-        let longest = estimated_text_width("Apr 14");
-        // s = 1 (desktop, SSR): room for 11, so max_x_ticks stays the bound.
-        assert_eq!(x_tick_budget(8, 576.0, longest, 1.0), 8);
-        // s = 2 (phone text compensation): text takes twice the logical
-        // room, (43.2 + 8) * 2 = 102.4 per label -> floor(576 / 102.4) = 5.
-        assert_eq!(x_tick_budget(8, 576.0, longest, 2.0), 5);
-        // Monotone: more compensation never yields more labels.
-        let mut prev = usize::MAX;
-        for s in [1.0, 1.25, 1.5, 1.75, 2.0] {
-            let b = x_tick_budget(12, 576.0, longest, s);
-            assert!(b <= prev, "s={s} gave {b} > {prev}");
-            prev = b;
-        }
+        let coords: Vec<f64> = (0..91).map(|i| p.center(i)).collect();
+        let sizes: Vec<f64> = labels.iter().map(|l| estimated_text_width(l)).collect();
+        let shown = preserve_end_ticks(&coords, &sizes, 0.0, 1286.0, 32.0);
+        assert_eq!(shown.len(), 18, "{shown:?}");
+        assert_eq!(shown.last().unwrap().0, 90);
     }
 
     #[test]
     fn format_x_tick_defaults_to_first_three_characters() {
-        // `Some(callback)` is exercised by `Chart`'s own SSR tests (e.g.
-        // `x_axis_labels_default_to_first_three_characters`), not here:
-        // `Callback::new` requires a live Dioxus runtime (`Runtime::
-        // current()`), which a plain `#[test]` fn -- no `VirtualDom` --
-        // does not provide.
         assert_eq!(format_x_tick("January", &None), "Jan");
         assert_eq!(format_x_tick("Hi", &None), "Hi");
     }
