@@ -47,7 +47,7 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
             ChevronDown {
                 class: "dx-navbar-expand-icon",
                 size: "20px",
-                stroke: "var(--secondary-color-4)",
+                stroke: "var(--dx-foreground)",
             }
         }
     }

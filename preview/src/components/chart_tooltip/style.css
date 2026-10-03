@@ -93,7 +93,7 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-chart-tooltip-gallery [data-slot="chart-icon"] svg {
@@ -129,7 +129,7 @@
  * ---------------------------------------------------------------------- */
 
 .dx-chart-tooltip-gallery [data-slot="chart-tooltip-unit"] {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-weight: 400;
   margin-inline-start: 2px;
 }
@@ -138,6 +138,6 @@
   display: flex;
   min-width: 130px;
   align-items: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 12px;
 }

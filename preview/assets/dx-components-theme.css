@@ -87,6 +87,114 @@ html[data-theme="light"] [class~="dxc-system"] {
   --primary-info-color: var(--dark, var(--primary-color-5)) var(--light, var(--primary-color));
   --secondary-info-color: var(--dark, var(--primary-color-7)) var(--light, var(--secondary-color-3));
 
+  /* ==========================================================================
+   * Semantic role tokens (docs/backlog.md row 111, phase A).
+   *
+   * shadcn's theme is a set of ROLES (background, card, popover, primary,
+   * muted, accent, border, ...), not a numbered ramp. Everything below is
+   * the role layer, defined ON TOP of the ramp above: the ramp stays the
+   * source of truth in phase A and every role resolves to exactly one
+   * ramp step per mode, so adding this block changes no computed style.
+   * Component sites are repointed from the ramp to these roles
+   * (dev-docs/research/theme-2026-10-03/{role-token-map.md,sites.tsv}).
+   *
+   * Naming: `--dx-<role>`, where <role> is shadcn's own name. Each one reads
+   * the bare shadcn variable first and falls back to the ramp:
+   *   --dx-border: var(--border, <ramp step>)
+   * so pasting a shadcn theme (`--border`, `--card`, ...) into a host app
+   * re-themes these components, while the `dx-` prefix keeps OUR names from
+   * colliding with a host's own. The reverse is deliberate and is the one
+   * risk: a host app that already defines a bare `--border`/`--primary`/
+   * `--accent`/... for its own purposes now changes our look.
+   *
+   * Light/dark: unchanged. Each fallback keeps the `var(--dark, ...)
+   * var(--light, ...)` space toggle, so one declaration still covers
+   * `data-theme`, `prefers-color-scheme` and non-browser renderers. A shadcn
+   * theme's own `.dark { --border: ... }` override is the host's job.
+   *
+   * `--dx-<role>-alt` / `-alt-2` / `-subtle` are NOT shadcn roles and have
+   * no shadcn fallback. They exist because the ramp was used inconsistently
+   * ("border" = 5 different steps, "surface" = all 8): a site on a step that
+   * differs from its role's base step cannot be pointed at the base token
+   * without a visible change, so it points at the nearest role's `-alt`
+   * instead. Each `-alt` is a phase-B review marker -- grep for it. Phase B
+   * either collapses it into its base role (one line here, no site edits)
+   * or promotes it.
+   * ========================================================================== */
+
+  /* Page and surfaces */
+  --dx-background: var(--background, var(--primary-color));
+  --dx-foreground: var(--foreground, var(--secondary-color-4));
+  --dx-card: var(--card, var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3)));
+  --dx-card-foreground: var(--card-foreground, var(--secondary-color-4));
+  --dx-popover: var(--popover, var(--light, var(--primary-color)) var(--dark, var(--primary-color-5)));
+  --dx-popover-foreground: var(--popover-foreground, var(--secondary-color-4));
+
+  /* Actions */
+  --dx-primary: var(--primary, var(--secondary-color-1));
+  --dx-primary-foreground: var(--primary-foreground, var(--primary-color));
+  --dx-secondary: var(--secondary, var(--primary-color-5));
+  --dx-secondary-foreground: var(--secondary-foreground, var(--secondary-color-1));
+  --dx-muted: var(--muted, var(--primary-color-5));
+  --dx-muted-foreground: var(--muted-foreground, var(--secondary-color-5));
+  --dx-accent: var(--accent, var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7)));
+  --dx-accent-foreground: var(--accent-foreground, var(--secondary-color-1));
+  --dx-destructive: var(--destructive, var(--primary-error-color));
+  --dx-destructive-foreground: var(--destructive-foreground, var(--contrast-error-color));
+
+  /* Lines and focus. shadcn's `--ring` is a colour, so it is `--dx-ring-color`
+   * here: `--dx-ring` (below) already means the focus-ring box-shadow. */
+  --dx-border: var(--border, var(--primary-color-6));
+  --dx-input: var(--input, var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7)));
+  --dx-ring-color: var(--ring, var(--focused-border-color));
+
+  /* Role variants -- ramp-only, no shadcn fallback (see above). */
+  --dx-background-alt: var(--primary-color-2);
+  --dx-card-alt: var(--primary-color-1);
+  --dx-muted-alt: var(--primary-color-3);
+  --dx-accent-alt: var(--primary-color-4);
+  --dx-accent-alt-2: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-5));
+  --dx-primary-alt: var(--secondary-color-2);
+  --dx-foreground-alt: var(--secondary-color-3);
+  --dx-foreground-alt-2: var(--secondary-color-1);
+  --dx-border-alt: var(--primary-color-7);
+  --dx-border-alt-2: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  --dx-destructive-alt: var(--secondary-error-color);
+
+  /* Status -- shadcn ships no success/warning/info roles; these are plain
+   * aliases of the existing status colours so sites can leave the ramp. */
+  --dx-success: var(--secondary-success-color);
+  --dx-success-subtle: var(--primary-success-color);
+  --dx-warning: var(--secondary-warning-color);
+  --dx-warning-subtle: var(--primary-warning-color);
+  --dx-info: var(--secondary-info-color);
+  --dx-info-subtle: var(--primary-info-color);
+
+  /* Sidebar. Names kept from the sidebar component's own pre-existing
+   * `--dx-sidebar-*` set (so no site changes); the shadcn names they read
+   * are `--sidebar`, `--sidebar-foreground`, `--sidebar-primary(-foreground)`,
+   * `--sidebar-accent(-foreground)`, `--sidebar-border`, `--sidebar-ring`.
+   * sidebar/style.css still re-declares the six it already had on
+   * `.dx-sidebar-wrapper` (same values), which masks these until a worker
+   * lane deletes that block. */
+  --dx-sidebar-background: var(--sidebar, var(--primary-color-2));
+  --dx-sidebar-foreground: var(--sidebar-foreground, var(--secondary-color-4));
+  --dx-sidebar-primary: var(--sidebar-primary, var(--secondary-color-1));
+  --dx-sidebar-primary-foreground: var(--sidebar-primary-foreground, var(--primary-color));
+  --dx-sidebar-accent: var(--sidebar-accent, var(--primary-color-4));
+  --dx-sidebar-accent-foreground: var(--sidebar-accent-foreground, var(--secondary-color-4));
+  --dx-sidebar-border: var(--sidebar-border, var(--primary-color-6));
+  --dx-sidebar-ring: var(--sidebar-ring, var(--primary-color-7));
+
+  /* Radius base. shadcn derives its whole radius scale from one `--radius`;
+   * ours already equals that derivation at 0.5rem (sm = base - 0.25rem,
+   * md = base - 0.125rem, lg = base, xl = base + 0.25rem, 2xl = base +
+   * 0.5rem). Phase A only introduces the base: the `--dx-radius-*` scale
+   * below stays literal until phase B rewires it onto this token (that
+   * rewiring is computed-style-identical but needs
+   * scripts/check-css-literals.sh taught to read calc() tokens first). */
+  --dx-radius: var(--radius, 0.5rem);
+
   /* Type scale (docs/backlog.md row 31a). Grounded in the `font-size`
    * literals already used across the 46 themed components' `style.css` +
    * `preview/assets/*.css` (session report has the full value -> frequency
@@ -231,16 +339,16 @@ html[data-theme="light"] [class~="dxc-system"] {
    * `--dx-chart-grid`/`--dx-chart-axis-text` reuse existing grayscale
    * tokens rather than inventing new ones -- grid lines and axis labels are
    * chrome, not data, and already have a home on this theme's neutral scale. */
-  --dx-chart-1: var(--dark, #3987e5) var(--light, #2a78d6);
-  --dx-chart-2: var(--dark, #d95926) var(--light, #eb6834);
-  --dx-chart-3: var(--dark, #199e70) var(--light, #1baf7a);
-  --dx-chart-4: var(--dark, #c98500) var(--light, #eda100);
-  --dx-chart-5: var(--dark, #d55181) var(--light, #e87ba4);
+  --dx-chart-1: var(--chart-1, var(--dark, #3987e5) var(--light, #2a78d6));
+  --dx-chart-2: var(--chart-2, var(--dark, #d95926) var(--light, #eb6834));
+  --dx-chart-3: var(--chart-3, var(--dark, #199e70) var(--light, #1baf7a));
+  --dx-chart-4: var(--chart-4, var(--dark, #c98500) var(--light, #eda100));
+  --dx-chart-5: var(--chart-5, var(--dark, #d55181) var(--light, #e87ba4));
   --dx-chart-6: var(--dark, #008300) var(--light, #008300);
   --dx-chart-7: var(--dark, #9085e9) var(--light, #4a3aa7);
   --dx-chart-8: var(--dark, #e66767) var(--light, #e34948);
-  --dx-chart-grid: var(--primary-color-6);
-  --dx-chart-axis-text: var(--secondary-color-4);
+  --dx-chart-grid: var(--dx-border);
+  --dx-chart-axis-text: var(--dx-foreground);
 
   /* Shared interaction affordances -- feeds the `[data-dx-interactive]`
    * layer below. `--dx-opacity-disabled` is a straight read of the
@@ -251,7 +359,6 @@ html[data-theme="light"] [class~="dxc-system"] {
    * conventional subtle default, easy to retune globally later. */
   --dx-opacity-hover: 0.8;
   --dx-opacity-disabled: 0.5;
-  --dx-ring-color: var(--focused-border-color);
   --dx-ring-width: 2px;
   --dx-ring: 0 0 0 var(--dx-ring-width) var(--dx-ring-color);
 }

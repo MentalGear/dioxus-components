@@ -202,7 +202,7 @@ pub fn Demo() -> Element {
                 SidebarRail {}
             }
             SidebarInset {
-                header { style: "display:flex; align-items:center; justify-content:space-between; height:3.5rem; flex-shrink:0; padding:0 1rem; border-bottom:1px solid var(--dx-sidebar-border); background:var(--primary-color-1);",
+                header { style: "display:flex; align-items:center; justify-content:space-between; height:3.5rem; flex-shrink:0; padding:0 1rem; border-bottom:1px solid var(--dx-sidebar-border); background:var(--dx-card-alt);",
                     div { style: "display: flex; align-items: center; gap: 0.75rem;",
                         SidebarTrigger {}
                         Separator { height: "1rem", horizontal: false }
@@ -474,9 +474,9 @@ fn DemoSettingControls(
     collapsible: Signal<SidebarCollapsible>,
 ) -> Element {
     rsx! {
-        div { style: "display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--dx-sidebar-border); border-radius: 0.75rem; background: var(--primary-color-2);",
+        div { style: "display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--dx-sidebar-border); border-radius: 0.75rem; background: var(--dx-background-alt);",
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
-                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--dx-foreground);",
                     "Side"
                 }
                 div { style: "display: inline-flex; gap: 0.5rem;",
@@ -495,7 +495,7 @@ fn DemoSettingControls(
                 }
             }
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
-                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--dx-foreground);",
                     "Collapse"
                 }
                 div { style: "display: inline-flex; gap: 0.5rem; flex-wrap: wrap;",

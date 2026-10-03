@@ -128,71 +128,70 @@
 }
 
 .dx-button[data-style="primary"] {
-  background-color: var(--secondary-color-2);
-  color: var(--primary-color);
+  background-color: var(--dx-primary-alt);
+  color: var(--dx-primary-foreground);
 }
 
 .dx-button[data-style="primary"]:not(:disabled):hover {
   background-color: color-mix(
     in oklab,
-    var(--secondary-color-2) 90%,
+    var(--dx-primary-alt) 90%,
     transparent
   );
 }
 
 .dx-button[data-style="secondary"] {
-  background-color: var(--primary-color-5);
-  color: var(--secondary-color-1);
+  background-color: var(--dx-secondary);
+  color: var(--dx-secondary-foreground);
 }
 
 .dx-button[data-style="secondary"]:not(:disabled):hover {
-  background-color: color-mix(in oklab, var(--primary-color-5) 80%, transparent);
+  background-color: color-mix(in oklab, var(--dx-secondary) 80%, transparent);
 }
 
 .dx-button[data-style="ghost"] {
   background-color: transparent;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
 }
 
 .dx-button[data-style="ghost"]:not(:disabled):hover {
-  background-color: var(--light, var(--primary-color-5))
-    var(--dark, color-mix(in oklab, var(--primary-color-5) 50%, transparent));
-  color: var(--secondary-color-1);
+  background-color: var(--light, var(--dx-muted))
+    var(--dark, color-mix(in oklab, var(--dx-muted) 50%, transparent));
+  color: var(--dx-accent-foreground);
 }
 
 .dx-button[data-style="outline"] {
-  border: 1px solid var(--light, var(--primary-color-6))
-    var(--dark, var(--primary-color-7));
-  background-color: var(--light, var(--primary-color))
+  border: 1px solid var(--dx-input);
+  background-color: var(--light, var(--dx-background))
     var(--dark, color-mix(in oklab, var(--primary-color-7) 30%, transparent));
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
 }
 
 .dx-button[data-style="outline"]:not(:disabled):hover {
-  background-color: var(--light, var(--primary-color-5))
+  background-color: var(--light, var(--dx-muted))
     var(--dark, color-mix(in oklab, var(--primary-color-7) 50%, transparent));
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-button[data-style="destructive"] {
-  background-color: var(--light, var(--primary-error-color))
-    var(--dark, color-mix(in oklab, var(--primary-error-color) 60%, transparent));
-  color: var(--contrast-error-color);
+  background-color: var(--light, var(--dx-destructive))
+    var(--dark, color-mix(in oklab, var(--dx-destructive) 60%, transparent));
+  color: var(--dx-destructive-foreground);
 }
 
 .dx-button[data-style="destructive"]:not(:disabled):hover {
   background-color: color-mix(
     in oklab,
-    var(--primary-error-color) 90%,
+    var(--dx-destructive) 90%,
     transparent
   );
 }
 
 .dx-button[data-style="destructive"]:focus-visible {
   box-shadow: 0 0 0 3px
-    var(--light, color-mix(in oklab, var(--primary-error-color) 20%, transparent))
-    var(--dark, color-mix(in oklab, var(--primary-error-color) 40%, transparent));
+    var(--light, color-mix(in oklab, var(--dx-destructive) 20%, transparent))
+    var(--dark, color-mix(in oklab, var(--dx-destructive) 40%, transparent));
 }
 
 .dx-button[data-style="link"] {
@@ -207,17 +206,17 @@
 }
 
 .dx-button:focus-visible {
-  border-color: var(--focused-border-color);
+  border-color: var(--dx-ring-color);
   box-shadow: 0 0 0 3px
-    color-mix(in oklab, var(--focused-border-color) 50%, transparent);
+    color-mix(in oklab, var(--dx-ring-color) 50%, transparent);
 }
 
 .dx-button[aria-invalid="true"] {
-  border-color: var(--primary-error-color);
+  border-color: var(--dx-destructive);
 }
 
 .dx-button[aria-invalid="true"]:focus-visible {
   box-shadow: 0 0 0 3px
-    var(--light, color-mix(in oklab, var(--primary-error-color) 20%, transparent))
-    var(--dark, color-mix(in oklab, var(--primary-error-color) 40%, transparent));
+    var(--light, color-mix(in oklab, var(--dx-destructive) 20%, transparent))
+    var(--dark, color-mix(in oklab, var(--dx-destructive) 40%, transparent));
 }

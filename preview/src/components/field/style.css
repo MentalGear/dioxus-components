@@ -15,7 +15,7 @@
 
 .dx-field-legend {
   padding: 0;
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground-alt-2);
   font-size: var(--dx-text-sm);
   font-weight: 500;
 }
@@ -45,7 +45,7 @@
 }
 
 .dx-field-label {
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground-alt-2);
   font-size: var(--dx-text-sm);
   font-weight: 500;
   line-height: 1.25;
@@ -75,20 +75,20 @@
 
 .dx-field-description {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   line-height: 1.5;
 }
 
 .dx-field-error {
   margin: 0;
-  color: var(--primary-error-color);
+  color: var(--dx-destructive);
   font-size: var(--dx-text-sm);
   line-height: 1.5;
 }
 
 .dx-field[data-invalid="true"] .dx-field-label {
-  color: var(--primary-error-color);
+  color: var(--dx-destructive);
 }
 
 .dx-field-separator {
@@ -102,7 +102,7 @@
   position: absolute;
   padding: 0 var(--dx-space-2);
   border-radius: var(--dx-radius-sm);
-  background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
-  color: var(--secondary-color-5);
+  background-color: var(--dx-card);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-xs);
 }

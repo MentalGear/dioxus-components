@@ -6,9 +6,9 @@
     border: none;
     border-radius: var(--dx-radius-sm);
     margin: 0;
-    background-color: var(--primary-color-3);
-    box-shadow: inset 0 0 0 1px var(--primary-color-7);
-    color: var(--secondary-color-4);
+    background-color: var(--dx-muted-alt);
+    box-shadow: inset 0 0 0 1px var(--dx-border-alt);
+    color: var(--dx-foreground);
     cursor: pointer;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
@@ -22,9 +22,9 @@
 }
 
 .dx-checkbox[data-state="checked"] {
-    background-color: var(--secondary-color-2);
+    background-color: var(--dx-primary-alt);
     box-shadow: none;
-    color: var(--primary-color);
+    color: var(--dx-primary-foreground);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),

@@ -22,7 +22,7 @@
   min-height: var(--dx-space-7);
   box-sizing: border-box;
   align-items: center;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-full);
   cursor: default;
   font-size: var(--dx-text-sm);
@@ -32,8 +32,8 @@
 }
 
 .dx-tag-group-tag[data-selected="true"] {
-  border-color: var(--focused-border-color);
-  background-color: var(--focused-border-color);
+  border-color: var(--dx-ring-color);
+  background-color: var(--dx-ring-color);
 }
 
 .dx-tag-group-tag[data-disabled="true"] {
@@ -85,7 +85,7 @@
 }
 
 .dx-tag-group-remove-button:focus-visible {
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 2px;
 }
 

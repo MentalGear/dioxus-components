@@ -52,7 +52,7 @@ pub fn Demo() -> Element {
             // a pause a user can rely on to read a slide without losing
             // their place, not a restart.
             p {
-                style: "margin: 0.5rem 0 0; text-align: center; font-size: 0.875rem; color: var(--secondary-color-3);",
+                style: "margin: 0.5rem 0 0; text-align: center; font-size: 0.875rem; color: var(--dx-foreground-alt);",
                 "Pauses (not stop-and-reset) on hover or focus, per the APG auto-rotating pattern."
             }
         }

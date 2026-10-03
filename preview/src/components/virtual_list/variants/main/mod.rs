@@ -29,9 +29,9 @@ pub fn Demo() -> Element {
 
 .dx-virtual-list-card {{
   padding: 0.75rem 0.9rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.625rem;
-  background: var(--primary-color-2);
+  background: var(--dx-background-alt);
 }}
 
 .dx-virtual-list-card-title {{

@@ -21,8 +21,8 @@
   border-radius: var(--dx-radius-lg);
   margin: 0;
   animation: dx-tooltip-fade-in var(--dx-motion-duration-slow) ease-in-out;
-  background-color: var(--secondary-color-4);
-  color: var(--primary-color);
+  background-color: var(--dx-foreground);
+  color: var(--dx-background);
   font-size: var(--dx-text-sm);
 
   /*
@@ -73,7 +73,7 @@
 .dx-tooltip-content[data-side="top"]::after {
   top: calc(100% - var(--dx-space-1));
   left: 50%;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0 0.1rem;
 }
 
@@ -88,7 +88,7 @@
 .dx-tooltip-content[data-side="right"]::after {
   top: calc(50% - var(--dx-space-1));
   left: 0;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0 0 0.1rem;
 }
 
@@ -103,7 +103,7 @@
 .dx-tooltip-content[data-side="bottom"]::after {
   bottom: calc(100% - var(--dx-space-1));
   left: 50%;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0.1rem 0 0;
 }
 
@@ -118,7 +118,7 @@
 .dx-tooltip-content[data-side="left"]::after {
   top: calc(50% - var(--dx-space-1));
   right: calc(-1 * var(--dx-space-1));
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0.1rem 0 0;
 }
 

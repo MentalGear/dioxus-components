@@ -7,7 +7,7 @@ use dioxus_icons::lucide::Inbox;
 pub fn Demo() -> Element {
     rsx! {
         Empty {
-            style: "border: 1px dashed var(--primary-color-6); width: 100%; max-width: 28rem;",
+            style: "border: 1px dashed var(--dx-border); width: 100%; max-width: 28rem;",
             EmptyHeader {
                 EmptyMedia { variant: EmptyMediaVariant::Icon,
                     Inbox {}

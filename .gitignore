@@ -27,3 +27,6 @@ mutants.out*/
 # CARGO_TARGET_DIR siblings. `target` above does not cover `target-*` (e.g. `target-laneA`, `target-final`).
 .claude/worktrees/
 target-*/
+
+# Python bytecode (dev-docs research tools)
+__pycache__/

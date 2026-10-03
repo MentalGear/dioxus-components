@@ -108,13 +108,13 @@ pub fn Demo() -> Element {
 
 .dx-tasks-subtitle {{
   margin: 4px 0 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 12px;
   line-height: 1.4;
 }}
 
 .dx-tasks-count {{
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
@@ -150,7 +150,7 @@ pub fn Demo() -> Element {
 .dx-task-meta {{
   display: flex;
   align-items: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   gap: 7px;
@@ -165,7 +165,7 @@ pub fn Demo() -> Element {
    * measured 1.54:1 on white. `--secondary-color-5` (this theme's actual
    * "muted text on light surfaces" token, used the same way in ~28 other
    * component stylesheets) is the correct token for this role. */
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 10.5px;
   font-weight: 500;
@@ -186,7 +186,7 @@ pub fn Demo() -> Element {
 }}
 
 .dx-tasks-demo .dx-drag-and-drop-list-item:hover .dx-task-code {{
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
 }}"# }
         div { class: "dx-tasks-demo",
             div { class: "dx-tasks-header",

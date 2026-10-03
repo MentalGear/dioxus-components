@@ -69,7 +69,7 @@ pub fn VerifiedIcon() -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/badge/style.css") }
         BadgeCheck {
             size: "12px",
-            stroke: "var(--secondary-color-4)",
+            stroke: "var(--dx-foreground)",
         }
     }
 }

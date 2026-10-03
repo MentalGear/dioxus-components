@@ -52,12 +52,12 @@
   box-sizing: border-box;
   flex-direction: column;
   padding: var(--dx-space-8) var(--dx-space-6) var(--dx-space-6);
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-lg);
   margin: 0;
-  background: var(--primary-color-2);
+  background: var(--dx-background-alt);
   box-shadow: 0 2px 10px rgb(0 0 0 / 18%);
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   gap: var(--dx-space-4);
@@ -67,14 +67,14 @@
 
 .dx-dialog-title {
   margin: 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-xl);
   font-weight: 700;
 }
 
 .dx-dialog-description {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-base);
 }
 
@@ -93,7 +93,7 @@
   border: none;
   margin: 0;
   background: none;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground-alt);
   cursor: pointer;
   font-size: var(--dx-text-lg);
   inset-inline-end: 1rem;
@@ -104,5 +104,5 @@
 }
 
 .dx-dialog-close:hover {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }

@@ -128,13 +128,13 @@ pub fn Demo() -> Element {
                                     // border-box already means "the row's own full width" with no
                                     // adjustment needed, matching the div exactly (both already
                                     // measured 320px, before any box-sizing changes at all).
-                                    style: "display: flex; align-items: center; justify-content: center; width: 100%; height: calc(12rem + 2px); border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); background: none; padding: 0; margin: 0; box-sizing: border-box; cursor: pointer; font: inherit; font-size: 2rem; color: inherit;",
+                                    style: "display: flex; align-items: center; justify-content: center; width: 100%; height: calc(12rem + 2px); border: 1px solid var(--dx-border); border-radius: var(--dx-radius-lg); background: none; padding: 0; margin: 0; box-sizing: border-box; cursor: pointer; font: inherit; font-size: 2rem; color: inherit;",
                                     onclick: move |_| slide_one_clicked.set(true),
                                     if slide_one_clicked() { "Clicked!" } else { "{i + 1}" }
                                 }
                             } else {
                                 div {
-                                    style: "display: flex; align-items: center; justify-content: center; height: 12rem; border: 1px solid var(--primary-color-6); border-radius: var(--dx-radius-lg); font-size: 2rem;",
+                                    style: "display: flex; align-items: center; justify-content: center; height: 12rem; border: 1px solid var(--dx-border); border-radius: var(--dx-radius-lg); font-size: 2rem;",
                                     "{i + 1}"
                                 }
                             }

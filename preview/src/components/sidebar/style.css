@@ -23,13 +23,6 @@
 }
 
 .dx-sidebar-wrapper {
-  --dx-sidebar-background: var(--primary-color-2);
-  --dx-sidebar-foreground: var(--secondary-color-4);
-  --dx-sidebar-border: var(--primary-color-6);
-  --dx-sidebar-accent: var(--primary-color-4);
-  --dx-sidebar-accent-foreground: var(--secondary-color-4);
-  --dx-sidebar-ring: var(--primary-color-7);
-
   display: flex;
   overflow: hidden;
   width: 100%;
@@ -334,7 +327,7 @@
   min-width: 0;
   flex: 1 1 0%;
   flex-direction: column;
-  background: var(--primary-color-1);
+  background: var(--dx-card-alt);
 }
 
 /* rtl-physical: default (side="left", the common case with no `[data-side]`
@@ -659,7 +652,7 @@
 }
 
 .dx-sidebar-menu-button[data-sidebar="menu-button"][data-variant="outline"] {
-  background: var(--primary-color-1);
+  background: var(--dx-card-alt);
   box-shadow: 0 0 0 1px var(--dx-sidebar-border);
 }
 

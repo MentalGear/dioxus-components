@@ -78,7 +78,7 @@ fn SlideCounter() -> Element {
     rsx! {
         p {
             // shadcn: `text-muted-foreground py-2 text-center text-sm`.
-            style: "margin: 0; padding-block: var(--dx-space-2); text-align: center; font-size: var(--dx-text-sm); color: var(--secondary-color-5);",
+            style: "margin: 0; padding-block: var(--dx-space-2); text-align: center; font-size: var(--dx-text-sm); color: var(--dx-muted-foreground);",
             "Slide {api.selected + 1} of {api.count}"
         }
     }

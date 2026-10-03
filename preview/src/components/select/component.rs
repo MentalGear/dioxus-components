@@ -254,7 +254,7 @@ pub fn Select<T: Clone + PartialEq + 'static>(props: SelectProps<T>) -> Element 
                 ChevronDown {
                     class: "dx-select-expand-icon",
                     size: "20px",
-                    stroke: "var(--primary-color-7)",
+                    stroke: "var(--dx-border-alt)",
                 }
             }
             select::SelectList {
@@ -305,7 +305,7 @@ pub fn SelectMulti<T: Clone + PartialEq + 'static>(props: SelectMultiProps<T>) -
                 ChevronDown {
                     class: "dx-select-expand-icon",
                     size: "20px",
-                    stroke: "var(--primary-color-7)",
+                    stroke: "var(--dx-border-alt)",
                 }
             }
             select::SelectList {
@@ -350,7 +350,7 @@ pub fn SelectOption<T: Clone + PartialEq + 'static>(props: SelectOptionProps<T>)
             select::SelectItemIndicator {
                 Check {
                     size: "1rem",
-                    stroke: "var(--secondary-color-5)",
+                    stroke: "var(--dx-muted-foreground)",
                 }
             }
         }

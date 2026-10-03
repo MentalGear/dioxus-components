@@ -8,7 +8,7 @@
   border: none;
   border-radius: var(--dx-radius-lg);
   background-color: transparent;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   outline: none;
   padding-inline: var(--dx-space-2);
@@ -35,16 +35,16 @@
    `:focus-visible` is untouched (kept at its own (0,2,0), same as today):
    this row is about the hover/active tie only. */
 .dx-toggle:where(:hover), .dx-toggle:focus-visible {
-  background-color: var(--primary-color-4);
+  background-color: var(--dx-accent-alt);
   cursor: pointer;
 }
 
 .dx-toggle:focus-visible {
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 2px;
 }
 
 .dx-toggle[data-state="on"] {
   background-color: var(--primary-color-7);
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }

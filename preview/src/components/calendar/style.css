@@ -5,9 +5,9 @@
     max-width: 100%;
     box-sizing: border-box;
     flex-direction: row;
-    border: 1px solid var(--primary-color-6);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-lg);
-    background-color: var(--primary-color-2);
+    background-color: var(--dx-background-alt);
     box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
     font-family:
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
@@ -26,7 +26,7 @@
 }
 
 .dx-calendar-nav-title {
-    color: var(--secondary-color-4);
+    color: var(--dx-foreground);
     font-size: var(--dx-text-base);
     font-weight: 600;
 }
@@ -39,11 +39,11 @@
     height: 1.75rem;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--primary-color-6);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-lg);
     background-color: var(--light, transparent)
-        var(--dark, var(--primary-color-3));
-    color: var(--secondary-color-5);
+        var(--dark, var(--dx-muted-alt));
+    color: var(--dx-muted-foreground);
     cursor: pointer;
     font-size: var(--dx-text-base);
 
@@ -76,9 +76,9 @@
 
 .dx-calendar-nav-prev:hover,
 .dx-calendar-nav-next:hover {
-    border-color: var(--primary-color-7);
-    background-color: var(--primary-color-4);
-    color: var(--secondary-color-4);
+    border-color: var(--dx-border-alt);
+    background-color: var(--dx-accent-alt);
+    color: var(--dx-foreground);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -97,8 +97,8 @@
 .dx-calendar-nav-prev:disabled,
 .dx-calendar-nav-next:disabled {
     border-color: var(--primary-color-5);
-    background-color: var(--primary-color-2);
-    color: var(--secondary-color-3);
+    background-color: var(--dx-background-alt);
+    color: var(--dx-foreground-alt);
     cursor: not-allowed;
 }
 
@@ -143,7 +143,7 @@
 
 .dx-calendar-grid-day-header {
     flex: 1;
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     font-size: var(--dx-text-xs);
     font-weight: 300;
     text-align: center;
@@ -162,7 +162,7 @@
     border-radius: var(--dx-radius-lg);
     aspect-ratio: 1;
     background: none;
-    color: var(--secondary-color-4);
+    color: var(--dx-foreground);
     cursor: pointer;
     font-size: var(--dx-text-sm);
 
@@ -194,18 +194,18 @@
    its specificity to (0,4,0), tying or beating some state rules below by
    accident), so :where() is used instead -- it needs no such invariant. */
 :where(.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"]):hover) {
-    background-color: var(--primary-color-4);
+    background-color: var(--dx-accent-alt);
 }
 
 .dx-calendar-grid-cell[data-month="current"]:focus-visible {
-    outline: 2px solid var(--focused-border-color);
+    outline: 2px solid var(--dx-ring-color);
     outline-offset: 2px;
 }
 
 .dx-calendar-grid-cell[data-month="last"],
 .dx-calendar-grid-cell[data-month="next"],
 .dx-calendar-grid-cell[data-disabled="true"] {
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     cursor: not-allowed;
 }
 
@@ -215,8 +215,8 @@
 }
 
 .dx-calendar-grid-cell[data-month="current"][data-selected="true"] {
-    background-color: var(--secondary-color-2);
-    color: var(--primary-color);
+    background-color: var(--dx-primary-alt);
+    color: var(--dx-primary-foreground);
 }
 
 .dx-calendar-grid-cell[data-month="current"][data-unavailable="true"] {
@@ -225,7 +225,7 @@
      * dark-surface use, not light-mode text -- measured 1.54:1 on white.
      * `--secondary-color-5` is this theme's actual muted-text-on-light
      * token, already used two rules up for other-month/disabled days. */
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     cursor: not-allowed;
     text-decoration: line-through;
 }
@@ -247,21 +247,21 @@
 .dx-calendar-grid-cell[data-month="last"][data-selection-between="true"],
 .dx-calendar-grid-cell[data-month="next"][data-selection-between="true"] {
     border-radius: 0;
-    background-color: var(--primary-color-5);
-    color: var(--secondary-color-5);
+    background-color: var(--dx-muted);
+    color: var(--dx-muted-foreground);
 }
 
 .dx-calendar-grid-cell[data-month="current"][data-selection-between="true"] {
     border-radius: 0;
-    background-color: var(--primary-color-5);
-    color: var(--secondary-color-4);
+    background-color: var(--dx-muted);
+    color: var(--dx-foreground);
 }
 
 td:has(.dx-calendar-grid-cell[data-selection-start="true"]) {
     padding: 0;
     margin-top: 1px;
     margin-bottom: 1px;
-    background-color: var(--primary-color-5);
+    background-color: var(--dx-muted);
     border-end-start-radius: var(--dx-radius-lg);
     border-start-start-radius: var(--dx-radius-lg);
 }
@@ -270,7 +270,7 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
     padding: 0;
     margin-top: 1px;
     margin-bottom: 1px;
-    background-color: var(--primary-color-5);
+    background-color: var(--dx-muted);
     border-end-end-radius: var(--dx-radius-lg);
     border-start-end-radius: var(--dx-radius-lg);
 }
@@ -301,13 +301,13 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
 .dx-calendar-grid-cell[data-month="current"][data-today="true"]:not(
         [data-selected="true"]
     ) {
-    background-color: var(--primary-color-5);
+    background-color: var(--dx-muted);
 }
 
 .dx-calendar-grid-weeknum {
     border-radius: var(--dx-radius-lg);
-    background-color: var(--primary-color);
-    color: var(--secondary-color-5);
+    background-color: var(--dx-background);
+    color: var(--dx-muted-foreground);
     font-size: var(--dx-text-xs);
 }
 
@@ -333,7 +333,7 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
 .dx-calendar-month-select-container:has(:focus-visible),
 .dx-calendar-year-select-container:has(:focus-visible) {
     border-radius: var(--dx-radius-lg);
-    outline: 2px solid var(--focused-border-color);
+    outline: 2px solid var(--dx-ring-color);
 }
 
 .dx-calendar-month-select,
@@ -374,7 +374,7 @@ td:has(.dx-calendar-grid-cell[data-selection-end="true"]) {
     padding: var(--dx-space-1);
     border: none;
     background-color: transparent;
-    color: var(--secondary-color-4);
+    color: var(--dx-foreground);
     cursor: pointer;
     font-size: var(--dx-text-base);
     transition:

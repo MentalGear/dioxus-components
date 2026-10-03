@@ -166,7 +166,7 @@
  * is themed by construction and every specific rule below -- axis text, the
  * donut center text, a demo's own inline `fill` -- still wins. */
 :where(.dx-chart [data-slot="chart-svg"] text) {
-  fill: var(--secondary-color-4);
+  fill: var(--dx-foreground);
 }
 
 /* Axis ticks are the muted tier (shadcn: `muted-foreground`), a step below
@@ -176,7 +176,7 @@
  * -- whereas the token this used to read, `--dx-chart-axis-text`, is the body
  * text colour. That token stays for the cursor, which is not a tick. */
 .dx-chart [data-slot="chart-axis"] text {
-  fill: var(--secondary-color-5);
+  fill: var(--dx-muted-foreground);
   font-size: var(--dx-text-xs);
 }
 
@@ -230,7 +230,7 @@
 }
 
 .dx-chart [data-slot="chart-label"][data-position="inside"] {
-  fill: var(--primary-color-1);
+  fill: var(--dx-card-alt);
 }
 
 /* Line dots: Recharts' `<Dot>` -- the series color, stroked in it at the
@@ -260,12 +260,12 @@
 .dx-chart [data-slot="chart-cursor-line"] {
   fill: none;
   pointer-events: none;
-  stroke: var(--primary-color-6);
+  stroke: var(--dx-border);
   stroke-width: 1;
 }
 
 .dx-chart [data-slot="chart-cursor-rect"] {
-  fill: var(--primary-color-5);
+  fill: var(--dx-muted);
   pointer-events: none;
   stroke: none;
 }
@@ -399,14 +399,14 @@
   box-sizing: border-box;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: var(--dx-radius-lg);
-  background-color: var(--primary-color-2);
+  background-color: var(--dx-background-alt);
   box-shadow: var(--dx-shadow-md);
 
   /* Body text on the `--primary-color-2` surface. NOT `--primary-color`: that
    * is the page background, so the text was invisible in both themes
    * (white-on-white / near-black-on-near-black). `--secondary-color-4` is the
    * body-text token the chart's own svg text and every other popover use. */
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-xs);
 
   /* Shares `[data-slot="chart"]`'s own grid area -- see `.dx-chart`'s own
@@ -467,7 +467,7 @@
 }
 
 .dx-chart-tooltip [data-slot="chart-tooltip-name"] {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-chart-tooltip [data-slot="chart-tooltip-value"] {
@@ -521,7 +521,7 @@
 .dx-chart-legend [data-slot="chart-legend-item"] {
   display: flex;
   align-items: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-xs);
   gap: calc(var(--dx-space-1) * 1.5);
   line-height: 1rem;
@@ -594,7 +594,7 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-chart-tooltip [data-slot="chart-icon"] svg,
@@ -694,20 +694,20 @@
 /* `RadarOptions::radius_axis` (shadcn's `PolarRadiusAxis
  * stroke="var(--foreground)"`): the tick values in the foreground colour. */
 .dx-chart [data-axis="radius"] text {
-  fill: var(--secondary-color-1);
+  fill: var(--dx-foreground-alt-2);
 }
 
 /* `RadarOptions::ticks` (shadcn's `chart-radar-label-custom` tick):
  * `fontSize={13} fontWeight={500}`, the muted runs and the 12px caption in
  * the muted foreground. */
 .dx-chart [data-axis="angle"] text[data-custom="true"] {
-  fill: var(--secondary-color-1);
+  fill: var(--dx-foreground-alt-2);
   font-size: 13px;
   font-weight: 500;
 }
 
 .dx-chart [data-axis="angle"] text[data-custom="true"] tspan[data-muted="true"] {
-  fill: var(--secondary-color-5);
+  fill: var(--dx-muted-foreground);
 }
 
 .dx-chart [data-axis="angle"] text[data-custom="true"] tspan[data-caption="true"] {
@@ -757,11 +757,11 @@
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="inside"] {
-  fill: var(--primary-color-2);
+  fill: var(--dx-background-alt);
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="outside"] {
-  fill: var(--secondary-color-1);
+  fill: var(--dx-foreground-alt-2);
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="inside-start"] {
@@ -783,13 +783,13 @@
  * size that fits the hole, so a chart narrower than its usual 250px never
  * overflows it. */
 .dx-chart [data-slot="chart-pie-center-text"] {
-  fill: var(--secondary-color-5);
+  fill: var(--dx-muted-foreground);
   font-size: min(var(--dx-text-xs), var(--dx-chart-center-secondary-max, 9999px));
   pointer-events: none;
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
-  fill: var(--secondary-color-1);
+  fill: var(--dx-foreground-alt-2);
   font-size: min(var(--dx-text-3xl), var(--dx-chart-center-primary-max, 9999px));
   font-weight: 700;
 }
@@ -808,7 +808,7 @@
  * className="first:fill-muted last:fill-background">`). */
 .dx-chart [data-slot="chart-radial-background"],
 .dx-chart [data-slot="chart-radial-annulus"] {
-  fill: var(--primary-color-5);
+  fill: var(--dx-muted);
 }
 
 /* A pie's per-slice legend (shadcn's `chart-pie-legend`: `flex-wrap gap-2
@@ -888,7 +888,7 @@
 }
 
 .dx-chart-footer-caption {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   line-height: 1;
 }
 
@@ -922,7 +922,7 @@
   flex-direction: column;
   align-items: stretch;
   padding: 0;
-  border-bottom: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-bottom: 1px solid var(--dx-border-alt-2);
   gap: 0;
 }
 
@@ -951,7 +951,7 @@
   border: 0;
   border-radius: 0;
   background-color: transparent;
-  border-block-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-block-start: 1px solid var(--dx-border-alt-2);
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -960,15 +960,15 @@
 }
 
 .dx-chart-interactive-toggle + .dx-chart-interactive-toggle {
-  border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-inline-start: 1px solid var(--dx-border-alt-2);
 }
 
 .dx-chart-interactive-toggle[data-active="true"] {
-  background-color: var(--primary-color-4);
+  background-color: var(--dx-accent-alt);
 }
 
 .dx-chart-interactive-toggle-label {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-xs);
 }
 
@@ -996,7 +996,7 @@
     flex: 0 0 auto;
     padding: var(--dx-space-6) var(--dx-space-8);
     border-block-start: 0;
-    border-inline-start: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+    border-inline-start: 1px solid var(--dx-border-alt-2);
   }
 
   .dx-chart-interactive-toggle-total {

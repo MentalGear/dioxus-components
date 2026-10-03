@@ -107,9 +107,9 @@
   flex-direction: column;
   border: none;
   margin: 0;
-  background: var(--primary-color-2);
+  background: var(--dx-background-alt);
   box-shadow: var(--dx-shadow-xl);
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   gap: var(--dx-space-4);
   inset: 0;
@@ -150,7 +150,7 @@
   top: auto;
   max-height: 80%;
   padding-bottom: env(safe-area-inset-bottom, 0);
-  border-top: 1px solid var(--primary-color-6);
+  border-top: 1px solid var(--dx-border);
   border-top-left-radius: var(--dx-radius-2xl);
   border-top-right-radius: var(--dx-radius-2xl);
 
@@ -174,7 +174,7 @@
    * 24px cap with 16px to spare. Invisible at rest (fully below the
    * viewport) and never mistaken for a drop shadow (0 blur, exact panel
    * color, no visible edge of its own). */
-  filter: drop-shadow(0 40px 0 var(--primary-color-2));
+  filter: drop-shadow(0 40px 0 var(--dx-background-alt));
   touch-action: pan-x;
   transform: translateY(100%);
 }
@@ -185,14 +185,14 @@
 .dx-drawer[data-side="top"] {
   bottom: auto;
   max-height: 80%;
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
   border-bottom-left-radius: var(--dx-radius-2xl);
   border-bottom-right-radius: var(--dx-radius-2xl);
 
   /* See "bottom" above for the full reasoning -- mirrored upward: an
    * overdrag away from the top edge is dragging DOWN, so the extension
    * bleeds further UP, past the already-flush top edge. */
-  filter: drop-shadow(0 -40px 0 var(--primary-color-2));
+  filter: drop-shadow(0 -40px 0 var(--dx-background-alt));
   touch-action: pan-x;
   transform: translateY(-100%);
 }
@@ -205,14 +205,14 @@
   left: auto;
   width: 100%;
   max-width: 24rem;
-  border-left: 1px solid var(--primary-color-6);
+  border-left: 1px solid var(--dx-border);
   border-bottom-left-radius: var(--dx-radius-2xl);
   border-top-left-radius: var(--dx-radius-2xl);
 
   /* See "bottom" above (same construction, rotated 90 degrees): an
    * overdrag away from the right edge drags LEFT, so the extension
    * bleeds further RIGHT, past the already-flush right edge. */
-  filter: drop-shadow(40px 0 0 var(--primary-color-2));
+  filter: drop-shadow(40px 0 0 var(--dx-background-alt));
   touch-action: pan-y;
   transform: translateX(100%);
 }
@@ -224,14 +224,14 @@
   right: auto;
   width: 100%;
   max-width: 24rem;
-  border-right: 1px solid var(--primary-color-6);
+  border-right: 1px solid var(--dx-border);
   border-bottom-right-radius: var(--dx-radius-2xl);
   border-top-right-radius: var(--dx-radius-2xl);
 
   /* See "bottom" above: an overdrag away from the left edge drags RIGHT,
    * so the extension bleeds further LEFT, past the already-flush left
    * edge. */
-  filter: drop-shadow(-40px 0 0 var(--primary-color-2));
+  filter: drop-shadow(-40px 0 0 var(--dx-background-alt));
   touch-action: pan-y;
   transform: translateX(-100%);
 }
@@ -422,14 +422,14 @@
 
 .dx-drawer-title {
   margin: 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-lg);
   font-weight: 600;
 }
 
 .dx-drawer-description {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
 }
 
@@ -469,10 +469,10 @@
  * foreign component's namespace). */
 .dx-drawer-close:not([data-style]) {
   padding: var(--dx-space-2) var(--dx-space-4);
-  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  border: 1px solid var(--dx-input);
   border-radius: var(--dx-radius-md);
-  background-color: var(--light, var(--primary-color)) var(--dark, color-mix(in oklab, var(--primary-color-7) 30%, transparent));
-  color: var(--secondary-color-4);
+  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, var(--primary-color-7) 30%, transparent));
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-sm);
   font-weight: 500;
@@ -480,8 +480,8 @@
 }
 
 .dx-drawer-close:not([data-style]):hover {
-  background-color: var(--light, var(--primary-color-5)) var(--dark, color-mix(in oklab, var(--primary-color-7) 50%, transparent));
-  color: var(--secondary-color-1);
+  background-color: var(--light, var(--dx-muted)) var(--dark, color-mix(in oklab, var(--primary-color-7) 50%, transparent));
+  color: var(--dx-accent-foreground);
 }
 
 /* Explicit requirement (primitives/src/drawer.rs's brief): this panel's

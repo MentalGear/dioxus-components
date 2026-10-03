@@ -515,7 +515,7 @@ fn Navbar() -> Element {
                         aria_label: "Back",
                         ChevronLeft {
                             size: "2rem",
-                            stroke: "var(--secondary-color-4)",
+                            stroke: "var(--dx-foreground)",
                         }
                     }
                 }
@@ -937,7 +937,7 @@ fn LanguageSelect() -> Element {
                     ChevronDown {
                         class: "dx-select-expand-icon",
                         size: "24px",
-                        stroke: "var(--secondary-color-4)",
+                        stroke: "var(--dx-foreground)",
                     }
                 }
             }
@@ -1909,7 +1909,7 @@ fn BlockComponentVariantHighlight(
                         // visitor should see).
                         class: "dx-block-demo-iframe",
                         height: "600px",
-                        border: "1px solid var(--primary-color-6)",
+                        border: "1px solid var(--dx-border)",
                         border_radius: "0.5em",
                     }
                 }
@@ -2293,8 +2293,8 @@ fn MasonryCard(component: Callback<(), Element>, #[props(default)] popout: bool)
 fn BlockSignIn() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1.05rem; font-weight: 660; color: var(--secondary-color-3);", "Welcome back" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Sign in to your workspace." }
+            h3 { style: "margin: 0; font-size: 1.05rem; font-weight: 660; color: var(--dx-foreground-alt);", "Welcome back" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Sign in to your workspace." }
         }
         div { style: "display: grid; gap: 0.75rem; margin-bottom: 1rem;",
             div { style: "display: grid; gap: 0.35rem;",
@@ -2304,7 +2304,7 @@ fn BlockSignIn() -> Element {
             div { style: "display: grid; gap: 0.35rem;",
                 div { style: "display: flex; align-items: center;",
                     Label { html_for: "blk-signin-pw", "Password" }
-                    span { style: "margin-left: auto; font-size: 0.78rem; color: var(--secondary-color-5); text-decoration: underline; text-underline-offset: 3px;",
+                    span { style: "margin-left: auto; font-size: 0.78rem; color: var(--dx-muted-foreground); text-decoration: underline; text-underline-offset: 3px;",
                         "Forgot?"
                     }
                 }
@@ -2331,18 +2331,18 @@ fn BlockProfile() -> Element {
             }
             div { style: "flex: 1; display: grid; gap: 0.1rem; min-width: 0;",
                 div { style: "display: flex; align-items: center; gap: 0.4rem;",
-                    span { style: "font-weight: 600; color: var(--secondary-color-3);", "Avery Lin" }
+                    span { style: "font-weight: 600; color: var(--dx-foreground-alt);", "Avery Lin" }
                     Badge {
                         variant: BadgeVariant::Secondary,
-                        style: "padding: 0.15rem 0.3rem; background-color: var(--focused-border-color); color: white;",
+                        style: "padding: 0.15rem 0.3rem; background-color: var(--dx-ring-color); color: white;",
                         VerifiedIcon {}
                     }
                 }
-                span { style: "color: var(--secondary-color-5); font-size: 0.85rem;", "@averylin" }
+                span { style: "color: var(--dx-muted-foreground); font-size: 0.85rem;", "@averylin" }
             }
             Button { variant: ButtonVariant::Outline, "Follow" }
         }
-        p { style: "margin: 1.1rem 0 0; color: var(--secondary-color-5); font-size: 0.9rem; line-height: 1.55;",
+        p { style: "margin: 1.1rem 0 0; color: var(--dx-muted-foreground); font-size: 0.9rem; line-height: 1.55;",
             "Building UI primitives that ship to web, desktop, and mobile. Mostly Rust, mostly weekends."
         }
         div { style: "display: flex; gap: 0.35rem; margin-top: 0.85rem; flex-wrap: wrap;",
@@ -2357,11 +2357,11 @@ fn BlockProfile() -> Element {
 fn BlockStats() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.45rem;",
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;",
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;",
                 "Active users · 30d"
             }
             div { style: "display: flex; align-items: baseline; gap: 0.6rem;",
-                span { style: "font-size: 2rem; font-weight: 720; color: var(--secondary-color-3); line-height: 1.1;",
+                span { style: "font-size: 2rem; font-weight: 720; color: var(--dx-foreground-alt); line-height: 1.1;",
                     "24,815"
                 }
                 Badge {
@@ -2385,7 +2385,7 @@ fn BlockStats() -> Element {
                 style: "width: 100%;",
             }
         }
-        p { style: "margin: 0.65rem 0 0; color: var(--secondary-color-5); font-size: 0.82rem;",
+        p { style: "margin: 0.65rem 0 0; color: var(--dx-muted-foreground); font-size: 0.82rem;",
             "On track for the 36k Q2 target."
         }
     }
@@ -2395,8 +2395,8 @@ fn BlockStats() -> Element {
 fn BlockNotifications() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Notifications" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Pick what we ping you about." }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Notifications" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Pick what we ping you about." }
         }
         div { style: "display: grid; gap: 0.95rem;",
             NotificationRow { id: "blk-notif-comments", name: "Comments", description: "Replies on your posts", default_on: true }
@@ -2413,8 +2413,8 @@ fn NotificationRow(id: String, name: String, description: String, default_on: bo
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.75rem;",
             div { style: "flex: 1; display: grid; gap: 0.1rem; min-width: 0;",
-                span { style: "font-weight: 540; font-size: 0.92rem; color: var(--secondary-color-3);", "{name}" }
-                span { style: "color: var(--secondary-color-5); font-size: 0.8rem;", "{description}" }
+                span { style: "font-weight: 540; font-size: 0.92rem; color: var(--dx-foreground-alt);", "{name}" }
+                span { style: "color: var(--dx-muted-foreground); font-size: 0.8rem;", "{description}" }
             }
             Switch {
                 id: "{id}",
@@ -2477,10 +2477,10 @@ fn BlockPlayer() -> Element {
                 style: "width: 64px; height: 64px; border-radius: 0.45rem; object-fit: cover; flex-shrink: 0; box-shadow: 0 6px 18px -8px rgba(0,0,0,0.35);",
             }
             div { style: "flex: 1; min-width: 0;",
-                p { style: "margin: 0; font-weight: 600; color: var(--secondary-color-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                p { style: "margin: 0; font-weight: 600; color: var(--dx-foreground-alt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                     "Midnight City"
                 }
-                p { style: "margin: 0.15rem 0 0; color: var(--secondary-color-5); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                p { style: "margin: 0.15rem 0 0; color: var(--dx-muted-foreground); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                     "M83 · Hurry Up, We're Dreaming"
                 }
             }
@@ -2495,7 +2495,7 @@ fn BlockPlayer() -> Element {
                 on_value_change: move |value| progress_seconds.set(Some(value)),
                 label: "Track progress",
             }
-            div { style: "display: flex; justify-content: space-between; margin-top: 0.45rem; color: var(--secondary-color-5); font-size: 0.78rem;",
+            div { style: "display: flex; justify-content: space-between; margin-top: 0.45rem; color: var(--dx-muted-foreground); font-size: 0.78rem;",
                 span { "{current_time}" }
                 span { "{duration_time}" }
             }
@@ -2536,17 +2536,17 @@ fn format_track_time(seconds: f64) -> String {
 fn BlockPricing() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Team" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Team" }
             Badge { variant: BadgeVariant::Secondary, "Most popular" }
         }
         div { style: "display: flex; align-items: baseline; gap: 0.3rem; margin-bottom: 0.55rem;",
-            span { style: "font-size: 2.4rem; font-weight: 720; color: var(--secondary-color-3); line-height: 1;", "$12" }
-            span { style: "color: var(--secondary-color-5);", "/ seat / mo" }
+            span { style: "font-size: 2.4rem; font-weight: 720; color: var(--dx-foreground-alt); line-height: 1;", "$12" }
+            span { style: "color: var(--dx-muted-foreground);", "/ seat / mo" }
         }
-        p { style: "margin: 0 0 1rem; color: var(--secondary-color-5); font-size: 0.86rem; line-height: 1.55;",
+        p { style: "margin: 0 0 1rem; color: var(--dx-muted-foreground); font-size: 0.86rem; line-height: 1.55;",
             "Everything in Pro, plus shared workspaces and audit logs."
         }
-        ul { style: "list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.55rem; color: var(--secondary-color-4); font-size: 0.88rem;",
+        ul { style: "list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.55rem; color: var(--dx-foreground); font-size: 0.88rem;",
             for feature in ["Unlimited projects", "Role-based access", "SSO + SAML", "Priority support"] {
                 li { style: "display: flex; align-items: center; gap: 0.55rem;",
                     svg {
@@ -2571,12 +2571,12 @@ fn BlockPricing() -> Element {
 fn BlockFilters() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Filter results" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Narrow down what's shown below." }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Filter results" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Narrow down what's shown below." }
         }
         div { style: "display: grid; gap: 1.1rem;",
             div { style: "display: grid; gap: 0.45rem;",
-                span { style: "color: var(--secondary-color-5); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;",
+                span { style: "color: var(--dx-muted-foreground); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;",
                     "Status"
                 }
                 RadioGroup { default_value: "active".to_string(),
@@ -2586,7 +2586,7 @@ fn BlockFilters() -> Element {
                 }
             }
             div { style: "display: grid; gap: 0.45rem;",
-                span { style: "color: var(--secondary-color-5); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;",
+                span { style: "color: var(--dx-muted-foreground); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;",
                     "Tags"
                 }
                 div { style: "display: grid; gap: 0.4rem;",
@@ -2628,8 +2628,8 @@ fn BlockColorPalette() -> Element {
 
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Theme accent" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Tune the accent that shows up across the workspace." }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Theme accent" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Tune the accent that shows up across the workspace." }
         }
         ColorPicker {
             label: "Theme accent color",
@@ -2653,8 +2653,8 @@ fn BlockTabs() -> Element {
     ];
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Workspace" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Team activity at a glance." }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Workspace" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Team activity at a glance." }
         }
         Tabs {
             default_value: "members".to_string(),
@@ -2677,14 +2677,14 @@ fn BlockTabs() -> Element {
                                 "{member.3}"
                             }
                             div { style: "flex: 1; min-width: 0;",
-                                div { style: "font-weight: 540; color: var(--secondary-color-3); font-size: 0.9rem;", "{member.0}" }
-                                div { style: "color: var(--secondary-color-5); font-size: 0.78rem;", "{member.1}" }
+                                div { style: "font-weight: 540; color: var(--dx-foreground-alt); font-size: 0.9rem;", "{member.0}" }
+                                div { style: "color: var(--dx-muted-foreground); font-size: 0.78rem;", "{member.1}" }
                             }
                             span {
                                 style: match member.2 {
                                     "online" => "width: 0.55rem; height: 0.55rem; border-radius: 999px; background-color: rgb(34,197,94);",
                                     "away" => "width: 0.55rem; height: 0.55rem; border-radius: 999px; background-color: rgb(234,179,8);",
-                                    _ => "width: 0.55rem; height: 0.55rem; border-radius: 999px; background-color: var(--primary-color-6);",
+                                    _ => "width: 0.55rem; height: 0.55rem; border-radius: 999px; background-color: var(--dx-border);",
                                 },
                             }
                         }
@@ -2695,26 +2695,26 @@ fn BlockTabs() -> Element {
                 div { style: "display: grid; gap: 0.85rem;",
                     for entry in activity.iter() {
                         div { style: "display: flex; align-items: baseline; gap: 0.45rem; font-size: 0.88rem;",
-                            span { style: "font-weight: 600; color: var(--secondary-color-3);", "{entry.0}" }
-                            span { style: "color: var(--secondary-color-5);", "{entry.1}" }
-                            span { style: "margin-left: auto; color: var(--secondary-color-5); font-size: 0.78rem; white-space: nowrap;", "{entry.2}" }
+                            span { style: "font-weight: 600; color: var(--dx-foreground-alt);", "{entry.0}" }
+                            span { style: "color: var(--dx-muted-foreground);", "{entry.1}" }
+                            span { style: "margin-left: auto; color: var(--dx-muted-foreground); font-size: 0.78rem; white-space: nowrap;", "{entry.2}" }
                         }
                     }
                 }
             }
             TabContent { index: 2usize, value: "files".to_string(),
-                div { style: "display: grid; gap: 0.6rem; color: var(--secondary-color-4); font-size: 0.88rem;",
+                div { style: "display: grid; gap: 0.6rem; color: var(--dx-foreground); font-size: 0.88rem;",
                     div { style: "display: flex; align-items: center; gap: 0.5rem;",
-                        span { style: "font-family: monospace; color: var(--secondary-color-5);", "/" }
+                        span { style: "font-family: monospace; color: var(--dx-muted-foreground);", "/" }
                         span { "Roadmap Q2.md" }
                         Badge { variant: BadgeVariant::Outline, style: "margin-left: auto;", "Draft" }
                     }
                     div { style: "display: flex; align-items: center; gap: 0.5rem;",
-                        span { style: "font-family: monospace; color: var(--secondary-color-5);", "/" }
+                        span { style: "font-family: monospace; color: var(--dx-muted-foreground);", "/" }
                         span { "Brand guidelines.pdf" }
                     }
                     div { style: "display: flex; align-items: center; gap: 0.5rem;",
-                        span { style: "font-family: monospace; color: var(--secondary-color-5);", "/" }
+                        span { style: "font-family: monospace; color: var(--dx-muted-foreground);", "/" }
                         span { "Onboarding deck.key" }
                     }
                 }
@@ -2728,8 +2728,8 @@ fn BlockSchedule() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Schedule" }
-                p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Pick a day for the standup." }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Schedule" }
+                p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Pick a day for the standup." }
             }
             Badge { variant: BadgeVariant::Outline, "Mar 2026" }
         }
@@ -2752,8 +2752,8 @@ fn BlockCommand() -> Element {
     ];
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Switch workspace" }
-            p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Jump between projects your team owns." }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Switch workspace" }
+            p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Jump between projects your team owns." }
         }
         Combobox::<String> {
             query: Some(query()),
@@ -2784,8 +2784,8 @@ fn BlockInbox() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.85rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Inbox" }
-                p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "3 new conversations." }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Inbox" }
+                p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "3 new conversations." }
             }
             Badge { variant: BadgeVariant::Secondary, "3" }
         }
@@ -2828,10 +2828,10 @@ fn BlockTasks() -> Element {
             rsx! {
                 div { key: "{t.0}", style: "display: flex; align-items: center; gap: 0.75rem; min-width: 0;",
                     div { style: "flex: 1; min-width: 0; display: grid; gap: 0.2rem;",
-                        div { style: "color: var(--secondary-color-3); font-size: 0.9rem; font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                        div { style: "color: var(--dx-foreground-alt); font-size: 0.9rem; font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                             "{t.1}"
                         }
-                        div { style: "display: flex; align-items: center; gap: 0.45rem; color: var(--secondary-color-5); font-size: 0.78rem;",
+                        div { style: "display: flex; align-items: center; gap: 0.45rem; color: var(--dx-muted-foreground); font-size: 0.78rem;",
                             span { style: "font-family: monospace;", "{t.0}" }
                             span { style: "width: 3px; height: 3px; border-radius: 999px; background-color: var(--primary-color-7);" }
                             span { "{t.2}" }
@@ -2852,8 +2852,8 @@ fn BlockTasks() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.55rem; margin-bottom: 1.1rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--secondary-color-3);", "Launch priorities" }
-                p { style: "margin: 0; color: var(--secondary-color-5); font-size: 0.85rem;", "Drag to reorder — top is highest priority." }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Launch priorities" }
+                p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Drag to reorder — top is highest priority." }
             }
             Badge { variant: BadgeVariant::Outline, "4 active" }
         }
@@ -2876,8 +2876,8 @@ fn BlockComposer() -> Element {
                 "AL"
             }
             div { style: "flex: 1; display: grid; gap: 0.1rem;",
-                span { style: "font-weight: 600; color: var(--secondary-color-3); font-size: 0.9rem;", "Reply to roadmap thread" }
-                span { style: "color: var(--secondary-color-5); font-size: 0.78rem;", "Posting as @averylin · #product" }
+                span { style: "font-weight: 600; color: var(--dx-foreground-alt); font-size: 0.9rem;", "Reply to roadmap thread" }
+                span { style: "color: var(--dx-muted-foreground); font-size: 0.78rem;", "Posting as @averylin · #product" }
             }
         }
         Textarea {
@@ -3022,7 +3022,7 @@ fn SidebarGalleryCardControls(controls: HomeSidebarControls) -> Element {
     rsx! {
         div { style: "display: flex; flex-direction: column; gap: 0.75rem; width: 100%;",
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
-                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--dx-foreground);",
                     "Side"
                 }
                 div { style: "display: inline-flex; gap: 0.5rem;",
@@ -3041,7 +3041,7 @@ fn SidebarGalleryCardControls(controls: HomeSidebarControls) -> Element {
                 }
             }
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
-                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--secondary-color-4);",
+                span { style: "font-size: 0.75rem; font-weight: 600; color: var(--dx-foreground);",
                     "Collapse"
                 }
                 div { style: "display: inline-flex; gap: 0.5rem; flex-wrap: wrap;",
@@ -3096,7 +3096,7 @@ fn GotoIcon(mut props: LinkProps) -> Element {
     props.children = rsx! {
         ExternalLink {
             size: "20px",
-            stroke: "var(--secondary-color-4)",
+            stroke: "var(--dx-foreground)",
         }
     };
     Link(props)

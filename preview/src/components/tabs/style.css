@@ -18,8 +18,7 @@
 }
 
 [data-variant="default"] .dx-tabs-list {
-    background: var(--light, var(--primary-color-3))
-        var(--dark, var(--primary-color-5));
+    background: var(--dx-accent-alt-2);
 }
 
 .dx-tabs-trigger {
@@ -27,7 +26,7 @@
     border: none;
     border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
     background: none;
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     cursor: pointer;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
@@ -37,16 +36,16 @@
 [data-variant="default"] .dx-tabs-trigger[data-state="active"] {
     background-color: var(--light, var(--primary-color))
         var(--dark, var(--primary-color-6));
-    box-shadow: var(--dark, inset 0 0 0 1px var(--primary-color-7))
+    box-shadow: var(--dark, inset 0 0 0 1px var(--dx-border-alt))
         var(--light, 0 1px 2px rgb(0 0 0 / 18%));
 }
 
 .dx-tabs-trigger[data-state="active"] {
-    color: var(--secondary-color-1);
+    color: var(--dx-accent-foreground);
 }
 
 .dx-tabs-trigger[data-disabled="true"] {
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     cursor: not-allowed;
 }
 
@@ -68,11 +67,11 @@
    tab SHOULD still visibly show focus, per the lane brief's "keep
    focus-visible rings visible on selected days". */
 :where(.dx-tabs-trigger:hover:not([data-disabled="true"])) {
-    color: var(--secondary-color-3);
+    color: var(--dx-foreground-alt);
 }
 
 .dx-tabs-trigger:focus-visible {
-    color: var(--secondary-color-3);
+    color: var(--dx-foreground-alt);
 }
 
 .dx-tabs-content {
@@ -82,11 +81,9 @@
 }
 
 [data-variant="default"] .dx-tabs-content-themed {
-    border: 1px solid var(--light, var(--primary-color-6))
-        var(--dark, var(--primary-color-7));
+    border: 1px solid var(--dx-input);
     border-radius: var(--dx-radius-lg);
-    background: var(--light, var(--primary-color))
-        var(--dark, var(--primary-color-3));
+    background: var(--dx-card);
     box-shadow: var(--light, 0 1px 2px rgb(0 0 0 / 18%)) var(--dark, none);
 }
 

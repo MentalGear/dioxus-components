@@ -46,7 +46,7 @@ fn DemoGroup(direction: ResizableDirection, height: &'static str, children: Elem
             height,
             max_width: "28rem",
             min_width: "450px",
-            border: "1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7))",
+            border: "1px solid var(--dx-input)",
             border_radius: "var(--dx-radius-lg)",
             overflow: "hidden",
             {children}

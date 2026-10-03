@@ -19,7 +19,7 @@
     box-sizing: border-box;
     flex-grow: 1;
     border-radius: var(--dx-radius-full);
-    background: var(--primary-color-5);
+    background: var(--dx-muted);
 }
 
 .dx-slider[data-orientation="vertical"] .dx-slider-track {
@@ -31,7 +31,7 @@
     position: absolute;
     height: 100%;
     border-radius: var(--dx-radius-full);
-    background-color: var(--secondary-color-2);
+    background-color: var(--dx-primary-alt);
 }
 
 .dx-slider[data-orientation="vertical"] .dx-slider-range {
@@ -48,7 +48,7 @@
     box-sizing: border-box;
     border: 0;
     border-radius: 50%;
-    background-color: var(--primary-color-1);
+    background-color: var(--dx-card-alt);
     box-shadow: inset 0 0 0 1px var(--secondary-color-2);
     cursor: pointer;
 
@@ -83,7 +83,7 @@
 .dx-slider-thumb:focus-visible,
 .dx-slider-thumb:hover {
     box-shadow: inset 0 0 0 1px var(--secondary-color-2),
-        0 0 0 4px color-mix(in oklab, var(--primary-color-7) 50%, transparent);
+        0 0 0 4px color-mix(in oklab, var(--dx-border-alt) 50%, transparent);
     transition: box-shadow var(--dx-motion-duration-base);
 }
 
