@@ -38,7 +38,7 @@
 }
 
 .dx-empty-title {
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-lg);
   font-weight: 500;
   line-height: 1.5;
@@ -51,7 +51,7 @@
 }
 
 .dx-empty-description a {
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   text-underline-offset: 0.25rem;
 }
 

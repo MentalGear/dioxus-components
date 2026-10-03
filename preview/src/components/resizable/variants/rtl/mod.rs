@@ -25,7 +25,7 @@ pub fn Demo() -> Element {
                 ResizablePanelGroup {
                     direction: ResizableDirection::Horizontal,
                     height: "10rem",
-                    border: "1px solid var(--secondary-color-3)",
+                    border: "1px solid var(--dx-foreground)",
                     border_radius: "0.5rem",
                     overflow: "hidden",
 

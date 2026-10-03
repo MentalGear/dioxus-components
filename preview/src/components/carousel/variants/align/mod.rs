@@ -25,7 +25,7 @@ pub fn Demo() -> Element {
             for (label , align) in rows {
                 div { key: "{label}",
                     p {
-                        style: "margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--dx-foreground-alt);",
+                        style: "margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--dx-foreground);",
                         "{label}"
                     }
                     Carousel {

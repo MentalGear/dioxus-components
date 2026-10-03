@@ -20,7 +20,7 @@
 }
 
 .dx-dropdown-menu-trigger:hover {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
   color: var(--dx-accent-foreground);
 }
 

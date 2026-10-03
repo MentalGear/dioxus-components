@@ -35,7 +35,7 @@
    `:focus-visible` is untouched (kept at its own (0,2,0), same as today):
    this row is about the hover/active tie only. */
 .dx-toggle:where(:hover), .dx-toggle:focus-visible {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
   cursor: pointer;
 }
 

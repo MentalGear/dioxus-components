@@ -24,7 +24,7 @@
 
 .dx-native-select:hover:not(:disabled),
 .dx-native-select:focus-visible {
-  background: var(--light, var(--dx-accent-alt)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
+  background: var(--light, var(--dx-accent)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
   color: var(--dx-accent-foreground);
   outline: none;
 }

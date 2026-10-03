@@ -39,7 +39,7 @@ pub fn CollapsibleTrigger(props: CollapsibleTriggerProps) -> Element {
             if show_icon {
                 ChevronsUpDown {
                     size: "1rem",
-                    stroke: "var(--dx-foreground-alt)",
+                    stroke: "var(--dx-foreground)",
                 }
             }
         }
@@ -85,7 +85,7 @@ pub fn CollapsibleList(
             flex_direction: "column",
             gap: "0.5rem",
             max_width: "20rem",
-            color: "var(--dx-foreground-alt)",
+            color: "var(--dx-foreground)",
             ..attributes,
             {children}
         }

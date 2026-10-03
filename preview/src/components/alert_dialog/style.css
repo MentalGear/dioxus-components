@@ -59,7 +59,7 @@
   border-radius: var(--dx-radius-lg);
   margin: 0;
   animation: none;
-  background: var(--dx-background-alt);
+  background: var(--dx-background);
   box-shadow: 0 2px 10px rgb(0 0 0 / 18%);
   color: var(--dx-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
@@ -115,7 +115,7 @@
 }
 
 .dx-alert-dialog-cancel:hover {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -145,7 +145,7 @@
 }
 
 .dx-alert-dialog-action:hover {
-  background-color: var(--dx-destructive-alt);
+  background-color: color-mix(in oklab, var(--dx-destructive) 90%, transparent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),

@@ -172,7 +172,7 @@
 
 .dx-toast-container:hover .dx-toast,
 .dx-toast-container:focus-within .dx-toast {
-  margin-top: var(--toast-padding);
+  margin-top: 0;
   filter: brightness(1);
   opacity: 1;
   transform: scale(calc(100%));
@@ -211,7 +211,7 @@
 }
 
 .dx-toast-description {
-  color: var(--dx-foreground-alt);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
 }
 
@@ -221,7 +221,7 @@
   border: none;
   margin: 0;
   background: none;
-  color: var(--dx-foreground-alt);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-lg);
   line-height: 1;

@@ -40,7 +40,7 @@
 }
 
 .dx-radio-group-item[data-state="checked"]::before {
-  border: 0.25rem solid var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  border: 0.25rem solid var(--dx-card);
   background: var(--dx-foreground);
 }
 

@@ -101,7 +101,7 @@
        the 1px border alone) is the actual shadcn look, so `--dx-shadow-sm`
        is dropped rather than kept for light mode only. */
     box-shadow: none;
-    color: var(--dx-foreground-alt-2);
+    color: var(--dx-foreground);
     cursor: pointer;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on
@@ -312,7 +312,7 @@
     border-radius: var(--dx-radius-full);
     background: var(--dx-card);
     box-shadow: none;
-    color: var(--dx-foreground-alt-2);
+    color: var(--dx-foreground);
     cursor: pointer;
     touch-action: manipulation;
 }
@@ -378,7 +378,7 @@
        dot white on the white light-theme frame -- invisible -- and the
        inactive ones barely off it. `--secondary-color-*` is the
        foreground ramp. */
-    background: var(--secondary-color-5);
+    background: var(--dx-muted-foreground);
     cursor: pointer;
     opacity: 0.5;
     touch-action: manipulation;
@@ -438,7 +438,7 @@
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);
-    background: var(--secondary-color-5);
+    background: var(--dx-muted-foreground);
     cursor: pointer;
     opacity: 0.5;
     touch-action: manipulation;

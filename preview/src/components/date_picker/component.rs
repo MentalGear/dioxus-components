@@ -417,7 +417,7 @@ pub(crate) fn DatePickerPopoverTrigger(props: PopoverTriggerProps) -> Element {
             ChevronDown {
                 class: "dx-date-picker-trigger",
                 size: "20px",
-                stroke: "var(--dx-border-alt)",
+                stroke: "var(--dx-muted-foreground)",
             }
         }
     }

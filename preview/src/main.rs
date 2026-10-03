@@ -2293,7 +2293,7 @@ fn MasonryCard(component: Callback<(), Element>, #[props(default)] popout: bool)
 fn BlockSignIn() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1.05rem; font-weight: 660; color: var(--dx-foreground-alt);", "Welcome back" }
+            h3 { style: "margin: 0; font-size: 1.05rem; font-weight: 660; color: var(--dx-foreground);", "Welcome back" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Sign in to your workspace." }
         }
         div { style: "display: grid; gap: 0.75rem; margin-bottom: 1rem;",
@@ -2331,7 +2331,7 @@ fn BlockProfile() -> Element {
             }
             div { style: "flex: 1; display: grid; gap: 0.1rem; min-width: 0;",
                 div { style: "display: flex; align-items: center; gap: 0.4rem;",
-                    span { style: "font-weight: 600; color: var(--dx-foreground-alt);", "Avery Lin" }
+                    span { style: "font-weight: 600; color: var(--dx-foreground);", "Avery Lin" }
                     Badge {
                         variant: BadgeVariant::Secondary,
                         style: "padding: 0.15rem 0.3rem; background-color: var(--dx-ring-color); color: white;",
@@ -2361,7 +2361,7 @@ fn BlockStats() -> Element {
                 "Active users · 30d"
             }
             div { style: "display: flex; align-items: baseline; gap: 0.6rem;",
-                span { style: "font-size: 2rem; font-weight: 720; color: var(--dx-foreground-alt); line-height: 1.1;",
+                span { style: "font-size: 2rem; font-weight: 720; color: var(--dx-foreground); line-height: 1.1;",
                     "24,815"
                 }
                 Badge {
@@ -2395,7 +2395,7 @@ fn BlockStats() -> Element {
 fn BlockNotifications() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Notifications" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Notifications" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Pick what we ping you about." }
         }
         div { style: "display: grid; gap: 0.95rem;",
@@ -2413,7 +2413,7 @@ fn NotificationRow(id: String, name: String, description: String, default_on: bo
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.75rem;",
             div { style: "flex: 1; display: grid; gap: 0.1rem; min-width: 0;",
-                span { style: "font-weight: 540; font-size: 0.92rem; color: var(--dx-foreground-alt);", "{name}" }
+                span { style: "font-weight: 540; font-size: 0.92rem; color: var(--dx-foreground);", "{name}" }
                 span { style: "color: var(--dx-muted-foreground); font-size: 0.8rem;", "{description}" }
             }
             Switch {
@@ -2477,7 +2477,7 @@ fn BlockPlayer() -> Element {
                 style: "width: 64px; height: 64px; border-radius: 0.45rem; object-fit: cover; flex-shrink: 0; box-shadow: 0 6px 18px -8px rgba(0,0,0,0.35);",
             }
             div { style: "flex: 1; min-width: 0;",
-                p { style: "margin: 0; font-weight: 600; color: var(--dx-foreground-alt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                p { style: "margin: 0; font-weight: 600; color: var(--dx-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                     "Midnight City"
                 }
                 p { style: "margin: 0.15rem 0 0; color: var(--dx-muted-foreground); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
@@ -2536,11 +2536,11 @@ fn format_track_time(seconds: f64) -> String {
 fn BlockPricing() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Team" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Team" }
             Badge { variant: BadgeVariant::Secondary, "Most popular" }
         }
         div { style: "display: flex; align-items: baseline; gap: 0.3rem; margin-bottom: 0.55rem;",
-            span { style: "font-size: 2.4rem; font-weight: 720; color: var(--dx-foreground-alt); line-height: 1;", "$12" }
+            span { style: "font-size: 2.4rem; font-weight: 720; color: var(--dx-foreground); line-height: 1;", "$12" }
             span { style: "color: var(--dx-muted-foreground);", "/ seat / mo" }
         }
         p { style: "margin: 0 0 1rem; color: var(--dx-muted-foreground); font-size: 0.86rem; line-height: 1.55;",
@@ -2571,7 +2571,7 @@ fn BlockPricing() -> Element {
 fn BlockFilters() -> Element {
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Filter results" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Filter results" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Narrow down what's shown below." }
         }
         div { style: "display: grid; gap: 1.1rem;",
@@ -2628,7 +2628,7 @@ fn BlockColorPalette() -> Element {
 
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Theme accent" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Theme accent" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Tune the accent that shows up across the workspace." }
         }
         ColorPicker {
@@ -2653,7 +2653,7 @@ fn BlockTabs() -> Element {
     ];
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1.1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Workspace" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Workspace" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Team activity at a glance." }
         }
         Tabs {
@@ -2677,7 +2677,7 @@ fn BlockTabs() -> Element {
                                 "{member.3}"
                             }
                             div { style: "flex: 1; min-width: 0;",
-                                div { style: "font-weight: 540; color: var(--dx-foreground-alt); font-size: 0.9rem;", "{member.0}" }
+                                div { style: "font-weight: 540; color: var(--dx-foreground); font-size: 0.9rem;", "{member.0}" }
                                 div { style: "color: var(--dx-muted-foreground); font-size: 0.78rem;", "{member.1}" }
                             }
                             span {
@@ -2695,7 +2695,7 @@ fn BlockTabs() -> Element {
                 div { style: "display: grid; gap: 0.85rem;",
                     for entry in activity.iter() {
                         div { style: "display: flex; align-items: baseline; gap: 0.45rem; font-size: 0.88rem;",
-                            span { style: "font-weight: 600; color: var(--dx-foreground-alt);", "{entry.0}" }
+                            span { style: "font-weight: 600; color: var(--dx-foreground);", "{entry.0}" }
                             span { style: "color: var(--dx-muted-foreground);", "{entry.1}" }
                             span { style: "margin-left: auto; color: var(--dx-muted-foreground); font-size: 0.78rem; white-space: nowrap;", "{entry.2}" }
                         }
@@ -2728,7 +2728,7 @@ fn BlockSchedule() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Schedule" }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Schedule" }
                 p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Pick a day for the standup." }
             }
             Badge { variant: BadgeVariant::Outline, "Mar 2026" }
@@ -2752,7 +2752,7 @@ fn BlockCommand() -> Element {
     ];
     rsx! {
         div { style: "display: grid; gap: 0.3rem; margin-bottom: 1rem;",
-            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Switch workspace" }
+            h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Switch workspace" }
             p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Jump between projects your team owns." }
         }
         Combobox::<String> {
@@ -2784,7 +2784,7 @@ fn BlockInbox() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.85rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Inbox" }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Inbox" }
                 p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "3 new conversations." }
             }
             Badge { variant: BadgeVariant::Secondary, "3" }
@@ -2828,12 +2828,12 @@ fn BlockTasks() -> Element {
             rsx! {
                 div { key: "{t.0}", style: "display: flex; align-items: center; gap: 0.75rem; min-width: 0;",
                     div { style: "flex: 1; min-width: 0; display: grid; gap: 0.2rem;",
-                        div { style: "color: var(--dx-foreground-alt); font-size: 0.9rem; font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                        div { style: "color: var(--dx-foreground); font-size: 0.9rem; font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                             "{t.1}"
                         }
                         div { style: "display: flex; align-items: center; gap: 0.45rem; color: var(--dx-muted-foreground); font-size: 0.78rem;",
                             span { style: "font-family: monospace;", "{t.0}" }
-                            span { style: "width: 3px; height: 3px; border-radius: 999px; background-color: var(--primary-color-7);" }
+                            span { style: "width: 3px; height: 3px; border-radius: 999px; background-color: var(--dx-muted-foreground);" }
                             span { "{t.2}" }
                         }
                     }
@@ -2852,7 +2852,7 @@ fn BlockTasks() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.55rem; margin-bottom: 1.1rem;",
             div { style: "flex: 1;",
-                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground-alt);", "Launch priorities" }
+                h3 { style: "margin: 0; font-size: 1rem; font-weight: 660; color: var(--dx-foreground);", "Launch priorities" }
                 p { style: "margin: 0; color: var(--dx-muted-foreground); font-size: 0.85rem;", "Drag to reorder — top is highest priority." }
             }
             Badge { variant: BadgeVariant::Outline, "4 active" }
@@ -2876,7 +2876,7 @@ fn BlockComposer() -> Element {
                 "AL"
             }
             div { style: "flex: 1; display: grid; gap: 0.1rem;",
-                span { style: "font-weight: 600; color: var(--dx-foreground-alt); font-size: 0.9rem;", "Reply to roadmap thread" }
+                span { style: "font-weight: 600; color: var(--dx-foreground); font-size: 0.9rem;", "Reply to roadmap thread" }
                 span { style: "color: var(--dx-muted-foreground); font-size: 0.78rem;", "Posting as @averylin · #product" }
             }
         }

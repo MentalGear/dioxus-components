@@ -34,7 +34,7 @@
    `:focus-visible` is untouched, same (0,2,0) it already has. */
 .dx-toggle-group-item:where(:hover),
 .dx-toggle-group-item:focus-visible {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
   cursor: pointer;
 }
 
@@ -52,14 +52,14 @@
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
   .dx-toggle-group-item[data-state="on"] {
-  border-top: 1px solid var(--secondary-color-6);
-  border-bottom: 1px solid var(--secondary-color-6);
-  border-inline-end: 1px solid var(--secondary-color-6);
+  border-top: 1px solid var(--dx-input);
+  border-bottom: 1px solid var(--dx-input);
+  border-inline-end: 1px solid var(--dx-input);
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
   .dx-toggle-group-item:first-child[data-state="on"] {
-  border: 1px solid var(--secondary-color-6);
+  border: 1px solid var(--dx-input);
 }
 
 .dx-toggle-group-item:first-child {

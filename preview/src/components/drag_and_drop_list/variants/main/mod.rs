@@ -100,7 +100,7 @@ pub fn Demo() -> Element {
 
 .dx-tasks-title {{
   margin: 0;
-  color: var(--secondary-color-2);
+  color: var(--dx-foreground);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
@@ -139,7 +139,7 @@ pub fn Demo() -> Element {
 
 .dx-task-title {{
   overflow: hidden;
-  color: var(--secondary-color-2);
+  color: var(--dx-foreground);
   font-size: 13.5px;
   font-weight: 500;
   line-height: 1.35;
@@ -177,11 +177,11 @@ pub fn Demo() -> Element {
   height: 2px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: var(--primary-color-7);
+  background: var(--dx-muted-foreground);
 }}
 
 .dx-task-due[data-urgent="true"] {{
-  color: var(--secondary-color-2);
+  color: var(--dx-foreground);
   font-weight: 500;
 }}
 

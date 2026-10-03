@@ -10,7 +10,7 @@
 }
 
 .dx-input-group:has(.dx-input-group-control:focus-visible) {
-  background: var(--light, var(--dx-accent-alt)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
+  background: var(--light, var(--dx-accent)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
   box-shadow: var(--dx-ring);
 }
 

@@ -93,7 +93,7 @@
   margin: 0;
   background: var(--dx-card);
   box-shadow: var(--dx-shadow-2xl);
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
@@ -129,7 +129,7 @@
   padding: var(--dx-space-3) 0;
   border: none;
   background: transparent;
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-family: inherit;
   font-size: var(--dx-text-base);
   outline: none;

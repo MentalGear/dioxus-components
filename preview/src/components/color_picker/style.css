@@ -15,7 +15,7 @@
     width: 2rem;
     height: 2rem;
     box-sizing: border-box;
-    border: 1px solid color-mix(in oklab, var(--primary-color) 10%, transparent);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
     background-color: var(--swatch-color);
     background-image:
@@ -72,7 +72,7 @@
     display: block;
     width: 16px;
     height: 16px;
-    border: 2px solid var(--secondary-color-2);
+    border: 2px solid var(--dx-primary);
     border-radius: 50%;
     box-shadow: black 0 0 0 1px, black 0 0 0 1px inset;
     cursor: pointer;
@@ -123,7 +123,7 @@
     display: block;
     width: 16px;
     height: 16px;
-    border: 2px solid var(--secondary-color-2);
+    border: 2px solid var(--dx-primary);
     border-radius: 50%;
     box-shadow: black 0 0 0 1px, black 0 0 0 1px inset;
     cursor: pointer;

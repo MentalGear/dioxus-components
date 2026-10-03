@@ -54,7 +54,7 @@
     padding: var(--dx-space-2) var(--dx-space-4);
     border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
-    background-color: var(--dx-card-alt);
+    background-color: var(--dx-card);
     color: var(--dx-foreground);
     cursor: pointer;
     font-size: var(--dx-text-sm);
@@ -66,7 +66,7 @@
     border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
     margin: 0;
-    background-color: var(--dx-card-alt);
+    background-color: var(--dx-card);
     color: var(--dx-foreground);
     font-size: 0.85rem;
     white-space: pre-wrap;

@@ -251,7 +251,7 @@
 }
 
 .dx-navigation-menu-link-title {
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 500;
 }
@@ -276,7 +276,7 @@
   background: linear-gradient(
     to bottom,
     var(--dx-accent),
-    var(--light, var(--primary-color-3)) var(--dark, var(--primary-color-8))
+    var(--dx-muted)
   );
   gap: var(--dx-space-2);
 }

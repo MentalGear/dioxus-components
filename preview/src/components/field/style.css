@@ -15,7 +15,7 @@
 
 .dx-field-legend {
   padding: 0;
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 500;
 }
@@ -45,7 +45,7 @@
 }
 
 .dx-field-label {
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 500;
   line-height: 1.25;

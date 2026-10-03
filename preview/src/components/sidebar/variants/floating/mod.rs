@@ -202,7 +202,7 @@ pub fn Demo() -> Element {
                 SidebarRail {}
             }
             SidebarInset {
-                header { style: "display:flex; align-items:center; justify-content:space-between; height:3.5rem; flex-shrink:0; padding:0 1rem; border-bottom:1px solid var(--dx-sidebar-border); background:var(--dx-card-alt);",
+                header { style: "display:flex; align-items:center; justify-content:space-between; height:3.5rem; flex-shrink:0; padding:0 1rem; border-bottom:1px solid var(--dx-sidebar-border); background:var(--dx-background);",
                     div { style: "display: flex; align-items: center; gap: 0.75rem;",
                         SidebarTrigger {}
                         Separator { height: "1rem", horizontal: false }
@@ -474,7 +474,7 @@ fn DemoSettingControls(
     collapsible: Signal<SidebarCollapsible>,
 ) -> Element {
     rsx! {
-        div { style: "display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--dx-sidebar-border); border-radius: 0.75rem; background: var(--dx-background-alt);",
+        div { style: "display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--dx-sidebar-border); border-radius: 0.75rem; background: var(--dx-card);",
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;",
                 span { style: "font-size: 0.75rem; font-weight: 600; color: var(--dx-foreground);",
                     "Side"

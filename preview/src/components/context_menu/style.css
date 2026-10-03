@@ -96,8 +96,7 @@
 .dx-context-menu-item:hover:not([data-disabled="true"]),
 .dx-context-menu-item:focus-visible {
   background: var(--dx-accent);
-  color: var(--light, var(--secondary-color-1))
-    var(--dark, var(--secondary-color-4));
+  color: var(--dx-accent-foreground);
 }
 
 /* Nested submenu (docs/component-backlog.md row 68) -- mirrors
@@ -127,8 +126,7 @@
 
 .dx-context-menu-sub-trigger[data-state="open"] {
   background: var(--dx-accent);
-  color: var(--light, var(--secondary-color-1))
-    var(--dark, var(--secondary-color-4));
+  color: var(--dx-accent-foreground);
 }
 
 /* Unlike `.dx-context-menu-content` (pinned to a raw click point via inline

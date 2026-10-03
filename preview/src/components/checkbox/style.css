@@ -6,7 +6,7 @@
     border: none;
     border-radius: var(--dx-radius-sm);
     margin: 0;
-    background-color: var(--dx-muted-alt);
+    background-color: var(--dx-muted);
     box-shadow: inset 0 0 0 1px var(--dx-border-alt);
     color: var(--dx-foreground);
     cursor: pointer;
@@ -22,7 +22,7 @@
 }
 
 .dx-checkbox[data-state="checked"] {
-    background-color: var(--dx-primary-alt);
+    background-color: var(--dx-primary);
     box-shadow: none;
     color: var(--dx-primary-foreground);
 }

@@ -11,7 +11,7 @@
   width: var(--dx-space-8);
   height: 1.15rem;
   border-radius: var(--dx-radius-full);
-  background-color: var(--primary-color-6);
+  background-color: var(--dx-input);
   cursor: pointer;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
@@ -20,7 +20,7 @@
 }
 
 .dx-switch[data-state="checked"] {
-  background-color: var(--secondary-color-2);
+  background-color: var(--dx-primary);
 }
 
 .dx-switch:focus-visible {
@@ -33,7 +33,7 @@
   width: calc(1.15rem - 2px);
   height: calc(1.15rem - 2px);
   border-radius: var(--dx-radius-full);
-  background-color: var(--light, var(--primary-color)) var(--dark, var(--secondary-color-2));
+  background-color: var(--light, var(--dx-background)) var(--dark, var(--dx-foreground));
 
   /* rtl-physical: `transform: translateX()` is never direction-aware. The
      unchecked/checked rest positions below are a physical left-to-right

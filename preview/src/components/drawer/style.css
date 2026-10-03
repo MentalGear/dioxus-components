@@ -107,7 +107,7 @@
   flex-direction: column;
   border: none;
   margin: 0;
-  background: var(--dx-background-alt);
+  background: var(--dx-background);
   box-shadow: var(--dx-shadow-xl);
   color: var(--dx-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -174,7 +174,7 @@
    * 24px cap with 16px to spare. Invisible at rest (fully below the
    * viewport) and never mistaken for a drop shadow (0 blur, exact panel
    * color, no visible edge of its own). */
-  filter: drop-shadow(0 40px 0 var(--dx-background-alt));
+  filter: drop-shadow(0 40px 0 var(--dx-background));
   touch-action: pan-x;
   transform: translateY(100%);
 }
@@ -192,7 +192,7 @@
   /* See "bottom" above for the full reasoning -- mirrored upward: an
    * overdrag away from the top edge is dragging DOWN, so the extension
    * bleeds further UP, past the already-flush top edge. */
-  filter: drop-shadow(0 -40px 0 var(--dx-background-alt));
+  filter: drop-shadow(0 -40px 0 var(--dx-background));
   touch-action: pan-x;
   transform: translateY(-100%);
 }
@@ -212,7 +212,7 @@
   /* See "bottom" above (same construction, rotated 90 degrees): an
    * overdrag away from the right edge drags LEFT, so the extension
    * bleeds further RIGHT, past the already-flush right edge. */
-  filter: drop-shadow(40px 0 0 var(--dx-background-alt));
+  filter: drop-shadow(40px 0 0 var(--dx-background));
   touch-action: pan-y;
   transform: translateX(100%);
 }
@@ -231,7 +231,7 @@
   /* See "bottom" above: an overdrag away from the left edge drags RIGHT,
    * so the extension bleeds further LEFT, past the already-flush left
    * edge. */
-  filter: drop-shadow(-40px 0 0 var(--dx-background-alt));
+  filter: drop-shadow(-40px 0 0 var(--dx-background));
   touch-action: pan-y;
   transform: translateX(-100%);
 }
@@ -372,7 +372,7 @@
   flex-shrink: 0;
   border-radius: var(--dx-radius-full);
   margin: var(--dx-space-3) auto 0;
-  background: var(--primary-color-7);
+  background: var(--dx-input);
 
   /* This bar has no text of its own, but a `mousedown`+drag starting here
    * still hits whatever's *underneath* in selection terms on some
@@ -471,7 +471,7 @@
   padding: var(--dx-space-2) var(--dx-space-4);
   border: 1px solid var(--dx-input);
   border-radius: var(--dx-radius-md);
-  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, var(--primary-color-7) 30%, transparent));
+  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
   color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-sm);
@@ -480,7 +480,7 @@
 }
 
 .dx-drawer-close:not([data-style]):hover {
-  background-color: var(--light, var(--dx-muted)) var(--dark, color-mix(in oklab, var(--primary-color-7) 50%, transparent));
+  background-color: var(--light, var(--dx-muted)) var(--dark, color-mix(in oklab, var(--dx-input) 50%, transparent));
   color: var(--dx-accent-foreground);
 }
 

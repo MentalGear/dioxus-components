@@ -4,7 +4,7 @@
   padding: var(--dx-space-1);
   border: none;
   border-radius: var(--dx-radius-lg);
-  background: var(--dx-background-alt);
+  background: var(--dx-background);
   box-shadow: inset 0 0 0 1px var(--dx-border);
   gap: var(--dx-space-1);
 }

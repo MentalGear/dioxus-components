@@ -27,7 +27,7 @@
 }
 
 .dx-table-row:hover {
-  background-color: var(--dx-accent-alt);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
 }
 
 .dx-table-row[data-state="selected"] {
@@ -70,7 +70,7 @@
 
 .dx-table-footer {
   border-top: 1px solid var(--dx-border);
-  background-color: var(--dx-accent-alt);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
   font-weight: 500;
 }
 

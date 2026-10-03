@@ -257,7 +257,7 @@
 }
 
 .dx-popover-content-cancel:hover {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -284,7 +284,7 @@
 }
 
 .dx-popover-content-action:hover {
-  background-color: var(--dx-destructive-alt);
+  background-color: color-mix(in oklab, var(--dx-destructive) 90%, transparent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -314,7 +314,7 @@
 }
 
 .dx-popover-trigger:hover {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),

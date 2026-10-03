@@ -230,7 +230,7 @@
 }
 
 .dx-chart [data-slot="chart-label"][data-position="inside"] {
-  fill: var(--dx-card-alt);
+  fill: var(--dx-background);
 }
 
 /* Line dots: Recharts' `<Dot>` -- the series color, stroked in it at the
@@ -249,7 +249,7 @@
 .dx-chart [data-slot="chart-active-dot"] {
   fill: var(--series-color);
   pointer-events: none;
-  stroke: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+  stroke: var(--dx-card);
   stroke-width: 2;
 }
 
@@ -399,7 +399,7 @@
   box-sizing: border-box;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: var(--dx-radius-lg);
-  background-color: var(--dx-background-alt);
+  background-color: var(--dx-background);
   box-shadow: var(--dx-shadow-md);
 
   /* Body text on the `--primary-color-2` surface. NOT `--primary-color`: that
@@ -694,14 +694,14 @@
 /* `RadarOptions::radius_axis` (shadcn's `PolarRadiusAxis
  * stroke="var(--foreground)"`): the tick values in the foreground colour. */
 .dx-chart [data-axis="radius"] text {
-  fill: var(--dx-foreground-alt-2);
+  fill: var(--dx-foreground);
 }
 
 /* `RadarOptions::ticks` (shadcn's `chart-radar-label-custom` tick):
  * `fontSize={13} fontWeight={500}`, the muted runs and the 12px caption in
  * the muted foreground. */
 .dx-chart [data-axis="angle"] text[data-custom="true"] {
-  fill: var(--dx-foreground-alt-2);
+  fill: var(--dx-foreground);
   font-size: 13px;
   font-weight: 500;
 }
@@ -757,11 +757,11 @@
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="inside"] {
-  fill: var(--dx-background-alt);
+  fill: var(--dx-background);
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="outside"] {
-  fill: var(--dx-foreground-alt-2);
+  fill: var(--dx-foreground);
 }
 
 .dx-chart [data-slot="chart-arc-label"][data-position="inside-start"] {
@@ -789,7 +789,7 @@
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
-  fill: var(--dx-foreground-alt-2);
+  fill: var(--dx-foreground);
   font-size: min(var(--dx-text-3xl), var(--dx-chart-center-primary-max, 9999px));
   font-weight: 700;
 }
@@ -922,7 +922,7 @@
   flex-direction: column;
   align-items: stretch;
   padding: 0;
-  border-bottom: 1px solid var(--dx-border-alt-2);
+  border-bottom: 1px solid var(--dx-border);
   gap: 0;
 }
 
@@ -951,7 +951,7 @@
   border: 0;
   border-radius: 0;
   background-color: transparent;
-  border-block-start: 1px solid var(--dx-border-alt-2);
+  border-block-start: 1px solid var(--dx-border);
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -960,11 +960,11 @@
 }
 
 .dx-chart-interactive-toggle + .dx-chart-interactive-toggle {
-  border-inline-start: 1px solid var(--dx-border-alt-2);
+  border-inline-start: 1px solid var(--dx-border);
 }
 
 .dx-chart-interactive-toggle[data-active="true"] {
-  background-color: var(--dx-accent-alt);
+  background-color: var(--dx-accent);
 }
 
 .dx-chart-interactive-toggle-label {
@@ -996,7 +996,7 @@
     flex: 0 0 auto;
     padding: var(--dx-space-6) var(--dx-space-8);
     border-block-start: 0;
-    border-inline-start: 1px solid var(--dx-border-alt-2);
+    border-inline-start: 1px solid var(--dx-border);
   }
 
   .dx-chart-interactive-toggle-total {

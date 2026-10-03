@@ -24,8 +24,7 @@
   justify-content: space-between;
   border: 1px solid var(--dx-border);
   border-radius: 10px;
-  background-color: var(--light, #fff)
-    var(--dark, var(--dx-accent-alt));
+  background-color: var(--dx-card);
   color: var(--dx-foreground);
   cursor: grab;
   list-style: none;
@@ -90,14 +89,14 @@
 
 .dx-drag-and-drop-list-item-icon {
   flex-shrink: 0;
-  color: var(--secondary-color-6);
+  color: var(--dx-muted-foreground);
   margin-inline-end: 6px;
   transition: color var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .dx-drag-and-drop-list-item:hover .dx-drag-and-drop-list-item-icon {
-    color: var(--secondary-color-2);
+    color: var(--dx-foreground);
   }
 }
 
@@ -121,7 +120,7 @@
   border-style: none;
   border-radius: var(--dx-radius-md);
   background-color: transparent;
-  color: var(--secondary-color-6);
+  color: var(--dx-muted-foreground);
   cursor: pointer;
   margin-inline-start: 10px;
 
@@ -134,9 +133,8 @@
 }
 
 .dx-drag-and-drop-list-remove-button:hover {
-  background-color: var(--light, var(--primary-color-5))
-    var(--dark, var(--primary-color-6));
-  color: var(--secondary-color-2);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
 }
 
 .dx-drag-and-drop-list-remove-button:active {

@@ -65,7 +65,7 @@
 }
 
 .dx-avatar[data-state="empty"] {
-    background: var(--primary-color-7);
+    background: var(--dx-muted);
 }
 
 @keyframes dx-pulse {
@@ -94,6 +94,6 @@
 }
 
 .dx-avatar[data-state="error"] .dx-avatar-fallback {
-    background: var(--dx-muted-alt);
+    background: var(--dx-muted);
     color: var(--dx-foreground);
 }

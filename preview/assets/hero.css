@@ -48,9 +48,9 @@
     box-sizing: border-box;
     align-items: center;
     padding: 0 1rem;
-    border: 1px solid var(--secondary-color-3);
+    border: 1px solid var(--dx-primary);
     border-radius: 0.25rem;
-    background-color: var(--secondary-color-3);
+    background-color: var(--dx-primary);
     color: var(--dx-primary-foreground);
     font-size: 0.925rem;
     font-weight: 500;
@@ -62,8 +62,8 @@
 }
 
 .dx-hero-cta-primary:hover {
-    border-color: var(--secondary-color-2);
-    background-color: var(--dx-primary-alt);
+    border-color: var(--dx-primary);
+    background-color: color-mix(in oklab, var(--dx-primary) 90%, transparent);
     transform: translateY(-1px);
 }
 
@@ -86,7 +86,7 @@
 }
 
 .dx-hero-title {
-    color: var(--dx-foreground-alt);
+    color: var(--dx-foreground);
 }
 
 .dx-hero-subtitle {
@@ -111,7 +111,7 @@
     padding: 0 0.5rem 0 0.75rem;
     border: 1px solid var(--dx-border);
     border-radius: 0.25rem;
-    background-color: var(--dx-card-alt);
+    background-color: var(--dx-card);
     color: var(--dx-foreground);
     gap: 0.5rem;
 }

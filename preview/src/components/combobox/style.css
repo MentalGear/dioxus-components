@@ -34,7 +34,7 @@
   border-radius: var(--dx-radius-lg);
   background: var(--dx-card);
   box-shadow: inset 0 0 0 1px var(--dx-input);
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   cursor: text;
   font-family: inherit;
   font-size: var(--dx-text-sm);
@@ -50,7 +50,7 @@
 .dx-combobox-input:hover:not([disabled]),
 .dx-combobox-input:focus-visible,
 .dx-combobox-input[data-state="open"] {
-  background: var(--dx-accent-alt-2);
+  background: var(--dx-muted);
 }
 
 .dx-combobox-input[disabled] {
@@ -113,7 +113,7 @@
   border-radius: var(--dx-radius-lg);
   background: var(--dx-popover);
   box-shadow: inset 0 0 0 1px var(--dx-input);
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   inset-inline-start: 0;
   transform-origin: top;
 }

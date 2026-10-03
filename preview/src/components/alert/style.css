@@ -27,7 +27,7 @@
 
 .dx-alert-title {
   min-height: var(--dx-space-4);
-  color: var(--dx-foreground-alt-2);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 500;
   grid-column-start: 2;

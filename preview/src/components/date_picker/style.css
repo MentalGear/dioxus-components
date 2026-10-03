@@ -117,7 +117,7 @@
 
 .dx-date-picker-segment:focus-visible {
     border-radius: var(--dx-radius-sm);
-    background: var(--secondary-color-3);
+    background: var(--dx-primary);
     color: var(--dx-primary-foreground);
     outline: none;
 }

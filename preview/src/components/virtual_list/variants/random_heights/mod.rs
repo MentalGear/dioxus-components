@@ -14,7 +14,7 @@ fn pseudo_random_repeats(idx: usize) -> usize {
 pub fn Demo() -> Element {
     rsx! {
         div { class: "dx-virtual-list-demo",
-            p { style: "color: var(--primary-color-9); font-size: 0.9rem; margin-bottom: 0.75rem;",
+            p { style: "color: var(--dx-muted-foreground); font-size: 0.9rem; margin-bottom: 0.75rem;",
                 "Random heights variant - tests adaptive estimation with highly variable item sizes"
             }
             style { r#".dx-virtual-list-container {{
@@ -35,18 +35,18 @@ pub fn Demo() -> Element {
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--dx-border);
   border-radius: 0.625rem;
-  background: var(--dx-background-alt);
+  background: var(--dx-card);
 }}
 
 .dx-virtual-list-card h3 {{
   margin: 0 0 0.3rem;
-  color: var(--primary-color-12);
+  color: var(--dx-foreground);
   font-size: 0.95rem;
 }}
 
 .dx-virtual-list-card p {{
   margin: 0;
-  color: var(--primary-color-11);
+  color: var(--dx-muted-foreground);
   font-size: 0.875rem;
   line-height: 1.4;
 }}"# }

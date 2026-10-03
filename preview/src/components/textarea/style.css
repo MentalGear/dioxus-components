@@ -34,7 +34,7 @@
 
 .dx-textarea[data-style="default"]:hover:not(:disabled),
 .dx-textarea[data-style="default"]:focus {
-  background: var(--dx-accent-alt-2);
+  background: var(--dx-muted);
   color: var(--dx-accent-foreground);
 }
 
@@ -45,7 +45,7 @@
 
 .dx-textarea[data-style="fade"]:hover:not(:disabled),
 .dx-textarea[data-style="fade"]:focus {
-  background: var(--dx-accent-alt-2);
+  background: var(--dx-muted);
   color: var(--dx-accent-foreground);
 }
 

@@ -63,7 +63,7 @@
   border-style: none;
   border-radius: var(--dx-radius-md);
   background-color: transparent;
-  color: var(--secondary-color-6);
+  color: var(--dx-muted-foreground);
   cursor: pointer;
   margin-inline-start: var(--dx-space-1);
 
@@ -76,8 +76,8 @@
 }
 
 .dx-tag-group-remove-button:hover {
-  background-color: var(--light, var(--primary-color-5)) var(--dark, var(--primary-color-6));
-  color: var(--secondary-color-2);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
 }
 
 .dx-tag-group-remove-button:active {
