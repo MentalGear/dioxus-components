@@ -2,12 +2,17 @@
 #
 # check-raw-text-interpolation.sh
 #
-# Forbids any interpolation inside the children of an rsx `style { ... }`
-# or `script { ... }` ELEMENT (not the `style: "..."` attribute):
+# Forbids any interpolation inside the children of an rsx `style { ... }`,
+# `script { ... }`, `noscript { ... }` or `textarea { ... }` ELEMENT (not the
+# `style: "..."` attribute), including path-qualified spellings:
 #
 #   style { "{css}" }          style { {CSS_CONST} }          style { "a {x} b" }
+#   dioxus::html::style { "{css}" }      html::script { {JS} }
+#   noscript { "{msg}" }       textarea { "{value}" }
 #
-# Why: `<style>` and `<script>` are raw-text elements. Dioxus SSR/SSG emits
+# Why: `<style>` and `<script>` are raw-text elements (`<noscript>` is too in
+# a scripting-enabled browser, and `<textarea>` is RCDATA: character
+# references work but markup, comments included, does not). Dioxus SSR/SSG emits
 # a hydration marker comment before every DYNAMIC text node, so the shipped
 # HTML is
 #
@@ -17,6 +22,8 @@
 # parses as the selector `node-id444-- > [data-chart="dxc-394"]`, which
 # never matches: the first rule is silently dead. (Static template text
 # gets no marker, which is why a plain string LITERAL child ships clean.)
+# In `<textarea>`/`<noscript>` the marker is not even inert: it ships as
+# visible literal text (`<!--node-id7-->` in the box).
 #
 # Evidence (2026-10-03): `ChartContainer` rendered `style { "{style_rule}" }`,
 # so on every deployed SSG page `--color-<series>` was never defined, bar/
@@ -30,7 +37,8 @@
 #
 # What to do instead:
 #   * put dynamic CSS in an inline `style:` attribute on an element (an
-#     attribute value never gets a marker), or in a stylesheet asset; or
+#     attribute value never gets a marker), or in a stylesheet asset; for a
+#     textarea, set its `value:` attribute instead of a text child; or
 #   * use a string LITERAL child -- `style { r#"a {{ b: c }}"# }` -- where
 #     braces are escaped as `{{`/`}}`. Literal-only children are allowed.
 #
@@ -41,7 +49,10 @@
 # block child (`{expr}`, `if`/`for` blocks), is a violation. String
 # attribute keys/values (`media: "{x}"`, `"data-x": ...`) are not text
 # children and are ignored. `document::Style`/`document::Script` (capital
-# letter, routed through the head mechanism) are out of scope.
+# letter, routed through the head mechanism) are out of scope, and so is
+# `title`: an SVG `<title>` child is fine (84 of them ship legitimately) and
+# an HTML title is set through `document::Title`. A block that is a closure
+# body (`onfocus: move |e| { ... }`, `async move { ... }`) is never a child.
 #
 # Scope: primitives/, preview/src/, labs/, test-harness/ (*.rs).
 #
@@ -67,8 +78,10 @@ from pathlib import Path
 SCAN_DIRS = ["primitives", "preview/src", "labs", "test-harness"]
 SKIP_PARTS = {"target", "node_modules", ".git"}
 
-ELEM_RE = re.compile(r"(?<![\w.:])(style|script)\s*\{")
-# A lower-case `style`/`script` right after one of these is a Rust variable or
+# Optional lower-case module path (`dioxus::html::style {`, `html::script {`);
+# `document::Style`/`Foo::style {` do not match (capital letter).
+ELEM_RE = re.compile(r"(?<![\w.:])(?:[a-z_]\w*::)*(style|script|noscript|textarea)\s*\{")
+# A lower-case `style`/`script`/... right after one of these is a Rust variable or
 # item name (`match style {`, `if script {`, `mod style {`), not an rsx element.
 ITEM_KW = {
     "mod", "struct", "enum", "fn", "impl", "trait", "use", "type", "const", "static",
@@ -147,6 +160,17 @@ def tokenize(text):
     return toks
 
 
+def closure_body(text, lo, pos):
+    """True if the `{` at `pos` opens a closure body (`|e| {`, `move {`,
+    `async move {`) rather than an rsx child block. `lo` bounds the look-back
+    to the current code span (a string/comment before it is not code)."""
+    before = text[lo:pos].rstrip()
+    if before.endswith("|"):
+        return True
+    words = re.findall(r"[A-Za-z_]\w*$", before)
+    return bool(words) and words[0] in ("move", "async")
+
+
 def str_body(text, s, e):
     raw = text[s:e]
     m = re.match(r'[bB]?r(#*)"', raw)
@@ -157,7 +181,7 @@ def str_body(text, s, e):
 
 def check(path):
     text = path.read_text(encoding="utf-8", errors="replace")
-    if "style" not in text and "script" not in text:
+    if not any(n in text for n in ("style", "script", "textarea")):
         return []
     toks = tokenize(text)
     line_of = lambda pos: text.count("\n", 0, pos) + 1
@@ -200,7 +224,7 @@ def check(path):
                     ch = text[i]
                     if ch == "{":
                         depth += 1
-                        if depth == 2 and prev_sig != ":":
+                        if depth == 2 and prev_sig != ":" and not closure_body(text, s2, i):
                             problems.append((line_of(i), "`{ ... }` expression/block child"))
                         prev_sig = "{"
                     elif ch == "}":
@@ -228,14 +252,16 @@ def main():
             if SKIP_PARTS & set(p.parts):
                 continue
             for line, why in sorted(set(check(p))):
-                bad.append(f"{p}:{line}: {why} inside a raw-text <style>/<script> element")
+                bad.append(f"{p}:{line}: {why} inside a raw-text/RCDATA <style>/<script>/<noscript>/<textarea> element")
     if bad:
         sys.stderr.write("\n".join(bad) + "\n\n")
         sys.stderr.write(
-            "Dynamic text inside <style>/<script> gets an SSR hydration marker "
-            "(`<!--node-id..-->`) that corrupts the CSS/JS.\n"
-            "Use an inline `style:` attribute, a stylesheet asset, or a string "
-            "LITERAL child with `{{`/`}}` escapes.\n"
+            "Dynamic text inside <style>/<script>/<noscript>/<textarea> gets an SSR "
+            "hydration marker (`<!--node-id..-->`) that corrupts the CSS/JS (or "
+            "shows as literal text).\n"
+            "Use an inline `style:` attribute, a stylesheet asset, a textarea "
+            "`value:` attribute, or a string LITERAL child with `{{`/`}}` "
+            "escapes.\n"
             "See the header of scripts/check-raw-text-interpolation.sh.\n"
         )
         return 1

@@ -105,6 +105,18 @@
   stroke-width: 1;
 }
 
+/* Base text fill for EVERY svg `<text>` a chart draws. An SVG text node with
+ * no `fill` of its own paints the initial value -- opaque black -- in both
+ * themes (~1.1:1 on the dark surface), and several slots deliberately carry no
+ * rule of their own (`chart-label`: bar `value_labels`/`inside_labels` and the
+ * line chart's point labels; `chart-arc-label`; any future text mark). Setting
+ * the default once here, at zero specificity (`:where`), means a new text slot
+ * is themed by construction and every specific rule below -- axis text, the
+ * donut center text, a demo's own inline `fill` -- still wins. */
+:where(.dx-chart [data-slot="chart-svg"] text) {
+  fill: var(--secondary-color-4);
+}
+
 .dx-chart [data-slot="chart-axis"] text {
   fill: var(--dx-chart-axis-text);
   font-size: var(--dx-text-xs);
@@ -519,18 +531,22 @@
   transform: scale(1.05);
 }
 
-/* No dedicated contrast-on-colored-fill token exists in this theme
- * (`preview/assets/dx-components-theme.css` has no generic "text on an
- * arbitrary --dx-chart-N swatch" color -- eight rotating hues, none of
- * them reliably light or dark) -- left unstyled (inherits the default SVG
- * text fill), the same choice `bar.rs`'s own `value_labels`/
- * `inside_labels` (`data-slot="chart-label"`, also unstyled here) already
- * made and shipped with.
- */
+/* Arc labels sit ON the series colour (pie slices, radial rings), and the
+ * eight rotating `--dx-chart-N` hues are neither reliably light nor dark, so
+ * no single text colour clears 4.5:1 against all of them in both themes.
+ * Instead the label takes the base themed text colour (the `:where` rule
+ * above) plus a halo in the surface colour (`paint-order: stroke` draws the
+ * stroke underneath the fill): legible on any hue, and the halo is the
+ * theme's own surface so it disappears wherever the text spills onto the
+ * card background. */
 .dx-chart [data-slot="chart-arc-label"] {
   font-size: var(--dx-text-xs);
   font-weight: 600;
+  paint-order: stroke;
   pointer-events: none;
+  stroke: var(--primary-color-1);
+  stroke-linejoin: round;
+  stroke-width: 3px;
 }
 
 /* The donut/gauge center text (`PieOptions::center_text`/
@@ -557,4 +573,34 @@
  * `PolarGrid` element -- this crate unifies both as one boolean). */
 .dx-chart [data-slot="chart-polar-grid"] {
   fill: var(--dx-chart-grid);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Demo card footer
+ *
+ * The "Trending up ... / Showing ..." footer the pie and radial galleries
+ * repeat under their charts (the bar gallery has its own copy,
+ * `dx-bar-chart-footer`, in `bar_chart/style.css`). `Card`'s footer is a row
+ * flex box, so two bare `div`s become two side-by-side wrapped columns; this
+ * stacks them, trend line over caption. Lives here, not in the gallery
+ * stylesheets, because this file is the one every chart demo is guaranteed
+ * to have loaded. The compound selector out-ranks `.dx-card-footer`
+ * regardless of stylesheet order.
+ * ---------------------------------------------------------------------- */
+
+[data-slot="card-footer"].dx-chart-footer {
+  flex-direction: column;
+  align-items: start;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+.dx-chart-footer-trend {
+  font-weight: 600;
+  line-height: 1;
+}
+
+.dx-chart-footer-caption {
+  color: var(--secondary-color-5);
+  line-height: 1;
 }

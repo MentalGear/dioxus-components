@@ -65,13 +65,22 @@ pub struct ChartProps {
 
     /// The `viewBox`'s logical width. CSS (the themed wrapper's
     /// `width: 100%; height: auto`) makes the rendered size responsive;
-    /// this and [`Self::height`] only set the aspect ratio and the scale
-    /// every other logical measurement (font sizes included, via the
-    /// browser's SVG scaling) is relative to.
+    /// this and [`Self::height`] set the aspect ratio and the scale every
+    /// other logical measurement (font sizes included, via the browser's
+    /// SVG scaling) is relative to.
+    ///
+    /// This is the *maximum* logical size. Once mounted in a browser, a
+    /// container narrower than this shrinks the logical size to the
+    /// container's own width (and [`Self::height`] proportionally, keeping
+    /// the aspect ratio), so one user unit stays one CSS pixel and text
+    /// does not scale below its authored size on a phone. Server-side
+    /// rendering, the first client render, and any container at least this
+    /// wide use this value unchanged.
     #[props(default = 600.0)]
     pub width: f64,
 
-    /// The `viewBox`'s logical height.
+    /// The `viewBox`'s logical height -- the maximum, scaled down in
+    /// proportion to [`Self::width`] on a narrower container.
     #[props(default = 300.0)]
     pub height: f64,
 
@@ -304,6 +313,15 @@ pub fn Chart(props: ChartProps) -> Element {
     let mut active_index = ctx.active_index;
     let mut layout_signal = ctx.layout;
 
+    // The wrapper's measured content width (CSS px), written only after
+    // mount/resize in a browser. `None` -- always the case during SSR and
+    // the first client render -- means "use the props' own size", so the
+    // first client render is byte-identical to the server HTML (no
+    // hydration mismatch); the measured width is adopted by the re-render
+    // that follows.
+    let mut measured_width = use_signal(|| None::<f64>);
+    let (width, height) = effective_size(props.width, props.height, measured_width());
+
     // Only Area and Bar have a stacking construction -- see
     // `ChartProps::stacked`'s own doc. Every computation below reads this
     // resolved value, not the raw prop, so the rule can't be forgotten in
@@ -330,8 +348,8 @@ pub fn Chart(props: ChartProps) -> Element {
 
     let n = data.len();
     let ctx_layout = layout::build(layout::LayoutParams {
-        width: props.width,
-        height: props.height,
+        width,
+        height,
         show_x_axis: props.show_x_axis,
         show_y_axis: props.show_y_axis,
         y_tick_count: props.y_tick_count,
@@ -357,8 +375,7 @@ pub fn Chart(props: ChartProps) -> Element {
     // kinds render no hit-bands yet (below), so `active_index` can never
     // be `Some` for them regardless -- an empty vec here is exactly as
     // inert as a wrong one would be unreachable.
-    let anchor_percent: Vec<(f64, f64)> = if is_cartesian && props.width > 0.0 && props.height > 0.0
-    {
+    let anchor_percent: Vec<(f64, f64)> = if is_cartesian && width > 0.0 && height > 0.0 {
         (0..n)
             .map(|i| {
                 let top = if stacked {
@@ -378,7 +395,7 @@ pub fn Chart(props: ChartProps) -> Element {
                 let top = if top.is_finite() { top } else { 0.0 };
                 let x = ctx_layout.x_scale.center(i);
                 let y = ctx_layout.y_scale.scale(top);
-                (x / props.width * 100.0, y / props.height * 100.0)
+                (x / width * 100.0, y / height * 100.0)
             })
             .collect()
     } else {
@@ -444,6 +461,16 @@ pub fn Chart(props: ChartProps) -> Element {
         div {
             aria_label: wrapper_label,
             dir: direction.as_str(),
+            onmounted: move |evt: MountedEvent| async move {
+                if let Ok(rect) = evt.data().get_client_rect().await {
+                    adopt_measured_width(&mut measured_width, rect.width());
+                }
+            },
+            onresize: move |evt: ResizeEvent| {
+                if let Ok(size) = evt.data().get_content_box_size() {
+                    adopt_measured_width(&mut measured_width, size.width);
+                }
+            },
             onkeydown: move |evt| {
                 if !props.keyboard || n == 0 {
                     return;
@@ -476,7 +503,7 @@ pub fn Chart(props: ChartProps) -> Element {
                 "data-slot": "chart-svg",
                 role: "img",
                 "aria-label": "{props.aria_label}",
-                view_box: "0 0 {fmt_num(props.width)} {fmt_num(props.height)}",
+                view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
                 onpointerleave: move |_| active_index.set(None),
 
                 title { "{props.aria_label}" }
@@ -607,6 +634,40 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
+/// The narrowest logical width a measured container may shrink the chart
+/// to -- below this, plot margins and axis labels no longer fit anyway, so
+/// the (then scaled-down) props size is the better fallback than a
+/// degenerate sliver.
+const MIN_MEASURED_WIDTH: f64 = 120.0;
+
+/// The logical `(width, height)` the chart lays out and draws at: the props'
+/// own size, shrunk (never grown) to `measured` -- the container's rendered
+/// CSS width -- keeping the props' aspect ratio. One user unit is then one
+/// CSS pixel on a narrow container, so text keeps its authored size instead
+/// of scaling down with the whole `viewBox`. `None`, a non-finite or
+/// below-[`MIN_MEASURED_WIDTH`] measurement, or a container at least as wide
+/// as the props all return the props' size unchanged.
+fn effective_size(width: f64, height: f64, measured: Option<f64>) -> (f64, f64) {
+    match measured {
+        Some(m) if m.is_finite() && m >= MIN_MEASURED_WIDTH && width > 0.0 && m < width => {
+            (m, height * m / width)
+        }
+        _ => (width, height),
+    }
+}
+
+/// Store a measured container width, rounded to a whole pixel and only when
+/// it changed, so sub-pixel resize jitter never re-renders the chart.
+fn adopt_measured_width(slot: &mut Signal<Option<f64>>, width: f64) {
+    if !width.is_finite() || width <= 0.0 {
+        return;
+    }
+    let width = width.round();
+    if *slot.peek() != Some(width) {
+        slot.set(Some(width));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,6 +737,30 @@ mod tests {
         dom.rebuild_in_place();
         dom.render_immediate(&mut NoOpMutations);
         dioxus_ssr::render(&dom)
+    }
+
+    #[test]
+    fn effective_size_shrinks_to_a_narrower_container_keeping_the_aspect_ratio() {
+        assert_eq!(effective_size(600.0, 300.0, Some(300.0)), (300.0, 150.0));
+        assert_eq!(effective_size(300.0, 300.0, Some(240.0)), (240.0, 240.0));
+    }
+
+    #[test]
+    fn effective_size_never_grows_and_ignores_unusable_measurements() {
+        assert_eq!(effective_size(600.0, 300.0, None), (600.0, 300.0));
+        assert_eq!(effective_size(600.0, 300.0, Some(600.0)), (600.0, 300.0));
+        assert_eq!(effective_size(600.0, 300.0, Some(900.0)), (600.0, 300.0));
+        assert_eq!(effective_size(600.0, 300.0, Some(50.0)), (600.0, 300.0));
+        assert_eq!(effective_size(600.0, 300.0, Some(f64::NAN)), (600.0, 300.0));
+        assert_eq!(effective_size(0.0, 0.0, Some(300.0)), (0.0, 0.0));
+    }
+
+    #[test]
+    fn first_render_uses_the_props_size_so_it_matches_ssr() {
+        // Nothing is measured during SSR / the first client render, so the
+        // viewBox is exactly the props' default 600x300.
+        let html = render(ChartKind::Line, false, true);
+        assert!(html.contains(r#"viewBox="0 0 600 300""#), "{html}");
     }
 
     #[test]

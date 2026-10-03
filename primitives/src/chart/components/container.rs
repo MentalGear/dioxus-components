@@ -55,6 +55,11 @@ pub struct ChartContainerProps {
 /// corrupts the CSS. A caller's own `style` is kept, after the generated
 /// declarations.
 ///
+/// Because the series colors are inline declarations, a stylesheet rule on
+/// `--color-<key>` loses to them (it would need `!important`): to recolor a
+/// series, set the series' `color` in the [`ChartConfig`], or override the
+/// variable through the caller `style` (e.g. `style: "--color-desktop: red"`).
+///
 /// This must contain a `Chart` (or any other consumer of
 /// [`crate::chart::use_chart`]) to be useful on its own.
 ///
@@ -90,7 +95,8 @@ pub struct ChartContainerProps {
 /// - `data-chart`: this chart instance's generated or caller-provided id.
 /// - `style`: carries the generated `--color-<slot>` declarations (plus any
 ///   caller `style`).
-/// - `data-kind`: the chart's [`ChartKind`], as `area`, `bar`, or `line`.
+/// - `data-kind`: the chart's [`ChartKind`], as `area`, `bar`, `line`, `pie`,
+///   `radar`, or `radial-bar`.
 #[component]
 pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let id = use_id_or(use_unique_id(), props.id);
