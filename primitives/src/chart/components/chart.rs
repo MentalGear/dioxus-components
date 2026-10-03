@@ -45,7 +45,7 @@ use super::series::{
     AreaOptions, BarOptions, LineOptions, PieOptions, RadarOptions, RadialOptions,
 };
 use super::{layout, series};
-use crate::chart::context::{is_touch, use_chart, ChartLayout, Cursor, Follow};
+use crate::chart::context::{is_touch, use_chart, ChartLayout, Follow};
 use crate::chart::engine::scale::fmt_num;
 use crate::chart::engine::table::{table_rows, table_rows_pie, table_rows_single_series};
 use crate::chart::{BandScale, ChartKind, Curve, LinearScale};
@@ -96,8 +96,14 @@ pub struct ChartProps {
     ///
     /// [`Self::width`] is still what the server render and the first client
     /// render use (nothing is measured yet, so there is no hydration
-    /// mismatch); the svg is already `height` px tall and top-left aligned in
-    /// that render, so adopting the measured width after mount does not move
+    /// mismatch). That pre-measure render is already `height` px tall and
+    /// fills the container's width: its viewBox is stretched to the box
+    /// (`preserveAspectRatio="none"`, `data-measured="false"`), which keeps
+    /// every mark where the measured render will put it (the height is exact,
+    /// and x positions are proportional) -- the stylesheet hides the text,
+    /// which a non-uniform stretch would distort, until the measured render
+    /// replaces it, so before the wasm loads there is no left-aligned strip
+    /// or shrunken 5px text, and adopting the measured width does not move
     /// the page. Off by default -- an existing chart is unchanged.
     ///
     /// Cartesian kinds only ([`ChartKind::Area`], [`ChartKind::Bar`] --
@@ -200,6 +206,21 @@ pub struct ChartProps {
     #[props(default = true)]
     pub keyboard: bool,
 
+    /// Show the tooltip already open at this datum index until the user
+    /// interacts (shadcn's `defaultIndex`): the server render and the first
+    /// client render both have it open -- anchored at the data point, placed
+    /// by the same flip/clamp rules as a keyboard-driven one (the position is
+    /// resolved once the box has been measured in the browser; until then the
+    /// open tooltip is laid out but hidden). The first hover, key press or
+    /// tap takes over, and when the tooltip closes (pointer leaves, blur,
+    /// Escape) it is closed for good. Read once, on mount: changing it later
+    /// does not move an open tooltip. An index past the data's end is
+    /// ignored. [`crate::chart::ChartTooltip`] must come after this
+    /// `Chart` among its siblings (as in every example) so it sees the index
+    /// on the server's single render pass.
+    #[props(default)]
+    pub default_index: Option<usize>,
+
     /// The text direction for the keyboard layer's ArrowLeft/ArrowRight
     /// swap, matching every other direction-aware component in this crate
     /// (`Slider`, `Select`, ...): a local override that wins over the
@@ -264,6 +285,18 @@ pub struct ChartProps {
 /// the pointer and the active datum's anchor. A mouse leaving closes the
 /// tooltip; a finger lifting does not -- a tapped tooltip stays until the
 /// wrapper loses focus (a tap elsewhere, or Tab).
+///
+/// A pointer result that arrives after the tooltip closed (a `pointerleave`,
+/// blur or key press while the bounding rect was still being read) is
+/// discarded, never reopening it. Under an ancestor `transform: scale(..)` or
+/// CSS `zoom` the pointer's screen-pixel position is mapped onto the chart
+/// box's layout pixels, so the tooltip still lands at the pointer.
+///
+/// Giving [`ChartProps::default_index`] shows the tooltip open at that datum
+/// from the first render (shadcn's `defaultIndex`) until the user interacts;
+/// Tab-focusing the chart opens it at the first point (pointer-initiated
+/// focus does not). On an Area or Line chart the active datum also gets a dot
+/// on every series (`data-slot="chart-active-dot"`, Recharts' `activeDot`).
 ///
 /// ## Wrapper element, stated plainly (see the module doc for the reason)
 ///
@@ -334,6 +367,11 @@ pub struct ChartProps {
 ///   doc). The two remaining polar/radial stub kinds still render one
 ///   `data-slot="chart-series"[data-kind=<kind>]` placeholder group (no
 ///   `data-series`) until their own owning lane replaces it.
+/// - `data-slot="chart-active-dots"` > `"chart-active-dot"[data-series]
+///   [data-index]`: the hovered datum's dot on each series (Area, and Line
+///   unless it draws its own dots) -- its fill is `--series-color`.
+/// - `data-measured="true"|"false"` on the svg in [`ChartProps::fit_width`]
+///   mode: `false` until the container has been measured.
 /// - `data-slot="chart-cursor"` (`"chart-cursor-line"` for Area/Line,
 ///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]"` --
 ///   `ChartKind::is_cartesian` kinds only.
@@ -362,12 +400,17 @@ pub fn Chart(props: ChartProps) -> Element {
     // The wrapper's mounted handle, whose bounding rect each pointer event
     // reads fresh (see `pointer.rs`).
     let mut mounted = use_signal(|| None::<Rc<MountedData>>);
+    // Whether the current focus came from a pointer (`pointerdown` precedes
+    // the focus it causes), as opposed to the keyboard: only keyboard focus
+    // opens the tooltip (`:focus-visible` semantics -- see `onfocus` below).
+    let mut pointer_focus = use_hook(|| CopyValue::new(false));
     let is_cartesian = kind.is_cartesian();
     let ChartSize {
         width,
         height,
         text_scale,
         fit,
+        pending,
     } = ChartSize::resolve(
         props.width,
         props.height,
@@ -399,6 +442,14 @@ pub fn Chart(props: ChartProps) -> Element {
     };
 
     let n = data.len();
+    // `default_index`: open from the very first render (server and client
+    // alike). A plain write during this first render, not an effect --
+    // `use_hook` runs exactly once, before anything below reads the index.
+    use_hook(|| {
+        if let Some(i) = props.default_index.filter(|i| *i < n) {
+            active_index.set(Some(i));
+        }
+    });
     let ctx_layout = layout::build(layout::LayoutParams {
         width,
         height,
@@ -572,6 +623,12 @@ pub fn Chart(props: ChartProps) -> Element {
         ChartKind::RadialBar => series::radial::render(&ctx_layout, &props.radial),
     };
 
+    let show_active_dots = match kind {
+        ChartKind::Area => true,
+        ChartKind::Line => !(props.line.dots || props.line.dot.is_some()),
+        _ => false,
+    };
+
     let wrapper_role = props.keyboard.then_some("group");
     let wrapper_roledescription = props.keyboard.then_some("chart");
     let wrapper_label = props.keyboard.then(|| props.aria_label.clone());
@@ -606,9 +663,16 @@ pub fn Chart(props: ChartProps) -> Element {
         div {
             aria_label: wrapper_label,
             dir: direction.as_str(),
+            // The one writer of the chart box's layout size (the pointer
+            // handler maps its screen-pixel rect onto it, `pointer.rs`). The
+            // border box, to match the bounding rect the pointer reads; the
+            // svg's own width (`measured_width`) is the content box.
             onresize: move |evt: ResizeEvent| {
-                if let Ok(size) = evt.data().get_content_box_size() {
+                let data = evt.data();
+                if let Ok(size) = data.get_content_box_size() {
                     adopt_measured_width(&mut measured_width, size.width);
+                }
+                if let Ok(size) = data.get_border_box_size() {
                     if size.width > 0.0 && size.height > 0.0 {
                         ctx.set_box_size((size.width, size.height));
                     }
@@ -621,7 +685,22 @@ pub fn Chart(props: ChartProps) -> Element {
             },
             // A touch tap is a pointerdown with no preceding move: show the
             // tooltip for the tapped category right away.
-            onpointerdown: move |evt| track_pointer(&evt, ctx, mounted, hit.clone()),
+            onpointerdown: move |evt| {
+                pointer_focus.set(true);
+                track_pointer(&evt, ctx, mounted, hit.clone());
+            },
+            // Keyboard focus (Tab) shows the first point at once, like
+            // shadcn's `accessibilityLayer`. A pointer-initiated focus
+            // (`pointerdown` came first) does not: the pointer already picks
+            // its own datum, and a tap-focus must not jump to the first one.
+            onfocus: move |_| {
+                let from_pointer = *pointer_focus.peek();
+                pointer_focus.set(false);
+                if focus_opens_tooltip(from_pointer, props.keyboard, n) {
+                    ctx.take_over_by_keyboard();
+                    active_index.set(Some(0));
+                }
+            },
             // A mouse leaving closes the tooltip. A finger lifting fires the
             // same event but must not: a tapped tooltip stays until the next
             // tap elsewhere (`onblur` below).
@@ -634,7 +713,10 @@ pub fn Chart(props: ChartProps) -> Element {
             onpointercancel: move |_| ctx.clear(),
             // Focus left the chart (tab away, or a tap elsewhere -- a tap on
             // the chart focuses its wrapper): close whatever is open.
-            onblur: move |_| ctx.clear(),
+            onblur: move |_| {
+                pointer_focus.set(false);
+                ctx.clear();
+            },
             onkeydown: move |evt| {
                 if !props.keyboard || n == 0 {
                     return;
@@ -642,12 +724,7 @@ pub fn Chart(props: ChartProps) -> Element {
                 let key = evt.key();
                 // The keyboard now drives: the tooltip hangs off the data
                 // point, not a stale pointer position.
-                let take_over = || {
-                    let mut cursor = ctx.cursor;
-                    if cursor() != Cursor::None {
-                        cursor.set(Cursor::None);
-                    }
-                };
+                let take_over = || ctx.take_over_by_keyboard();
                 if key == Key::Home {
                     take_over();
                     active_index.set(Some(0));
@@ -681,10 +758,15 @@ pub fn Chart(props: ChartProps) -> Element {
                 "aria-label": "{props.aria_label}",
                 view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
                 style: svg_style(text_scale, fit.then_some(props.height)),
-                // Fit mode: top-left aligned, so the pre-measure render (the
-                // props' `width`, possibly wider than the box) never centres.
-                preserve_aspect_ratio: fit.then_some("xMinYMin meet"),
+                // Fit mode, pre-measure: stretch the props-width viewBox to the
+                // container (height is already exact, so only x is scaled --
+                // marks land where the measured render puts them, text is
+                // hidden by the stylesheet meanwhile). Measured: the viewBox
+                // is the box, `meet` is then an identity (and a safe fallback
+                // under the minimum logical width).
+                preserve_aspect_ratio: fit.then_some(if pending { "none" } else { "xMinYMin meet" }),
                 "data-fit": fit.then_some("width"),
+                "data-measured": fit.then_some(if pending { "false" } else { "true" }),
                 // Which way touch may scrub (`touch-action` in the themed
                 // stylesheet): a horizontal bar chart scrubs along y.
                 "data-bars": horizontal_bars.then_some("horizontal"),
@@ -773,6 +855,14 @@ pub fn Chart(props: ChartProps) -> Element {
                         }
                     }
 
+                    // The hovered point's dot on every series (shadcn's
+                    // Recharts `activeDot`), above the marks and the cursor.
+                    // A line chart that draws its own dots enlarges the
+                    // active one instead (`series::line`).
+                    if show_active_dots {
+                        {series::active_dot::render(&ctx_layout)}
+                    }
+
                     // Hit bands are no longer what drives hover (the pointer
                     // handler on the wrapper resolves the nearest category
                     // from coordinates -- `pointer.rs`); they stay as the
@@ -852,6 +942,16 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
+/// Whether a focus event opens the tooltip at the first point: only focus the
+/// keyboard moved there (a Tab, or a programmatic focus -- `:focus-visible`'s
+/// own heuristic), on a chart whose keyboard layer is on and that has data.
+/// Focus a pointer caused (`from_pointer`: its `pointerdown` came first) never
+/// does -- the pointer picks its own datum, and a tap must not jump to the
+/// first one.
+fn focus_opens_tooltip(from_pointer: bool, keyboard: bool, n: usize) -> bool {
+    !from_pointer && keyboard && n > 0
+}
+
 /// The narrowest logical width [`ChartSize::resolve`] follows in fit mode: a
 /// container narrower than this (a collapsed or hidden one) still gets a
 /// layout with a positive plot, drawn scaled down instead.
@@ -867,6 +967,9 @@ struct ChartSize {
     text_scale: f64,
     /// Whether fit mode is in effect (requested *and* a Cartesian kind).
     fit: bool,
+    /// Fit mode with no usable measurement yet (the server and the first
+    /// client render): drawn from the props' size, stretched to the box.
+    pending: bool,
 }
 
 impl ChartSize {
@@ -885,6 +988,7 @@ impl ChartSize {
                 height,
                 text_scale: 1.0,
                 fit,
+                pending: false,
             },
             _ => ChartSize {
                 width,
@@ -895,6 +999,7 @@ impl ChartSize {
                     text_scale(width, measured)
                 },
                 fit,
+                pending: fit,
             },
         }
     }
@@ -978,7 +1083,7 @@ fn adopt_measured_width(slot: &mut Signal<Option<f64>>, width: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chart::{ChartConfig, ChartContainer, ChartDatum};
+    use crate::chart::{ChartConfig, ChartContainer, ChartDatum, ChartTooltip};
     use dioxus_core::NoOpMutations;
 
     fn sample_config() -> ChartConfig {
@@ -1011,6 +1116,12 @@ mod tests {
         keyboard: bool,
         #[props(default)]
         fit_width: bool,
+        #[props(default)]
+        default_index: Option<usize>,
+        #[props(default)]
+        line_dots: bool,
+        #[props(default)]
+        with_tooltip: bool,
     }
 
     #[component]
@@ -1025,6 +1136,14 @@ mod tests {
                     stacked: props.stacked,
                     keyboard: props.keyboard,
                     fit_width: props.fit_width,
+                    default_index: props.default_index,
+                    line: crate::chart::LineOptions {
+                        dots: props.line_dots,
+                        ..Default::default()
+                    },
+                }
+                if props.with_tooltip {
+                    ChartTooltip {}
                 }
             }
         }
@@ -1040,18 +1159,34 @@ mod tests {
     }
 
     fn render_with(kind: ChartKind, stacked: bool, keyboard: bool, fit_width: bool) -> String {
-        let mut dom = VirtualDom::new_with_props(
-            Harness,
-            HarnessProps {
-                kind,
-                stacked,
-                keyboard,
-                fit_width,
-            },
-        );
+        render_props(HarnessProps {
+            kind,
+            stacked,
+            keyboard,
+            fit_width,
+            default_index: None,
+            line_dots: false,
+            with_tooltip: false,
+        })
+    }
+
+    fn render_props(props: HarnessProps) -> String {
+        let mut dom = VirtualDom::new_with_props(Harness, props);
         dom.rebuild_in_place();
         dom.render_immediate(&mut NoOpMutations);
         dioxus_ssr::render(&dom)
+    }
+
+    fn render_default(kind: ChartKind, default_index: Option<usize>, line_dots: bool) -> String {
+        render_props(HarnessProps {
+            kind,
+            stacked: false,
+            keyboard: true,
+            fit_width: false,
+            default_index,
+            line_dots,
+            with_tooltip: true,
+        })
     }
 
     #[test]
@@ -1179,13 +1314,155 @@ mod tests {
         // First render: the props' default 600x300 viewBox, as without fit...
         assert!(html.contains(r#"viewBox="0 0 600 300""#), "{html}");
         assert!(html.contains("--dx-chart-text-scale: 1"), "{html}");
-        // ...but the svg is already exactly `height` CSS px tall, top-left aligned.
+        // ...but the svg is already exactly `height` CSS px tall and, being
+        // unmeasured, stretched across the box (nothing left-aligned, no
+        // shrunken text) with its text held back until the measured render.
         assert!(html.contains("height: 300px"), "{html}");
+        assert!(html.contains(r#"preserveAspectRatio="none""#), "{html}");
+        assert!(html.contains(r#"data-fit="width""#), "{html}");
+        assert!(html.contains(r#"data-measured="false""#), "{html}");
+    }
+
+    #[test]
+    fn fit_mode_is_pending_until_a_usable_width_is_measured() {
+        for measured in [None, Some(0.0), Some(-1.0), Some(f64::NAN)] {
+            let s = ChartSize::resolve(700.0, 250.0, true, measured);
+            assert!(s.pending, "{measured:?}");
+        }
+        let s = ChartSize::resolve(700.0, 250.0, true, Some(390.0));
+        assert!(!s.pending, "measured");
+        // Only fit mode can be pending: the default mode never is.
+        assert!(!ChartSize::resolve(600.0, 300.0, false, None).pending);
+    }
+
+    #[test]
+    fn a_measured_fit_chart_is_not_stretched() {
+        // The svg attrs are a pure function of `pending`: a measured chart
+        // (viewBox == box) uses `meet`, an identity there, as a safe fallback
+        // below the minimum logical width. Pinned through the one place both
+        // come from.
+        let (pending, measured) = (
+            ChartSize::resolve(700.0, 250.0, true, None),
+            ChartSize::resolve(700.0, 250.0, true, Some(1230.0)),
+        );
+        assert!(pending.pending && pending.width == 700.0);
+        assert!(!measured.pending && measured.width == 1230.0);
+    }
+
+    #[test]
+    fn keyboard_focus_opens_the_first_point_but_pointer_focus_does_not() {
+        assert!(focus_opens_tooltip(false, true, 6), "Tab");
+        assert!(!focus_opens_tooltip(true, true, 6), "tap / click focus");
+        assert!(!focus_opens_tooltip(false, false, 6), "keyboard layer off");
+        assert!(!focus_opens_tooltip(false, true, 0), "no data");
+    }
+
+    #[test]
+    fn default_index_opens_the_tooltip_on_the_server_render() {
+        let html = render_default(ChartKind::Area, Some(1), false);
+        assert!(html.contains(r#"data-state="open""#), "{html}");
+        // February's label and desktop value are in the tooltip...
         assert!(
-            html.contains(r#"preserveAspectRatio="xMinYMin meet""#),
+            html.contains(r#"data-slot="chart-tooltip-label""#),
             "{html}"
         );
-        assert!(html.contains(r#"data-fit="width""#), "{html}");
+        assert!(html.contains("305"), "{html}");
+        // ...with the cursor and the active dots at that datum.
+        assert!(html.contains(r#"data-slot="chart-cursor-line""#), "{html}");
+        assert!(html.contains(r#"data-index="1""#));
+    }
+
+    #[test]
+    fn default_index_is_closed_when_unset_or_past_the_data() {
+        for default in [None, Some(2), Some(99)] {
+            let html = render_default(ChartKind::Area, default, false);
+            assert!(html.contains(r#"data-state="closed""#), "{default:?}");
+            assert!(!html.contains("chart-cursor-line"), "{default:?}");
+            assert!(
+                !html.contains(r#"data-slot="chart-active-dot""#),
+                "{default:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_index_works_for_every_family() {
+        for kind in [
+            ChartKind::Area,
+            ChartKind::Bar,
+            ChartKind::Line,
+            ChartKind::Pie,
+            ChartKind::Radar,
+            ChartKind::RadialBar,
+        ] {
+            let html = render_default(kind, Some(0), false);
+            assert!(html.contains(r#"data-state="open""#), "{kind:?}: {html}");
+        }
+    }
+
+    /// `data-slot="chart-active-dot"` circles in `html`, as (series, index).
+    fn active_dots(html: &str) -> Vec<(String, String)> {
+        let attr = |tag: &str, name: &str| {
+            let key = format!(r#"{name}=""#);
+            let at = tag.find(&key).unwrap() + key.len();
+            tag[at..at + tag[at..].find('"').unwrap()].to_string()
+        };
+        html.split("<circle ")
+            .skip(1)
+            .map(|t| &t[..t.find('>').unwrap()])
+            .filter(|t| t.contains(r#"data-slot="chart-active-dot""#))
+            .map(|t| (attr(t, "data-series"), attr(t, "data-index")))
+            .collect()
+    }
+
+    #[test]
+    fn area_and_line_draw_an_active_dot_per_series_with_a_value() {
+        for kind in [ChartKind::Area, ChartKind::Line] {
+            // January has both values; February's mobile is a gap.
+            let both = active_dots(&render_default(kind, Some(0), false));
+            assert_eq!(
+                both,
+                vec![
+                    ("desktop".to_string(), "0".to_string()),
+                    ("mobile".to_string(), "0".to_string())
+                ],
+                "{kind:?}"
+            );
+            let gap = active_dots(&render_default(kind, Some(1), false));
+            assert_eq!(
+                gap,
+                vec![("desktop".to_string(), "1".to_string())],
+                "{kind:?}"
+            );
+            // Nothing active: no dots.
+            assert!(active_dots(&render_default(kind, None, false)).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_active_dot_is_r4_in_the_series_color() {
+        let html = render_default(ChartKind::Area, Some(0), false);
+        let dot = html
+            .split("<circle ")
+            .skip(1)
+            .map(|t| &t[..t.find('>').unwrap()])
+            .find(|t| t.contains(r#"data-series="desktop""#) && t.contains("chart-active-dot"))
+            .expect("desktop's active dot");
+        assert!(dot.contains(r#"r="4""#), "{dot}");
+        assert!(
+            dot.contains("--series-color: var(--color-desktop)"),
+            "{dot}"
+        );
+    }
+
+    #[test]
+    fn a_line_chart_with_its_own_dots_and_bars_use_no_active_dot_layer() {
+        // Line `dots: true` enlarges its own active dot instead (`series::line`).
+        let html = render_default(ChartKind::Line, Some(0), true);
+        assert!(active_dots(&html).is_empty(), "{html}");
+        assert!(!html.contains("chart-active-dots"), "{html}");
+        let bar = render_default(ChartKind::Bar, Some(0), false);
+        assert!(!bar.contains("chart-active-dots"), "{bar}");
     }
 
     #[test]

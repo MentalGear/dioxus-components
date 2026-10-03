@@ -115,13 +115,44 @@
 
   /* Touch scrubs the tooltip along the category axis (see the tooltip
    * section): horizontal drags go to the chart, vertical ones still scroll
-   * the page. */
-  touch-action: pan-y;
+   * the page. `pinch-zoom` stays on: `pan-y` alone would turn the browser's
+   * pinch-zoom off over every chart (WCAG 1.4.4 resize). */
+  touch-action: pan-y pinch-zoom;
 }
 
 .dx-chart [data-slot="chart-grid"] line {
   stroke: var(--dx-chart-grid);
   stroke-width: 1;
+}
+
+/* `fit_width` before the first measurement (server render, pre-hydration, the
+ * first client render): the viewBox is the props' size stretched to the box
+ * (`preserveAspectRatio="none"`) -- exact height, so only x is scaled, and
+ * every mark lands within a few px of where the measured render puts it.
+ * What a non-uniform stretch would distort is made safe: strokes keep their
+ * width (`non-scaling-stroke`) and the text -- which would be stretched
+ * sideways -- is held back and fades in when the measured render replaces
+ * it (`data-measured="true"`). The result is a full-width chart of the final
+ * height from the first paint instead of a left-aligned strip, or ~5px text
+ * on a phone, that jumps. */
+.dx-chart [data-slot="chart-svg"][data-fit="width"] text {
+  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
+}
+
+.dx-chart [data-slot="chart-svg"][data-fit="width"][data-measured="false"] text {
+  opacity: 0;
+}
+
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-line"],
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-grid"] line,
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-cursor-line"] {
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-chart [data-slot="chart-svg"][data-fit="width"] text {
+    transition: none;
+  }
 }
 
 /* Base text fill for EVERY svg `<text>` a chart draws. An SVG text node with
@@ -136,8 +167,14 @@
   fill: var(--secondary-color-4);
 }
 
+/* Axis ticks are the muted tier (shadcn: `muted-foreground`), a step below
+ * the values and labels the chart itself draws (`--secondary-color-4`, the
+ * base rule above). `--secondary-color-5` is #707070 on the white card
+ * (4.95:1) and #a1a1a1 on the dark card #141313 (7.18:1) -- both clear 4.5:1
+ * -- whereas the token this used to read, `--dx-chart-axis-text`, is the body
+ * text colour. That token stays for the cursor, which is not a tick. */
 .dx-chart [data-slot="chart-axis"] text {
-  fill: var(--dx-chart-axis-text);
+  fill: var(--secondary-color-5);
   font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
@@ -175,6 +212,19 @@
   fill: var(--series-color);
   stroke: var(--primary-color-1);
   stroke-width: 1.5;
+}
+
+/* The hovered point's dot on every series (`chart-active-dot`, area and line
+ * charts -- shadcn/Recharts' `activeDot`, r = 4): the series color with a ring
+ * in the card's own surface color so it reads against the line and the fill
+ * in both themes (same light/dark pair as `card/style.css`'s background). The
+ * ring scales with the text compensation, like the radius the primitive sets
+ * (`r` = 4 x scale), so the dot keeps its CSS size on a shrunken drawing. */
+.dx-chart [data-slot="chart-active-dot"] {
+  fill: var(--series-color);
+  pointer-events: none;
+  stroke: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+  stroke-width: calc(2px * var(--dx-chart-text-scale, 1));
 }
 
 /* The hover/keyboard crosshair: a dashed line for area/line charts
@@ -317,7 +367,7 @@
  * the perpendicular direction still scrolls the page. A horizontal bar
  * chart's categories run along y, so it scrubs vertically instead. */
 .dx-chart [data-slot="chart-svg"][data-bars="horizontal"] {
-  touch-action: pan-x;
+  touch-action: pan-x pinch-zoom;
 }
 
 .dx-chart-tooltip [data-slot="chart-tooltip-label"] {
@@ -464,7 +514,19 @@
 }
 
 /* A ChartTooltipProps::formatter-built total row (chart_tooltip gallery's
- * `advanced` demo). */
+ * `advanced` demo). Its item becomes a three-column grid (swatch, name,
+ * value) with the total spanning a row of its own beneath: a plain flex row
+ * would keep the total beside the value, and `flex-wrap` would size the
+ * tooltip to all four pieces on one line. */
+.dx-chart-tooltip [data-slot="chart-tooltip-item"]:has(> [data-slot="chart-tooltip-total"]) {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-item"] > [data-slot="chart-tooltip-total"] {
+  grid-column: 1 / -1;
+}
+
 .dx-chart-tooltip [data-slot="chart-tooltip-total"] {
   display: flex;
   flex-basis: 100%;

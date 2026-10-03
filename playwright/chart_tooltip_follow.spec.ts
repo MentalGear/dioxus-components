@@ -10,7 +10,9 @@ import { gotoHydrated } from "./hydration";
 // between positions but never flying in on (re)appearing. Polar charts follow
 // the pointer on both axes except a pie, which anchors at the slice. A touch
 // tap shows it and it stays until the next tap elsewhere; the keyboard hangs
-// it off the data point.
+// it off the data point; Tab-focusing the chart opens it at the first point
+// (a click's own focus does not); `default_index` shows it open from the first
+// render; a pointer result that lands after the tooltip closed is dropped.
 //
 // Motion-sensitive assertions run with `reducedMotion: "reduce"` so a
 // position can be read the moment it is set (the stylesheet turns the
@@ -231,9 +233,8 @@ test.describe("Cartesian tooltip follows the pointer", () => {
   test("keyboard: arrows hang the tooltip off the data point, flipped and clamped like the pointer's", async ({ page }) => {
     const m = await measure(page);
     const tooltip = tooltipOf(page);
-    await chartOf(page).focus();
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
+    await chartOf(page).focus(); // opens the first point (keyboard focus)
+    await page.keyboard.press("ArrowRight"); // -> the 2nd category
     await expect(tooltip).toHaveAttribute("data-state", "open");
     const px = m.pointX(1);
     await expect
@@ -625,5 +626,237 @@ test.describe("Touch", () => {
     expect(seen.size, "every category was visited during the drag").toBe(m.bands.length);
     await page.waitForTimeout(300);
     await expect(tooltip, "stays after lifting").toHaveAttribute("data-state", "open");
+  });
+});
+
+const tooltipsGallery = `${BASE_URL}/component/?name=chart_tooltip&`;
+
+/** Every chart_tooltip demo, as `[variant, preview-frame selector]` (`main` owns the un-suffixed frame). */
+const TOOLTIP_VARIANTS = [
+  "main",
+  "indicator_line",
+  "indicator_none",
+  "label_none",
+  "label_custom",
+  "label_formatter",
+  "formatter",
+  "icons",
+  "advanced",
+].map((v) => [v, v === "main" ? "#component-preview-frame" : `#component-preview-frame-${v}`] as const);
+
+test.describe("A late pointer result never reopens a closed tooltip", () => {
+  test("a pointermove and a pointerleave in one task leave it closed, every time", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await gotoHydrated(page, area, { timeout: 20 * 60 * 1000 });
+    await chartOf(page).scrollIntoViewIfNeeded();
+    // The rect read behind a pointermove is async; a close in the same task
+    // used to be overtaken by it (30/30 stuck open before the fix).
+    const stuck = await page.evaluate(async () => {
+      const wrapper = document.querySelector('#component-preview-frame [data-slot="chart"]')!;
+      const svg = wrapper.querySelector("svg")!;
+      const tip = wrapper.parentElement!.querySelector('[data-slot="chart-tooltip"]')!;
+      const r = wrapper.getBoundingClientRect();
+      let stuck = 0;
+      for (let i = 0; i < 30; i++) {
+        const o = { bubbles: true, clientX: r.x + 60 + i * 8, clientY: r.y + 60, pointerType: "mouse", pointerId: 1, isPrimary: true };
+        svg.dispatchEvent(new PointerEvent("pointermove", o));
+        wrapper.dispatchEvent(new PointerEvent("pointerleave", { ...o, bubbles: false, clientX: r.x - 50 }));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (tip.getAttribute("data-state") === "open") stuck++;
+      }
+      return stuck;
+    });
+    expect(stuck, "tooltip stuck open after move+leave").toBe(0);
+  });
+
+  test("a real hover afterwards still opens it", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await gotoHydrated(page, area, { timeout: 20 * 60 * 1000 });
+    const m = await measure(page);
+    await page.evaluate(() => {
+      const wrapper = document.querySelector('#component-preview-frame [data-slot="chart"]')!;
+      const r = wrapper.getBoundingClientRect();
+      const o = { bubbles: true, clientX: r.x + 80, clientY: r.y + 60, pointerType: "mouse", pointerId: 1, isPrimary: true };
+      wrapper.querySelector("svg")!.dispatchEvent(new PointerEvent("pointermove", o));
+      wrapper.dispatchEvent(new PointerEvent("pointerleave", { ...o, bubbles: false }));
+    });
+    await page.mouse.move(m.chart.x + m.pointX(1), m.chart.y + m.plot.top + 40);
+    await expect(tooltipOf(page)).toHaveAttribute("data-state", "open");
+  });
+});
+
+test.describe("defaultIndex: the tooltip starts open", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await gotoHydrated(page, tooltipsGallery, { timeout: 20 * 60 * 1000 });
+  });
+
+  test("every tooltip demo shows its tooltip, visible and inside its chart, with no interaction", async ({ page }) => {
+    for (const [variant, frame] of TOOLTIP_VARIANTS) {
+      const tooltip = tooltipOf(page, frame);
+      await tooltip.scrollIntoViewIfNeeded();
+      await expect(tooltip, `${variant}: open on load`).toHaveAttribute("data-state", "open");
+      await expect(tooltip, `${variant}: placed once measured`).toHaveAttribute("data-placed", "true");
+      await expect(tooltip, `${variant}: visible`).toBeVisible();
+      await expectInside(tooltip, await box(chartOf(page, frame)), `${variant}: default tooltip`);
+    }
+  });
+
+  test("it hangs off the default data point with the usual offset and flip rules", async ({ page }) => {
+    const frame = "#component-preview-frame";
+    const m = await measure(page, frame);
+    const tooltip = tooltipOf(page, frame);
+    await expect(tooltip).toHaveAttribute("data-placed", "true");
+    // `default_index: 2` in the demos: x is that category's point + 10px.
+    await expectTooltipFollows(tooltip, m.chart, { x: m.pointX(2), y: 0 }, { x: true, y: false }, "default index 2");
+    await expect(tooltip.locator('[data-slot="chart-tooltip-label"]')).toHaveText(/./);
+  });
+
+  test("the first hover takes over; once it closes it stays closed", async ({ page }) => {
+    const frame = "#component-preview-frame";
+    const m = await measure(page, frame);
+    const tooltip = tooltipOf(page, frame);
+    const label = tooltip.locator('[data-slot="chart-tooltip-label"]');
+    await expect(tooltip).toHaveAttribute("data-state", "open");
+    const initial = await label.textContent();
+    await page.mouse.move(m.chart.x + m.pointX(4), m.chart.y + m.plot.top + 40);
+    await expect(label).not.toHaveText(initial!);
+    await page.mouse.move(0, 0);
+    await expect(tooltip).toHaveAttribute("data-state", "closed");
+    await page.waitForTimeout(300);
+    await expect(tooltip, "the default is not re-applied").toHaveAttribute("data-state", "closed");
+  });
+
+  test("the server render already has it open (before the wasm loads)", async ({ request }) => {
+    // Plain HTTP, no browser: what an SSG/SSR host sends before any wasm runs.
+    const html = await (await request.get(`${BASE_URL}/component/chart_tooltip/`)).text();
+    test.skip(!html.includes('data-slot="chart-tooltip"'), "a client-rendered dev server sends no chart markup");
+    const tooltips = (html.match(/<div[^>]*>/g) ?? []).filter((tag) => tag.includes('data-slot="chart-tooltip"'));
+    expect(tooltips.length, "every tooltip demo is on the page").toBeGreaterThanOrEqual(TOOLTIP_VARIANTS.length);
+    expect(tooltips.filter((tag) => tag.includes('data-state="open"')).length, "and each one is open").toBe(tooltips.length);
+  });
+});
+
+test.describe("Active dot on the hovered point", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+  });
+
+  const dotsOf = (page: Page, frame: string) => page.locator(frame).first().locator('[data-slot="chart-active-dot"]');
+
+  test("area: one r=4 dot per series at the hovered category, ringed, gone when the pointer leaves", async ({ page }) => {
+    await gotoHydrated(page, `${BASE_URL}/component/?name=area_chart&`, { timeout: 20 * 60 * 1000 });
+    const frame = "#component-preview-frame-stacked"; // two series
+    const m = await measure(page, frame);
+    const dots = dotsOf(page, frame);
+    await expect(dots).toHaveCount(0);
+    await page.mouse.move(m.chart.x + m.pointX(2), m.chart.y + m.plot.top + 50);
+    await expect(dots).toHaveCount(2);
+    for (let s = 0; s < 2; s++) {
+      const dot = dots.nth(s);
+      const d = await box(dot);
+      // r = 4 plus a 2px ring (stroke centred on the edge): ~10px across, at least 8.
+      expect(d.width, `series ${s}: dot size`).toBeGreaterThanOrEqual(8);
+      expect(d.width).toBeLessThanOrEqual(12);
+      expect(Math.abs(d.x + d.width / 2 - (m.chart.x + m.pointX(2))), `series ${s}: on the category's point`).toBeLessThanOrEqual(1.5);
+      const style = await dot.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { fill: cs.fill, stroke: cs.stroke, strokeWidth: cs.strokeWidth, r: el.getAttribute("r") };
+      });
+      expect(style.r).toBe("4");
+      expect(style.fill, `series ${s}: series color`).not.toMatch(/^(none|rgb\(0, 0, 0\))$/);
+      expect(parseFloat(style.strokeWidth), "ring").toBeCloseTo(2, 0);
+      expect(style.stroke, "ring is the card surface, not the series color").not.toBe(style.fill);
+    }
+    // The two series' dots sit at different heights (their own values).
+    const [a, b] = [await box(dots.nth(0)), await box(dots.nth(1))];
+    expect(Math.abs(a.y - b.y)).toBeGreaterThan(2);
+    await page.mouse.move(0, 0);
+    await expect(dots).toHaveCount(0);
+  });
+
+  test("line: a dot on the hovered point; none beside it; a chart with its own dots keeps its own", async ({ page }) => {
+    await gotoHydrated(page, `${BASE_URL}/component/?name=line_chart&`, { timeout: 20 * 60 * 1000 });
+    const frame = "#component-preview-frame";
+    const m = await measure(page, frame);
+    const dots = dotsOf(page, frame);
+    await page.mouse.move(m.chart.x + m.pointX(3), m.chart.y + m.plot.top + 50);
+    await expect(dots).toHaveCount(1);
+    const d = await box(dots.first());
+    expect(Math.abs(d.x + d.width / 2 - (m.chart.x + m.pointX(3)))).toBeLessThanOrEqual(1.5);
+    // `dots` variant draws its own dots (enlarged when active): no extra layer.
+    const own = "#component-preview-frame-dots";
+    const mo = await measure(page, own);
+    await page.mouse.move(mo.chart.x + mo.pointX(3), mo.chart.y + mo.plot.top + 50);
+    await expect(page.locator(own).locator('[data-slot="chart-dot"][data-active="true"]')).toHaveCount(1);
+    await expect(dotsOf(page, own)).toHaveCount(0);
+  });
+
+  test("keyboard stepping moves the dot with the cursor", async ({ page }) => {
+    await gotoHydrated(page, area, { timeout: 20 * 60 * 1000 });
+    const m = await measure(page);
+    await chartOf(page).focus();
+    const dot = dotsOf(page, "#component-preview-frame");
+    await expect(dot).toHaveCount(1);
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(async () => Math.abs((await box(dot.first())).x + (await box(dot.first())).width / 2 - (m.chart.x + m.pointX(1))))
+      .toBeLessThanOrEqual(1.5);
+  });
+});
+
+test.describe("Keyboard focus opens the first point", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await gotoHydrated(page, area, { timeout: 20 * 60 * 1000 });
+  });
+
+  test("Tab into the chart shows the first point at once; Tab away closes it", async ({ page }) => {
+    const m = await measure(page);
+    const tooltip = tooltipOf(page);
+    // Reach the chart the way a keyboard user does: Tab until it holds focus.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const chart = chartOf(page);
+    let focused = false;
+    // (the docs page's sidebar alone is ~85 tab stops ahead of the chart)
+    for (let i = 0; i < 200 && !focused; i++) {
+      await page.keyboard.press("Tab");
+      focused = await chart.evaluate((el) => el === document.activeElement);
+    }
+    expect(focused, "Tab reaches the chart").toBe(true);
+    await expect(tooltip).toHaveAttribute("data-state", "open");
+    await expectTooltipFollows(tooltip, m.chart, { x: m.pointX(0), y: 0 }, { x: true, y: false }, "first point");
+    await page.keyboard.press("Tab");
+    await expect(tooltip).toHaveAttribute("data-state", "closed");
+  });
+
+  test("a click's own focus does not jump to the first point", async ({ page }) => {
+    const tooltip = tooltipOf(page);
+    const label = tooltip.locator('[data-slot="chart-tooltip-label"]');
+    // The first point's label, from the keyboard.
+    await chartOf(page).focus();
+    await expect(tooltip).toHaveAttribute("data-state", "open");
+    const first = await label.textContent();
+    await page.keyboard.press("Tab");
+    await expect(tooltip).toHaveAttribute("data-state", "closed");
+    // Tab moved focus on and may have scrolled the page: measure again.
+    const m = await measure(page);
+    await page.evaluate(() => {
+      const label = document.querySelector('#component-preview-frame [data-slot="chart-tooltip"]')!;
+      (window as any).__labels = [];
+      new MutationObserver(() => (window as any).__labels.push(label.textContent)).observe(label, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["data-state"],
+      });
+    });
+    await page.mouse.click(m.chart.x + m.pointX(3), m.chart.y + m.plot.top + 50);
+    await expect(tooltip).toHaveAttribute("data-state", "open");
+    await expect(label).not.toHaveText(first!);
+    await page.waitForTimeout(150);
+    const seen = (await page.evaluate(() => (window as any).__labels as string[])).filter((t) => t.includes(first!));
+    expect(seen, "the first point never flashed while the click was handled").toEqual([]);
   });
 });

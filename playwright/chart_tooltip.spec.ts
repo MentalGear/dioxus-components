@@ -60,6 +60,19 @@ test.describe("render: every variant shows a labelled chart and opens its toolti
   }
 });
 
+test.describe("default_index: every variant shows its tooltip open before any interaction", () => {
+  // shadcn's Tooltips tab shows each tooltip already open (`defaultIndex`).
+  for (const variant of VARIANTS) {
+    test(variant, async ({ page }) => {
+      await goto(page);
+      const tooltip = frameOf(page, variant).locator('[data-slot="chart-tooltip"]');
+      await expect(tooltip).toHaveAttribute("data-state", "open");
+      await expect(tooltip).toBeVisible();
+      await expect(tooltip.locator('[data-slot="chart-tooltip-item"]')).toHaveCount(2);
+    });
+  }
+});
+
 test.describe("Axe automated scan: every variant, tooltip open", () => {
   for (const variant of VARIANTS) {
     test(variant, async ({ page }) => {

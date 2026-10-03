@@ -14,7 +14,19 @@
 //! chart without any event on the chart itself). Reading the rect is async
 //! in Dioxus, so the position lands a microtask after the event. The datum
 //! and the position are published together from that one task, so the
-//! tooltip's first visible frame is already at the pointer.
+//! tooltip's first visible frame is already at the pointer. That task is
+//! guarded by the chart's `PointerGate` (`context.rs`): a close that happens
+//! while the rect is being read voids it, so a late result can never reopen
+//! a tooltip the user just closed.
+//!
+//! ## Scaled ancestors
+//!
+//! The rect is in screen pixels, but the tooltip is placed in the chart
+//! box's own layout pixels; under `transform: scale(..)` or CSS `zoom` they
+//! differ. [`local_position`] therefore maps the pointer's *fraction* of the
+//! rect onto the layout box (whose size comes from the wrapper's
+//! `onresize`, the one source of `ChartContext::box_size`), so the hit test,
+//! the cursor and the tooltip all live in one frame.
 //!
 //! ## Every family resolves the datum from coordinates
 //!
@@ -160,9 +172,41 @@ impl HitTest {
     }
 }
 
+/// The pointer's position in the chart box's own (layout) CSS pixels.
+///
+/// `client` and `origin`/`rect` are in *screen* pixels -- a bounding rect is
+/// measured after every ancestor `transform: scale(...)` / CSS `zoom` -- while
+/// the tooltip is placed with a `transform: translate(..)` in the box's own
+/// layout pixels, inside that same scaled subtree. The two differ by the
+/// ancestors' scale `rect / layout`, so the pointer's *fraction* of the rect
+/// is carried over to the layout box: `fraction * layout`. With no scaling
+/// (`rect == layout`) this is exactly `client - origin`.
+pub(crate) fn local_position(
+    client: (f64, f64),
+    origin: (f64, f64),
+    rect: (f64, f64),
+    layout: (f64, f64),
+) -> (f64, f64) {
+    (
+        (client.0 - origin.0) / rect.0 * layout.0,
+        (client.1 - origin.1) / rect.1 * layout.1,
+    )
+}
+
 /// Handle one pointer event (`pointermove`/`pointerdown`) on the chart
 /// wrapper: measure the wrapper, then publish the pointer position and, for
 /// category charts, the datum under it.
+///
+/// The measurement is async, so the event takes a [`Ticket`] first and the
+/// result is applied only if the chart's `PointerGate` still admits it: a
+/// close (leave/blur/cancel/keyboard) that happened meanwhile wins.
+///
+/// The chart box's *layout* size is read from `ChartContext::box_size`,
+/// written only by the wrapper's `onresize` (one measure, one box); this
+/// handler adopts the rect's size for it only while it is still unmeasured,
+/// where scale `1` is the best available guess.
+///
+/// [`Ticket`]: crate::chart::context::Ticket
 pub(crate) fn track_pointer(
     evt: &Event<PointerData>,
     chart: ChartContext,
@@ -173,17 +217,29 @@ pub(crate) fn track_pointer(
     let Some(element) = mounted.peek().clone() else {
         return;
     };
+    let ticket = chart.begin_pointer();
     spawn(async move {
         let Ok(rect) = element.get_client_rect().await else {
             return;
         };
-        let size = (rect.width(), rect.height());
-        if !(size.0 > 0.0 && size.1 > 0.0) {
+        if !chart.admit_pointer(ticket) {
             return;
         }
-        let (px, py) = (client.x - rect.origin.x, client.y - rect.origin.y);
-        chart.set_box_size(size);
-        match hit.resolve(px, py, size) {
+        let rect_size = (rect.width(), rect.height());
+        if !(rect_size.0 > 0.0 && rect_size.1 > 0.0) {
+            return;
+        }
+        let layout = chart.box_size.peek().unwrap_or_else(|| {
+            chart.set_box_size(rect_size);
+            rect_size
+        });
+        let (px, py) = local_position(
+            (client.x, client.y),
+            (rect.origin.x, rect.origin.y),
+            rect_size,
+            layout,
+        );
+        match hit.resolve(px, py, layout) {
             Hit::Outside => chart.clear(),
             Hit::Index(i) => {
                 let mut active = chart.active_index;
@@ -281,6 +337,47 @@ mod tests {
         let b = (600.0, 300.0);
         assert_eq!(HitTest::None.resolve(10.0, 10.0, b), Hit::Unresolved);
         assert_eq!(columns().resolve(10.0, 10.0, (0.0, 0.0)), Hit::Unresolved);
+    }
+
+    #[test]
+    fn local_position_is_client_minus_origin_without_scaling() {
+        let p = local_position((130.0, 90.0), (100.0, 40.0), (300.0, 150.0), (300.0, 150.0));
+        assert_eq!(p, (30.0, 50.0));
+    }
+
+    #[test]
+    fn local_position_undoes_an_ancestor_scale() {
+        // `transform: scale(0.6)`: a 300x150 layout box measures 180x90 on
+        // screen. A pointer at the screen center of that rect is the layout
+        // center -- not (90, 45) layout px.
+        let p = local_position((190.0, 85.0), (100.0, 40.0), (180.0, 90.0), (300.0, 150.0));
+        assert_eq!(p, (150.0, 75.0));
+        // CSS `zoom: 1.5`: 450x225 on screen; the quarter point maps to the
+        // layout quarter point, not 1.5x too far.
+        let p = local_position(
+            (212.5, 96.25),
+            (100.0, 40.0),
+            (450.0, 225.0),
+            (300.0, 150.0),
+        );
+        assert!(
+            (p.0 - 75.0).abs() < 1e-9 && (p.1 - 37.5).abs() < 1e-9,
+            "{p:?}"
+        );
+    }
+
+    #[test]
+    fn a_scaled_pointer_resolves_to_the_same_category_as_an_unscaled_one() {
+        // The hit test sees layout px either way, so the scale cancels out.
+        let t = columns();
+        let layout = (600.0, 300.0);
+        let unscaled = local_position((300.0, 100.0), (0.0, 0.0), layout, layout);
+        let scaled = local_position((150.0, 50.0), (0.0, 0.0), (300.0, 150.0), layout);
+        assert_eq!(unscaled, scaled);
+        assert_eq!(
+            t.resolve(unscaled.0, unscaled.1, layout),
+            t.resolve(scaled.0, scaled.1, layout)
+        );
     }
 
     use std::f64::consts::{FRAC_PI_2, PI, TAU};

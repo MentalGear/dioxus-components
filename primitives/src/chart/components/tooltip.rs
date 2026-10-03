@@ -209,7 +209,9 @@ pub struct ChartTooltipProps {
 ///   `data-side-x="left"|"right"` and `data-side-y="top"|"bottom"` (which
 ///   side of its anchor the box is on; `left`/`top` mean it flipped),
 ///   `data-placed="true"|"false"` (`false` while an open tooltip is still
-///   waiting for its own size -- a stylesheet hides it then) and
+///   waiting for its own size or the chart's -- a stylesheet hides it then,
+///   which includes the server render of a chart with a
+///   [`crate::chart::ChartProps::default_index`]) and
 ///   `data-motion="true"|"false"` (whether a position change may animate:
 ///   `false` for the jump that first shows it).
 /// - `data-slot="chart-tooltip-label"`.
@@ -245,7 +247,11 @@ pub fn ChartTooltip(props: ChartTooltipProps) -> Element {
     // An active index is all it takes -- on the server that is never the
     // case, so the SSR tooltip is always closed.
     let open = active.is_some();
-    let is_placed = open && placed();
+    // Placed needs both measurements: its own size (`placed`) AND the chart
+    // box (`box_size`, from the chart's `onresize`). With only the first, a
+    // tooltip that is open from the start (`default_index`) could show for a
+    // frame at the neutral top-left and then slide to its anchor.
+    let is_placed = open && placed() && box_size.is_some();
     let motion = {
         let n = if is_placed {
             *placed_renders.peek() + 1
@@ -660,6 +666,17 @@ mod tests {
         );
         assert!(html.contains(r#"data-side-x="right""#));
         assert!(html.contains(r#"data-side-y="bottom""#));
+    }
+
+    #[test]
+    fn an_open_tooltip_stays_hidden_until_it_and_the_chart_are_measured() {
+        // The server render of an open tooltip (a `default_index`): open, but
+        // unmeasured, so `data-placed="false"` (the stylesheet hides it) and
+        // the neutral position -- no guessed placement to correct later.
+        let html = render(Some(0));
+        assert!(html.contains(r#"data-state="open""#), "{html}");
+        assert!(html.contains(r#"data-placed="false""#), "{html}");
+        assert!(html.contains("transform:translate(0px,0px)"), "{html}");
     }
 
     #[test]

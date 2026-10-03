@@ -104,6 +104,67 @@ pub(crate) enum Cursor {
     At(f64, f64),
 }
 
+/// Ordering guard for the asynchronous pointer pipeline
+/// (`components::pointer::track_pointer`).
+///
+/// A pointer event is turned into a position only after an *async* bounding
+/// rect read, so its result lands after the event handler returned. Anything
+/// that happens in between -- a `pointerleave`/`blur`/`pointercancel` that
+/// closes the tooltip, a key press that takes over, a newer move that
+/// already landed -- must win over that stale result, or it would reopen a
+/// tooltip the user just closed (a synthetic move + leave in one JS task
+/// left it stuck open every time). Two counters make that unable to happen:
+///
+/// - `epoch` is bumped by every close/takeover; a [`Ticket`] issued under an
+///   older epoch is rejected.
+/// - `issued`/`applied` order the moves: a result is applied only if it is
+///   newer than the last one applied, so results can arrive out of order
+///   without moving the tooltip backwards -- but, unlike "only the latest
+///   issued may land", a slow read never starves: if no newer result has
+///   landed yet, the older one still does.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) struct PointerGate {
+    epoch: u64,
+    issued: u64,
+    applied: u64,
+}
+
+/// A claim on the [`PointerGate`], taken when a pointer event fires and
+/// presented again when its async measurement finishes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct Ticket {
+    epoch: u64,
+    seq: u64,
+}
+
+impl PointerGate {
+    /// A pointer event fired: take the next ticket under the current epoch.
+    pub(crate) fn issue(&mut self) -> Ticket {
+        self.issued += 1;
+        Ticket {
+            epoch: self.epoch,
+            seq: self.issued,
+        }
+    }
+
+    /// The tooltip closed (or something else took over): every ticket issued
+    /// so far is void.
+    pub(crate) fn close(&mut self) {
+        self.epoch += 1;
+    }
+
+    /// The measurement behind `ticket` finished: may it be applied? `true`
+    /// at most once per ticket, and only while the epoch is unchanged and no
+    /// newer ticket was applied first.
+    pub(crate) fn admit(&mut self, ticket: Ticket) -> bool {
+        if ticket.epoch != self.epoch || ticket.seq <= self.applied {
+            return false;
+        }
+        self.applied = ticket.seq;
+        true
+    }
+}
+
 /// The state `ChartContainer` provides to every descendant -- fetch it
 /// with [`use_chart`]. `Copy` (like this crate's other root contexts, e.g.
 /// `slider`'s `SliderContext`) so every event handler and child component
@@ -149,11 +210,17 @@ pub struct ChartContext {
     /// The tooltip's own measured border-box size, for flip/clamp. `None`
     /// until measured; `ChartTooltip` assumes a typical size meanwhile.
     pub(crate) tip_size: Signal<Option<(f64, f64)>>,
+    /// Orders the async pointer measurements against closes -- see
+    /// [`PointerGate`]. Not reactive (nothing renders from it).
+    pub(crate) gate: CopyValue<PointerGate>,
 }
 
 impl ChartContext {
     /// Nothing is hovered or focused any more: close and forget the pointer.
+    /// Also voids every pointer measurement still in flight
+    /// ([`PointerGate::close`]), so a late result cannot reopen it.
     pub(crate) fn clear(self) {
+        self.release_pointer();
         let (mut active, mut cursor) = (self.active_index, self.cursor);
         if active().is_some() {
             active.set(None);
@@ -161,6 +228,38 @@ impl ChartContext {
         if cursor() != Cursor::None {
             cursor.set(Cursor::None);
         }
+    }
+
+    /// Void every pointer measurement still in flight, without touching the
+    /// open state: the keyboard (or a close) has the last word.
+    pub(crate) fn release_pointer(self) {
+        let mut gate = self.gate;
+        gate.write().close();
+    }
+
+    /// The keyboard drives from now on: forget the pointer (the tooltip then
+    /// hangs off the data point, not a stale position) and void any pointer
+    /// measurement still in flight.
+    pub(crate) fn take_over_by_keyboard(self) {
+        self.release_pointer();
+        let mut cursor = self.cursor;
+        if cursor() != Cursor::None {
+            cursor.set(Cursor::None);
+        }
+    }
+
+    /// A pointer event fired: claim the next [`Ticket`] (see [`PointerGate`]).
+    pub(crate) fn begin_pointer(self) -> Ticket {
+        let mut gate = self.gate;
+        let ticket = gate.write().issue();
+        ticket
+    }
+
+    /// The measurement behind `ticket` finished: whether it may be applied.
+    pub(crate) fn admit_pointer(self, ticket: Ticket) -> bool {
+        let mut gate = self.gate;
+        let admitted = gate.write().admit(ticket);
+        admitted
     }
 
     /// Record the chart box's size, only when it changed (a stored-equal
@@ -207,3 +306,63 @@ pub fn use_chart() -> ChartContext {
 // The success path (`use_chart` returning the provided context) is
 // exercised by every other test in this module tree that renders a
 // `ChartContainer` around something that calls it.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_close_voids_a_measurement_still_in_flight() {
+        // pointermove -> (rect read pending) -> pointerleave/blur/cancel.
+        let mut gate = PointerGate::default();
+        let moved = gate.issue();
+        gate.close();
+        assert!(!gate.admit(moved), "the late result must not reopen it");
+    }
+
+    #[test]
+    fn a_move_issued_after_a_close_lands() {
+        let mut gate = PointerGate::default();
+        let stale = gate.issue();
+        gate.close();
+        let fresh = gate.issue();
+        assert!(!gate.admit(stale));
+        assert!(gate.admit(fresh));
+    }
+
+    #[test]
+    fn every_close_voids_every_older_ticket() {
+        let mut gate = PointerGate::default();
+        let tickets: Vec<_> = (0..5).map(|_| gate.issue()).collect();
+        gate.close();
+        gate.close();
+        assert!(tickets.into_iter().all(|t| !gate.admit(t)));
+    }
+
+    #[test]
+    fn results_arriving_out_of_order_never_move_the_tooltip_backwards() {
+        let mut gate = PointerGate::default();
+        let (first, second) = (gate.issue(), gate.issue());
+        assert!(gate.admit(second));
+        assert!(!gate.admit(first), "older than what is already shown");
+    }
+
+    #[test]
+    fn a_slow_measurement_is_not_starved_by_newer_moves() {
+        // Moves keep being issued while the first read is slow: until a newer
+        // one actually lands, the older one still may.
+        let mut gate = PointerGate::default();
+        let first = gate.issue();
+        let _second = gate.issue();
+        let _third = gate.issue();
+        assert!(gate.admit(first));
+    }
+
+    #[test]
+    fn a_ticket_is_admitted_at_most_once() {
+        let mut gate = PointerGate::default();
+        let t = gate.issue();
+        assert!(gate.admit(t));
+        assert!(!gate.admit(t));
+    }
+}

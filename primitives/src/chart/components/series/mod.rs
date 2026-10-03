@@ -59,6 +59,7 @@
 //! (pure data extraction, not drawing logic) IS shared, as a
 //! `SeriesRenderContext` method -- see that type's own doc.
 
+pub(crate) mod active_dot;
 pub mod area;
 pub mod bar;
 pub mod line;

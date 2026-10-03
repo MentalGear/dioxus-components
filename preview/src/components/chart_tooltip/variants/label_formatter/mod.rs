@@ -2,9 +2,7 @@ use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's nine source
-/// files does the same.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -29,14 +27,7 @@ fn chart_config() -> ChartConfig {
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// Parses a `"YYYY-MM-DD"` date and renders it `"<Month> <day>, <year>"`
-/// (e.g. `"July 16, 2024"`) -- ports shadcn's own `labelFormatter={(value)
-/// => new Date(value).toLocaleDateString("en-US", { day: "numeric", month:
-/// "long", year: "numeric" })}`. Unlike `short_weekday`
-/// (`component.rs`, shared by all nine demos), this formatting is only
-/// this one demo's own feature, so it stays local rather than joining that
-/// shared helper. Falls back to the raw string when malformed, same
-/// reasoning as `short_weekday`.
+/// Renders a `"YYYY-MM-DD"` date as `"<Month> <day>, <year>"` (e.g. `"July 16, 2024"`), falling back to the raw string when it is malformed.
 fn long_date(iso_date: &str) -> String {
     const MONTHS: [&str; 12] = [
         "January", "February", "March", "April", "May", "June", "July", "August", "September",
@@ -55,9 +46,7 @@ fn long_date(iso_date: &str) -> String {
     iso_date.to_string()
 }
 
-/// Ports shadcn's `chart-tooltip-label-formatter.tsx`: the label row shows
-/// the active datum's date spelled out in full, instead of the raw
-/// `"YYYY-MM-DD"` string.
+/// The label row shows the hovered date spelled out in full instead of the raw `"YYYY-MM-DD"` string.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -71,6 +60,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),
