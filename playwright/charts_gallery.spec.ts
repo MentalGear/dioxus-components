@@ -405,7 +405,7 @@ test("each tab has its own document title", async ({ page }) => {
 
 test("the interactive bar toggles have no UA button border", async ({ page }) => {
   await gotoHydrated(page, `${BASE_URL}/charts/bar/`);
-  const toggles = page.locator(".dx-bar-chart-interactive-toggle");
+  const toggles = page.locator(".dx-chart-interactive-toggle");
   await expect(toggles).toHaveCount(2);
   for (const toggle of await toggles.all()) {
     const widths = await toggle.evaluate((el) => {

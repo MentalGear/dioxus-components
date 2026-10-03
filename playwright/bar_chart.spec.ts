@@ -126,14 +126,14 @@ test.describe("interactive variant (shadcn chart-bar-interactive.tsx)", () => {
   test("toggling the header buttons swaps which series draws", async ({ page }) => {
     await goto(page);
     const f = frame(page, "interactive");
-    const toggles = f.locator(".dx-bar-chart-interactive-toggle");
+    const toggles = f.locator(".dx-chart-interactive-toggle");
     await expect(toggles).toHaveCount(2);
 
     // Desktop is active by default.
     await expect(toggles.nth(0)).toHaveAttribute("data-active", "true");
     await expect(toggles.nth(1)).toHaveAttribute("data-active", "false");
     // Both totals are real, non-empty numbers regardless of which is active.
-    const totals = f.locator(".dx-bar-chart-interactive-toggle-total");
+    const totals = f.locator(".dx-chart-interactive-toggle-total");
     await expect(totals.nth(0)).toHaveText(/\d/);
     await expect(totals.nth(1)).toHaveText(/\d/);
 
@@ -295,7 +295,7 @@ test.describe("Axe automated scan", () => {
     page,
   }) => {
     await goto(page);
-    await frame(page, "interactive").locator(".dx-bar-chart-interactive-toggle").nth(1).click();
+    await frame(page, "interactive").locator(".dx-chart-interactive-toggle").nth(1).click();
     await expectNoAxeViolations(page, "bar_chart: interactive toggled", {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
