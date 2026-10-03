@@ -57,7 +57,7 @@ On `Chart`:
 - `x_label` — the name of the x-axis column in the hidden data table. Defaults to `"Category"`.
 - `x_tick_format` — format x-axis labels. By default a label is cut to its first three characters (`"January"` becomes `"Jan"`), so supply a formatter for anything that is not a month name.
 - `max_x_ticks` — cap on how many x-axis labels are drawn (see below).
-- `width` and `height` — the logical size (default 600 by 300). The SVG scales to its container, so these set the aspect ratio.
+- `width` and `height` — the logical size (default 600 by 300): the coordinate space that every length in the chart's props (radii, insets, gaps) is expressed in. The SVG scales to fit its container, so these set the aspect ratio and the layout, not a pixel size. On a container narrower than `width`, text is scaled up to stay legible instead of shrinking with the drawing.
 - `keyboard` — keyboard stepping through data points, on by default.
 - `area`, `bar`, `line`, `pie`, `radar`, `radial` — per-kind options structs, such as `LineOptions { dots: true, .. }`. Each is described on its gallery page.
 
@@ -83,6 +83,6 @@ A chart is a picture, so it comes with a real data table for anyone who cannot s
 
 ## Dense x-axes
 
-With many points (say 90 daily values) a label under every category would be an unreadable smear, so a chart draws at most 12 x-axis labels. `max_x_ticks` (default `12`) sets that limit: the chart labels every n-th category, where n is the number of categories divided by `max_x_ticks`, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
+With many points (say 90 daily values) a label under every category would be an unreadable smear, so a chart draws at most 12 x-axis labels. `max_x_ticks` (default `12`) sets that upper limit: the chart labels every n-th category, where n is the number of categories divided by the label count, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
 
-The limit is a count, not a measurement of text width, so very long labels on a narrow screen can still collide even under the limit. Shorten them with `x_tick_format` or lower `max_x_ticks`.
+Labels are also thinned to fit the available width. The chart estimates how wide its longest label is and draws only as many as fit with a small gap, so a narrow chart (such as on a phone) shows fewer labels than a wide one, and longer labels show fewer than short ones. The estimate is not an exact measurement, so extremely wide labels can still touch; shorten them with `x_tick_format` or lower `max_x_ticks`.

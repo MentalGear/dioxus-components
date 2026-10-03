@@ -63,24 +63,19 @@ pub struct ChartProps {
     #[props(default)]
     pub description: Option<String>,
 
-    /// The `viewBox`'s logical width. CSS (the themed wrapper's
-    /// `width: 100%; height: auto`) makes the rendered size responsive;
-    /// this and [`Self::height`] set the aspect ratio and the scale every
-    /// other logical measurement (font sizes included, via the browser's
-    /// SVG scaling) is relative to.
-    ///
-    /// This is the *maximum* logical size. Once mounted in a browser, a
-    /// container narrower than this shrinks the logical size to the
-    /// container's own width (and [`Self::height`] proportionally, keeping
-    /// the aspect ratio), so one user unit stays one CSS pixel and text
-    /// does not scale below its authored size on a phone. Server-side
-    /// rendering, the first client render, and any container at least this
-    /// wide use this value unchanged.
+    /// The chart's logical width -- the `viewBox`'s own width, and the
+    /// coordinate space every length in the chart's props (radii, insets,
+    /// gaps) is expressed in. The SVG scales to fit its container (the
+    /// themed wrapper's `width: 100%; height: auto`), so this sets the
+    /// aspect ratio and the layout, not a pixel size. On a container
+    /// narrower than this the text is compensated to stay legible (see
+    /// [`text_scale`]) instead of shrinking with the drawing.
     #[props(default = 600.0)]
     pub width: f64,
 
-    /// The `viewBox`'s logical height -- the maximum, scaled down in
-    /// proportion to [`Self::width`] on a narrower container.
+    /// The chart's logical height -- the `viewBox`'s own height, in the same
+    /// coordinate space as [`Self::width`]; the SVG scales both together to
+    /// fit its container.
     #[props(default = 300.0)]
     pub height: f64,
 
@@ -141,20 +136,22 @@ pub struct ChartProps {
     /// how many data points the chart has. A dense chart (e.g. 90 daily
     /// data points) would otherwise draw one `<text>` per datum and
     /// overlap them into an unreadable smear; this labels only every
-    /// `ceil(n / max_x_ticks)`-th datum (always including the first),
-    /// leaving every hit band, mark and hidden-table row exactly as
-    /// before -- this only thins the *visible tick labels*, never the
-    /// underlying per-datum data or interactivity. MVP count-based
-    /// thinning: it does not account for the actual rendered pixel width
-    /// of a label (a genuinely crowded chart at a narrow viewport can
-    /// still overlap short labels, or leave room for more than
-    /// `max_x_ticks` long ones) -- the forks survey
-    /// (`dev-docs/research/chart-forks-2026-09-19.md`, §6/§3c,
-    /// `leptos-chartistry`'s `ticks/gen/aligned_floats.rs`) documents a
-    /// width-aware alternative (derive the count from estimated label
-    /// width vs. available pixel span) as the natural stage-2 upgrade;
-    /// not built here since this MVP has no text-measurement facility and
-    /// the fixed-count default already fixes the crowded 90-point demo.
+    /// `ceil(n / count)`-th datum (always including the first), leaving
+    /// every hit band, mark and hidden-table row exactly as before -- this
+    /// only thins the *visible tick labels*, never the underlying
+    /// per-datum data or interactivity.
+    ///
+    /// This is an *upper bound*: the count actually drawn is
+    /// `min(max_x_ticks, floor(plot_width / (longest_label_width + 8)))`,
+    /// never below 1, so a narrow chart (a phone, or any container narrower
+    /// than `width`) draws fewer labels instead of overlapping them. The
+    /// longest label's width is estimated, not measured -- 12px axis text at
+    /// ~0.6em per ASCII glyph (a full em for any other character), times the
+    /// narrow-container text compensation (see [`Self::width`]; `1` on the
+    /// server and first render) -- so the server render and the client agree
+    /// for the same width. It is an
+    /// estimate: an unusually wide font can still crowd, in which case
+    /// shorten the labels with `x_tick_format` or lower `max_x_ticks`.
     /// `ChartKind::is_cartesian` kinds only.
     #[props(default = 12)]
     pub max_x_ticks: usize,
@@ -313,14 +310,17 @@ pub fn Chart(props: ChartProps) -> Element {
     let mut active_index = ctx.active_index;
     let mut layout_signal = ctx.layout;
 
-    // The wrapper's measured content width (CSS px), written only after
-    // mount/resize in a browser. `None` -- always the case during SSR and
-    // the first client render -- means "use the props' own size", so the
-    // first client render is byte-identical to the server HTML (no
-    // hydration mismatch); the measured width is adopted by the re-render
-    // that follows.
+    // The wrapper's measured content-box width (CSS px), written only by
+    // `onresize` in a browser (a ResizeObserver reports once on observe, so
+    // this also covers mount; one measure, one box, everywhere). `None` --
+    // always the case during SSR and the first client render -- means
+    // `text_scale == 1`, so the first client render is byte-identical to the
+    // server HTML (no hydration mismatch); the measured width is adopted by
+    // the re-render that follows. The layout itself always uses the props'
+    // own `width`x`height`: only the text compensation depends on it.
     let mut measured_width = use_signal(|| None::<f64>);
-    let (width, height) = effective_size(props.width, props.height, measured_width());
+    let (width, height) = (props.width, props.height);
+    let text_scale = text_scale(width, measured_width());
 
     // Only Area and Bar have a stacking construction -- see
     // `ChartProps::stacked`'s own doc. Every computation below reads this
@@ -350,6 +350,7 @@ pub fn Chart(props: ChartProps) -> Element {
     let ctx_layout = layout::build(layout::LayoutParams {
         width,
         height,
+        text_scale,
         show_x_axis: props.show_x_axis,
         show_y_axis: props.show_y_axis,
         y_tick_count: props.y_tick_count,
@@ -461,11 +462,6 @@ pub fn Chart(props: ChartProps) -> Element {
         div {
             aria_label: wrapper_label,
             dir: direction.as_str(),
-            onmounted: move |evt: MountedEvent| async move {
-                if let Ok(rect) = evt.data().get_client_rect().await {
-                    adopt_measured_width(&mut measured_width, rect.width());
-                }
-            },
             onresize: move |evt: ResizeEvent| {
                 if let Ok(size) = evt.data().get_content_box_size() {
                     adopt_measured_width(&mut measured_width, size.width);
@@ -504,6 +500,7 @@ pub fn Chart(props: ChartProps) -> Element {
                 role: "img",
                 "aria-label": "{props.aria_label}",
                 view_box: "0 0 {fmt_num(width)} {fmt_num(height)}",
+                style: "--dx-chart-text-scale: {fmt_num(text_scale)}",
                 onpointerleave: move |_| active_index.set(None),
 
                 title { "{props.aria_label}" }
@@ -634,25 +631,38 @@ pub fn Chart(props: ChartProps) -> Element {
     }
 }
 
-/// The narrowest logical width a measured container may shrink the chart
-/// to -- below this, plot margins and axis labels no longer fit anyway, so
-/// the (then scaled-down) props size is the better fallback than a
-/// degenerate sliver.
-const MIN_MEASURED_WIDTH: f64 = 120.0;
+/// The largest text compensation [`text_scale`] applies: beyond a 2x
+/// shrink the drawing no longer has room for proportionally larger text, so
+/// text is allowed to render smaller than authored instead.
+const MAX_TEXT_SCALE: f64 = 2.0;
 
-/// The logical `(width, height)` the chart lays out and draws at: the props'
-/// own size, shrunk (never grown) to `measured` -- the container's rendered
-/// CSS width -- keeping the props' aspect ratio. One user unit is then one
-/// CSS pixel on a narrow container, so text keeps its authored size instead
-/// of scaling down with the whole `viewBox`. `None`, a non-finite or
-/// below-[`MIN_MEASURED_WIDTH`] measurement, or a container at least as wide
-/// as the props all return the props' size unchanged.
-fn effective_size(width: f64, height: f64, measured: Option<f64>) -> (f64, f64) {
+/// Container widths within this factor of the logical width get no text
+/// compensation (`s = 1`): a ~1-5% shrink (e.g. a 592px card around a 600
+/// chart) leaves text visually at its authored size, and compensating it
+/// would only shave labels off the desktop layout for no legibility gain.
+const TEXT_SCALE_DEADZONE: f64 = 1.05;
+
+/// The text compensation scale `s`: how much larger than authored (in the
+/// chart's logical units) text is drawn so it renders at its authored CSS
+/// size when the SVG is shown `k = measured / width` times its logical size.
+/// `s = clamp(1 / k, 1, MAX_TEXT_SCALE)`; `1` when the width is unmeasured
+/// (SSR, first client render, `None`), unusable (non-finite or non-positive),
+/// at least as wide as the logical width, or within [`TEXT_SCALE_DEADZONE`]
+/// of it -- text is never shrunk below authored.
+///
+/// Published to CSS as `--dx-chart-text-scale` on the SVG, which the themed
+/// stylesheet multiplies into every chart text's `font-size`, and read by
+/// the layout (tick-count estimate, axis margins) in logical units. Only
+/// *text* is compensated: every geometry length stays in the logical
+/// coordinate space and scales with the drawing.
+fn text_scale(width: f64, measured: Option<f64>) -> f64 {
     match measured {
-        Some(m) if m.is_finite() && m >= MIN_MEASURED_WIDTH && width > 0.0 && m < width => {
-            (m, height * m / width)
+        Some(m)
+            if m.is_finite() && m > 0.0 && width.is_finite() && width > m * TEXT_SCALE_DEADZONE =>
+        {
+            (width / m).clamp(1.0, MAX_TEXT_SCALE)
         }
-        _ => (width, height),
+        _ => 1.0,
     }
 }
 
@@ -740,19 +750,31 @@ mod tests {
     }
 
     #[test]
-    fn effective_size_shrinks_to_a_narrower_container_keeping_the_aspect_ratio() {
-        assert_eq!(effective_size(600.0, 300.0, Some(300.0)), (300.0, 150.0));
-        assert_eq!(effective_size(300.0, 300.0, Some(240.0)), (240.0, 240.0));
+    fn text_scale_is_the_inverse_shrink_factor_clamped() {
+        // 600 logical shown at 400 CSS px: k = 2/3, s = 1.5.
+        assert!((text_scale(600.0, Some(400.0)) - 1.5).abs() < 1e-9);
+        // 600 shown at 300: s = 2 (the cap).
+        assert_eq!(text_scale(600.0, Some(300.0)), 2.0);
+        // Beyond the cap it stays at the cap (390 phone: 600 -> 229).
+        assert_eq!(text_scale(600.0, Some(229.0)), MAX_TEXT_SCALE);
+        assert_eq!(text_scale(600.0, Some(1.0)), MAX_TEXT_SCALE);
     }
 
     #[test]
-    fn effective_size_never_grows_and_ignores_unusable_measurements() {
-        assert_eq!(effective_size(600.0, 300.0, None), (600.0, 300.0));
-        assert_eq!(effective_size(600.0, 300.0, Some(600.0)), (600.0, 300.0));
-        assert_eq!(effective_size(600.0, 300.0, Some(900.0)), (600.0, 300.0));
-        assert_eq!(effective_size(600.0, 300.0, Some(50.0)), (600.0, 300.0));
-        assert_eq!(effective_size(600.0, 300.0, Some(f64::NAN)), (600.0, 300.0));
-        assert_eq!(effective_size(0.0, 0.0, Some(300.0)), (0.0, 0.0));
+    fn text_scale_is_one_when_wider_or_unmeasured() {
+        assert_eq!(text_scale(600.0, None), 1.0);
+        assert_eq!(text_scale(600.0, Some(600.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(900.0)), 1.0);
+        // Within the dead zone: a 592px card around a 600 chart.
+        assert_eq!(text_scale(600.0, Some(592.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(572.0)), 1.0);
+        assert!(text_scale(600.0, Some(570.0)) > 1.0);
+        assert_eq!(text_scale(600.0, Some(0.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(-5.0)), 1.0);
+        assert_eq!(text_scale(600.0, Some(f64::NAN)), 1.0);
+        assert_eq!(text_scale(600.0, Some(f64::INFINITY)), 1.0);
+        assert_eq!(text_scale(0.0, Some(300.0)), 1.0);
+        assert_eq!(text_scale(f64::NAN, Some(300.0)), 1.0);
     }
 
     #[test]
@@ -761,6 +783,8 @@ mod tests {
         // viewBox is exactly the props' default 600x300.
         let html = render(ChartKind::Line, false, true);
         assert!(html.contains(r#"viewBox="0 0 600 300""#), "{html}");
+        // ...and the text compensation starts at 1 (no hydration mismatch).
+        assert!(html.contains("--dx-chart-text-scale: 1"), "{html}");
     }
 
     #[test]
@@ -902,6 +926,8 @@ mod tests {
         max_x_ticks: usize,
         #[props(default = "Category".to_string())]
         x_label: String,
+        #[props(default = 600.0)]
+        width: f64,
     }
 
     #[component]
@@ -926,18 +952,24 @@ mod tests {
                     aria_label: "Visitors by month",
                     x_label: props.x_label.clone(),
                     max_x_ticks: props.max_x_ticks,
+                    width: props.width,
                 }
             }
         }
     }
 
     fn render_axis(data_len: usize, max_x_ticks: usize, x_label: &str) -> String {
+        render_axis_at(data_len, max_x_ticks, x_label, 600.0)
+    }
+
+    fn render_axis_at(data_len: usize, max_x_ticks: usize, x_label: &str, width: f64) -> String {
         let mut dom = VirtualDom::new_with_props(
             AxisHarness,
             AxisHarnessProps {
                 data_len,
                 max_x_ticks,
                 x_label: x_label.to_string(),
+                width,
             },
         );
         dom.rebuild_in_place();
@@ -994,6 +1026,27 @@ mod tests {
         // Every hit band stays per-datum -- thinning only removes axis
         // *labels*, never data or interactivity.
         assert_eq!(html.matches(r#"data-slot="chart-hit-band""#).count(), 90);
+    }
+
+    /// The number of `<text>` tick labels in the x-axis group of `html`.
+    fn x_tick_label_count(html: &str) -> usize {
+        let start = html.find(r#"data-axis="x""#).expect("x-axis group");
+        let after_open = &html[start..];
+        let end = after_open.find("</g>").expect("x-axis group closes");
+        after_open[..end].matches("<text ").count()
+    }
+
+    #[test]
+    fn x_axis_tick_count_also_shrinks_to_fit_a_narrow_width() {
+        // 90 points, max 12, 3-char labels ("D00": ~21.6 + 8 gap = ~30 per label).
+        let wide = x_tick_label_count(&render_axis_at(90, 12, "Category", 600.0));
+        let narrow = x_tick_label_count(&render_axis_at(90, 12, "Category", 229.0));
+        // This harness draws no y axis, so the plot spans `width - 16`.
+        // Wide plot (584) fits 19 labels, so `max_x_ticks` stays the bound.
+        assert_eq!(wide, 12);
+        // Narrow plot (213) fits floor(213 / 29.6) = 7 -> step 13 -> 7 labels.
+        assert_eq!(narrow, 7);
+        assert!(narrow < wide);
     }
 
     #[test]

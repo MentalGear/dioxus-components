@@ -108,7 +108,9 @@
 
 use dioxus::prelude::*;
 
-use super::super::layout::{SeriesRenderContext, BAND_PADDING};
+use super::super::layout::{
+    effective_tick_count, x_tick_step, SeriesRenderContext, BAND_PADDING, TICK_LABEL_LINE_HEIGHT,
+};
 use crate::chart::engine::geometry::bar_extent;
 use crate::chart::engine::scale::fmt_num;
 use crate::chart::{use_chart, BandScale, LinearScale};
@@ -447,17 +449,30 @@ fn render_horizontal_category_labels(
     ctx: &SeriesRenderContext,
     category_scale: &BandScale,
 ) -> Element {
+    // Rows are stacked top-to-bottom, so a dense category axis overlaps by
+    // *height*, not width: thin to the row budget the plot height can hold
+    // (first label always kept, every n-th after it), same stride rule as the
+    // x axis. Unlike a vertical `Chart`'s x axis there is no `max_x_ticks`
+    // cap here -- only the height bound.
+    let budget = effective_tick_count(
+        usize::MAX,
+        ctx.plot_y1 - ctx.plot_y0,
+        TICK_LABEL_LINE_HEIGHT * ctx.text_scale,
+    );
+    let tick_step = x_tick_step(ctx.data.len(), budget);
     rsx! {
         g { "data-slot": "chart-axis", "data-axis": "category",
             for (i , datum) in ctx.data.iter().enumerate() {
-                text {
-                    key: "{i}",
-                    "data-index": "{i}",
-                    x: "{fmt_num(ctx.plot_x0 - 8.0)}",
-                    y: "{fmt_num(category_scale.center(i))}",
-                    "text-anchor": "end",
-                    "dominant-baseline": "central",
-                    {datum.label.chars().take(3).collect::<String>()}
+                if i % tick_step == 0 {
+                    text {
+                        key: "{i}",
+                        "data-index": "{i}",
+                        x: "{fmt_num(ctx.plot_x0 - 8.0)}",
+                        y: "{fmt_num(category_scale.center(i))}",
+                        "text-anchor": "end",
+                        "dominant-baseline": "central",
+                        {datum.label.chars().take(3).collect::<String>()}
+                    }
                 }
             }
         }

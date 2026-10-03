@@ -179,7 +179,11 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
     let cy = ctx.height / 2.0;
     let half_extent = ctx.width.min(ctx.height) / 2.0;
     // Leave room for the rim category labels outside the outermost ring.
-    let label_margin = if opts.axis_labels { 24.0 } else { 0.0 };
+    let label_margin = if opts.axis_labels {
+        24.0 * ctx.text_scale
+    } else {
+        0.0
+    };
     let outer_radius =
         ((half_extent - label_margin).max(0.0) * opts.outer_radius.clamp(0.0, 1.0)).max(1.0);
 
@@ -279,7 +283,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                 g { "data-slot": "chart-axis", "data-axis": "angle",
                     for (i , (angle , datum)) in angles.iter().copied().zip(ctx.data.iter()).enumerate() {
                         {
-                            let (x, y) = point_radial(angle, outer_radius + 12.0);
+                            let (x, y) = point_radial(angle, outer_radius + 12.0 * ctx.text_scale);
                             rsx! {
                                 text {
                                     key: "{i}",

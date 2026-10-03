@@ -220,6 +220,7 @@ fn render_rings(
                     radius: (ring_inner + ring_outer) / 2.0,
                     start,
                     end,
+                    text_scale: ctx.text_scale,
                 });
                 rsx! {
                     g { key: "{i}",
@@ -309,6 +310,7 @@ fn render_stacked_ring(
                     radius: (inner_radius + outer_radius) / 2.0,
                     start,
                     end,
+                    text_scale: ctx.text_scale,
                 });
                 rsx! {
                     path {
@@ -332,9 +334,13 @@ fn render_stacked_ring(
     }
 }
 
-/// How far (arc length, logical SVG units) an arc's label starts inside the
-/// arc's own start edge.
+/// How far (arc length, logical SVG units, at text scale 1) an arc's label
+/// starts inside the arc's own start edge.
 const LABEL_INSET: f64 = 8.0;
+/// The angular length (radians, ~0.95 turn) of every label's centerline path,
+/// whatever the arc's own sweep -- see [`ArcLabel::centerline`]. Just under a
+/// full turn so the path never closes onto its own start.
+const LABEL_SPAN: f64 = std::f64::consts::TAU * 0.95;
 /// A label's own half-height as a fraction of its font size: the offset
 /// (`dy`) that centers the glyphs on the ring's centerline rather than
 /// resting their baseline on it.
@@ -351,6 +357,9 @@ struct ArcLabel {
     radius: f64,
     start: f64,
     end: f64,
+    /// The chart's text compensation scale (`SeriesRenderContext::text_scale`):
+    /// the label's own inset is a text-sized length, so it grows with it.
+    text_scale: f64,
 }
 
 impl ArcLabel {
@@ -359,10 +368,16 @@ impl ArcLabel {
     /// direction when it starts in the upper half of the chart, against it
     /// (anchored at the arc-start end) when it starts in the lower half --
     /// otherwise text there would render upside down.
+    ///
+    /// `direction="ltr"` on the `<text>` is load-bearing: under an `rtl`
+    /// ancestor (`dir="rtl"`, inherited by SVG text) `text-anchor: start`
+    /// means the *right* end, so the glyphs would lay out backwards off the
+    /// start of the path and vanish. The label's own reading order is set
+    /// by the path, never by the page direction.
     fn render(&self) -> Element {
         let (path_d, anchor, offset) = self.centerline();
-        let href = format!("#{}", self.id);
-        let id = self.id.clone();
+        let id = safe_fragment_id(&self.id);
+        let href = format!("#{id}");
         let text = self.text.clone();
         rsx! {
             defs {
@@ -370,6 +385,7 @@ impl ArcLabel {
             }
             text {
                 "data-slot": "chart-arc-label",
+                direction: "ltr",
                 text_anchor: "{anchor}",
                 dy: "{LABEL_HALF_HEIGHT_EM}em",
                 textPath { "href": "{href}", "startOffset": "{offset}", "{text}" }
@@ -378,21 +394,45 @@ impl ArcLabel {
     }
 
     /// `(path d, text-anchor, startOffset)` for this label's centerline.
+    ///
+    /// The path always starts (just inside the arc start) at the arc's start
+    /// and runs on for the fixed [`LABEL_SPAN`] -- never to the arc's own
+    /// end. A zero-sweep (value `0`) ring would otherwise get a zero-length
+    /// path and lose its label, and a short arc would clip its text to the
+    /// arc's length; this way the text is always laid out in full and simply
+    /// continues onto the (unfilled) track past a short arc.
     fn centerline(&self) -> (String, &'static str, &'static str) {
         let sweep = self.end - self.start;
         let sign = if sweep < 0.0 { -1.0 } else { 1.0 };
-        let inset = (LABEL_INSET / self.radius.max(1.0)).min(sweep.abs() / 2.0);
+        let inset = (LABEL_INSET * self.text_scale / self.radius.max(1.0)).min(sweep.abs() / 2.0);
         let from = self.start + sign * inset;
+        let far = from + sign * LABEL_SPAN;
         // Angle `0.0` is twelve o'clock, increasing clockwise: the upper
         // half is where clockwise travel reads left to right.
         let upper_half = from.cos() >= 0.0;
         let natural_is_clockwise = sign > 0.0;
         if natural_is_clockwise == upper_half {
-            (centerline_path(self.radius, from, self.end), "start", "0%")
+            (centerline_path(self.radius, from, far), "start", "0%")
         } else {
-            (centerline_path(self.radius, self.end, from), "end", "100%")
+            (centerline_path(self.radius, far, from), "end", "100%")
         }
     }
+}
+
+/// `id` made safe to appear in a `url(#...)`/`href="#..."` fragment: every
+/// character outside `[A-Za-z0-9_-]` (a `%` would start a percent-escape,
+/// a space or `)` ends a `url()`) becomes `_` + its code point in hex, so
+/// two different ids can never collapse to the same fragment.
+fn safe_fragment_id(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for c in id.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            out.push(c);
+        } else {
+            out.push_str(&format!("_{:x}", c as u32));
+        }
+    }
+    out
 }
 
 /// An SVG path `d` along the circle of `radius` (centered at the origin)
@@ -508,12 +548,23 @@ mod tests {
         data: Vec<ChartDatum>,
         opts: RadialOptions,
     ) -> String {
+        render_dir(kind, config, data, opts, None)
+    }
+
+    fn render_dir(
+        kind: ChartKind,
+        config: ChartConfig,
+        data: Vec<ChartDatum>,
+        opts: RadialOptions,
+        dir: Option<crate::direction::Direction>,
+    ) -> String {
         #[derive(Clone, PartialEq, Props)]
         struct HarnessProps {
             kind: ChartKind,
             config: ChartConfig,
             data: Vec<ChartDatum>,
             opts: RadialOptions,
+            dir: Option<crate::direction::Direction>,
         }
         #[component]
         fn Harness(props: HarnessProps) -> Element {
@@ -521,7 +572,13 @@ mod tests {
             let data = use_signal(|| props.data.clone());
             rsx! {
                 ChartContainer { config, data, kind: props.kind,
-                    Chart { width: 300.0, height: 300.0, aria_label: "Test", radial: props.opts.clone() }
+                    Chart {
+                        width: 300.0,
+                        height: 300.0,
+                        aria_label: "Test",
+                        radial: props.opts.clone(),
+                        dir: props.dir,
+                    }
                 }
             }
         }
@@ -532,6 +589,7 @@ mod tests {
                 config,
                 data,
                 opts,
+                dir,
             },
         );
         dom.rebuild_in_place();
@@ -744,6 +802,7 @@ mod tests {
             radius: 100.0,
             start: 0.0,
             end: std::f64::consts::PI,
+            text_scale: 1.0,
         };
         let (d, anchor, offset) = label.centerline();
         assert_eq!((anchor, offset), ("start", "0%"));
@@ -752,7 +811,8 @@ mod tests {
         assert!(d.starts_with("M7.991 -99.68"), "{d}");
         // Clockwise (sweep flag 1), split into quarter-turn segments.
         assert!(d.contains("A100 100 0 0 1"), "{d}");
-        assert_eq!(d.matches('A').count(), 2, "{d}");
+        // The fixed ~0.95-turn span, not the arc's own half-turn sweep.
+        assert_eq!(d.matches('A').count(), 4, "{d}");
     }
 
     #[test]
@@ -768,13 +828,15 @@ mod tests {
             radius: 100.0,
             start: PI,
             end: PI * 1.5,
+            text_scale: 1.0,
         };
         let (d, anchor, offset) = label.centerline();
         assert_eq!((anchor, offset), ("end", "100%"));
-        // Reversed => counter-clockwise (sweep flag 0), beginning at the
-        // arc's end (nine o'clock = (-r, 0)).
-        assert!(d.starts_with("M-100 0"), "{d}");
+        // Reversed => counter-clockwise (sweep flag 0), ending at the label
+        // start just inside the arc start (six o'clock plus 0.08 rad:
+        // x = -100 sin(0.08), y = 100 cos(0.08)).
         assert!(d.contains("A100 100 0 0 0"), "{d}");
+        assert!(d.ends_with("-7.991 99.68"), "{d}");
     }
 
     #[test]
@@ -785,18 +847,144 @@ mod tests {
         assert!(ccw.contains("A50 50 0 0 0"), "{ccw}");
     }
 
+    /// First and last points of a `centerline_path`-shaped `d`.
+    fn path_ends(d: &str) -> ((f64, f64), (f64, f64)) {
+        let nums = |t: &str| -> (f64, f64) {
+            let v: Vec<f64> = t
+                .split([' ', 'M', 'A'])
+                .filter(|p| !p.is_empty())
+                .map(|p| p.parse().unwrap())
+                .collect();
+            (v[v.len() - 2], v[v.len() - 1])
+        };
+        let first = d[..d[1..].find('A').unwrap() + 1].to_string();
+        let last = d[d.rfind('A').unwrap()..].to_string();
+        (nums(&first), nums(&last))
+    }
+
+    fn chord(d: &str) -> f64 {
+        let ((x0, y0), (x1, y1)) = path_ends(d);
+        ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt()
+    }
+
     #[test]
-    fn a_zero_length_arc_gets_a_degenerate_but_valid_label_path() {
+    fn a_zero_sweep_arc_still_gets_a_label_path_with_length() {
         let label = ArcLabel {
             id: "x".to_string(),
             text: "0".to_string(),
             radius: 40.0,
             start: 0.0,
             end: 0.0,
+            text_scale: 1.0,
         };
-        let (d, _, _) = label.centerline();
+        let (d, anchor, offset) = label.centerline();
         assert!(d.starts_with('M') && d.contains('A'), "{d}");
         assert!(!d.contains("NaN"), "{d}");
+        // Chord of a 0.95-turn arc of radius 40: 2 * 40 * sin(0.95 pi) ~= 12.5.
+        assert!(chord(&d) > 10.0, "zero-length label path: {d}");
+        assert_eq!((anchor, offset), ("start", "0%"));
+    }
+
+    #[test]
+    fn a_short_arc_label_path_is_not_clipped_to_the_arc() {
+        let short = ArcLabel {
+            id: "x".to_string(),
+            text: "Chrome 275".to_string(),
+            radius: 100.0,
+            start: 0.0,
+            end: 0.3,
+            text_scale: 1.0,
+        };
+        let long = ArcLabel {
+            end: 5.0,
+            id: "y".to_string(),
+            text: "Chrome 275".to_string(),
+            radius: 100.0,
+            start: 0.0,
+            text_scale: 1.0,
+        };
+        // Same start, same fixed span: the path length does not depend on
+        // the arc's end.
+        assert_eq!(short.centerline().0.matches('A').count(), 4);
+        assert_eq!(long.centerline().0.matches('A').count(), 4);
+        assert!(chord(&short.centerline().0) > 25.0);
+    }
+
+    #[test]
+    fn label_inset_grows_with_the_text_scale() {
+        let at = |scale: f64| {
+            ArcLabel {
+                id: "x".to_string(),
+                text: "a".to_string(),
+                radius: 100.0,
+                start: 0.0,
+                end: PI_,
+                text_scale: scale,
+            }
+            .centerline()
+            .0
+        };
+        const PI_: f64 = std::f64::consts::PI;
+        // Inset 8 at s=1 (x = 100 sin 0.08 = 7.991), 16 at s=2 (sin 0.16).
+        assert!(at(1.0).starts_with("M7.991 "), "{}", at(1.0));
+        assert!(at(2.0).starts_with("M15.932 "), "{}", at(2.0));
+    }
+
+    #[test]
+    fn labels_stay_left_to_right_under_an_rtl_page() {
+        use crate::direction::Direction;
+        let opts = RadialOptions {
+            labels: PieLabels::Value,
+            ..Default::default()
+        };
+        let rtl = render_dir(
+            ChartKind::RadialBar,
+            one_series_config(),
+            one_series_data(),
+            opts.clone(),
+            Some(Direction::Rtl),
+        );
+        // Under `dir="rtl"` text-anchor `start` would otherwise mean the right
+        // end and the glyphs would lay out backwards off the path start.
+        assert!(rtl.contains(r#"dir="rtl""#), "{rtl}");
+        let labels = rtl.matches(r#"data-slot="chart-arc-label""#).count();
+        assert_eq!(labels, 3, "{rtl}");
+        assert_eq!(
+            rtl.matches(r#"direction="ltr""#).count(),
+            labels,
+            "every arc label must pin direction=ltr: {rtl}"
+        );
+    }
+
+    #[test]
+    fn safe_fragment_id_escapes_fragment_breaking_characters() {
+        assert_eq!(safe_fragment_id("abc-DEF_09"), "abc-DEF_09");
+        assert_eq!(safe_fragment_id("a%b"), "a_25b");
+        assert_eq!(safe_fragment_id("a b)"), "a_20b_29");
+        // Different ids never collapse onto one fragment.
+        assert_ne!(safe_fragment_id("a%"), safe_fragment_id("a_"));
+        for c in safe_fragment_id("x%y#z (1)").chars() {
+            assert!(c.is_ascii_alphanumeric() || c == '-' || c == '_', "{c}");
+        }
+    }
+
+    #[test]
+    fn a_percent_in_the_chart_id_never_reaches_the_href_fragment() {
+        let label = ArcLabel {
+            id: "chart%1-radial-label-0".to_string(),
+            text: "x".to_string(),
+            radius: 40.0,
+            start: 0.0,
+            end: 1.0,
+            text_scale: 1.0,
+        };
+        let html = dioxus_ssr::render_element(label.render());
+        assert!(!html.contains("chart%"), "{html}");
+        assert!(
+            html.contains(r##"href="#chart_251-radial-label-0""##),
+            "{html}"
+        );
+        assert!(html.contains(r#"id="chart_251-radial-label-0""#), "{html}");
     }
 
     #[test]

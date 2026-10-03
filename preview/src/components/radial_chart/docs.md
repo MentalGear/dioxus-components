@@ -37,10 +37,11 @@ Each ring is scaled against the largest value in the data, so the biggest value 
 
 ## Options
 
+- Radii and other lengths here (`inner_radius`, `outer_radius`, `corner_radius`) are in the chart's logical units: the `width`×`height` coordinate space, which the chart scales to fit its container.
 - `inner_radius` should normally be above zero; otherwise the innermost ring starts at a single point and its length is hard to judge. `outer_radius` defaults to `0.0`, which fits the ring stack to the chart's size.
 - `start_angle` and `end_angle` set the sweep in radians, where `0.0` is twelve o'clock and angles increase clockwise. Shift both to rotate the chart (a start of `FRAC_PI_2` is three o'clock, `-FRAC_PI_2` nine o'clock), or make the sweep longer than a full turn so the ends of the first and last rings do not touch.
 - `grid: true` draws a muted full-sweep track behind every ring.
-- `labels` takes the same `PieLabels` values as the pie chart (`None`, `Value`, `Percent`, `List`) and prints each label along its ring, starting just inside the ring's start.
+- `labels` takes the same `PieLabels` values as the pie chart (`None`, `Value`, `Percent`, `List`) and prints each label along its ring, starting just inside the ring's start. A label keeps its full length: on a short or empty ring it runs on past the ring's end onto the track.
 - `center_text` writes a two-line total in the hole, which is the usual way to make a gauge. It needs `inner_radius` above zero.
 - `stacked: true` puts every configured series' value for the first datum into one ring, end to end. It only makes sense with two or more series.
 

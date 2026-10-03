@@ -98,6 +98,17 @@
      descendant (axis labels) inherit it normally, same idiom as
      `main.css`'s own `font-family: inherit` re-affirmations. */
   font-family: inherit;
+
+  /* Text compensation. The viewBox is always the props' `width` x `height`,
+   * so on a narrower container the whole drawing -- text included -- shrinks.
+   * `Chart` measures its container and publishes `--dx-chart-text-scale`
+   * (`s = clamp(1 / k, 1, 2)`, `k` = rendered / logical width; `1` on the
+   * server, first render and any container at least as wide as the viewBox)
+   * on this element; every chart text size below is multiplied by it, which
+   * cancels the shrink so text renders at its authored size while the
+   * geometry (radii, bar radius, ring gaps) scales with the drawing. This
+   * base rule scales text that has no font-size of its own (`chart-label`). */
+  font-size: calc(1em * var(--dx-chart-text-scale, 1));
 }
 
 .dx-chart [data-slot="chart-grid"] line {
@@ -119,7 +130,7 @@
 
 .dx-chart [data-slot="chart-axis"] text {
   fill: var(--dx-chart-axis-text);
-  font-size: var(--dx-text-xs);
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
 .dx-chart [data-slot="chart-area"] {
@@ -540,13 +551,13 @@
  * theme's own surface so it disappears wherever the text spills onto the
  * card background. */
 .dx-chart [data-slot="chart-arc-label"] {
-  font-size: var(--dx-text-xs);
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
   font-weight: 600;
   paint-order: stroke;
   pointer-events: none;
   stroke: var(--primary-color-1);
   stroke-linejoin: round;
-  stroke-width: 3px;
+  stroke-width: calc(3px * var(--dx-chart-text-scale, 1));
 }
 
 /* The donut/gauge center text (`PieOptions::center_text`/
@@ -556,13 +567,13 @@
  * description. */
 .dx-chart [data-slot="chart-pie-center-text"] {
   fill: var(--secondary-color-5);
-  font-size: var(--dx-text-sm);
+  font-size: calc(var(--dx-text-sm) * var(--dx-chart-text-scale, 1));
   pointer-events: none;
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
   fill: var(--secondary-color-4);
-  font-size: var(--dx-text-2xl);
+  font-size: calc(var(--dx-text-2xl) * var(--dx-chart-text-scale, 1));
   font-weight: 700;
 }
 

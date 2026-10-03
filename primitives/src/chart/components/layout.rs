@@ -52,6 +52,11 @@ pub(crate) const BAND_PADDING: f64 = 0.2;
 pub(crate) struct LayoutParams<'a> {
     pub width: f64,
     pub height: f64,
+    /// The text compensation scale (`>= 1`, see `chart::text_scale`): how
+    /// many logical units one CSS pixel of axis text occupies once the chart
+    /// is rendered narrower than its logical `width`. `1.0` on the server,
+    /// the first client render and any container at least `width` wide.
+    pub text_scale: f64,
     pub show_x_axis: bool,
     pub show_y_axis: bool,
     pub y_tick_count: usize,
@@ -110,6 +115,9 @@ pub(crate) struct SeriesRenderContext {
     // than by re-adding them under time pressure later.
     #[allow(dead_code)]
     pub kind: ChartKind,
+    /// See [`LayoutParams::text_scale`]; axis margins and label offsets are
+    /// multiplied by it so scaled-up text keeps its room.
+    pub text_scale: f64,
     pub config: ChartConfig,
     pub data: Vec<ChartDatum>,
     #[allow(dead_code)]
@@ -165,13 +173,17 @@ impl SeriesRenderContext {
 /// `components::chart`'s tests for the behavior this must keep producing
 /// bit-for-bit.
 pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
+    // Axis margins hold text, so they grow with the compensated text size
+    // (`s == 1` -- desktop, SSR -- leaves every value exactly as authored);
+    // the bare margins hold no text and stay put.
+    let s = p.text_scale;
     let margin_left = if p.show_y_axis {
-        MARGIN_LEFT_WITH_AXIS
+        MARGIN_LEFT_WITH_AXIS * s
     } else {
         MARGIN_LEFT_BARE
     };
     let margin_bottom = if p.show_x_axis {
-        MARGIN_BOTTOM_WITH_AXIS
+        MARGIN_BOTTOM_WITH_AXIS * s
     } else {
         MARGIN_BOTTOM_BARE
     };
@@ -206,6 +218,7 @@ pub(crate) fn build(p: LayoutParams<'_>) -> SeriesRenderContext {
 
     SeriesRenderContext {
         kind: p.kind,
+        text_scale: p.text_scale,
         config: p.config.clone(),
         data: p.data.to_vec(),
         dir: p.dir,
@@ -303,23 +316,40 @@ pub(crate) fn render_grid(ctx: &SeriesRenderContext) -> Element {
 }
 
 /// Render `g[data-slot="chart-axis"][data-axis="x"]`: one tick label per
-/// datum whose index survives [`x_tick_step`]'s thinning.
+/// datum whose index survives [`x_tick_step`]'s thinning. The label budget is
+/// [`effective_tick_count`]: `max_x_ticks`, further capped so the labels fit
+/// the plot's own width (see that fn for the estimate).
 pub(crate) fn render_x_axis(
     ctx: &SeriesRenderContext,
     x_tick_format: &Option<Callback<String, String>>,
     max_x_ticks: usize,
 ) -> Element {
-    let tick_step = x_tick_step(ctx.data.len(), max_x_ticks);
+    let labels: Vec<String> = ctx
+        .data
+        .iter()
+        .map(|datum| format_x_tick(&datum.label, x_tick_format))
+        .collect();
+    let longest = labels
+        .iter()
+        .map(|l| estimated_text_width(l))
+        .fold(0.0, f64::max);
+    let budget = x_tick_budget(
+        max_x_ticks,
+        ctx.plot_x1 - ctx.plot_x0,
+        longest,
+        ctx.text_scale,
+    );
+    let tick_step = x_tick_step(ctx.data.len(), budget);
     rsx! {
         g { "data-slot": "chart-axis", "data-axis": "x",
-            for (i , datum) in ctx.data.iter().enumerate() {
+            for (i , label) in labels.into_iter().enumerate() {
                 if i % tick_step == 0 {
                     text {
                         key: "{i}",
                         "data-index": "{i}",
                         x: "{fmt_num(ctx.x_scale.center(i))}",
-                        y: "{fmt_num(ctx.plot_y1 + 16.0)}",
-                        {format_x_tick(&datum.label, x_tick_format)}
+                        y: "{fmt_num(ctx.plot_y1 + 16.0 * ctx.text_scale)}",
+                        {label}
                     }
                 }
             }
@@ -335,7 +365,7 @@ pub(crate) fn render_y_axis(ctx: &SeriesRenderContext) -> Element {
             for y_tick in ctx.y_ticks.iter().copied() {
                 text {
                     key: "{y_tick}",
-                    x: "{fmt_num(ctx.plot_x0 - 8.0)}",
+                    x: "{fmt_num(ctx.plot_x0 - 8.0 * ctx.text_scale)}",
                     y: "{fmt_num(ctx.y_scale.scale(y_tick))}",
                     {fmt_decimal(y_tick, 2)}
                 }
@@ -353,13 +383,74 @@ fn format_x_tick(label: &str, format: &Option<Callback<String, String>>) -> Stri
     }
 }
 
+/// Axis label font size in CSS px (`--dx-text-xs` = 0.75rem). In a chart
+/// rendered narrower than its logical width the text is drawn `text_scale`
+/// times larger in logical units (see `chart::text_scale`), so a label's
+/// logical width is its estimate here times that scale.
+const AXIS_FONT_PX: f64 = 12.0;
+/// Average advance of one ASCII glyph, as a fraction of the font size
+/// (measured: "Apr 14" at 12px is ~44px wide, i.e. ~0.61em per glyph).
+const ASCII_GLYPH_EM: f64 = 0.6;
+/// Advance of any non-ASCII glyph (CJK, emoji, ...), as a fraction of the font
+/// size -- full-width in the worst case, so the estimate errs on thinning.
+const WIDE_GLYPH_EM: f64 = 1.0;
+/// Empty space kept between two adjacent tick labels, in user units.
+const TICK_LABEL_GAP: f64 = 8.0;
+/// Vertical pitch one stacked (y-axis category) label needs, in user units: a
+/// 12px font at a ~16px line height. Used by a horizontal bar's category
+/// labels, whose spacing runs top-to-bottom.
+pub(crate) const TICK_LABEL_LINE_HEIGHT: f64 = 16.0;
+
+/// Estimated rendered width of one axis label at [`AXIS_FONT_PX`], without a
+/// DOM measurement -- a pure function of the string, so SSR and the client
+/// agree for the same width.
+pub(crate) fn estimated_text_width(label: &str) -> f64 {
+    label
+        .chars()
+        .map(|c| {
+            if c.is_ascii() {
+                ASCII_GLYPH_EM
+            } else {
+                WIDE_GLYPH_EM
+            }
+        })
+        .sum::<f64>()
+        * AXIS_FONT_PX
+}
+
+/// The number of tick labels an axis span can hold without overlap:
+/// `min(max_ticks, floor(span / pitch))`, never below 1 (the first label is
+/// always drawn). `pitch` is the space one label needs along the axis: the
+/// *longest* label's estimated width plus [`TICK_LABEL_GAP`] for an x axis,
+/// [`TICK_LABEL_LINE_HEIGHT`] for a y-category axis -- so the result is
+/// conservative; `max_ticks` stays a hard upper bound. A non-finite or
+/// non-positive span yields 1.
+pub(crate) fn effective_tick_count(max_ticks: usize, span: f64, pitch: f64) -> usize {
+    let pitch = pitch.max(1.0);
+    let fit = if span.is_finite() && span > 0.0 {
+        (span / pitch).floor() as usize
+    } else {
+        0
+    };
+    max_ticks.min(fit).max(1)
+}
+
+/// The x-axis label budget: `max_x_ticks` capped by what `span` (the plot
+/// width, logical units) holds of labels `longest` px wide (see
+/// [`estimated_text_width`]) plus [`TICK_LABEL_GAP`], all drawn
+/// `text_scale` times larger in logical units. At `text_scale == 1`
+/// (desktop, SSR) this is the plain CSS-px computation.
+pub(crate) fn x_tick_budget(max_x_ticks: usize, span: f64, longest: f64, text_scale: f64) -> usize {
+    effective_tick_count(max_x_ticks, span, (longest + TICK_LABEL_GAP) * text_scale)
+}
+
 /// The x-axis tick-label stride (see `ChartProps::max_x_ticks`): label
 /// datum `i` only when `i % x_tick_step(..) == 0`, so at most `max_x_ticks`
 /// labels are drawn regardless of `n`, always including the first datum
-/// (`i == 0`). MVP count-based thinning -- a pure function so the
-/// "at most `max_x_ticks` labels" guarantee is unit-testable independent of
-/// any SSR render.
-fn x_tick_step(n: usize, max_x_ticks: usize) -> usize {
+/// (`i == 0`). Takes the already width-capped budget from
+/// [`effective_tick_count`] -- a pure function so the "at most that many
+/// labels" guarantee is unit-testable independent of any SSR render.
+pub(crate) fn x_tick_step(n: usize, max_x_ticks: usize) -> usize {
     if n == 0 {
         return 1;
     }
@@ -392,6 +483,90 @@ mod tests {
         assert_eq!(x_tick_step(90, 12), 8);
         assert_eq!(x_tick_step(0, 12), 1);
         assert_eq!(x_tick_step(10, 0), 10);
+    }
+
+    #[test]
+    fn estimated_text_width_scales_with_glyph_count() {
+        assert_eq!(estimated_text_width(""), 0.0);
+        // 6 ASCII glyphs * 0.6em * 12px.
+        assert!((estimated_text_width("Apr 14") - 43.2).abs() < 1e-9);
+        // A non-ASCII glyph counts as a full em.
+        assert!((estimated_text_width("\u{4e00}") - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn effective_tick_count_is_the_max_when_the_span_is_wide() {
+        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
+        // 592 wide chart -> 544 plot span: room for 10, so max 8 stays 8.
+        assert_eq!(effective_tick_count(8, 544.0, pitch), 8);
+        // A huge span never exceeds `max_ticks`.
+        assert_eq!(effective_tick_count(12, 10_000.0, pitch), 12);
+    }
+
+    #[test]
+    fn effective_tick_count_shrinks_on_a_narrow_span() {
+        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
+        // 229 wide chart -> 181 plot span; 350 -> 302.
+        assert_eq!(effective_tick_count(8, 181.0, pitch), 3);
+        assert_eq!(effective_tick_count(8, 302.0, pitch), 5);
+        assert!(effective_tick_count(12, 181.0, pitch) < 12);
+    }
+
+    #[test]
+    fn effective_tick_count_shrinks_for_longer_labels() {
+        let short = estimated_text_width("Apr") + TICK_LABEL_GAP;
+        let long = estimated_text_width("September 14") + TICK_LABEL_GAP;
+        let (a, b) = (
+            effective_tick_count(12, 500.0, short),
+            effective_tick_count(12, 500.0, long),
+        );
+        assert!(b < a, "longer labels must yield fewer ticks ({b} !< {a})");
+    }
+
+    #[test]
+    fn effective_tick_count_never_drops_below_one() {
+        assert_eq!(effective_tick_count(8, 0.0, 50.0), 1);
+        assert_eq!(effective_tick_count(8, -5.0, 50.0), 1);
+        assert_eq!(effective_tick_count(8, f64::NAN, 50.0), 1);
+        assert_eq!(effective_tick_count(8, 10.0, 500.0), 1);
+        // ...but a zero `max_ticks` still floors at 1 like `x_tick_step`.
+        assert_eq!(effective_tick_count(0, 500.0, 50.0), 1);
+    }
+
+    #[test]
+    fn narrow_width_thins_the_drawn_labels_so_adjacent_ones_clear_the_pitch() {
+        // The end-to-end invariant: after thinning, adjacent drawn labels are
+        // at least one pitch apart (datum spacing * step >= pitch).
+        let pitch = estimated_text_width("Apr 14") + TICK_LABEL_GAP;
+        for span in [120.0, 181.0, 302.0, 544.0] {
+            let n = 90usize;
+            let count = effective_tick_count(8, span, pitch);
+            let step = x_tick_step(n, count);
+            let spacing = span / n as f64 * step as f64;
+            assert!(
+                spacing >= pitch,
+                "span={span} step={step} spacing={spacing}"
+            );
+        }
+    }
+
+    #[test]
+    fn x_tick_budget_main_demo_at_desktop_and_phone_text_scale() {
+        // Main demo: 90 daily points, `max_x_ticks: 8`, longest label
+        // "Apr 14"-like (6 chars), 592-wide chart with no y axis (plot 576).
+        let longest = estimated_text_width("Apr 14");
+        // s = 1 (desktop, SSR): room for 11, so max_x_ticks stays the bound.
+        assert_eq!(x_tick_budget(8, 576.0, longest, 1.0), 8);
+        // s = 2 (phone text compensation): text takes twice the logical
+        // room, (43.2 + 8) * 2 = 102.4 per label -> floor(576 / 102.4) = 5.
+        assert_eq!(x_tick_budget(8, 576.0, longest, 2.0), 5);
+        // Monotone: more compensation never yields more labels.
+        let mut prev = usize::MAX;
+        for s in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            let b = x_tick_budget(12, 576.0, longest, s);
+            assert!(b <= prev, "s={s} gave {b} > {prev}");
+            prev = b;
+        }
     }
 
     #[test]

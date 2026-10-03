@@ -18,7 +18,7 @@ ChartContainer { config, data, kind: ChartKind::Pie,
     Chart {
         aria_label: "Visitors by browser",
         pie: PieOptions {
-            inner_radius: 0.0,       // above 0.0 draws a donut (SVG units)
+            inner_radius: 0.0,       // above 0.0 draws a donut (logical units)
             pad_angle: 0.0,          // gap between slices, in radians
             corner_radius: 0.0,      // rounds slice corners
             labels: PieLabels::None, // None | Value | Percent | List(Vec<String>)
@@ -36,6 +36,7 @@ With a single series, each datum is one slice and `ChartLegend` lists one entry 
 ## Options
 
 - `labels` prints text on each slice, centered in it: `Value` shows the slice's value, `Percent` its share of the total (one decimal place), and `List(vec![..])` shows your own text, one entry per datum by position. A slice with no entry gets no label.
+- `inner_radius` and `corner_radius` are in the chart's logical units: the `width`×`height` coordinate space, which the chart scales to fit its container.
 - `inner_radius` greater than `0.0` makes a donut, and `center_text: Some(("1,125".into(), "Visitors".into()))` writes a two-line total in the hole.
 - `active_index: Some(i)` keeps slice `i` highlighted (its outer radius grows and it gets `data-active="true"`) regardless of hover. Drive it from a signal to build a picker.
 - Hovering a slice, or stepping to it with the keyboard, highlights it the same way.
