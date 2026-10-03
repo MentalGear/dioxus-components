@@ -27,8 +27,8 @@ NavigationMenu {
             NavigationMenuTrigger { "Components" }
             NavigationMenuContent {
                 // Compose any markup here -- typically a grid of links.
-                NavigationMenuLink { href: "/component/?name=accordion", "Accordion" }
-                NavigationMenuLink { href: "/component/?name=dialog", "Dialog" }
+                NavigationMenuLink { href: "/component/accordion/", "Accordion" }
+                NavigationMenuLink { href: "/component/dialog/", "Dialog" }
             }
         }
         NavigationMenuItem {
@@ -39,6 +39,9 @@ NavigationMenu {
     }
 }
 ```
+
+`NavigationMenuLink` renders a plain `<a>`, not a router `Link`. If your app is
+served below a base path, prefix each `href` with it yourself.
 
 ## Keyboard interaction
 

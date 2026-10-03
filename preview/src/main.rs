@@ -1402,10 +1402,14 @@ fn ComponentDemoPath(iframe: Option<bool>, dark_mode: Option<bool>, name: String
 const PAGE_HEADING_INSTALLATION: &str = "Installation";
 const PAGE_HEADING_USAGE: &str = "Usage notes";
 const PAGE_HEADING_VARIANTS: &str = "Variants";
+/// "Usage" is reserved too: the docs are rendered inside the template's own
+/// "Usage notes" section, so a docs h2 called "Usage" would read as a nested
+/// duplicate of it.
 #[cfg(test)]
-const TEMPLATE_H2_HEADINGS: [&str; 3] = [
+const TEMPLATE_H2_HEADINGS: [&str; 4] = [
     PAGE_HEADING_INSTALLATION,
     PAGE_HEADING_USAGE,
+    "Usage",
     PAGE_HEADING_VARIANTS,
 ];
 
@@ -1421,11 +1425,31 @@ fn prefix_internal_hrefs(docs: &'static str) -> String {
 }
 
 fn prefix_root_absolute_hrefs(html: &str, prefix: &str) -> String {
+    const ATTR: &str = "href=\"";
     let prefix = prefix.trim_end_matches('/');
     if prefix.is_empty() {
         return html.to_string();
     }
-    html.replace("href=\"/", &format!("href=\"{prefix}/"))
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut rest = html;
+    while let Some(at) = rest.find(ATTR) {
+        let (head, value) = rest.split_at(at + ATTR.len());
+        out.push_str(head);
+        // Only a genuinely root-absolute path gets the prefix: not a
+        // protocol-relative `//host/...` link, and not one that already
+        // carries it (`<prefix>/...`), so running this twice -- or over
+        // pre-prefixed markup -- can never double-prefix.
+        let root_absolute = value.starts_with('/') && !value.starts_with("//");
+        let already_prefixed = value
+            .strip_prefix(prefix)
+            .is_some_and(|after| after.starts_with(['/', '?', '#', '"']));
+        if root_absolute && !already_prefixed {
+            out.push_str(prefix);
+        }
+        rest = value;
+    }
+    out.push_str(rest);
+    out
 }
 
 #[component]
@@ -3032,16 +3056,41 @@ mod variant_title_tests {
 mod docs_tests {
     use super::TEMPLATE_H2_HEADINGS;
 
-    /// Every `## ` heading of a `docs.md`, ignoring fenced code blocks.
-    fn h2_headings(markdown: &str) -> Vec<&str> {
-        let mut in_fence = false;
+    /// Every h2 of a `docs.md`: ATX `## ` headings and raw `<h2>` lines,
+    /// ignoring fenced code blocks (``` and ~~~; a fence only closes on the
+    /// same marker, at least as long, so a ``` line inside a ~~~ block -- or
+    /// the reverse -- does not toggle it).
+    fn h2_headings(markdown: &str) -> Vec<String> {
+        let mut fence: Option<(char, usize)> = None;
         let mut headings = Vec::new();
         for line in markdown.lines() {
-            if line.trim_start().starts_with("```") {
-                in_fence = !in_fence;
-            } else if !in_fence {
-                if let Some(text) = line.strip_prefix("## ") {
-                    headings.push(text.trim().trim_end_matches(':').trim());
+            let trimmed = line.trim_start();
+            let marker = trimmed
+                .chars()
+                .next()
+                .filter(|c| *c == '`' || *c == '~')
+                .map(|c| (c, trimmed.chars().take_while(|x| *x == c).count()))
+                .filter(|(_, n)| *n >= 3);
+            match (fence, marker) {
+                (None, Some(open)) => fence = Some(open),
+                (Some((c, n)), Some((mc, mn)))
+                    if mc == c && mn >= n && trimmed[mn..].trim().is_empty() =>
+                {
+                    fence = None
+                }
+                (Some(_), _) => {}
+                (None, None) => {
+                    if let Some(text) = line.strip_prefix("## ") {
+                        headings.push(text.trim().trim_end_matches(':').trim().to_string());
+                    } else if trimmed.len() >= 3
+                        && trimmed.is_char_boundary(3)
+                        && trimmed[..3].eq_ignore_ascii_case("<h2")
+                        && trimmed[3..].starts_with(['>', ' '])
+                    {
+                        let inner = trimmed.split_once('>').map_or("", |(_, rest)| rest);
+                        let inner = inner.split("</").next().unwrap_or(inner);
+                        headings.push(inner.trim().trim_end_matches(':').trim().to_string());
+                    }
                 }
             }
         }
@@ -3049,14 +3098,40 @@ mod docs_tests {
     }
 
     #[test]
+    fn h2_headings_sees_atx_raw_and_skips_fences() {
+        let md = "## Real\n```rust\n## in backticks\n```\n~~~\n## in tildes\n```\n## still in tildes\n~~~\n<h2>Raw</h2>\n<H2 id=\"x\">Usage:</h2>\n## After\n";
+        assert_eq!(h2_headings(md), vec!["Real", "Raw", "Usage", "After"],);
+    }
+
+    #[test]
     fn root_absolute_hrefs_gain_the_base_path() {
         let html = r##"<a href="/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##;
+        let prefixed = super::prefix_root_absolute_hrefs(html, "/dioxus-components");
         assert_eq!(
-            super::prefix_root_absolute_hrefs(html, "/dioxus-components"),
+            prefixed,
             r##"<a href="/dioxus-components/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##
         );
         assert_eq!(super::prefix_root_absolute_hrefs(html, ""), html);
         assert_eq!(super::prefix_root_absolute_hrefs(html, "/"), html);
+        // Idempotent: already-prefixed hrefs are left alone.
+        assert_eq!(
+            super::prefix_root_absolute_hrefs(&prefixed, "/dioxus-components"),
+            prefixed
+        );
+        // Protocol-relative links are not root-absolute paths.
+        let proto = r#"<a href="//cdn.example.com/x">x</a> <a href="/docs">d</a>"#;
+        assert_eq!(
+            super::prefix_root_absolute_hrefs(proto, "/dioxus-components"),
+            r#"<a href="//cdn.example.com/x">x</a> <a href="/dioxus-components/docs">d</a>"#
+        );
+        // A sibling path that merely starts with the prefix text still gets it.
+        assert_eq!(
+            super::prefix_root_absolute_hrefs(
+                r#"<a href="/dioxus-components-x/">x</a>"#,
+                "/dioxus-components"
+            ),
+            r#"<a href="/dioxus-components/dioxus-components-x/">x</a>"#
+        );
     }
 
     #[test]
@@ -3073,7 +3148,7 @@ mod docs_tests {
             for heading in h2_headings(&markdown) {
                 if TEMPLATE_H2_HEADINGS
                     .iter()
-                    .any(|reserved| reserved.eq_ignore_ascii_case(heading))
+                    .any(|reserved| reserved.eq_ignore_ascii_case(&heading))
                 {
                     offenders.push(format!("{}: `## {heading}`", path.display()));
                 }
@@ -3090,8 +3165,9 @@ mod docs_tests {
 
     #[test]
     fn docs_md_has_no_root_absolute_query_links() {
-        // `/component/?name=x` is the legacy JS-redirect route; build.rs
-        // rewrites it, but keep the sources on the canonical form too.
+        // `/component/?name=x` is the legacy JS-redirect route (client-side
+        // redirect to `/component/x/`); nothing rewrites it at build time, so
+        // keep the sources on the canonical `/component/<name>/` form.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
         let mut offenders = Vec::new();
         for entry in std::fs::read_dir(&root).unwrap().flatten() {

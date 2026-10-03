@@ -1669,6 +1669,40 @@ summary,
   }
 }
 
+/* Very narrow phones. The 760px step above leaves the header's seven items
+ * needing ~306px of content width, but a 300/320/340px viewport (less a 15px
+ * classic scrollbar, the 1px borders and the side padding) only offers
+ * ~251/271/291px, so with `nowrap` + `min-width: 0` the utilities group drew
+ * over the primary group ("Demos" under the GitHub link, then under the theme
+ * toggle). Reclaim the difference in steps, spacing first, the language
+ * chevron last, so nothing overlaps down to 300px:
+ *   <= 360px  tighter padding and gaps (~32px), 16px chevron (~8px)
+ *   <= 320px  drop the chevron entirely (flag only, ~26px); the transparent
+ *             `<select>` still covers the flag, so it stays operable. */
+@media (width <= 360px) {
+  .dx-navbar-inner {
+    padding-right: var(--dx-space-3);
+    padding-left: var(--dx-space-3);
+    gap: 0.25rem;
+  }
+
+  .dx-navbar-primary,
+  .dx-navbar-utilities {
+    gap: 0.5rem;
+  }
+
+  .dx-language-select-value .dx-select-expand-icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (width <= 320px) {
+  .dx-language-select-value .dx-select-expand-icon {
+    display: none;
+  }
+}
+
 /* Disable animations while the page is loading */
 .dx-preload * {
   animation-duration: 0.001s !important;
