@@ -5835,7 +5835,7 @@ mod tests {
                     }
                     let d = shortest_signed_delta(old, new, count);
                     assert!(d != 0);
-                    assert!(d.unsigned_abs() as usize <= count / 2 + 1);
+                    assert!(d.unsigned_abs() <= count / 2 + 1);
                     // Applying it must land back on `new`, modulo `count`.
                     let landed = ((old as isize + d).rem_euclid(count as isize)) as usize;
                     assert_eq!(landed, new);

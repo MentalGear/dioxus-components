@@ -24,6 +24,6 @@ mutants.out*/
 
 # Subagent lane scratch (local to a session's container, never committed):
 # git worktrees under .claude/worktrees/agent-<id> and their isolated
-# CARGO_TARGET_DIR siblings. `target` above does not cover `target-lane-*`.
+# CARGO_TARGET_DIR siblings. `target` above does not cover `target-*` (e.g. `target-laneA`, `target-final`).
 .claude/worktrees/
-target-lane-*/
+target-*/
