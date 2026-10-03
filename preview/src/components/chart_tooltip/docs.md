@@ -1,8 +1,6 @@
-Chart Tooltip gathers the tooltip and legend *options* the `chart` package's `ChartTooltip` and
-`ChartLegend` expose — the indicator shape, hiding the label or indicator, a custom label, a label
-or value formatter, per-series icons, and a fully custom row renderer — one demo per option,
-mirroring shadcn's own nine `chart-tooltip-*` gallery entries. It installs no primitive of its own:
-every demo below composes the same `Chart`/`ChartContainer`/`ChartTooltip` pieces `chart` ships.
+`ChartTooltip` and `ChartLegend` are the optional pieces of a [Chart](/component/chart/) that tell a reader what each series and value means. This page shows each option on its own: the indicator shape, hiding the label or indicator, a fixed heading, label and value formatters, per-series icons, and fully custom rows. Nothing extra is installed; it is the same `ChartTooltip` that ships with `chart`.
+
+Place `ChartTooltip {}` as a sibling of `Chart` inside the `ChartContainer`. It shows the label and one row per series for the active data point, which is the point under the pointer or the one the keyboard has stepped to. It is hidden from assistive technology (`aria-hidden`) because the chart's data table is the accessible source of the same numbers.
 
 ## Indicator shape
 
@@ -10,11 +8,7 @@ every demo below composes the same `Chart`/`ChartContainer`/`ChartTooltip` piece
 ChartTooltip { indicator: TooltipIndicator::Line } // Dot (default) | Line | Dashed | None
 ```
 
-`Dot` draws a small square swatch, matching every other chart demo's default. `Line` and `Dashed`
-draw a full-row-height bar or dashed rule instead — useful when a row's own value already reads as
-a magnitude and the swatch mainly needs to carry color, not shape. `None` (or the separate
-`hide_indicator: true` flag, kept for parity with shadcn's own distinct `hideIndicator` prop) omits
-the indicator entirely.
+`Dot` draws a small square swatch beside each row. `Line` and `Dashed` draw a full-height bar or dashed rule instead, which reads better when the row's value is already a magnitude and the swatch only needs to carry color. `None`, or `hide_indicator: true`, leaves the indicator out.
 
 ## Hiding the label or indicator
 
@@ -22,7 +16,7 @@ the indicator entirely.
 ChartTooltip { hide_label: true, hide_indicator: true }
 ```
 
-Either can be set independently. With both set, a row shows only its series' name and value.
+Set either on its own or both together. With both set, each row shows only the series name and its value.
 
 ## Overriding the label or a row's name
 
@@ -30,25 +24,18 @@ Either can be set independently. With both set, a row shows only its series' nam
 ChartTooltip { label_key: Some("Activities".into()) }
 ```
 
-`label_key` replaces the label row's text with a literal string instead of the active datum's own
-category label — useful for a static heading ("Activities") rather than a per-datum date. `name_key`
-does the same for every row's displayed name. Both are this crate's simplified equivalent of
-shadcn's `labelKey`/`nameKey`, which instead point at a second, free-form lookup into `ChartConfig`
-— a mechanism this crate's own strongly-typed, positional `ChartConfig` has no equivalent of, so the
-same *observable* effect is exposed directly as a literal string instead.
+`label_key` replaces the label row's text with a fixed string instead of the active category, which suits a static heading ("Activities") better than a per-point date. `name_key` does the same for every row's name, though with more than one series every row would then show the same text.
 
 ## Formatting the label or a value
 
 ```rust
 ChartTooltip {
-    label_format: |raw: String| /* e.g. */ format!("{raw} (spelled out)"),
+    label_format: |raw: String| format!("{raw} (spelled out)"),
     value_format: |v: f64| format!("{v} kcal"),
 }
 ```
 
-`label_format` transforms the (possibly `label_key`-overridden) label text; `value_format`
-transforms each row's own numeric value. Both leave the indicator/name markup untouched — for that,
-use `formatter` instead.
+`label_format` transforms the label text (after `label_key`, if set) and `value_format` transforms each row's number. Neither changes the indicator or name markup; use `formatter` for that. Without `value_format`, values are shown with up to two decimals.
 
 ## Fully custom rows
 
@@ -56,51 +43,45 @@ use `formatter` instead.
 ChartTooltip {
     formatter: |row: TooltipRow| rsx! {
         span { "{row.label}" }
-        span { "{row.value:?} kcal" }
+        span {
+            if let Some(v) = row.value { "{v} kcal" } else { "—" }
+        }
         if row.is_last {
-            div { "data-slot": "chart-tooltip-total", "Total: {row.total} kcal" }
+            div { "Total: {row.total} kcal" }
         }
     },
 }
 ```
 
-`formatter` replaces a row's entire inner content (indicator, name, and value together) with
-whatever `Element` it returns, called once per configured series with a [`TooltipRow`] carrying
-that row's key, resolved label, value, color, position, and (since this crate has no equivalent of
-shadcn's free-form per-datum payload object) a precomputed cross-series total — enough to build the
-`advanced` demo's own trailing "Total" row without recomputing it from raw data.
+`formatter` replaces the inside of every row (indicator, name and value) with whatever `Element` you return. It is called once per series with a `TooltipRow`: the series `key`, its resolved `label`, the `value` (`None` for a gap), the `color` as a `var(--color-<key>)` reference, the row's `index`, an `is_last` flag, and `total`, the sum of every series' value at that point. The total and flag make it easy to append a "Total" line after the last row without recomputing anything.
 
-## Icons
+## Series icons
 
-`ChartSeries::icon` (`Option<ChartIcon>`) has no builder method yet, so attach one with a struct
-update on an already-built series:
+A series can carry an icon that replaces its color swatch in both the tooltip and the legend. Set it on the series in your config:
 
 ```rust
-let running = ChartConfig::new().series("running", "Running", "var(--dx-chart-1)").series.remove(0);
-let running = ChartSeries { icon: Some(ChartIcon(Callback::new(|()| rsx! { Footprints {} }))), ..running };
+let mut config = ChartConfig::new()
+    .series("running", "Running", "var(--dx-chart-1)")
+    .series("swimming", "Swimming", "var(--dx-chart-2)");
+config.series[0].icon = Some(ChartIcon(Callback::new(|()| rsx! { Footprints {} })));
 ```
 
-A series with an icon renders that icon in place of its indicator swatch, in both the tooltip and
-the legend (`ChartLegend`'s own `hide_icon: true` opts a legend back out of icons while keeping a
-series' icon in the tooltip). The icon sits in a `role="graphics-symbol"` wrapper with the series'
-label as its accessible name, exactly like the swatch it replaces -- and, unlike the swatch, ignores
-`hide_indicator`/`indicator` entirely on the tooltip side (it only ever falls back to the swatch via
-the legend's own `hide_icon`).
+The icon is wrapped in a `role="graphics-symbol"` element named after the series, exactly like the swatch it replaces. In the tooltip an icon is always shown when present, whatever `indicator` or `hide_indicator` say. `ChartLegend { hide_icon: true }` falls back to plain swatches in the legend while the tooltip keeps its icons.
 
-## The nine demos
+## Legend options
 
-| Demo | What it shows |
-| --- | --- |
-| Default | `ChartTooltipContent`'s own defaults: dot indicator, label and every value shown. |
-| Line Indicator | `indicator: TooltipIndicator::Line`. |
-| No Indicator | `hide_indicator: true`. |
-| No Label | `hide_indicator: true, hide_label: true`. |
-| Custom label | `label_key`, pointing the label row at a fixed heading. |
-| Label Formatter | `label_format`, spelling the date out in full. |
-| Formatter | `formatter`, replacing each row's value with a custom "N kcal" layout. |
-| Icons | Per-series icons instead of swatches. |
-| Advanced | `formatter` again, this time appending a computed total row after the last series. |
+`ChartLegend` shows one swatch (or icon) and label per series. `vertical_align` (`LegendAlign::Top` or `LegendAlign::Bottom`, the default) sets which side of the chart it belongs on through a `data-align` attribute, and `hide_icon` is described above. A single-series pie or radial chart lists one entry per slice or ring instead.
 
-Every demo ports its data, series, and copy from shadcn's own
-`registry/new-york-v4/charts/chart-tooltip-*.tsx` sources (cited in each variant's own doc comment)
-— a six-day running/swimming calorie dataset, rendered as a stacked bar chart.
+## Demos
+
+- **Default** — dot indicator, label and every value.
+- **Line indicator** — `indicator: TooltipIndicator::Line`.
+- **No indicator** — `hide_indicator: true`.
+- **No label** — `hide_indicator: true, hide_label: true`.
+- **Custom label** — `label_key` as a fixed heading.
+- **Label formatter** — `label_format` spelling the date out in full.
+- **Formatter** — `formatter` showing each value as "N kcal".
+- **Icons** — per-series icons instead of swatches.
+- **Advanced** — `formatter` again, adding a computed total row after the last series.
+
+All demos use a six-day running and swimming calorie dataset drawn as a stacked bar chart.

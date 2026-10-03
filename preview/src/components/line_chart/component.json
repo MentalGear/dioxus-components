@@ -1,6 +1,6 @@
 {
   "name": "line_chart",
-  "description": "Line chart gallery: shadcn's ten chart-line-* demos (default, linear, step, multiple, dots, dots with colors/custom markers, value/custom labels, interactive) built entirely on the Chart primitive.",
+  "description": "Line charts: default, linear and step curves, multiple series, dots, labels and an interactive series toggle.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

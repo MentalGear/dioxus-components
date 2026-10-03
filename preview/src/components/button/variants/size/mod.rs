@@ -5,7 +5,20 @@ use dioxus_icons::lucide::ArrowUpRight;
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        style { {SIZE_DEMO_STYLE} }
+        style { r#"
+.dx-button-size-demo {{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2rem;
+}}
+
+@media (width >= 40rem) {{
+  .dx-button-size-demo {{
+    flex-direction: row;
+  }}
+}}
+"# }
         div { class: "dx-button-size-demo",
 
             div {
@@ -62,21 +75,6 @@ pub fn Demo() -> Element {
         }
     }
 }
-
-const SIZE_DEMO_STYLE: &str = r#"
-.dx-button-size-demo {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2rem;
-}
-
-@media (width >= 40rem) {
-  .dx-button-size-demo {
-    flex-direction: row;
-  }
-}
-"#;
 
 #[component]
 fn ArrowUpRightIcon() -> Element {

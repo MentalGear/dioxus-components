@@ -46,9 +46,9 @@ pub fn Demo() -> Element {
                     ChartLegend {}
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month" }
-                div { "January 2024 total visitors" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-caption", "January 2024 total visitors" }
             }
         }
     }

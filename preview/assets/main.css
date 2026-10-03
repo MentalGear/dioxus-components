@@ -19,8 +19,14 @@
    * previous #2b7fff, used as `color` (not a border/background) in 11
    * rules across this file, measured 3.76:1 on white -- below WCAG's
    * 4.5:1 for normal text. #0065ff keeps the same hue/saturation, darker
-   * lightness only, and clears 4.5:1 (measured 4.88:1 on white). */
-  --highlight-color-tertiary: #0065ff;
+   * lightness only, and clears 4.5:1 (measured 4.88:1 on white).
+   *
+   * Dark theme (reviewer finding, 2026-10-03): #0065ff measured 4.31:1 on
+   * the #000 page and 3.80:1 on the #141313 card -- under 4.5:1 again, in
+   * the other direction. The `--light`/`--dark` pair keeps light as-is and
+   * uses the lighter #4d94ff in dark (7.00:1 on #000, 6.18:1 on #141313,
+   * 5.04:1 on #262626). */
+  --highlight-color-tertiary: var(--dark, #4d94ff) var(--light, #0065ff);
   --dx-content-width: 1360px;
 
   /* Comfortably >= .dx-preview-navbar's tallest steady-state rendered
@@ -52,6 +58,17 @@ html {
      future same-page anchor jump elsewhere in the app should behave the
      same way. */
   scroll-behavior: smooth;
+
+  /* Reserve the classic-scrollbar gutter in the SSR/pre-hydration layout
+     too. `ensure_scrollbar_gutter_baseline` (`primitives/src/scroll_lock.rs`)
+     installs the same `scrollbar-gutter: stable` (as a zero-specificity
+     `:where(html)` rule) only once the WASM runtime runs, so without this
+     the page was laid out 15px wider before hydration and shifted
+     the instant it hydrated (CLS 0.115 on /component/chart/ at 390px with
+     classic scrollbars). Declaring it statically makes the SSR and hydrated
+     layouts identical; the runtime rule is a redundant, same-valued
+     declaration that this one simply outranks. */
+  scrollbar-gutter: stable;
 }
 
 html,
@@ -546,12 +563,18 @@ summary,
   padding: 3rem 1.5rem 5rem 4.25rem;
 }
 
+/* `grid-template-columns: minmax(0, 1fr)`, not the implicit `auto` track: an
+ * `auto` track grows to its widest child's min-content, so an unshrinkable
+ * child (the title row's `dx-component-inline-command`, `white-space:
+ * nowrap`) widened the whole header past the viewport at phone widths and
+ * pushed the copy button out of view. */
 .dx-docs-page-header,
 .dx-component-page-header {
   display: grid;
   padding-bottom: 1.75rem;
   border-bottom: 1px solid var(--primary-color-6);
   gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .dx-docs-page-header > *,
@@ -795,6 +818,50 @@ summary,
   line-height: 1.6;
 }
 
+/* Tables in prose: the wrapper (added in `preview/build.rs`) is the scroll
+ * container, so a wide table scrolls inside its own box at phone widths. */
+.dx-docs-prose .dx-docs-table-scroll {
+  max-width: 100%;
+  margin: 0 0 1.1rem;
+  overflow-x: auto;
+}
+
+.dx-docs-prose table {
+  min-width: 100%;
+  border-collapse: collapse;
+  color: var(--secondary-color-4);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.dx-docs-prose th,
+.dx-docs-prose td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--primary-color-6);
+  text-align: start;
+  vertical-align: top;
+}
+
+.dx-docs-prose th {
+  background-color: var(--primary-color-2);
+  color: var(--secondary-color-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dx-docs-prose tbody tr:nth-child(even) td {
+  background-color: var(--primary-color-1);
+}
+
+.dx-docs-prose td code {
+  padding: 0.15em 0.4em;
+  border-radius: 0.25rem;
+  background-color: var(--primary-color-2);
+  color: var(--secondary-color-3);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+}
+
 /* Inline links in prose */
 .dx-docs-prose .dx-docs-section a {
   color: var(--highlight-color-tertiary);
@@ -860,10 +927,18 @@ summary,
 
 .dx-component-inline-command code {
   overflow: hidden;
+  min-width: 0;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The copy button must stay visible however long the command is: the
+ * command text (the only flexible part) truncates, the button never
+ * shrinks. */
+.dx-component-inline-command > :not(code) {
+  flex-shrink: 0;
 }
 
 .dx-component-preview-frame {
@@ -883,6 +958,23 @@ summary,
     radial-gradient(circle, rgb(0 0 0 / 6%) 1px, transparent 1px);
   background-position: -1px -1px;
   background-size: 16px 16px;
+}
+
+/* At phone widths the frame's 32px-per-side padding plus a card's own 24px
+ * content padding left a chart 159 of 305px and its text unreadable; 12px
+ * (`--dx-space-3`) keeps a visible canvas edge without eating the demo.
+ *
+ * The frame element is ALSO a `.dx-tabs-content` (`ComponentVariantHighlight`,
+ * `preview/src/main.rs`), and `components/tabs/style.css` loads after this
+ * file and sets `.dx-tabs-content { padding: var(--dx-space-8) }` at the same
+ * single-class specificity -- so the 1.75rem above never applied at any
+ * width. The compound selector outranks that rule; it must stay ABOVE the
+ * `:has(.dx-code-block)` rule below (same specificity), which keeps the CODE
+ * tab at `padding: 0` by source order. */
+@media (width <= 480px) {
+  .dx-component-preview-frame.dx-tabs-content {
+    padding: var(--dx-space-3);
+  }
 }
 
 /* When the preview frame wraps a code block (the CODE tab), drop the
@@ -1388,6 +1480,34 @@ summary,
   max-width: 100%;
 }
 
+/* Bare chart demos (`.dx-chart` as the frame's direct child, e.g. the
+ * `chart` page's Bar/Line/Stacked variants) and chart demos wrapped in a
+ * `Card` (the `*_chart` galleries) both shrink-wrapped to ~300-450px inside
+ * the wide frame: the frame is a centred flex column and the chart's own
+ * content is a `width: 100%` svg, so there is no intrinsic width to wrap to.
+ * Give them one shared comfortable width instead: the frame's full width up
+ * to 40rem (`area_chart` wraps its Card in a `display: contents` gallery div,
+ * hence the third/fourth selectors; the wrapper itself is sized too so the
+ * rule also holds if it renders as an ordinary block). `width` is explicit
+ * next to `max-width` (scripts/check-demo-wrapper-width.sh, row 94). */
+.dx-component-preview-frame > .dx-chart,
+.dx-component-preview-frame > .dx-card:has(.dx-chart),
+.dx-component-preview-frame > .dx-area-chart-gallery:has(.dx-chart),
+.dx-component-preview-frame > .dx-area-chart-gallery > .dx-card:has(.dx-chart) {
+  width: 100%;
+  max-width: 40rem;
+}
+
+/* A bare chart sits straight on the dotted frame canvas; give it the same
+ * surface the `Card`-wrapped demos have so its axis labels stay legible. */
+.dx-component-preview-frame > .dx-chart {
+  box-sizing: border-box;
+  padding: var(--dx-space-4);
+  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border-radius: var(--dx-radius-2xl);
+  background-color: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+}
+
 /* Footer */
 .dx-preview-footer {
   display: flex;
@@ -1490,21 +1610,40 @@ summary,
 }
 
 @media (width <= 760px) {
+  /* One compact row at phone widths (measured 54px at 360/390 vs 151px when
+   * it wrapped to three rows): no wrapping, tighter gaps, and the brand
+   * wordmark visually hidden -- the logo stays as the home link, and the
+   * text stays in the accessibility tree. */
   .dx-navbar-inner {
     width: 100%;
-    flex-wrap: wrap;
-    padding-right: 1rem;
-    padding-left: 1rem;
-    gap: 0.75rem;
+    flex-wrap: nowrap;
+    padding-right: var(--dx-space-4);
+    padding-left: var(--dx-space-4);
+    gap: 0.5rem;
   }
 
   .dx-navbar-utilities {
-    flex-wrap: wrap;
+    min-width: 0;
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    gap: 0.75rem;
   }
 
   .dx-navbar-primary {
-    flex-wrap: wrap;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+  }
+
+  .dx-navbar-brand span {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* The mobile drawer itself (sidebar-wrapper -> Sheet, `data-mobile="true"`)
@@ -1521,9 +1660,11 @@ summary,
     border-left: none;
   }
 
+  /* Keep a 16px side gutter: with `0` inline padding the h1 and prose sat
+   * flush against the screen edge on /docs/ and every component page. */
   .dx-docs-page,
   .dx-component-page {
-    padding: 1.5rem 0 4rem;
+    padding: 1.5rem var(--dx-space-4) 4rem;
   }
 
   .dx-docs-page-header h1,
@@ -1542,7 +1683,12 @@ summary,
     grid-template-columns: 1fr;
   }
 
+  /* `overflow: hidden`: a thumbnail whose demo has a fixed inline `min-width`
+   * wider than the card (the Resizable demo's 450px group) must clip inside
+   * its own box, not widen the page. Desktop keeps the base `overflow:
+   * visible`. */
   .dx-component-card-preview {
+    overflow: hidden;
     min-height: 7rem;
     padding: 1.25rem;
   }
@@ -1551,6 +1697,57 @@ summary,
     width: 100%;
     padding-right: 1rem;
     padding-left: 1rem;
+  }
+
+  /* The desktop footer insets (4.5rem a side, two 1.4fr/1fr columns) leave
+   * ~100px for the link columns at 390px, so the two nav headings overlap.
+   * Stack the brand above the nav and use phone-sized gutters. */
+  .dx-footer-inner {
+    padding: var(--dx-space-8) var(--dx-space-4);
+    gap: var(--dx-space-8);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-footer-nav {
+    gap: var(--dx-space-6);
+  }
+
+  .dx-footer-base {
+    padding: var(--dx-space-4) var(--dx-space-4) var(--dx-space-6);
+  }
+}
+
+/* Very narrow phones. The 760px step above leaves the header's seven items
+ * needing ~306px of content width, but a 300/320/340px viewport (less a 15px
+ * classic scrollbar, the 1px borders and the side padding) only offers
+ * ~251/271/291px, so with `nowrap` + `min-width: 0` the utilities group drew
+ * over the primary group ("Demos" under the GitHub link, then under the theme
+ * toggle). Reclaim the difference in steps, spacing first, the language
+ * chevron last, so nothing overlaps down to 300px:
+ *   <= 360px  tighter padding and gaps (~32px), 16px chevron (~8px)
+ *   <= 320px  drop the chevron entirely (flag only, ~26px); the transparent
+ *             `<select>` still covers the flag, so it stays operable. */
+@media (width <= 360px) {
+  .dx-navbar-inner {
+    padding-right: var(--dx-space-3);
+    padding-left: var(--dx-space-3);
+    gap: 0.25rem;
+  }
+
+  .dx-navbar-primary,
+  .dx-navbar-utilities {
+    gap: 0.5rem;
+  }
+
+  .dx-language-select-value .dx-select-expand-icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (width <= 320px) {
+  .dx-language-select-value .dx-select-expand-icon {
+    display: none;
   }
 }
 

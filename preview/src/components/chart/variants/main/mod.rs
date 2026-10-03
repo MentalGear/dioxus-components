@@ -108,9 +108,16 @@ pub fn Demo() -> Element {
                         aria_label: "Visitors by day, desktop and mobile",
                         // Daily dates, not the generic "Category" default --
                         // this is the one demo whose x-axis is actually a
-                        // date series (labels like "Apr 1"). The default
-                        // max_x_ticks=12 already thins the 90-day view's
-                        // x-axis labels down from one-per-day.
+                        // date series. The default `x_tick_format` keeps only
+                        // a label's first 3 characters (built for "January"
+                        // -> "Jan"), which turned "Apr 1".."Jun 30" into a
+                        // wall of "Apr Apr Apr ... May May"; the full
+                        // "Apr 1" label is what makes each tick readable.
+                        // `max_x_ticks` thins 90 days to ~8 labels (every
+                        // 12th day), 30 days to ~8 (every 4th), and leaves
+                        // the 7-day view labelled daily.
+                        x_tick_format: |label: String| label,
+                        max_x_ticks: 8,
                         x_label: "Date",
                     }
                     ChartTooltip {}

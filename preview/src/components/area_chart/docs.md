@@ -1,18 +1,18 @@
-Area Chart is a gallery of [`Chart`](/component/?name=chart&) configured with `kind: ChartKind::Area` — shadcn/ui's own `chart-area-*` demo spread, ported one-for-one. There is no `area_chart` primitive and no new themed wrapper: every piece below (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) is the `chart` package's own, installed as this component's one dependency (`componentDependencies: ["chart"]`). This page exists to show the shapes an area chart actually takes in practice — a single series, several curve interpolations, stacked and percent-stacked totals, gradient fills, and an interactive range picker — the same variety shadcn's own docs site demonstrates.
+Area charts show how one or more values change across categories, with the region under the line filled in. Use them for totals over time, or stack several series to show how a whole is made up. This page is a gallery of the shapes an area chart usually takes; every piece it uses (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) comes from the [Chart](/component/chart/) package, which is the one package you install.
 
-## Component structure
+## Quick start
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
 let data = vec![
-    ChartDatum { label: "January".into(), values: vec![Some(186.0)] },
+    ChartDatum { label: "January".into(), values: vec![Some(186.0)], ..Default::default() },
     // ...
 ];
 
 ChartContainer { config, data, kind: ChartKind::Area,
     Chart {
         aria_label: "Visitors by month",
-        curve: Curve::Monotone, // Monotone (shadcn's "natural") | Linear | Step
+        curve: Curve::Monotone, // Monotone (default, smooth) | Linear | Step
         stacked: false,         // true stacks every configured series
     }
     ChartTooltip {}
@@ -20,19 +20,30 @@ ChartContainer { config, data, kind: ChartKind::Area,
 }
 ```
 
-## Variants
+## Options
 
-- **Default** (`chart-area-default`) — one series, the default `Curve::Monotone` interpolation (matches shadcn's `type="natural"`), filled to the baseline.
-- **Linear** (`chart-area-linear`) — the same data with `curve: Curve::Linear` — straight segments between points, no smoothing.
-- **Step** (`chart-area-step`) — `curve: Curve::Step` — a step-after path (a horizontal run to the next point's x, then a vertical rise/drop to its y).
-- **Stacked** (`chart-area-stacked`) — two series, `stacked: true`: each datum's values sum, drawn as one filled region atop the other rather than overlapping.
-- **Legend** (`chart-area-legend`) — a stacked area chart with a `ChartLegend` below it.
-- **Axes** (`chart-area-axes`) — both axes shown (`show_y_axis: true` alongside the default `show_x_axis`), with a reduced y-tick count (`y_tick_count: 3`) matching shadcn's own `tickCount={3}`.
-- **Interactive** (`chart-area-interactive`) — 90 days of two-series data, a `Select` narrows the visible range to the last 90/30/7 days, with a `ChartLegend`.
-- **Stacked, expand** (`chart-area-stacked-expand`) — three series stacked as *percentages of each datum's total* (`area: AreaOptions { stack_mode: StackMode::Expand, .. }`) — every datum's stack reaches exactly 100%, regardless of its raw total. Renders with `show_grid: false`: the shared grid still reflects the *raw* domain, not the percent one, until a follow-up makes it stack-mode-aware (see the component's own source comment).
-- **Gradient** (`chart-area-gradient`) — `area: AreaOptions { gradient: true, .. }`: each series' fill is a top-to-bottom `<linearGradient>` (opaque near the line, fading toward the baseline) instead of a flat, uniform fill-opacity.
-- **Icons** (`chart-area-icons`) — each series' `ChartSeries.icon` is set (`TrendingDown`/`TrendingUp`). Not yet visually wired up — `ChartLegend`/`ChartTooltip` don't read this field yet — so today this renders identically to `legend`; the config is ready for the moment they do.
+- `curve` on `Chart` picks the interpolation: `Curve::Monotone` is smooth and never overshoots a data point, `Curve::Linear` draws straight segments, and `Curve::Step` draws a horizontal run to the next point followed by a vertical jump.
+- `stacked: true` on `Chart` draws each series on top of the previous one, so the top edge is the running total.
+- `area: AreaOptions { .. }` holds the area-specific settings:
+  - `gradient: true` fills each series with a gradient that is opaque near the line and fades toward the baseline.
+  - `fill_opacity` sets the flat fill opacity (default `0.4`); the line itself stays fully opaque.
+  - `connect_nulls: true` draws straight across a missing (`None`) value instead of breaking the area. It applies to unstacked charts only.
+  - `stack_mode: StackMode::Expand` stacks as percentages, so every category reaches the same total height regardless of its raw total. Pair it with `stacked: true`.
+- `show_y_axis: true` and `y_tick_count` show the y-axis and control how many ticks it gets. The y-axis is off by default; the tooltip and the data table carry exact values.
+- A series can have an icon: set `icon: Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })))` on a `ChartSeries`. `ChartLegend` and `ChartTooltip` show it in place of the color swatch.
+
+## Demos
+
+- **Default** — one series with the default smooth curve.
+- **Linear** and **Step** — the same data with `Curve::Linear` and `Curve::Step`.
+- **Stacked** — two series with `stacked: true`.
+- **Legend** — a stacked chart with a `ChartLegend` below it.
+- **Axes** — both axes shown, with `y_tick_count: 3`.
+- **Interactive** — 90 days of two-series data with a `Select` that narrows the range to the last 90, 30 or 7 days. With this many points, `max_x_ticks` keeps the x-axis readable.
+- **Stacked, expand** — three series stacked as percentages with `StackMode::Expand`.
+- **Gradient** — `AreaOptions { gradient: true, .. }`.
+- **Icons** — per-series icons shown in the legend and tooltip.
 
 ## Accessibility
 
-Nothing about `kind: ChartKind::Area` changes `Chart`'s own accessibility contract — see the [Chart](/component/?name=chart&) page: `role="img"` + `<title>`/`<desc>` on the svg, a real hidden `<table>` mirroring every datum, `role="graphics-symbol"` legend/tooltip swatches, and optional arrow-key stepping of the active point.
+Area charts have the same accessibility behavior as every [Chart](/component/chart/): the SVG is a named image (`role="img"` with a `<title>`), a visually hidden data table lists every value, and a focusable wrapper lets keyboard users step through points with the arrow keys, `Home`, `End` and `Escape`. Legend swatches have `role="graphics-symbol"` and the series label as their name. See the Chart page for details.

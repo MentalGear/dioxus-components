@@ -2,111 +2,6 @@ use super::super::component::*;
 use crate::components::avatar::{ImageAvatar, AvatarImageSize};
 use dioxus::prelude::*;
 
-const INLINE_STYLE: &str = r#".dx-tasks-demo {
-  width: 100%;
-  max-width: 460px;
-  margin: 0 auto;
-}
-
-.dx-tasks-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 2px 14px;
-  gap: 16px;
-}
-
-.dx-tasks-title {
-  margin: 0;
-  color: var(--secondary-color-2);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.dx-tasks-subtitle {
-  margin: 4px 0 0;
-  color: var(--secondary-color-5);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.dx-tasks-count {
-  color: var(--secondary-color-5);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.dx-task-card {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  align-items: center;
-  gap: 12px;
-}
-
-.dx-task-body {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.dx-task-title {
-  overflow: hidden;
-  color: var(--secondary-color-2);
-  font-size: 13.5px;
-  font-weight: 500;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dx-task-meta {
-  display: flex;
-  align-items: center;
-  color: var(--secondary-color-5);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  gap: 7px;
-  line-height: 1.3;
-}
-
-.dx-task-code {
-  /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03):
-   * `--secondary-color-6`'s light value (#d0d0d0) is meant for
-   * dark-surface use (its own dark-mode value, #5d5d5d, is the
-   * light-surface-appropriate one) -- used here as light-mode text, it
-   * measured 1.54:1 on white. `--secondary-color-5` (this theme's actual
-   * "muted text on light surfaces" token, used the same way in ~28 other
-   * component stylesheets) is the correct token for this role. */
-  color: var(--secondary-color-5);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-}
-
-.dx-task-sep {
-  width: 2px;
-  height: 2px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--primary-color-7);
-}
-
-.dx-task-due[data-urgent="true"] {
-  color: var(--secondary-color-2);
-  font-weight: 500;
-}
-
-.dx-tasks-demo .dx-drag-and-drop-list-item:hover .dx-task-code {
-  color: var(--secondary-color-4);
-}"#;
-
 #[derive(Clone, Copy)]
 struct TaskView {
     code: &'static str,
@@ -189,7 +84,110 @@ pub fn Demo() -> Element {
     let items: Vec<Element> = TASKS.iter().map(|t| task_item(*t)).collect();
 
     rsx! {
-        style { {INLINE_STYLE} }
+        style { r#".dx-tasks-demo {{
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+}}
+
+.dx-tasks-header {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px 14px;
+  gap: 16px;
+}}
+
+.dx-tasks-title {{
+  margin: 0;
+  color: var(--secondary-color-2);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}}
+
+.dx-tasks-subtitle {{
+  margin: 4px 0 0;
+  color: var(--secondary-color-5);
+  font-size: 12px;
+  line-height: 1.4;
+}}
+
+.dx-tasks-count {{
+  color: var(--secondary-color-5);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}}
+
+.dx-task-card {{
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}}
+
+.dx-task-body {{
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}}
+
+.dx-task-title {{
+  overflow: hidden;
+  color: var(--secondary-color-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+
+.dx-task-meta {{
+  display: flex;
+  align-items: center;
+  color: var(--secondary-color-5);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  gap: 7px;
+  line-height: 1.3;
+}}
+
+.dx-task-code {{
+  /* axe `color-contrast` (docs/backlog.md row 39, filed 2026-09-03):
+   * `--secondary-color-6`'s light value (#d0d0d0) is meant for
+   * dark-surface use (its own dark-mode value, #5d5d5d, is the
+   * light-surface-appropriate one) -- used here as light-mode text, it
+   * measured 1.54:1 on white. `--secondary-color-5` (this theme's actual
+   * "muted text on light surfaces" token, used the same way in ~28 other
+   * component stylesheets) is the correct token for this role. */
+  color: var(--secondary-color-5);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}}
+
+.dx-task-sep {{
+  width: 2px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--primary-color-7);
+}}
+
+.dx-task-due[data-urgent="true"] {{
+  color: var(--secondary-color-2);
+  font-weight: 500;
+}}
+
+.dx-tasks-demo .dx-drag-and-drop-list-item:hover .dx-task-code {{
+  color: var(--secondary-color-4);
+}}"# }
         div { class: "dx-tasks-demo",
             div { class: "dx-tasks-header",
                 div {

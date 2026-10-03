@@ -1,6 +1,6 @@
 {
   "name": "chart",
-  "description": "A themed, data-driven SVG chart (area, bar, line) with tooltip, legend, and an accessible hidden data table.",
+  "description": "A themed, data-driven SVG chart (area, bar, line, pie, radar and radial) with a tooltip, legend and an accessible hidden data table.",
   "authors": ["Claude"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

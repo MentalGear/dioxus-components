@@ -6,7 +6,8 @@
 //! ## Provenance
 //!
 //! This module ports shadcn/ui's *conceptual* chart layer (`ChartConfig` ->
-//! `--color-<key>` CSS variables scoped by `data-chart="<id>"`,
+//! `--color-<key>` CSS variables (an inline `style` on the container,
+//! which also carries `data-chart="<id>"`),
 //! `ChartContainer`/`ChartTooltip`/`ChartLegend`) rather than its literal
 //! React composition API, which has no Dioxus equivalent -- see
 //! `dev-docs/research/chart-2026-09-19.md` §1 (especially §1.4) for why a

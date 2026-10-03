@@ -36,8 +36,9 @@ pub use dioxus_primitives::chart::{
     LegendAlign, LineOptions, PieLabels, PieOptions, RadarOptions, RadialOptions, StackMode,
 };
 
-/// The themed chart container: scopes the `--color-<key>` CSS variables
-/// generated from `config` to this instance via `data-chart="<id>"`. Always
+/// The themed chart container: sets the `--color-<key>` CSS variables
+/// generated from `config` as an inline `style` on its own element, so they
+/// are scoped to this instance by inheritance. Always
 /// the outermost chart piece -- `Chart`/`ChartTooltip`/`ChartLegend` are
 /// composed as its children. The focusable/keyboard-navigable root
 /// (`Chart`'s `keyboard` prop) is `Chart`'s own `[data-slot="chart"]` div,

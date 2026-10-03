@@ -1,6 +1,17 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
+/// A root-absolute site path with the app base path (`dx --base-path`, e.g.
+/// `/dioxus-components` on Pages) in front. `NavigationMenuLink` renders a
+/// plain `<a>`, not a router `Link`, so it does not get the prefix for free
+/// and a bare `"/docs"` would 404 when the site is served below a sub-path.
+fn site_href(path: &str) -> String {
+    let prefix = try_router()
+        .and_then(|router| router.prefix())
+        .unwrap_or_default();
+    format!("{}{path}", prefix.trim_end_matches('/'))
+}
+
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -16,7 +27,7 @@ pub fn Demo() -> Element {
                         NavigationMenuContent {
                             div { class: "dx-navigation-menu-grid dx-navigation-menu-grid-2col",
                                 NavigationMenuLink {
-                                    href: "/",
+                                    href: site_href("/"),
                                     content_index: 0usize,
                                     class: "dx-navigation-menu-featured",
                                     // Deliberately not "dioxus-components" --
@@ -39,14 +50,14 @@ pub fn Demo() -> Element {
                                 }
                                 div { class: "dx-navigation-menu-grid",
                                     style: "grid-template-columns: 1fr;",
-                                    NavigationMenuLink { href: "/docs", content_index: 1usize,
+                                    NavigationMenuLink { href: site_href("/docs"), content_index: 1usize,
                                         div { class: "dx-navigation-menu-link-title", "Introduction" }
                                         div { class: "dx-navigation-menu-link-description",
                                             "Re-usable primitives you can copy into your own project."
                                         }
                                     }
-                                    NavigationMenuLink { href: "/component/?name=button", content_index: 2usize, "Button" }
-                                    NavigationMenuLink { href: "/component/?name=input", content_index: 3usize, "Input" }
+                                    NavigationMenuLink { href: site_href("/component/button/"), content_index: 2usize, "Button" }
+                                    NavigationMenuLink { href: site_href("/component/input/"), content_index: 3usize, "Input" }
                                 }
                             }
                         }
@@ -55,37 +66,37 @@ pub fn Demo() -> Element {
                         NavigationMenuTrigger { "Components" }
                         NavigationMenuContent {
                             div { class: "dx-navigation-menu-grid",
-                                NavigationMenuLink { href: "/component/?name=accordion", content_index: 0usize,
+                                NavigationMenuLink { href: site_href("/component/accordion/"), content_index: 0usize,
                                     div { class: "dx-navigation-menu-link-title", "Accordion" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A vertically stacked set of collapsible panels."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=dialog", content_index: 1usize,
+                                NavigationMenuLink { href: site_href("/component/dialog/"), content_index: 1usize,
                                     div { class: "dx-navigation-menu-link-title", "Dialog" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A modal window layered above the page."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=tooltip", content_index: 2usize,
+                                NavigationMenuLink { href: site_href("/component/tooltip/"), content_index: 2usize,
                                     div { class: "dx-navigation-menu-link-title", "Tooltip" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "A short message shown on hover or focus."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=tabs", content_index: 3usize,
+                                NavigationMenuLink { href: site_href("/component/tabs/"), content_index: 3usize,
                                     div { class: "dx-navigation-menu-link-title", "Tabs" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Switch between panels of related content."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=select", content_index: 4usize,
+                                NavigationMenuLink { href: site_href("/component/select/"), content_index: 4usize,
                                     div { class: "dx-navigation-menu-link-title", "Select" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Pick one value from a list of options."
                                     }
                                 }
-                                NavigationMenuLink { href: "/component/?name=progress", content_index: 5usize,
+                                NavigationMenuLink { href: site_href("/component/progress/"), content_index: 5usize,
                                     div { class: "dx-navigation-menu-link-title", "Progress" }
                                     div { class: "dx-navigation-menu-link-description",
                                         "Displays the completion progress of a task."
@@ -95,7 +106,7 @@ pub fn Demo() -> Element {
                         }
                     }
                     NavigationMenuItem { index: 2usize,
-                        NavigationMenuLink { href: "/docs", "Docs" }
+                        NavigationMenuLink { href: site_href("/docs"), "Docs" }
                     }
                 }
             }

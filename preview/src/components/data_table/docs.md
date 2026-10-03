@@ -1,4 +1,4 @@
-Data Table is a composition pattern, not a new primitive — the same architecture as shadcn/ui's own Data Table. It builds sorting, filtering, pagination, and row selection out of [`Table`](/component/?name=table&) plus this crate's existing `Select`, `Checkbox`, `Button`, and `Input` components. Three pieces do the composing:
+Data Table is a composition pattern, not a new primitive — the same architecture as shadcn/ui's own Data Table. It builds sorting, filtering, pagination, and row selection out of [`Table`](/component/table/) plus this crate's existing `Select`, `Checkbox`, `Button`, and `Input` components. Three pieces do the composing:
 
 - `DataTableColumnHeader` — a sortable `TableHead`: a ghost `Button` toggles the sort and an icon shows the current direction, with `aria-sort` set on the header cell per the [APG Table pattern](https://www.w3.org/WAI/ARIA/apg/patterns/table/)'s sortable-columns guidance.
 - `DataTableToolbar` — a text filter `Input` with an accessible name. The demo below filters like shadcn's `includesString`: a case-insensitive substring match anywhere in the email, not just at the start.

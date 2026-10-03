@@ -98,6 +98,20 @@
      descendant (axis labels) inherit it normally, same idiom as
      `main.css`'s own `font-family: inherit` re-affirmations. */
   font-family: inherit;
+
+  /* Text compensation. The viewBox is always the props' `width` x `height`,
+   * so on a narrower container the whole drawing -- text included -- shrinks.
+   * `Chart` measures its container and publishes `--dx-chart-text-scale`
+   * (`s = clamp(1 / k, 0.5, 2.5)`, `k` = rendered / logical width, snapped to
+   * `1` within 5%; `1` on the server and first render) on this element;
+   * every chart text size below is multiplied by it, which cancels the
+   * shrink (s > 1) or growth (s < 1) so text renders at its authored size
+   * while the geometry (radii, bar radius, ring gaps) scales with the
+   * drawing. This base rule scales text that has no font-size of its own
+   * (`chart-label`: bar/line value labels), at the same `--dx-text-xs` size
+   * as the axis text so values and ticks read as one typographic tier --
+   * previously it inherited the page's 1em (16px), a third larger. */
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
 .dx-chart [data-slot="chart-grid"] line {
@@ -105,9 +119,21 @@
   stroke-width: 1;
 }
 
+/* Base text fill for EVERY svg `<text>` a chart draws. An SVG text node with
+ * no `fill` of its own paints the initial value -- opaque black -- in both
+ * themes (~1.1:1 on the dark surface), and several slots deliberately carry no
+ * rule of their own (`chart-label`: bar `value_labels`/`inside_labels` and the
+ * line chart's point labels; `chart-arc-label`; any future text mark). Setting
+ * the default once here, at zero specificity (`:where`), means a new text slot
+ * is themed by construction and every specific rule below -- axis text, the
+ * donut center text, a demo's own inline `fill` -- still wins. */
+:where(.dx-chart [data-slot="chart-svg"] text) {
+  fill: var(--secondary-color-4);
+}
+
 .dx-chart [data-slot="chart-axis"] text {
   fill: var(--dx-chart-axis-text);
-  font-size: var(--dx-text-xs);
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
 .dx-chart [data-slot="chart-area"] {
@@ -180,8 +206,18 @@
  * technique as `sidebar/style.css`'s `.dx-sidebar-sr-only` and
  * `pagination/style.css`'s `.dx-pagination-sr-only` (byte-identical there
  * too; still not collapsed into a shared utility -- see those files' own
- * TODO(row 31a) comment), namespaced here as this component's own copy. */
-.dx-chart [data-slot="chart-data"] {
+ * TODO(row 31a) comment), namespaced here as this component's own copy.
+ *
+ * The clamp sits on the table's WRAPPER (`chart-data-wrapper`), not on the
+ * table: a `table` box is sized to at least its min-content width and
+ * ignores `width: 1px` / `overflow: hidden` (CSS 2.1 17.5.2), so with
+ * `white-space: nowrap` cells it stayed 280-440px wide -- invisible
+ * (`clip-path`) yet still counted as scrollable overflow, widening the
+ * whole page on phones (measured: 418-727px full-page at a 390px
+ * viewport). Overriding the table's `display` instead would strip its table
+ * semantics in WebKit/VoiceOver, so the table itself stays a normal
+ * `display: table` and only the block-level wrapper is clamped. */
+.dx-chart [data-slot="chart-data-wrapper"] {
   position: absolute;
   overflow: hidden;
   width: 1px;
@@ -205,7 +241,12 @@
   border-radius: var(--dx-radius-lg);
   background-color: var(--primary-color-2);
   box-shadow: var(--dx-shadow-md);
-  color: var(--primary-color);
+
+  /* Body text on the `--primary-color-2` surface. NOT `--primary-color`: that
+   * is the page background, so the text was invisible in both themes
+   * (white-on-white / near-black-on-near-black). `--secondary-color-4` is the
+   * body-text token the chart's own svg text and every other popover use. */
+  color: var(--secondary-color-4);
   font-size: var(--dx-text-xs);
 
   /* Shares `[data-slot="chart"]`'s own grid area -- see `.dx-chart`'s own
@@ -496,8 +537,11 @@
  * whichever edge that one slice's own bounding box happens to sit near.
  * ---------------------------------------------------------------------- */
 
+/* No `fill` here on purpose: `pie.rs`/`radial.rs` set each arc's colour as a
+ * `fill` presentation attribute (`var(--dx-chart-N)` / `var(--color-<slot>)`),
+ * and any CSS `fill` declaration would beat that attribute (neither sets
+ * `--series-color`), painting every slice the same near-black `currentColor`. */
 .dx-chart [data-slot="chart-arc"] {
-  fill: var(--series-color, currentColor);
   transform-origin: 0 0;
   transition: transform 120ms var(--dx-motion-ease);
 }
@@ -506,34 +550,62 @@
   transform: scale(1.05);
 }
 
-/* No dedicated contrast-on-colored-fill token exists in this theme
- * (`preview/assets/dx-components-theme.css` has no generic "text on an
- * arbitrary --dx-chart-N swatch" color -- eight rotating hues, none of
- * them reliably light or dark) -- left unstyled (inherits the default SVG
- * text fill), the same choice `bar.rs`'s own `value_labels`/
- * `inside_labels` (`data-slot="chart-label"`, also unstyled here) already
- * made and shipped with.
- */
+/* Arc labels sit ON the series colour (pie slices, radial rings), and the
+ * eight rotating `--dx-chart-N` hues are neither reliably light nor dark, so
+ * no single text colour clears 4.5:1 against all of them in both themes.
+ * Instead the label takes the base themed text colour (the `:where` rule
+ * above) plus a halo in the surface colour (`paint-order: stroke` draws the
+ * stroke underneath the fill): legible on any hue, and the halo is the
+ * theme's own surface so it disappears wherever the text spills onto the
+ * card background.
+ *
+ * A radial label's inline `font-size` (radial.rs) caps this one at ~0.85 of
+ * the ring's thickness, so on a narrow container -- where the text scale
+ * grows but the rings stay thin -- the text shrinks to its ring instead of
+ * spilling across the neighbours. The halo is in `em` so it follows whichever
+ * size wins (3px at the authored 12px, exactly as before). */
 .dx-chart [data-slot="chart-arc-label"] {
-  font-size: var(--dx-text-xs);
+  font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
   font-weight: 600;
+  paint-order: stroke;
   pointer-events: none;
+  stroke: var(--primary-color-1);
+  stroke-linejoin: round;
+  stroke-width: 0.25em;
 }
 
 /* The donut/gauge center text (`PieOptions::center_text`/
  * `RadialOptions::center_text`): two `<tspan>`s, the primary value drawn
  * larger/bolder than the secondary caption below it -- same two-tier
  * text-color pairing `card/style.css` uses for a title versus its
- * description. */
+ * description.
+ *
+ * Sizing differs from the other chart text in two ways:
+ *  - it never shrinks below its authored size in logical units
+ *    (`max(1, scale)`): the center number belongs to the gauge graphic, so
+ *    when the chart is shown larger than its viewBox (a 300x300 radial across
+ *    a ~590px card) it grows with the donut instead of being halved by the
+ *    text compensation and looking lost in the big hole (the other text --
+ *    ticks, labels -- is compensated down to its authored pixel size);
+ *  - on a narrow container, where the scale grows up to 2.5x but the hole
+ *    does not, it is clamped to what fits the hole -- the primitive publishes
+ *    `--dx-chart-center-{primary,secondary}-max` (center_text.rs) -- so a
+ *    3-digit number never overflows it. */
 .dx-chart [data-slot="chart-pie-center-text"] {
   fill: var(--secondary-color-5);
-  font-size: var(--dx-text-sm);
+  font-size: min(
+    calc(var(--dx-text-sm) * max(1, var(--dx-chart-text-scale, 1))),
+    var(--dx-chart-center-secondary-max, 9999px)
+  );
   pointer-events: none;
 }
 
 .dx-chart [data-slot="chart-pie-center-text"] tspan:first-child {
   fill: var(--secondary-color-4);
-  font-size: var(--dx-text-2xl);
+  font-size: min(
+    calc(var(--dx-text-2xl) * max(1, var(--dx-chart-text-scale, 1))),
+    var(--dx-chart-center-primary-max, 9999px)
+  );
   font-weight: 700;
 }
 
@@ -544,4 +616,34 @@
  * `PolarGrid` element -- this crate unifies both as one boolean). */
 .dx-chart [data-slot="chart-polar-grid"] {
   fill: var(--dx-chart-grid);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Demo card footer
+ *
+ * The "Trending up ... / Showing ..." footer the pie and radial galleries
+ * repeat under their charts (the bar gallery has its own copy,
+ * `dx-bar-chart-footer`, in `bar_chart/style.css`). `Card`'s footer is a row
+ * flex box, so two bare `div`s become two side-by-side wrapped columns; this
+ * stacks them, trend line over caption. Lives here, not in the gallery
+ * stylesheets, because this file is the one every chart demo is guaranteed
+ * to have loaded. The compound selector out-ranks `.dx-card-footer`
+ * regardless of stylesheet order.
+ * ---------------------------------------------------------------------- */
+
+[data-slot="card-footer"].dx-chart-footer {
+  flex-direction: column;
+  align-items: start;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+.dx-chart-footer-trend {
+  font-weight: 600;
+  line-height: 1;
+}
+
+.dx-chart-footer-caption {
+  color: var(--secondary-color-5);
+  line-height: 1;
 }

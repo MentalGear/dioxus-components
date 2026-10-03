@@ -47,6 +47,7 @@
 
 use dioxus::prelude::*;
 
+use super::super::fragment::{fragment_url, safe_fragment_id};
 use super::super::layout::SeriesRenderContext;
 use crate::chart::context::use_chart;
 use crate::chart::engine::curve::{area_between_path, area_path, line_path};
@@ -105,9 +106,10 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &AreaOptions) -> Element {
         for (s , series) in ctx.config.series.iter().enumerate() {
             {
                 let slot = series.slot();
-                let gradient_id = format!("{}-gradient-{slot}", chart_id());
+                let raw_gradient_id = format!("{}-gradient-{slot}", chart_id());
+                let gradient_id = safe_fragment_id(&raw_gradient_id);
                 let fill = if opts.gradient {
-                    format!("url(#{gradient_id})")
+                    fragment_url(&raw_gradient_id)
                 } else {
                     "var(--series-color)".to_string()
                 };
@@ -262,5 +264,45 @@ mod tests {
         let (out_xs, out_values) = connect_nulls(&[0.0, 1.0], &[None, None]);
         assert!(out_xs.is_empty());
         assert!(out_values.is_empty());
+    }
+
+    #[test]
+    fn gradient_id_and_url_are_fragment_safe_for_an_awkward_chart_id() {
+        use crate::chart::{Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind};
+        use dioxus_core::NoOpMutations;
+
+        #[component]
+        fn Harness() -> Element {
+            let config = use_signal(|| ChartConfig::new().series("a", "A", "var(--dx-chart-1)"));
+            let data = use_signal(|| {
+                vec![ChartDatum {
+                    label: "x".to_string(),
+                    values: vec![Some(1.0)],
+                    ..Default::default()
+                }]
+            });
+            rsx! {
+                ChartContainer { config, data, kind: ChartKind::Area, id: "my chart%1)",
+                    Chart {
+                        aria_label: "T",
+                        area: AreaOptions { gradient: true, ..Default::default() },
+                    }
+                }
+            }
+        }
+        let mut dom = VirtualDom::new(Harness);
+        dom.rebuild_in_place();
+        dom.render_immediate(&mut NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
+        assert!(!html.contains("#my chart"), "raw id leaked: {html}");
+        assert!(!html.contains(r#"id="my chart"#), "raw id leaked: {html}");
+        assert!(
+            html.contains(r#"id="my_20_chart_25_1_29_-gradient-a""#),
+            "{html}"
+        );
+        assert!(
+            html.contains("url(#my_20_chart_25_1_29_-gradient-a)"),
+            "{html}"
+        );
     }
 }

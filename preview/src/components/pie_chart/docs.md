@@ -1,39 +1,29 @@
-Pie chart is the arc-based member of the [Chart](/component/?name=chart) family: the same
-`ChartContainer`/`Chart`/`ChartTooltip`/`ChartLegend` pieces, `kind: ChartKind::Pie`, and a
-`PieOptions` prop that shapes how the slices themselves draw. There is no separate installable
-package — `dx components add chart` is everything a pie or donut chart needs; this page is a
-gallery of that one package's polar mode.
+Pie charts show how a whole divides into parts, and donut charts do the same with a hole in the middle that can hold a total. They are the arc-based members of the [Chart](/component/chart/) family: the same `ChartContainer`, `Chart`, `ChartTooltip` and `ChartLegend`, with `kind: ChartKind::Pie` and a `PieOptions` value that shapes the slices. Installing `chart` is everything a pie or donut needs; this page is a gallery of that mode.
 
-## Component structure
+## Quick start
 
 ```rust
 let config = ChartConfig::new()
     .series("visitors", "Visitors", "var(--dx-chart-1)");
 
-// One ChartDatum per slice (a category, e.g. a browser) -- `color`
-// overrides the position-based `--dx-chart-N` fallback per slice, the
-// same way shadcn's own demos give each row its own `fill`.
+// One ChartDatum per slice. `color` sets that slice's color; without it,
+// slices use --dx-chart-1, --dx-chart-2, ... by position.
 let data = vec![
     ChartDatum { label: "Chrome".into(), values: vec![Some(275.0)], color: Some("var(--dx-chart-1)".into()) },
     ChartDatum { label: "Safari".into(), values: vec![Some(200.0)], color: Some("var(--dx-chart-2)".into()) },
     // ...
 ];
 
-ChartContainer {
-    config,
-    data,
-    kind: ChartKind::Pie,
-
+ChartContainer { config, data, kind: ChartKind::Pie,
     Chart {
         aria_label: "Visitors by browser",
         pie: PieOptions {
-            inner_radius: 0.0,   // > 0.0 draws a donut
-            pad_angle: 0.0,      // radians between slices
-            corner_radius: 0.0,
+            inner_radius: 0.0,       // above 0.0 draws a donut (logical units)
+            pad_angle: 0.0,          // gap between slices, in radians
+            corner_radius: 0.0,      // rounds slice corners
             labels: PieLabels::None, // None | Value | Percent | List(Vec<String>)
-            active_index: None,      // force a slice "active" regardless of hover
-            center_text: None,       // Some((primary, secondary)) -- donuts only
-            ..Default::default()
+            active_index: None,      // hold one slice in its highlighted state
+            center_text: None,       // Some((primary, secondary)), donuts only
         },
     }
     ChartTooltip {}
@@ -41,36 +31,30 @@ ChartContainer {
 }
 ```
 
-Every slice renders as `path[data-slot="chart-arc"][data-index][data-series]`, with `data-start-
-angle`/`data-end-angle` (radians) alongside the `d` path for anything that needs the raw layout
-numbers rather than re-deriving them from the path. Hovering a slice (or, when `active_index` is
-set, a caller-forced slice) grows its outer radius and sets `data-active="true"` — plain CSS driven
-off that attribute, no re-render of the path itself needed for the common case.
+With a single series, each datum is one slice and `ChartLegend` lists one entry per slice. With more than one series, each series is drawn as its own concentric ring (the first series innermost) and the legend lists the series instead.
 
-## The eleven variants
+## Options
 
-Each ports one of shadcn/ui's own `chart-pie-*.tsx` demos (`registry/new-york-v4/registry/new-
-york-v4/charts/`) — same dataset, same config, same card copy:
+- `labels` prints text on each slice, centered in it: `Value` shows the slice's value, `Percent` its share of the total (one decimal place), and `List(vec![..])` shows your own text, one entry per datum by position. A slice with no entry gets no label.
+- `inner_radius` and `corner_radius` are in the chart's logical units: the `width`×`height` coordinate space, which the chart scales to fit its container.
+- `inner_radius` greater than `0.0` makes a donut, and `center_text: Some(("1,125".into(), "Visitors".into()))` writes a two-line total in the hole.
+- `active_index: Some(i)` keeps slice `i` highlighted (its outer radius grows and it gets `data-active="true"`) regardless of hover. Drive it from a signal to build a picker.
+- Hovering a slice, or stepping to it with the keyboard, highlights it the same way.
+- Each slice is a `path[data-slot="chart-arc"]` with `data-index`, `data-start-angle` and `data-end-angle` (in radians) if you need the raw layout numbers in your own CSS or scripts.
 
-- **Simple** (`main`) — a plain 5-slice pie.
-- **Separator none** — no stroke between slices.
-- **Label** — each slice's own value, centered in the slice (this crate always centers a label at
-  the slice's own centroid, per `engine::polar::centroid` — shadcn's default instead floats the
-  label outside the pie on a leader line; a documented simplification, not a missing feature).
-- **Label list** — each slice's category name instead of its value.
-- **Label custom** — a caller-supplied label list is exactly the same mechanism as "Label list";
-  this variant just supplies different text.
-- **Legend** — a swatch + label per slice below the chart.
-- **Donut** — `inner_radius > 0.0`.
-- **Donut active** — a permanently-active first slice (`active_index: Some(0)`).
-- **Donut text** — a two-line total centered in the hole.
-- **Stacked** — two data sets drawn as two concentric rings (two `Chart`-level series, one ring
-  each), matching shadcn's two `<Pie>` elements sharing one `<PieChart>`.
-- **Interactive** — a `Select` drives `active_index` and the donut's center text together.
+## Demos
+
+- **Simple** — a plain five-slice pie.
+- **Separator none** — the same pie; slices are drawn without a separator stroke.
+- **Label** — each slice's value.
+- **Label list** and **Custom label** — your own text per slice through `PieLabels::List`.
+- **Legend** — a swatch and label per slice below the chart.
+- **Donut** — `inner_radius` above zero.
+- **Donut active** — the first slice held active.
+- **Donut with text** — a two-line total in the hole.
+- **Stacked** — two series drawn as two concentric rings.
+- **Interactive** — a `Select` drives `active_index` and the center text together.
 
 ## Accessibility
 
-Same contract as every other chart kind (see the [Chart](/component/?name=chart) docs): the SVG is
-`role="img"` with an accessible name, and the real, visually-hidden `table[data-slot="chart-data"]`
-lists every slice's category, value, and share of the total — screen reader users get the data
-table, not an attempt to describe forty pixels of colored wedge in prose.
+A pie chart has the same accessibility behavior as every [Chart](/component/chart/): the SVG is a named image, and the visually hidden data table lists each slice's category, its value and its percent of the total, so screen reader users read the numbers instead of an attempt to describe wedges. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the slices.

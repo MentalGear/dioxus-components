@@ -50,9 +50,9 @@ pub fn Demo() -> Element {
                     ChartTooltip { hide_label: true }
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month" }
-                div { "Showing total visitors for the last 6 months" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

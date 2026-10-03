@@ -50,6 +50,7 @@ pub enum ComponentCategory {
     Feedback,
     Disclosure,
     DataDisplay,
+    Charts,
 }
 
 impl ComponentCategory {
@@ -60,6 +61,7 @@ impl ComponentCategory {
         Self::Feedback,
         Self::Disclosure,
         Self::DataDisplay,
+        Self::Charts,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -70,6 +72,7 @@ impl ComponentCategory {
             Self::Feedback => "Feedback",
             Self::Disclosure => "Disclosure",
             Self::DataDisplay => "Data display",
+            Self::Charts => "Charts",
         }
     }
 }
@@ -89,10 +92,28 @@ pub fn category_of(name: &str) -> ComponentCategory {
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "chart"
-        | "resizable" => ComponentCategory::DataDisplay,
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable" => {
+            ComponentCategory::DataDisplay
+        }
+        "chart" | "area_chart" | "bar_chart" | "line_chart" | "pie_chart" | "radar_chart"
+        | "radial_chart" | "chart_tooltip" => ComponentCategory::Charts,
         _ => ComponentCategory::DataDisplay,
     }
+}
+
+/// The `DEMOS` entries of one sidebar group, in sidebar order: `DEMOS` order
+/// (alphabetical), except that a group's overview page leads it. Only
+/// `chart` is one today; it would otherwise sort between `bar chart` and
+/// `chart tooltip`, burying the page the other chart pages point to. A
+/// stable sort on a boolean key keeps every other entry where it was, and
+/// leaves the gallery/Demos grids (which iterate `DEMOS` directly) alone.
+pub fn demos_in_category(cat: ComponentCategory) -> Vec<&'static ComponentDemoData> {
+    let mut demos: Vec<_> = DEMOS
+        .iter()
+        .filter(|demo| category_of(demo.name) == cat)
+        .collect();
+    demos.sort_by_key(|demo| demo.name != "chart");
+    demos
 }
 
 macro_rules! examples {

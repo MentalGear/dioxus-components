@@ -85,6 +85,11 @@ fn process_markdown_to_html(markdown_path: &std::path::Path) -> String {
         std::fs::read_to_string(markdown_path).expect("Failed to read markdown file");
     let mut options = Options::empty();
     options.insert(Options::ENABLE_GFM);
+    // `ENABLE_GFM` alone does not turn on pipe tables (nor the other GFM
+    // extensions), so they shipped as raw `|` text.
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
     let parser = Parser::new_ext(&markdown_input, options);
     let mut events = Vec::new();
     let mut code_block: Option<(CodeBlockKind<'_>, String)> = None;
@@ -102,6 +107,18 @@ fn process_markdown_to_html(markdown_path: &std::path::Path) -> String {
                     render_code_block_html(kind, source).into_boxed_str(),
                 )));
                 code_block = None;
+            }
+            // Wrap every table in a scroll container so a wide table scrolls
+            // inside its own box instead of widening the page.
+            (None, Event::Start(tag @ Tag::Table(_))) => {
+                events.push(Event::Html(CowStr::Borrowed(
+                    "<div class=\"dx-docs-table-scroll\">",
+                )));
+                events.push(Event::Start(tag));
+            }
+            (None, Event::End(TagEnd::Table)) => {
+                events.push(Event::End(TagEnd::Table));
+                events.push(Event::Html(CowStr::Borrowed("</div>\n")));
             }
             (None, event) => events.push(event),
             (Some((_, source)), Event::Code(text)) => {

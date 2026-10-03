@@ -48,6 +48,7 @@
 
 use dioxus::prelude::*;
 
+use super::super::center_text;
 use super::super::layout::SeriesRenderContext;
 use crate::chart::context::use_chart;
 use crate::chart::engine::polar::{arc_path, centroid, pie_layout, PieArc};
@@ -155,14 +156,7 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &PieOptions) -> Element {
                 }
             }
             if let Some((primary, secondary)) = &opts.center_text {
-                text {
-                    "data-slot": "chart-pie-center-text",
-                    x: "{fmt_num(cx)}",
-                    y: "{fmt_num(cy)}",
-                    text_anchor: "middle",
-                    tspan { x: "{fmt_num(cx)}", dy: "-0.1em", "{primary}" }
-                    tspan { x: "{fmt_num(cx)}", dy: "1.4em", "{secondary}" }
-                }
+                {center_text::render(cx, cy, inner_radius, primary, secondary)}
             }
         }
     }

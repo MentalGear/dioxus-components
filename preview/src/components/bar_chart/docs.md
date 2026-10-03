@@ -1,15 +1,11 @@
-Bar Chart is a gallery of `ChartKind::Bar` configurations built entirely from the installable
-`chart` package (see that component's own docs for `ChartConfig`/`ChartContainer`/`Chart`/
-`ChartTooltip`/`ChartLegend`) plus `Card` for the surrounding chrome. There is no separate
-`bar_chart` primitive -- installing this component pulls in `chart` and `card` as
-`componentDependencies` and gives you the demo source below as a starting point.
+Bar charts compare values across categories. This page is a gallery of bar configurations built from the [Chart](/component/chart/) package (`ChartContainer`, `Chart`, `ChartTooltip`, `ChartLegend`) and `Card` for the surrounding frame. Installing this component adds `chart` and `card` for you.
 
-## A single series
+## Quick start
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
 let data = vec![
-    ChartDatum { label: "January".into(), values: vec![Some(186.0)] },
+    ChartDatum { label: "January".into(), values: vec![Some(186.0)], ..Default::default() },
     // ...
 ];
 
@@ -19,45 +15,34 @@ ChartContainer { config, data, kind: ChartKind::Bar,
 }
 ```
 
-## Multiple series (grouped)
+## Multiple series
 
-Add a second series to `ChartConfig` and a second value to every `ChartDatum` -- bars for the same
-category draw side by side automatically, no extra prop needed.
+Add a second series to the `ChartConfig` and a second value to every `ChartDatum`. Bars for the same category are drawn side by side with no extra prop. Set `Chart { stacked: true }` to stack them instead, and add a `ChartLegend` once there is more than one series so each segment can be identified. A missing value (`None`) simply leaves that bar out.
 
-## Stacked
+## Options
 
-`Chart { stacked: true }` stacks every configured series' bars instead of grouping them. Combine
-with `ChartLegend` once there is more than one series to identify each stack segment.
+Bar-specific settings live in `bar: BarOptions { .. }` on `Chart`:
 
-## Interactive (toggle which series draws)
+- `horizontal: true` draws categories top to bottom and values left to right. Hide both default axes (`show_x_axis: false`, `show_y_axis: false`), because in this layout the chart draws its own category labels at the left edge.
+- `value_labels: true` prints each bar's value just beyond its end.
+- `inside_labels: true` also prints the category name inside the bar near its start. It takes precedence over `value_labels` and suits a horizontal chart with the axes hidden. Both label options are ignored when the chart is stacked.
+- `active_index: Some(i)` highlights one bar: it gets `data-active="true"` and every other bar `data-active="false"`, which the theme uses to dim the rest.
 
-Keep the full dataset (every series' values) around, but build a single-series `ChartConfig` from
-whichever one the user has picked, and re-map each `ChartDatum` down to just that series' value
-before passing it to `ChartContainer`. See this gallery's `interactive` variant for the full
-pattern, including per-series running totals shown in the card header.
+For per-bar colors, set `ChartDatum::color` on each datum, for example one color for positive values and another for negative ones. Bar charts always draw a zero line, so mixed positive and negative values have a visible baseline.
 
-## Horizontal orientation
+## Demos
 
-`Chart { bar: BarOptions { horizontal: true, .. } }` draws the category axis running top-to-bottom
-and values running left-to-right instead of the default vertical layout -- hide both of `Chart`'s
-default axes (`show_x_axis`/`show_y_axis: false`) the way shadcn's own horizontal demos do, since
-this family draws its own category labels at the plot's left edge when `horizontal` is set.
+- **Default** — one series.
+- **Multiple** — two series grouped side by side.
+- **Stacked** and **Stacked with legend** — the same two series stacked.
+- **Horizontal** — `horizontal: true` with the axes hidden.
+- **Mixed** — a horizontal chart where every bar has its own color through `ChartDatum::color`.
+- **Label** — `value_labels: true`.
+- **Custom label** — `inside_labels: true` on a horizontal chart.
+- **Active** — one highlighted bar through `active_index`.
+- **Negative** — positive and negative values colored per datum around a zero line.
+- **Interactive** — a header lets the reader switch which of two series is drawn. To build the same, keep the full dataset in a signal, build a one-series `ChartConfig` for the chosen series, and map each `ChartDatum` down to that series' value before passing both to `ChartContainer`.
 
-## Negative values and per-datum color
+## Accessibility
 
-Set `ChartDatum::color` per datum (e.g. one color for a positive value, another for negative) to
-color each bar independently instead of from one flat series color. `ChartKind::Bar` always draws
-an explicit zero-line, so a chart mixing positive and negative values has a visible baseline.
-
-## Value and inside labels
-
-`BarOptions::value_labels` draws each bar's own value just outside its far end.
-`BarOptions::inside_labels` (takes precedence when both are set) additionally draws the datum's
-category name inside the bar near its start -- useful paired with `horizontal` and every axis
-hidden, so the labels themselves carry the information an axis normally would.
-
-## A highlighted ("active") bar
-
-`BarOptions::active_index` marks one bar `data-active="true"` (every other bar `"false"`); the
-themed stylesheet dims every non-active bar once at least one is marked active, independent of
-hover.
+Bar charts follow the shared [Chart](/component/chart/) behavior: a named SVG image, a hidden data table with every value, and arrow-key, `Home`, `End` and `Escape` stepping through bars on the focusable wrapper.
