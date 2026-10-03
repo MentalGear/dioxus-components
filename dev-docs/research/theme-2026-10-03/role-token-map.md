@@ -333,3 +333,21 @@ or `--dx-accent-strong`), then a one-line edit in each file.
 - Promote `--dx-border-alt` to a documented non-shadcn role (suggest `--dx-border-strong`) and keep it, or fold it into `--dx-input` by giving `input` light `#b0b0b0`. Six sites depend on it staying distinct from `border` in light.
 - Light `--dx-accent` (`#f8f8f8`) is too close to `--dx-muted` (`#f5f5f5`) and to `--dx-background` to carry a pressed state; toggle and toggle_group `on` need a stronger role in light.
 - All `-alt` tokens except `border-alt` now have 0 uses in scope. They still have uses in `card`, `button`, `input`, `badge`, `tabs`, `dialog`, `select` (other lane); delete them from the theme only after that lane lands.
+
+## 11. Phase B cleanup (2026-10-03)
+
+- **Renamed** `--dx-border-alt` -> `--dx-border-strong` at its 6 remaining sites (`main.css` `.dx-demos-card:hover`,
+  calendar nav hover, drag_and_drop_list x2, textarea hover, checkbox ring). Same value, so no visual change.
+- **Deleted** from `dx-components-theme.css`, each verified unreferenced (CSS, inline Rust, docs): `--dx-background-alt`,
+  `-card-alt`, `-muted-alt`, `-accent-alt`, `-accent-alt-2`, `-primary-alt`, `-foreground-alt`, `-foreground-alt-2`,
+  `-border-alt`, `-border-alt-2`, `-destructive-alt`. The only non-shadcn colour role left is `--dx-border-strong`
+  (plus the status roles). Sections 4 and 10 above describe the pre-cleanup state. `tools/gen.py` still runs and
+  reports 0 problems (it only uses the `-alt` names as labels in its role table; nothing resolves them any more).
+- **Gate**: `scripts/check-css-literals.sh` skipped every token whose value contains `var(`, so once the radius scale
+  became `calc(var(--dx-radius) * k)` a literal `border-radius: 0.5rem` passed. It now resolves each
+  `--dx-radius-*` step at the default base (`--dx-radius: var(--radius, X)`) and fails loudly if that shape changes.
+  Proven on a scratch copy: `0.5rem` -> `--dx-radius-md`, `0.375rem` -> `--dx-radius-sm` are reported. It immediately
+  found `pagination` `0.625rem`, now `var(--dx-radius-lg)` (same 10px, no visual change).
+- `InputGroup` wrapper now matches `Input` focus (muted fill, ring-coloured edge + `--dx-ring-focus`, input/30% dark
+  rest fill); `dx-utilities.css` regenerated (adds `.dx-radius-4xl`; the rest of the staleness was a comment path).
+

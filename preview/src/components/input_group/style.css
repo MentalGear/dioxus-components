@@ -1,17 +1,26 @@
+/* The wrapper draws the field chrome and the inner control is stripped bare
+ * (below), so the wrapper must agree with `.dx-input` (input/style.css): same
+ * transparent-light / input-30%-dark fill, 1px `input` edge, `muted` fill on
+ * hover and focus, and on focus the ring-coloured edge plus `--dx-ring-focus`. */
 .dx-input-group {
   position: relative;
   display: flex;
   box-sizing: border-box;
   align-items: center;
   border-radius: var(--dx-radius-lg);
-  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
+  background-color: var(--light, transparent)
+    var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
   box-shadow: inset 0 0 0 1px var(--dx-input);
   transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
+.dx-input-group:has(.dx-input-group-control:hover:not(:disabled)),
 .dx-input-group:has(.dx-input-group-control:focus-visible) {
-  background: var(--light, var(--dx-accent)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
-  box-shadow: var(--dx-ring);
+  background-color: var(--dx-muted);
+}
+
+.dx-input-group:has(.dx-input-group-control:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
 }
 
 .dx-input-group .dx-input-group-control {

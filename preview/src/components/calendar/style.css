@@ -76,7 +76,7 @@
 
 .dx-calendar-nav-prev:hover,
 .dx-calendar-nav-next:hover {
-    border-color: var(--dx-border-alt);
+    border-color: var(--dx-border-strong);
     background-color: var(--dx-accent);
     color: var(--dx-foreground);
 }

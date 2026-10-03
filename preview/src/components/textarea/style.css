@@ -56,7 +56,7 @@
 }
 
 .dx-textarea[data-style="outline"]:hover:not(:disabled, :focus) {
-  border-color: var(--dx-border-alt);
+  border-color: var(--dx-border-strong);
 }
 
 .dx-textarea[data-style="outline"]:focus {

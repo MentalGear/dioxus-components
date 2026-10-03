@@ -1,3 +1,5 @@
+# NOTE (phase B cleanup): the `-alt` role names below are phase-A labels only; the tokens were deleted from the
+# theme (role-token-map.md section 11). They are never resolved once no site references them.
 import re, sys, json, collections
 import os,sys
 HERE=os.path.dirname(os.path.abspath(__file__))

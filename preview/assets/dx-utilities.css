@@ -2,7 +2,7 @@
  *
  * Produced by `node scripts/generate-dx-utilities.js` from the token
  * declarations in `preview/assets/dx-components-theme.css`
- * (docs/backlog.md row 31a). Re-run that script to regenerate after
+ * (dev-docs/backlog.md row 31a). Re-run that script to regenerate after
  * changing the token file; `node scripts/generate-dx-utilities.js
  * --check` fails if this file is stale.
  *
@@ -1352,6 +1352,10 @@
 
 .dx-radius-3xl {
   border-radius: var(--dx-radius-3xl);
+}
+
+.dx-radius-4xl {
+  border-radius: var(--dx-radius-4xl);
 }
 
 .dx-radius-full {

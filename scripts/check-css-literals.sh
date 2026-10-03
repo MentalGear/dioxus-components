@@ -65,6 +65,20 @@ tokens = {}
 for m in re.finditer(r"(--dx-[a-z0-9-]+)\s*:\s*([^;]+);", open(THEME).read()):
     tokens[m.group(1)] = norm(m.group(2))
 
+# The radius scale is `var(--dx-radius)` / `calc(var(--dx-radius) * k)`, which
+# the `var(` skip below would hide -- and then a literal `border-radius: 0.5rem`
+# passes. Resolve each step at the default base (`--dx-radius: var(--radius, X)`)
+# so literal radii stay catchable. Fail loudly if the shape ever changes, rather
+# than silently dropping the radius check.
+_base = re.fullmatch(r"var\(--radius,\s*([\d.]+)rem\)", tokens.get("--dx-radius", ""))
+if not _base:
+    sys.exit("check-css-literals: cannot resolve --dx-radius (expected "
+             "`var(--radius, <n>rem)`); update the radius resolver in this script.")
+for name, val in tokens.items():
+    k = re.fullmatch(r"var\(--dx-radius\)|calc\(var\(--dx-radius\) \* ([\d.]+)\)", val)
+    if name.startswith("--dx-radius-") and k:
+        tokens[name] = f"{float(_base.group(1)) * float(k.group(1) or 1):g}rem"
+
 # Which token FAMILY each property draws from. Without this the suggestion
 # would be wrong wherever two scales share a value -- `1rem` is both
 # `--dx-text-base` and `--dx-space-4`, so a bare value->token map would tell

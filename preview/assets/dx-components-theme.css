@@ -112,14 +112,10 @@ html[data-theme="light"] [class~="dxc-system"] {
    * `data-theme`, `prefers-color-scheme` and non-browser renderers. A shadcn
    * theme's own `.dark { --border: ... }` override is the host's job.
    *
-   * `--dx-<role>-alt` / `-alt-2` / `-subtle` are NOT shadcn roles and have
-   * no shadcn fallback. They exist because the ramp was used inconsistently
-   * ("border" = 5 different steps, "surface" = all 8): a site on a step that
-   * differs from its role's base step cannot be pointed at the base token
-   * without a visible change, so it points at the nearest role's `-alt`
-   * instead. Each `-alt` is a phase-B review marker -- grep for it. Phase B
-   * either collapses it into its base role (one line here, no site edits)
-   * or promotes it.
+   * `--dx-border-strong` and the status roles (`-subtle`, success/warning/info)
+   * are NOT shadcn roles and have no shadcn fallback. The phase-A `-alt` /
+   * `-alt-2` variants were review markers; phase B moved every site onto a
+   * base role and deleted them (see dev-docs/research/theme-2026-10-03/).
    * ========================================================================== */
 
   /* Page and surfaces */
@@ -152,21 +148,9 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-input: var(--input, var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7)));
   --dx-ring-color: var(--ring, var(--focused-border-color));
 
-  /* Role variants -- ramp-only, no shadcn fallback (see above). */
-  --dx-background-alt: var(--primary-color-2);
-  --dx-card-alt: var(--primary-color-1);
-  --dx-muted-alt: var(--primary-color-3);
-  --dx-accent-alt: var(--primary-color-4);
-  --dx-accent-alt-2: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-5));
-  --dx-primary-alt: var(--dx-primary); /* collapsed (phase B): was #0d0d0d | #e6e6e6, now the base role */
-  --dx-foreground-alt: var(--secondary-color-3);
-  --dx-foreground-alt-2: var(--secondary-color-1);
-  /* `-strong` is the documented role (hover borders, checkbox ring); `-alt`
-   * stays as an alias until the other component dirs are renamed. */
+  /* Non-shadcn role: a stronger line than `--dx-border` (hover borders,
+   * checkbox ring). Phase B removed every other `-alt` role variant. */
   --dx-border-strong: var(--primary-color-7);
-  --dx-border-alt: var(--dx-border-strong);
-  --dx-border-alt-2: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
-  --dx-destructive-alt: var(--secondary-error-color);
 
   /* Status -- shadcn ships no success/warning/info roles; these are plain
    * aliases of the existing status colours so sites can leave the ramp. */
