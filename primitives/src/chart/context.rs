@@ -62,7 +62,8 @@ pub(crate) struct ChartLayout {
 #[derive(Clone, Copy)]
 pub struct ChartContext {
     /// This chart instance's id -- the `data-chart` attribute value the
-    /// `--color-<key>` style rule (and any per-instance styling) scopes to.
+    /// per-instance styling scopes to (the `--color-<key>` declarations
+    /// themselves live in the container's inline `style` attribute).
     /// A [`Memo`] (not a plain `String`) so the context stays `Copy`
     /// despite an id that may come from the caller's own reactive `id` prop
     /// (`use_id_or`, this crate's existing id-resolution helper).

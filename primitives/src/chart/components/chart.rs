@@ -291,7 +291,9 @@ pub struct ChartProps {
 /// - `data-slot="chart-cursor"` (`"chart-cursor-line"` for Area/Line,
 ///   `"chart-cursor-rect"` for Bar) and `"chart-hit-band"[data-index]"` --
 ///   `ChartKind::is_cartesian` kinds only.
-/// - `data-slot="chart-data"`: the hidden data table.
+/// - `data-slot="chart-data"`: the hidden data table, inside a
+///   `data-slot="chart-data-wrapper"` div that carries the visually-hidden
+///   clamp (a table box ignores `width`/`overflow` clamps).
 #[component]
 pub fn Chart(props: ChartProps) -> Element {
     let ctx = use_chart();
@@ -555,37 +557,47 @@ pub fn Chart(props: ChartProps) -> Element {
                 }
             }
 
-            table { "data-slot": "chart-data",
-                caption { "{props.aria_label}" }
-                thead {
-                    tr {
-                        th { scope: "col", "{props.x_label}" }
-                        if is_cartesian {
-                            for series in &config.series {
-                                th { key: "{series.key}", "{series.label}" }
-                            }
-                        } else {
-                            th { scope: "col",
-                                {
-                                    config
-                                        .series
-                                        .first()
-                                        .map(|s| s.label.clone())
-                                        .unwrap_or_else(|| "Value".to_string())
+            // The visually-hidden clamp lives on this WRAPPER, never on the
+            // table: a `table` box cannot shrink below its min-content
+            // width, so `width: 1px; overflow: hidden` on the table itself
+            // does nothing and the (clipped but still laid-out) table widens
+            // the page at phone widths -- while changing its `display` to
+            // `block` would strip its table semantics in WebKit/VoiceOver.
+            // A block-level wrapper honours the clamp and leaves the table a
+            // normal `display: table`.
+            div { "data-slot": "chart-data-wrapper",
+                table { "data-slot": "chart-data",
+                    caption { "{props.aria_label}" }
+                    thead {
+                        tr {
+                            th { scope: "col", "{props.x_label}" }
+                            if is_cartesian {
+                                for series in &config.series {
+                                    th { key: "{series.key}", "{series.label}" }
                                 }
-                            }
-                            if matches!(kind, ChartKind::Pie) {
-                                th { scope: "col", "Percent" }
+                            } else {
+                                th { scope: "col",
+                                    {
+                                        config
+                                            .series
+                                            .first()
+                                            .map(|s| s.label.clone())
+                                            .unwrap_or_else(|| "Value".to_string())
+                                    }
+                                }
+                                if matches!(kind, ChartKind::Pie) {
+                                    th { scope: "col", "Percent" }
+                                }
                             }
                         }
                     }
-                }
-                tbody {
-                    for row in rows.iter() {
-                        tr { key: "{row.label}",
-                            th { scope: "row", "{row.label}" }
-                            for (i , cell) in row.cells.iter().enumerate() {
-                                td { key: "{i}", "{cell}" }
+                    tbody {
+                        for row in rows.iter() {
+                            tr { key: "{row.label}",
+                                th { scope: "row", "{row.label}" }
+                                for (i , cell) in row.cells.iter().enumerate() {
+                                    td { key: "{i}", "{cell}" }
+                                }
                             }
                         }
                     }
@@ -897,6 +909,18 @@ mod tests {
         // Every hit band stays per-datum -- thinning only removes axis
         // *labels*, never data or interactivity.
         assert_eq!(html.matches(r#"data-slot="chart-hit-band""#).count(), 90);
+    }
+
+    #[test]
+    fn hidden_table_is_wrapped_so_the_clamp_never_sits_on_the_table() {
+        let html = render(ChartKind::Bar, false, true);
+        let wrapper = html
+            .find(r#"data-slot="chart-data-wrapper""#)
+            .expect("wrapper div");
+        let table = html.find(r#"data-slot="chart-data""#).expect("table");
+        assert!(wrapper < table, "the table is inside the wrapper");
+        assert!(html[table..].starts_with(r#"data-slot="chart-data""#));
+        assert!(html[..table].rfind("<table").unwrap() > wrapper);
     }
 
     #[test]

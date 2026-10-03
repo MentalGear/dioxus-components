@@ -22,7 +22,25 @@ use dioxus_icons::lucide::{ChevronLeft, ChevronRight};
 #[component]
 pub fn Demo() -> Element {
     rsx! {
-        style { {SIZES_DEMO_STYLE} }
+        style { r#"
+.dx-carousel-demo-sizes {{
+  max-width: 12rem;
+  --dx-carousel-per-view: 2;
+}}
+
+@media (width >= 24rem) {{
+  .dx-carousel-demo-sizes {{
+    max-width: 20rem;
+  }}
+}}
+
+@media (width >= 64rem) {{
+  .dx-carousel-demo-sizes {{
+    max-width: 24rem;
+    --dx-carousel-per-view: 3;
+  }}
+}}
+"# }
         div { class: "dx-carousel-demo-sizes", style: "width: 100%; margin: 0 auto;",
             Carousel { aria_label: "Product gallery",
                 CarouselPrevious { ChevronLeft {} }
@@ -44,22 +62,3 @@ pub fn Demo() -> Element {
     }
 }
 
-const SIZES_DEMO_STYLE: &str = r#"
-.dx-carousel-demo-sizes {
-  max-width: 12rem;
-  --dx-carousel-per-view: 2;
-}
-
-@media (width >= 24rem) {
-  .dx-carousel-demo-sizes {
-    max-width: 20rem;
-  }
-}
-
-@media (width >= 64rem) {
-  .dx-carousel-demo-sizes {
-    max-width: 24rem;
-    --dx-carousel-per-view: 3;
-  }
-}
-"#;

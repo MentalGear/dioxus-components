@@ -180,8 +180,18 @@
  * technique as `sidebar/style.css`'s `.dx-sidebar-sr-only` and
  * `pagination/style.css`'s `.dx-pagination-sr-only` (byte-identical there
  * too; still not collapsed into a shared utility -- see those files' own
- * TODO(row 31a) comment), namespaced here as this component's own copy. */
-.dx-chart [data-slot="chart-data"] {
+ * TODO(row 31a) comment), namespaced here as this component's own copy.
+ *
+ * The clamp sits on the table's WRAPPER (`chart-data-wrapper`), not on the
+ * table: a `table` box is sized to at least its min-content width and
+ * ignores `width: 1px` / `overflow: hidden` (CSS 2.1 17.5.2), so with
+ * `white-space: nowrap` cells it stayed 280-440px wide -- invisible
+ * (`clip-path`) yet still counted as scrollable overflow, widening the
+ * whole page on phones (measured: 418-727px full-page at a 390px
+ * viewport). Overriding the table's `display` instead would strip its table
+ * semantics in WebKit/VoiceOver, so the table itself stays a normal
+ * `display: table` and only the block-level wrapper is clamped. */
+.dx-chart [data-slot="chart-data-wrapper"] {
   position: absolute;
   overflow: hidden;
   width: 1px;
@@ -496,8 +506,11 @@
  * whichever edge that one slice's own bounding box happens to sit near.
  * ---------------------------------------------------------------------- */
 
+/* No `fill` here on purpose: `pie.rs`/`radial.rs` set each arc's colour as a
+ * `fill` presentation attribute (`var(--dx-chart-N)` / `var(--color-<slot>)`),
+ * and any CSS `fill` declaration would beat that attribute (neither sets
+ * `--series-color`), painting every slice the same near-black `currentColor`. */
 .dx-chart [data-slot="chart-arc"] {
-  fill: var(--series-color, currentColor);
   transform-origin: 0 0;
   transition: transform 120ms var(--dx-motion-ease);
 }

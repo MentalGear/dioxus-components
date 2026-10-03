@@ -147,3 +147,49 @@ test.describe("Legend never overlaps the chart's axis labels, svg box, or open t
     });
   }
 });
+
+// Regression: on the deployed SSG pages every chart rendered black/grey and
+// line charts were nearly invisible (2026-10-03). `ChartContainer` used to
+// emit its `--color-<slot>` declarations as a `<style>` rule built from a
+// dynamic text node; SSR put a `<!--node-id..-->` hydration marker inside
+// that raw-text element, which CSS parses as part of the selector
+// (`node-id444-- > [data-chart=...]`), so the rule never matched,
+// `--series-color: var(--color-desktop)` was invalid, and marks fell back
+// to `fill: black` / `stroke: none`. The declarations are now an inline
+// `style` attribute on the container (no `<style>` element at all).
+test.describe("Series colors resolve (no dead --color-<slot> rule)", () => {
+  test("the container carries its --color declarations inline, with no <style> child", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=chart&`);
+    const container = page.locator("#component-preview-frame-bar").first().locator("[data-chart]").first();
+    await expect(container).toHaveAttribute("style", /--color-desktop:\s*var\(--dx-chart-1\)/);
+    await expect(container.locator("style")).toHaveCount(0);
+  });
+
+  test("a bar's computed fill is the resolved --dx-chart-1 color, not the black fallback", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=chart&`);
+    const frame = page.locator("#component-preview-frame-bar").first();
+    const bar = frame.locator('[data-slot="chart-series"][data-series="desktop"] [data-slot="chart-bar"]').first();
+    await expect(bar).toBeVisible();
+
+    const { fill, seriesColor, expected } = await bar.evaluate((el) => {
+      const g = el.closest('[data-slot="chart-series"]') as Element;
+      // Resolve `--dx-chart-1` to a concrete color by letting the browser
+      // paint it on a throwaway probe inside the same subtree, so any
+      // theme-scoped custom properties apply exactly as they do to the bar.
+      const probe = document.createElement("span");
+      probe.style.color = "var(--dx-chart-1)";
+      g.ownerDocument.body.appendChild(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        fill: getComputedStyle(el).fill,
+        seriesColor: getComputedStyle(g).getPropertyValue("--series-color").trim(),
+        expected,
+      };
+    });
+
+    expect(seriesColor).not.toBe("");
+    expect(fill).not.toBe("rgb(0, 0, 0)");
+    expect(fill).toBe(expected);
+  });
+});
