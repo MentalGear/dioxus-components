@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Dioxus Components</h1>
+  <h1>shadcn-dioxus (Dioxus Components)</h1>
   <p><strong>Accessible, customizable components for Dioxus.</strong></p>
 </div>
 
