@@ -26,8 +26,8 @@ use crate::components::{
     ComponentCategory,
 };
 use crate::{
-    components, variant_title, ComponentVariantDemoData, HighlightedCode, Navbar, PreviewCode,
-    Route,
+    components, installed_source, variant_title, ComponentVariantDemoData, HighlightedCode, Navbar,
+    PreviewCode, Route,
 };
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
@@ -279,6 +279,7 @@ pub fn ChartsKind(kind: String, dark_mode: Option<bool>) -> Element {
         // slug is never prerendered anyway (`server_static_routes` only
         // lists `ChartKind::ALL`).
         None => rsx! {
+            document::Title { "Chart type not found \u{2013} {SITE_NAME}" }
             Navbar {}
             main { class: "dx-charts-not-found",
                 h1 { "Chart type not found" }
@@ -288,6 +289,45 @@ pub fn ChartsKind(kind: String, dark_mode: Option<bool>) -> Element {
         },
     }
 }
+
+/// The site name in a page title: `Area Charts - dioxus-components`.
+const SITE_NAME: &str = "dioxus-components";
+
+/// Runs when a tab link is activated, before the router navigates (an inline
+/// handler runs ahead of Dioxus's own delegated one): remembers where the tab
+/// row sits in the viewport. Plain primary clicks only, like the handler.
+const REMEMBER_TAB_ROW: &str = "if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { const row = document.querySelector('.dx-charts-tabs'); window.__dxChartsTab = { top: row ? row.getBoundingClientRect().top : null, at: Date.now() }; }";
+
+/// Runs after a gallery page renders. The router scrolls to the top on every
+/// navigation and the clicked tab may have been unmounted with the previous
+/// page, so after a tab switch this scrolls the page back so the tab row sits
+/// where it did before the click (never under the sticky navbar, never off
+/// screen) and focuses the now-active tab. `behavior: 'instant'` also
+/// overrides the page's `scroll-behavior: smooth`: switching tabs is not a
+/// scroll to watch, and it keeps the motion-averse from seeing any.
+const RESTORE_TAB_ROW: &str = r#"
+const pending = window.__dxChartsTab;
+window.__dxChartsTab = undefined;
+if (pending && Date.now() - pending.at < 5000) {
+    const active = document.querySelector('.dx-charts-tab[aria-current="page"]');
+    const row = active && active.closest('.dx-charts-tabs');
+    if (active && row) {
+        active.focus({ preventScroll: true });
+        const navbar = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--dx-navbar-height')
+        ) || 60;
+        const want = typeof pending.top === 'number' ? Math.max(pending.top, navbar) : navbar;
+        window.scrollTo({
+            top: window.scrollY + row.getBoundingClientRect().top - want,
+            behavior: 'instant',
+        });
+        const rect = row.getBoundingClientRect();
+        if (rect.top < navbar || rect.bottom > window.innerHeight) {
+            row.scrollIntoView({ block: 'start', behavior: 'instant' });
+        }
+    }
+}
+"#;
 
 /// What the code view shows: one variant's source, and on which surface.
 #[derive(Clone, PartialEq)]
@@ -304,7 +344,17 @@ fn ChartsPage(kind: ChartKind) -> Element {
     let mut selected = use_signal(|| None::<CodeView>);
     let variants = ordered_variants(kind);
 
+    // After a tab switch (and only then): put the tab row back where it was
+    // and focus the new tab. Re-runs when `kind` changes in place (Bar ->
+    // Line keeps this component); the first run, on page load, has no
+    // pending switch and does nothing.
+    use_effect(use_reactive!(|kind| {
+        let _ = kind;
+        document::eval(RESTORE_TAB_ROW);
+    }));
+
     rsx! {
+        document::Title { "{kind.tab_label()} \u{2013} {SITE_NAME}" }
         Navbar {}
         main { class: "dx-charts-page",
             ChartsHero {}
@@ -379,6 +429,7 @@ fn ChartsTab(kind: ChartKind, active: bool) -> Element {
             class: "dx-charts-tab",
             href,
             aria_current: active.then_some("page"),
+            "onclick": REMEMBER_TAB_ROW,
             onclick: move |event: MouseEvent| {
                 // Modified and non-primary clicks keep the browser's own
                 // behavior (new tab, ...), like `Link`.
@@ -402,10 +453,13 @@ fn ChartsCard(
 ) -> Element {
     let ComponentVariantDemoData {
         name,
-        rs_highlighted: code,
+        rs_highlighted,
         css_highlighted: _,
         component: Comp,
     } = variant;
+    // What `dx components add` makes of the file, so Copy / View Code hand
+    // out code that compiles in the user's app (see `installed_source`).
+    let code = installed_source::installed(kind.demo_name(), name, &rs_highlighted);
     let title = variant_title(name);
     let filename = format!("{}/variants/{name}/mod.rs", kind.demo_name());
     let span = if kind.is_hero(name) { "full" } else { "single" };

@@ -41,6 +41,7 @@ use unic_langid::{langid, LanguageIdentifier};
 mod charts_gallery;
 mod components;
 mod dashboard;
+mod installed_source;
 mod theme;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -1537,7 +1538,7 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                 section { class: "dx-component-section",
                     match r#type {
                         ComponentType::Normal => rsx! {
-                            ComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: None }
+                            ComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: None, owner: raw_name }
                         },
                         ComponentType::Block => rsx! {
                             BlockComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: raw_name, show_install: false }
@@ -1572,7 +1573,7 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                             div { class: "dx-component-variant",
                                 match r#type {
                                     ComponentType::Normal => rsx! {
-                                        ComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: None }
+                                        ComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: None, owner: raw_name }
                                     },
                                     ComponentType::Block => rsx! {
                                         BlockComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: raw_name, show_install: false }
@@ -1654,13 +1655,17 @@ fn ComponentVariantHighlight(
     variant: ComponentVariantDemoData,
     main_variant: bool,
     component_name: Option<&'static str>,
+    /// The component the variant belongs to (its folder name): the code tab
+    /// shows the source as it reads once that component is installed.
+    owner: &'static str,
 ) -> Element {
     let ComponentVariantDemoData {
         name,
-        rs_highlighted: highlighted,
+        rs_highlighted,
         css_highlighted: _,
         component: Comp,
     } = variant;
+    let highlighted = installed_source::installed(owner, name, &rs_highlighted);
     // Every variant of a "Normal" component renders on the SAME page (the
     // "Variants" section below loops over all of them, main included --
     // see `ComponentHighlight` above), so a literal `"component-preview-
@@ -1744,10 +1749,11 @@ fn BlockComponentVariantHighlight(
 ) -> Element {
     let ComponentVariantDemoData {
         name,
-        rs_highlighted: highlighted,
+        rs_highlighted,
         css_highlighted,
         component: _,
     } = variant;
+    let highlighted = installed_source::installed(component_name, name, &rs_highlighted);
 
     // The canonical, SSG-enumerable path route (row 46) -- NOT the legacy
     // `Route::ComponentBlockDemo` query form, so every block demo's iframe

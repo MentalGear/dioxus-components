@@ -18,6 +18,19 @@ const SCROLLBAR_SLACK = 16;
 
 const COMPONENTS = path.join(__dirname, "../preview/src/components");
 
+// What Copy / View Code hand out for a variant: the variant's own file, with
+// its repo-relative `use super::super::component::*;` rewritten to where
+// `dx components add <demo>` puts the component in the user's app
+// (`preview/src/installed_source.rs`).
+function installedSource(demo: string, variant: string): string {
+  return fs
+    .readFileSync(path.join(COMPONENTS, `${demo}/variants/${variant}/mod.rs`), "utf8")
+    .replaceAll("super::super::component", `crate::components::${demo}`);
+}
+
+// Notes that belong in the repo's research logs, not in code a user copies.
+const INTERNAL_NOTES = /\$S\/|refs\/ui\/|dev-docs|backlog\.md|stage-?[0-9]|clone commit/;
+
 // Minimum card counts: shadcn's own per-tab counts, which every tab of ours
 // has at least (the demos behind the cards can only grow).
 const TABS = [
@@ -111,7 +124,7 @@ test("hero buttons, top nav and the chart component pages link to the gallery", 
   await expect(page).toHaveURL(/\/charts\/\??$/);
 });
 
-test("Copy writes the variant's full source to the clipboard", async ({ page, context }) => {
+test("Copy writes the variant's full source to the clipboard, as installed", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoHydrated(page, `${BASE_URL}/charts/area/`);
 
@@ -120,16 +133,136 @@ test("Copy writes the variant's full source to the clipboard", async ({ page, co
   await copy.scrollIntoViewIfNeeded();
   await copy.click();
 
-  const expected = fs.readFileSync(
-    path.join(COMPONENTS, "area_chart/variants/gradient/mod.rs"),
-    "utf8",
-  );
+  const expected = installedSource("area_chart", "gradient");
+  expect(expected).toContain("use crate::components::area_chart::*;");
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(expected);
   // The check icon confirms the copy, then resets.
   await expect(copy).toHaveAttribute("data-copied", "true");
   await expect(copy).toHaveAttribute("data-copied", "false");
+});
+
+test("every card's Copy gives self-contained code: installed import path, no repo-internal notes", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  for (const tab of TABS) {
+    await gotoHydrated(page, `${BASE_URL}/charts/${tab.slug}/`);
+    for (const cell of await page.locator(".dx-charts-cell").all()) {
+      const variant = (await cell.getAttribute("data-variant"))!;
+      const copy = cell.getByRole("button", { name: /^Copy code/ });
+      await copy.scrollIntoViewIfNeeded();
+      await copy.click();
+      const expected = installedSource(tab.demo, variant);
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()), {
+          message: `${tab.demo}/${variant}`,
+        })
+        .toBe(expected);
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      expect(copied, `${tab.demo}/${variant}`).not.toContain("super::super");
+      expect(copied, `${tab.demo}/${variant}`).toMatch(
+        new RegExp(`^use crate::components::${tab.demo}::`, "m"),
+      );
+      expect(copied, `${tab.demo}/${variant}`).not.toMatch(INTERNAL_NOTES);
+    }
+  }
+});
+
+test("View Code shows the installed import path, highlighted", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHydrated(page, `${BASE_URL}/charts/bar/`);
+  const viewCode = page
+    .locator('.dx-charts-cell[data-variant="main"]')
+    .getByRole("button", { name: /^View Code/ });
+  await viewCode.scrollIntoViewIfNeeded();
+  await viewCode.click();
+  const code = page.getByRole("dialog", { name: "bar_chart/variants/main/mod.rs" }).locator(
+    ".dx-preview-code-theme",
+  );
+  await expect(code).toContainText("use crate::components::bar_chart::*;");
+  await expect(code).not.toContainText("super::super");
+  // The rewritten import keeps its token colors: the path segments are
+  // still separate highlighted spans, not one plain run of text.
+  expect(await code.locator(".dxc span").allTextContents()).toEqual(
+    expect.arrayContaining(["crate", "components", "bar_chart"]),
+  );
+});
+
+test("the component pages' CODE tab shows the installed import path too", async ({ page }) => {
+  await gotoHydrated(page, `${BASE_URL}/component/pie_chart/`);
+  await page.getByRole("tab", { name: "CODE" }).first().click();
+  const code = page.locator(".dx-component-preview-frame .dx-preview-code-theme").first();
+  await expect(code).toContainText("use crate::components::pie_chart::*;");
+  await expect(code).not.toContainText("super::super");
+});
+
+test("switching tabs keeps the tab row in view and focuses the active tab", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHydrated(page, `${BASE_URL}/charts/area/`);
+  const nav = page.getByRole("navigation", { name: "Chart types" });
+  const rowTop = () => nav.evaluate((el) => Math.round(el.getBoundingClientRect().top));
+
+  // Scrolled past the hero, tab row a little below the sticky navbar.
+  await page.evaluate(() => {
+    const row = document.querySelector(".dx-charts-tabs")!;
+    window.scrollTo({ top: window.scrollY + row.getBoundingClientRect().top - 120, behavior: "instant" });
+  });
+  await expect.poll(rowTop).toBe(120);
+
+  // Area -> Pie remounts the page; Pie -> Radar keeps it. Both must hold the row.
+  for (const label of ["Pie Charts", "Radar Charts", "Area Charts"]) {
+    await nav.getByRole("link", { name: label }).click();
+    await expect(nav.getByRole("link", { name: label })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link", { name: label })).toBeFocused();
+    await expect.poll(rowTop, { message: `tab row after ${label}` }).toBeGreaterThanOrEqual(60);
+    await expect.poll(rowTop, { message: `tab row after ${label}` }).toBeLessThan(800 - 32);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    expect(Math.abs((await rowTop()) - 120)).toBeLessThanOrEqual(2);
+  }
+});
+
+test("a keyboard tab switch lands on the new tab, not the page top", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHydrated(page, `${BASE_URL}/charts/area/`);
+  const nav = page.getByRole("navigation", { name: "Chart types" });
+  const bar = nav.getByRole("link", { name: "Bar Charts" });
+  await bar.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/charts\/bar\/\??$/);
+  await expect(bar).toBeFocused();
+  await expect(bar).toBeInViewport();
+});
+
+test("each tab has its own document title", async ({ page }) => {
+  for (const tab of TABS) {
+    await gotoHydrated(page, `${BASE_URL}/charts/${tab.slug}/`);
+    await expect(page).toHaveTitle(`${tab.label} \u2013 dioxus-components`);
+  }
+  await gotoHydrated(page, `${BASE_URL}/charts/`);
+  await expect(page).toHaveTitle("Area Charts \u2013 dioxus-components");
+  // ... and a client-side switch updates it.
+  await page
+    .getByRole("navigation", { name: "Chart types" })
+    .getByRole("link", { name: "Line Charts" })
+    .click();
+  await expect(page).toHaveTitle("Line Charts \u2013 dioxus-components");
+});
+
+test("the interactive bar toggles have no UA button border", async ({ page }) => {
+  await gotoHydrated(page, `${BASE_URL}/charts/bar/`);
+  const toggles = page.locator(".dx-bar-chart-interactive-toggle");
+  await expect(toggles).toHaveCount(2);
+  for (const toggle of await toggles.all()) {
+    const widths = await toggle.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth];
+    });
+    expect(widths).toEqual(["0px", "0px", "0px"]);
+  }
 });
 
 test("Copy shows a 'Copy code' tooltip on hover", async ({ page }) => {
@@ -171,10 +304,7 @@ test("View Code opens the source sheet and Escape closes it, returning focus", a
 
   // The sheet's own copy button copies the same text.
   await dialog.getByRole("button", { name: /^Copy code/ }).click();
-  const expected = fs.readFileSync(
-    path.join(COMPONENTS, "area_chart/variants/gradient/mod.rs"),
-    "utf8",
-  );
+  const expected = installedSource("area_chart", "gradient");
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
 
   await page.keyboard.press("Escape");
