@@ -2,10 +2,7 @@ use super::super::component::*;
 use crate::components::select::{Select, SelectOption};
 use dioxus::prelude::*;
 
-/// The six months shadcn's own `chart-pie-interactive.tsx` fixture covers
-/// -- a small `Copy` enum plays the role of its `activeMonth` state string,
-/// same convention `bar_chart/variants/interactive/mod.rs`'s own `Series`
-/// enum uses for an analogous "pick one, keep its index" interaction.
+/// The months the select offers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Month {
     January,
@@ -36,10 +33,7 @@ impl Month {
     }
 }
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- here keyed by month instead of
-/// browser, matching shadcn's own `chart-pie-interactive.tsx` fixture
-/// shape (one visitor count per month, one color per month).
+/// Visitor counts per month, one color per month.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("January", 186.0, "var(--dx-chart-1)"),
@@ -62,11 +56,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-interactive.tsx`: a `Select` drives which
-/// month's slice is "active" (grown, `data-active="true"`) and the donut's
-/// own center text together -- `PieOptions::active_index`, set from the
-/// selected `Month`'s own position in [`chart_data`], is the single value
-/// both effects read from.
+/// A `Select` picks which month's slice is active (grown) and what the donut's
+/// center text shows; `PieOptions::active_index` drives both.
 #[component]
 pub fn Demo() -> Element {
     let mut active = use_signal(|| Month::January);

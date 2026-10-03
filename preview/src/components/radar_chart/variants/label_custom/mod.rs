@@ -5,17 +5,8 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-label-custom.tsx`
-/// (data, config, copy). shadcn's own demo replaces the category tick
-/// renderer entirely with a custom multi-line `<text>` (each axis label
-/// shows "desktop/mobile" values above the month name) via a render-prop
-/// `tick` function. This crate's data-driven chart API deliberately has no
-/// render-prop/children-introspection mechanism for internal ticks (same
-/// reasoning as `primitives/src/chart/engine/data.rs`'s own module doc:
-/// Dioxus's `Element` gives a parent no equivalent of React's
-/// `Children.map`/`cloneElement`) -- ported here as the standard category
-/// labels (`axis_labels: true`, the default) with this note, not the fully
-/// custom tick markup.
+/// Category labels around the chart (`axis_labels: true`, the default). There
+/// is no hook to replace the label markup.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

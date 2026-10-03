@@ -5,14 +5,8 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-radius.tsx`
-/// (data, config, copy, card chrome). shadcn's own demo hides the category
-/// (`PolarAngleAxis`) axis entirely and shows a `PolarRadiusAxis` (numeric
-/// ticks along one spoke) instead; `RadarOptions` has no dedicated
-/// value-axis overlay (out of scope for this MVP -- ChartTooltip's own
-/// `labelKey` render already surfaces the category name on hover, which is
-/// this crate's substitute for reading it off an axis). This port keeps
-/// that one deviation and otherwise matches the data/config/copy exactly.
+/// One series on the default grid; hovering a vertex shows the category name
+/// and value in the tooltip.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

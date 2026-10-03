@@ -5,9 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-dots.tsx`
-/// (data, config, copy, card chrome). Same data as the default demo, with a
-/// dot at every vertex.
+/// Same data as the default demo, with a dot at every vertex.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

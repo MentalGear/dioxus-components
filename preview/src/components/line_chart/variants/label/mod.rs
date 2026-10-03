@@ -3,11 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-label.tsx`: `LineOptions::labels:
-/// LineLabels::Value` draws each defined point's own value just above it
-/// (shadcn's `<LabelList position="top" />`), with the grid/y-axis hidden
-/// (matching the source demo, whose whole point is that the labels replace
-/// the axis as the readout).
+/// `LineOptions::labels: LineLabels::Value` draws each point's value above it;
+/// the grid and y axis are hidden because the labels replace them.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

@@ -1,14 +1,9 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-label-custom.tsx`: the same horizontal
-/// browser layout as this gallery's own `horizontal`/`mixed` variants, plus
-/// `BarOptions::inside_labels` -- each bar's own category name drawn
-/// INSIDE it near its start (in a color meant to read against the bar's
-/// fill) and its value just outside the bar's far end, replacing the
-/// hidden default axis entirely (shadcn's own `<LabelList
-/// dataKey="browser" position="insideLeft" />` + a second `<LabelList
-/// dataKey="visitors" position="right" />`).
+/// Horizontal bars with the category name drawn inside each bar and its value
+/// just past the end (`BarOptions::inside_labels`); the default axes are
+/// hidden.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 5] = [
         ("Chrome", 275.0),

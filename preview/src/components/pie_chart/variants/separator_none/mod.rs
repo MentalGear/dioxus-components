@@ -2,9 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's eleven source
-/// files does the same.
+/// Visitor counts per browser.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -26,13 +24,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-separator-none.tsx` (`<Pie stroke={0} />`).
-/// Upstream's default pie draws no visible separator either -- shadcn's
-/// `ChartContainer` forces Recharts' default white sector stroke
-/// (`stroke='#fff'`) to transparent -- so `chart-pie-simple` and this demo
-/// render identically on shadcn's own gallery, and `main` here is the same
-/// plain pie: this crate's `chart-arc` has no stroke (nor any `pad_angle`)
-/// to remove. The demo exists for gallery parity, not as a visual variant.
+/// A plain pie with no separator between slices; slices are drawn without one
+/// by default.
 #[component]
 pub fn Demo() -> Element {
     rsx! {

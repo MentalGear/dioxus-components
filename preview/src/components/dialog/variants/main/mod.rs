@@ -1,4 +1,4 @@
-use crate::components::button::component::Button;
+use crate::components::button::Button;
 
 use super::super::component::{Dialog, DialogDescription, DialogTitle};
 use dioxus::prelude::*;

@@ -1,11 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-default.tsx`: one series over six months,
-/// rounded bars, a grid, an x-axis, and a `hideLabel` tooltip -- the
-/// simplest possible bar chart, so this is this gallery's `main` demo (this
-/// repo's `variants::main` convention corresponds to shadcn's own "default"
-/// story, see `dev-docs/research/chart-2026-09-19.md` §1.2's naming).
+/// One series over six months: rounded bars, a grid, an x axis and a tooltip
+/// without a label row.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

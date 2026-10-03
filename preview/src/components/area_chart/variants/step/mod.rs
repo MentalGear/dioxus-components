@@ -3,13 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-step.tsx`
-/// (shadcn's `chart-area-step` demo): the same data again, this time with
-/// `type="step"` -- `curve: Curve::Step` (this crate's step-after
-/// interpolation; see `primitives/src/chart/engine/curve.rs`). The
-/// upstream demo's `chartConfig.desktop.icon` is left out here -- the
-/// `icons` variant is where `ChartSeries.icon` is demonstrated.
+/// The default data drawn as steps (`curve: Curve::Step`) instead of a smoothed
+/// curve.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),

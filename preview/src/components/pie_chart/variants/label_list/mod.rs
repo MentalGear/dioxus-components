@@ -2,8 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared.
+/// Visitor counts per browser.
 const BROWSERS: [(&str, f64, &str); 5] = [
     ("chrome", 275.0, "var(--dx-chart-1)"),
     ("safari", 200.0, "var(--dx-chart-2)"),
@@ -27,10 +26,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-label-list.tsx`: each slice's own category
-/// name drawn inside it, instead of its value -- `PieLabels::List`, given
-/// the same lower-case browser names as this variant's own dataset
-/// (shadcn's `label` prop reads `dataKey` off the same underlying row).
+/// Each slice labelled with its category name (`PieLabels::List`).
 #[component]
 pub fn Demo() -> Element {
     let labels: Vec<String> = BROWSERS.iter().map(|&(browser, ..)| browser.to_string()).collect();

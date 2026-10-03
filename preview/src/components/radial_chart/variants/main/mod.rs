@@ -2,10 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports shadcn's `chart-radial-simple.tsx`: five browsers' visitor
-/// counts, one concentric ring each -- the same approximate (see
-/// `pie_chart/variants/main/mod.rs`'s own doc comment on why "approximate,
-/// not byte-copied") shadcn fixture `pie_chart`'s own `main` demo uses.
+/// Five browsers' visitor counts, one concentric ring each.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),

@@ -6,7 +6,7 @@ use crate::components::item::{
     Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemMediaVariant, ItemTitle,
 };
 use crate::components::select::{SelectGroup, SelectGroupLabel, SelectMulti, SelectOption};
-use crate::components::tabs::component::{TabList, TabTrigger, Tabs};
+use crate::components::tabs::{TabList, TabTrigger, Tabs};
 use crate::components::virtual_list::VirtualList;
 use crate::dashboard::common::{
     lookup_message, IconKind, LucideIcon, MessageState, MessageStateStoreExt, MessageTag, TabId,

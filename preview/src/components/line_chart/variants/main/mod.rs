@@ -3,23 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-default.tsx`
-/// (`$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-line-default.tsx`,
-/// clone commit `a87a63b`): one series, no dots, the plain baseline every
-/// other variant in this gallery starts from. The tooltip hides its label
-/// row (the source's own `hideLabel`) since a single-series chart's
-/// tooltip header would just repeat the x category already implied by the
-/// one swatch row underneath it.
-///
-/// shadcn's `type="natural"` (a natural cubic spline) is ported as this
-/// primitive's `Curve::Monotone` (`Chart`'s own default -- left unset
-/// below) -- the closest existing curve (Steffen's monotonicity-preserving
-/// cubic, `primitives/src/chart/engine/curve.rs`), and visually
-/// indistinguishable from a natural spline for this demo's data.
-/// `Curve::Natural` itself was not added: `$S/stage2-common.md`'s own
-/// ownership line for `engine/curve.rs` calls it "no change expected;
-/// ... if wanted for parity" -- optional polish, not required for a
-/// faithful-looking port.
+/// One series, no dots, smoothed with the default `Curve::Monotone`. The
+/// tooltip hides its label row (`hide_label`): a single-series chart has
+/// nothing to tell apart.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

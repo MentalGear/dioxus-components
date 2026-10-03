@@ -1,12 +1,9 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-label.tsx`: the same single-series, six-month
-/// dataset as this gallery's own `main` demo, plus `BarOptions::
-/// value_labels` -- each bar's own value drawn just above it (shadcn's
-/// `<LabelList position="top" />`), and the grid/y-axis hidden (matching
-/// the source demo, whose whole point is that the labels replace the axis
-/// as the readout).
+/// The six-month series with each bar's value drawn above it
+/// (`BarOptions::value_labels`); the grid and y axis are hidden because the
+/// labels replace them.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),

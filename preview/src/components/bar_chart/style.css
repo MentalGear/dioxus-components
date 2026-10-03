@@ -54,6 +54,10 @@
   align-items: start;
   justify-content: center;
   padding: var(--dx-space-3) var(--dx-space-4);
+
+  /* Reset the UA button border (an outset 2px on every side) before the
+   * start-edge divider below puts one side back. */
+  border: 0;
   border-radius: 0;
   background-color: transparent;
   border-inline-start: 1px solid var(--primary-color-6);

@@ -3,16 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-axes.tsx`
-/// (shadcn's `chart-area-axes` demo): the same stacked two-series data,
-/// with the y axis shown (`show_y_axis: true`) alongside the default x
-/// axis, and a reduced tick count (`y_tick_count: 3`, matching the
-/// upstream demo's `tickCount={3}`). shadcn's own `YAxis`/`XAxis` also set
-/// `axisLine={false}` (no baseline stroke, only tick labels) -- this
-/// crate's `Chart` draws axis tick *labels* only in the first place (no
-/// baseline stroke to suppress; see `$S/chart-api.md`), so that prop has
-/// no equivalent to port.
+/// A stacked two-series area chart with both axes shown: the y axis is turned
+/// on (`show_y_axis: true`) and limited to three ticks (`y_tick_count: 3`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

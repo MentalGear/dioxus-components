@@ -5,9 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-grid-custom.tsx`
-/// (data, config, copy, card chrome). A single custom ring at value `90`
-/// (shadcn's `polarRadius={[90]}`), no spokes.
+/// A single custom ring at value `90`, no spokes.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

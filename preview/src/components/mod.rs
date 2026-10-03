@@ -120,7 +120,7 @@ macro_rules! examples {
     ($($name:ident $(($kind:ident))? $([$($variant:ident),*])?),* $(,)?) => {
         $(
             pub(crate) mod $name {
-                pub(crate) mod component;
+                mod component;
                 #[allow(unused)]
                 pub use component::*;
                 pub(crate) mod variants {

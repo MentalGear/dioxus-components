@@ -2,9 +2,8 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// A single-category dataset -- shadcn's `chart-radial-text.tsx` shows one
-/// gauge-style ring (a single `<RadialBar>` value against its own domain
-/// max) with the raw visitor count centered in the hole.
+/// A single-category dataset: one gauge-style ring with the visitor count
+/// centered in the hole.
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
         label: "Visitors".to_string(),
@@ -17,10 +16,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-radial-text.tsx`: a single ring with a two-line
-/// total centered in its hole, gauge-style (`RadialOptions::center_text`,
-/// the exact mechanism `pie_chart/variants/donut_text/mod.rs` already
-/// uses for Pie's own donut hole).
+/// A single ring with a two-line total centered in its hole
+/// (`RadialOptions::center_text`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {

@@ -1,15 +1,9 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-horizontal.tsx`: a single series
-/// ("visitors") over browser categories, drawn with the category axis
-/// running top-to-bottom and values running left-to-right --
-/// `BarOptions::horizontal`. Like shadcn's own demo, both of `Chart`'s
-/// default axes are hidden (`show_x_axis`/`show_y_axis: false`): this
-/// family's own `render` draws its own category labels at the plot's left
-/// edge when `horizontal` is set (`primitives/src/chart/components/series/
-/// bar.rs`'s own module doc explains why that's this family's job, not
-/// `components::layout`'s).
+/// One series over browser categories, drawn horizontally
+/// (`BarOptions::horizontal`). Both default axes are hidden; the category
+/// labels are drawn at the left edge of the plot.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 5] = [
         ("Chrome", 275.0),

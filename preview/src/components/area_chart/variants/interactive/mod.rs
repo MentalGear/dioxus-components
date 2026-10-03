@@ -3,8 +3,8 @@ use crate::components::card::{Card, CardAction, CardContent, CardDescription, Ca
 use crate::components::select::{Select, SelectOption};
 use dioxus::prelude::*;
 
-/// The three ranges shadcn's own `chart-area-interactive` demo offers,
-/// filtering the tail of the fixed 91-day series below.
+/// The ranges the select offers; each shows the tail of the 91-day series
+/// below.
 #[derive(Debug, Clone, Copy, PartialEq, strum::Display)]
 enum TimeRange {
     #[strum(to_string = "Last 3 months")]
@@ -25,20 +25,9 @@ impl TimeRange {
     }
 }
 
-/// The literal 91-row dataset from
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-interactive.tsx`
-/// (`(date, desktop, mobile)`) -- ported verbatim rather than regenerated,
-/// so this demo's shape (which days trend up/down, the two series'
-/// relative sizes) matches the upstream demo exactly, not just its
-/// statistical flavor. Formatted `"Mon D"` labels (matching the upstream
-/// `tickFormatter`'s `toLocaleDateString(..., { month: "short", day:
-/// "numeric" })` output) are built once in [`generate_data`], not stored
-/// as separate ISO strings -- this crate's `ChartDatum::label` is the one
-/// value both the hidden data table and the x-axis format from (see
-/// `x_tick_format` below, which returns it unchanged rather than this
-/// crate's own default first-3-characters truncation, which would cut
-/// every label down to just `"Apr"`/`"May"`/`"Jun"` and lose the day
-/// number).
+/// The 91-day dataset as `(date, desktop, mobile)` rows. The `"Mon D"` labels
+/// are built once in [`generate_data`]; `ChartDatum::label` is what both the
+/// hidden data table and the x axis read.
 const ROWS: [(&str, f64, f64); 91] = [
     ("2024-04-01", 222.0, 150.0),
     ("2024-04-02", 97.0, 180.0),
@@ -133,10 +122,8 @@ const ROWS: [(&str, f64, f64); 91] = [
     ("2024-06-30", 446.0, 400.0),
 ];
 
-/// `"2024-04-01"` -> `"Apr 1"` -- a fixed, hand-written month-name table
-/// rather than a date-arithmetic dependency (this crate takes on none for
-/// the chart engine; see `primitives/src/chart/engine/mod.rs`'s own doc),
-/// enough for this literal dataset's own two months' worth of ISO dates.
+/// `"2024-04-01"` -> `"Apr 1"`, using a fixed month-name table instead of a
+/// date library.
 fn format_date_label(iso: &str) -> String {
     let month = match &iso[5..7] {
         "04" => "Apr",
@@ -208,16 +195,13 @@ pub fn Demo() -> Element {
                 CardContent {
                     ChartContainer { config, data: visible, kind: ChartKind::Area,
                         Chart {
-                            // Stacked, per the upstream demo's shared
-                            // `stackId="a"` on both `<Area>`s -- unlike the
-                            // generic `chart` package's own `main` variant
-                            // (a deliberate, documented, non-stacked
-                            // simplification of this same upstream demo).
+                            // Stacked: the two series are drawn on top of each
+                            // other.
                             aria_label: "Visitors by day, desktop and mobile",
-                            // shadcn's fixed `h-[250px]` hero chart: the width fills the card (the chart's
-                            // logical width follows its measured container, 1 unit = 1 CSS px), the height
-                            // is exactly 250px at every viewport, and x ticks thin to the real width.
-                            // `width` is only the server/first-render size (see `ChartProps::fit_width`).
+                            // A fixed 250px height; the width follows the card.
+                            // `width` is only the size used for the
+                            // server/first render (see
+                            // `ChartProps::fit_width`).
                             fit_width: true,
                             width: 700.0,
                             height: 250.0,

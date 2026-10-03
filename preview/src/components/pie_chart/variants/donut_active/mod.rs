@@ -2,8 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared.
+/// Visitor counts per browser.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -25,8 +24,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-donut-active.tsx`: `active_index: Some(0)`
-/// permanently grows the first slice, regardless of hover.
+/// `active_index: Some(0)` keeps the first slice grown, regardless of hover.
 #[component]
 pub fn Demo() -> Element {
     rsx! {

@@ -5,9 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-default.tsx`
-/// (data, config, copy, card chrome). shadcn's simplest radar: one series,
-/// the default polygon grid, no dots.
+/// One series on the default polygon grid, no dots.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

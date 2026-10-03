@@ -3,12 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-step.tsx`
-/// (`$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-line-step.tsx`,
-/// clone commit `a87a63b`): identical data/config to `variants::main`
-/// (`chart-line-default.tsx`), stepping horizontally then vertically
-/// between points (`Curve::Step`, "step-after" -- `Chart`'s only step
-/// variant, matching shadcn's own `type="step"`).
+/// The default data drawn as steps (`Curve::Step`).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

@@ -1,9 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// A single series, monotone curve (the `Chart`/`Curve` default -- left
-/// unset below), with each data point's dot drawn (`show_dots`). Matches
-/// shadcn's own `chart-line-dots` demo shape.
+/// A single series with the default monotone curve and a dot at each data point
+/// (`show_dots`).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [&str; 6] = ["January", "February", "March", "April", "May", "June"];
     MONTHS

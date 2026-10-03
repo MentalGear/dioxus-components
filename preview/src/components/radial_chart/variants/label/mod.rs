@@ -2,8 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared.
+/// Visitor counts per browser.
 const BROWSERS: [(&str, f64, &str); 5] = [
     ("Chrome", 275.0, "var(--dx-chart-1)"),
     ("Safari", 200.0, "var(--dx-chart-2)"),
@@ -27,9 +26,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-radial-label.tsx`: each ring's own category name
-/// drawn inside its own arc -- `PieLabels::List`, this family's own reuse
-/// of Pie's per-arc label mechanism (`RadialOptions::labels`'s own doc).
+/// Each ring's category name drawn inside its arc (`RadialOptions::labels` with
+/// `PieLabels::List`).
 #[component]
 pub fn Demo() -> Element {
     let labels: Vec<String> = BROWSERS.iter().map(|&(browser, ..)| browser.to_string()).collect();

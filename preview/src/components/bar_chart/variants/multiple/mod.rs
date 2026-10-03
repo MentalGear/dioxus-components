@@ -1,13 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-multiple.tsx`: two series (desktop/mobile)
-/// grouped side by side per category, rather than stacked -- the `stacked`
-/// and `stacked_legend` variants are this same shape, stacked instead.
-///
-/// The tooltip uses the dashed-line indicator, as shadcn's demo does
-/// (`<ChartTooltipContent indicator="dashed" />` ->
-/// `ChartTooltip { indicator: TooltipIndicator::Dashed }`).
+/// Two series (desktop/mobile) grouped side by side per month, with a dashed
+/// tooltip indicator (`TooltipIndicator::Dashed`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

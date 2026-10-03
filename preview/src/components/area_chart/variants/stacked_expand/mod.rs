@@ -3,19 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-stacked-expand.tsx`
-/// (shadcn's `chart-area-stacked-expand` demo, `stackOffset="expand"`):
-/// three series, percent-stacked via `AreaOptions::stack_mode:
-/// StackMode::Expand` (`primitives/src/chart/engine/stack.rs`'s
-/// `stack_with_mode`, d3 `offset/expand.js` semantics) so every month's
-/// stack reaches exactly 100% regardless of its raw total.
-///
-/// The grid is shown (unlike an earlier draft of this demo): stage-2's
-/// §4(c) construction made `components::layout::build` itself
-/// `StackMode`-aware, so `Chart`'s shared grid lines/y-axis ticks now
-/// reflect the same normalized 0..1 domain the marks draw against -- no
-/// more mismatch to work around by hiding the grid.
+/// Three series stacked to 100% (`AreaOptions::stack_mode: StackMode::Expand`):
+/// every month's stack fills the full height, so each area shows that series'
+/// share rather than its raw value.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64, f64); 6] = [
         ("January", 186.0, 80.0, 45.0),

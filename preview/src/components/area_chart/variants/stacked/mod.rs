@@ -3,14 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-stacked.tsx`
-/// (shadcn's `chart-area-stacked` demo): two series, `stacked: true`.
-/// Series order here (`desktop` then `mobile`) is this config's own
-/// stacking order (`ChartConfig::series`, positional -- see that type's
-/// doc), not shadcn's JSX render order (`mobile` then `desktop`, both
-/// sharing `stackId="a"`); either order draws the same two regions, one
-/// stacked on the other.
+/// Two series stacked on top of each other (`stacked: true`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

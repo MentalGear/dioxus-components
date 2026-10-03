@@ -3,10 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-legend.tsx`
-/// (shadcn's `chart-area-legend` demo): the same stacked two-series data as
-/// the `stacked` variant, with a `ChartLegend` added below the chart.
+/// The stacked two-series chart with a `ChartLegend` below it.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

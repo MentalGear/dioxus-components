@@ -1,4 +1,4 @@
-use crate::components::button::component::Button;
+use crate::components::button::Button;
 
 use super::super::component::*;
 use dioxus::prelude::*;

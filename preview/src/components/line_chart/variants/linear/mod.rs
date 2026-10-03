@@ -3,12 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-linear.tsx`
-/// (`$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-line-linear.tsx`,
-/// clone commit `a87a63b`): identical data/config to `variants::main`
-/// (`chart-line-default.tsx`), with straight (`Curve::Linear`) segments
-/// between points instead of a curve -- shadcn's own `type="linear"` maps
-/// directly, no substitution needed.
+/// The default data with straight segments between points (`Curve::Linear`).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),

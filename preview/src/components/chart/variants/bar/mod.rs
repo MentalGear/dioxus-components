@@ -1,9 +1,7 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Three series over six months, grouped (not stacked) side by side per
-/// shadcn's own `chart-bar-multiple` demo shape -- matches
-/// `dev-docs/research/chart-2026-09-19.md` §6.7's brief for this variant.
+/// Three series over six months, grouped side by side per month (not stacked).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [&str; 6] = ["January", "February", "March", "April", "May", "June"];
     MONTHS
@@ -34,10 +32,7 @@ pub fn Demo() -> Element {
         ChartContainer { config, data: generate_data(), kind: ChartKind::Bar,
             Chart { aria_label: "Visitors by month, desktop, mobile, and tablet" }
             ChartTooltip {}
-            // Top, not the Bottom default -- exercises the legend's own
-            // `data-align` reorder (style.css's `[data-align="top"] { order:
-            // -1; }`) so this package's one demo of it is a real, checked
-            // code path rather than dead capability.
+            // The legend aligned to the top instead of the default bottom.
             ChartLegend { vertical_align: LegendAlign::Top }
         }
     }

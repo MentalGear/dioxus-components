@@ -2,8 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared.
+/// Visitor counts per browser.
 const BROWSERS: [(&str, f64, &str); 5] = [
     ("Chrome", 275.0, "var(--dx-chart-1)"),
     ("Safari", 200.0, "var(--dx-chart-2)"),
@@ -27,12 +26,8 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-label-custom.tsx`: a fully custom per-slice
-/// label -- shadcn draws its own `<text>`/percentage combination via a
-/// render-prop `label` function; this crate's equivalent `PieLabels::List`
-/// (the exact same mechanism `label_list` uses, just with different
-/// caller-supplied text -- see `PieLabels::List`'s own doc) is given each
-/// slice's percentage share of the total, computed once up front.
+/// Each slice labelled with its percentage share of the total, via
+/// `PieLabels::List` (the caller supplies the label text).
 #[component]
 pub fn Demo() -> Element {
     let total: f64 = BROWSERS.iter().map(|&(_, v, _)| v).sum();

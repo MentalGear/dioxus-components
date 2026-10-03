@@ -3,15 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-linear.tsx`
-/// (shadcn's `chart-area-linear` demo): the same data as the default demo,
-/// with straight (`type="linear"`) segments instead of a smoothed curve --
-/// `curve: Curve::Linear`. Its tooltip content hides the label row
-/// (`hideLabel`), ported here as `hide_label: true`; the "dot" vs. "line"
-/// indicator shape shadcn's `ChartTooltipContent` distinguishes has no
-/// equivalent prop on this crate's `ChartTooltip` (see `$S/chart-api.md`)
-/// and is not reproduced.
+/// The default area chart with straight segments between points (`curve:
+/// Curve::Linear`) instead of a smoothed curve. The tooltip hides its label row
+/// (`hide_label: true`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),

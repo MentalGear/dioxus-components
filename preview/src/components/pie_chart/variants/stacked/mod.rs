@@ -2,12 +2,8 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports shadcn's `chart-pie-stacked.tsx`: two concentric rings (desktop,
-/// mobile), one per configured series -- this crate's `series::pie::render`
-/// draws `ctx.config.series.len() > 1` as `render_rings` (one ring per
-/// series, series 0 innermost) automatically, the same `ChartConfig`/
-/// `ChartDatum` shape every Cartesian family uses (unlike this gallery's
-/// other ten single-series demos).
+/// Two concentric rings, one per configured series (desktop innermost, then
+/// mobile): a chart with more than one series draws one ring per series.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("January", 186.0, 80.0),

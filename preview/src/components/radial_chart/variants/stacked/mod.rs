@@ -2,9 +2,8 @@ use super::super::component::*;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// A single category (January) with two series -- shadcn's
-/// `chart-radial-stacked.tsx` stacks `desktop`/`mobile` cumulatively into
-/// ONE ring instead of each getting its own (`RadialOptions::stacked`).
+/// A single category (January) with two series stacked cumulatively into one
+/// ring instead of one ring each (`RadialOptions::stacked`).
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
         label: "January".to_string(),

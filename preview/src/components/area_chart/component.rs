@@ -20,25 +20,13 @@
 //! package is an even thinner instance of the same shape, since it adds no
 //! composition logic of its own at all, only demos.
 //!
-//! **`chart::component::*`, not `chart::*`, and this is load-bearing, not
-//! a style choice:** `preview/src/components/mod.rs`'s `examples!` macro
-//! expands every registered `$name` (this package included) to `mod $name
-//! { pub(crate) mod component; pub use component::*; pub(crate) mod
-//! variants { ... } }`. Every such module therefore has its own submodule
-//! literally named `component`, `pub(crate)` (crate-wide visible). Glob-
-//! importing a sibling's *whole* module (`crate::components::chart::*`)
-//! transitively re-exports that sibling's `component` submodule NAME too
-//! (not just its contents) -- which then collides with this module's own
-//! macro-declared `pub(crate) mod component;`, `error[E0659]: `component`
-//! is ambiguous` (confirmed by triggering it while writing this file).
-//! Importing one level deeper, `chart::component::*`, re-exports that
-//! module's *contents* (`Chart`, `ChartContainer`, ...) without also
-//! naming the `component` module itself, which sidesteps the collision by
-//! construction. Any other stage-2 gallery package following this same
-//! "thin wrapper over `chart`" shape must import this same way.
+//! Re-exports `crate::components::chart::*`, the path a user's own tree has
+//! after `dx components add chart` (there `chart/mod.rs` is `mod component;
+//! pub use component::*;`). Never reach into `chart::component::` directly:
+//! that module is private once installed (`scripts/check-installed-paths.sh`).
 use dioxus::prelude::*;
 
-pub use crate::components::chart::component::*;
+pub use crate::components::chart::*;
 
 /// Root of every demo in this gallery. Its only job is to link this
 /// package's `style.css` (the `display: contents` rule that makes the

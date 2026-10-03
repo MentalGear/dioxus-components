@@ -3,16 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// One series over six months -- ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-default.tsx`
-/// (shadcn's `chart-area-default` demo) data, config, and copy verbatim.
-/// The default `Curve::Monotone` interpolation matches shadcn's own
-/// `type="natural"` (Recharts' `"natural"` curve is a natural cubic
-/// spline, distinct in theory from this crate's Steffen-monotone spline,
-/// but both are smooth interpolations through the same points and shadcn's
-/// own docs use the two names for the same visual idea across its demos --
-/// see `primitives/src/chart/engine/curve.rs`'s own module doc for why
-/// this crate implements Steffen's monotone formula specifically).
+/// One series over six months, drawn with the default smoothed curve
+/// (`Curve::Monotone`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 6] = [
         ("January", 186.0),

@@ -3,12 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-dots-colors.tsx`: a single series
-/// ("visitors") over browser categories, each point's own dot colored
-/// individually (`ChartDatum::color`) instead of one flat series color --
-/// `series::line::render_dot`'s own doc: an inline `style` override, since
-/// an SVG presentation attribute alone would lose to `chart/style.css`'s
-/// own `[data-slot="chart-dot"] { fill: var(--series-color); }` rule.
+/// One series over browser categories, with each dot colored individually
+/// (`ChartDatum::color`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, &str); 5] = [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
