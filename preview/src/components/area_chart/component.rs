@@ -36,4 +36,20 @@
 //! naming the `component` module itself, which sidesteps the collision by
 //! construction. Any other stage-2 gallery package following this same
 //! "thin wrapper over `chart`" shape must import this same way.
+use dioxus::prelude::*;
+
 pub use crate::components::chart::component::*;
+
+/// Root of every demo in this gallery. Its only job is to link this
+/// package's `style.css` (the `display: contents` rule that makes the
+/// wrapper transparent to layout), like every other component links its own
+/// stylesheet from the component that uses it, so the rule travels with the
+/// demos on every page that renders them rather than being mirrored into
+/// the docs site's own CSS.
+#[component]
+pub fn AreaChartGallery(children: Element) -> Element {
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/area_chart/style.css") }
+        div { class: "dx-area-chart-gallery", {children} }
+    }
+}

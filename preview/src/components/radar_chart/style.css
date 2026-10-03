@@ -3,8 +3,9 @@
  * installable `chart` package's own themed pieces (Chart/ChartContainer/
  * ChartTooltip/ChartLegend, styled by `chart/style.css`) plus `Card` --
  * unlike `bar_chart`/`chart_tooltip`, none of this gallery's 14 demos need
- * any bespoke chrome of their own (no bar-style "trending" footer classes,
- * no gallery-local scoping hook), so this file carries no rules. It exists
+ * any bespoke chrome of their own (the "trending" card footer is the shared
+ * `dx-chart-footer` pattern in `chart/style.css`, and there is no
+ * gallery-local scoping hook), so this file carries no rules. It exists
  * only because `preview/src/components/mod.rs`'s `examples!` macro
  * unconditionally references `/src/components/<name>/style.css` for every
  * registered component, `radar_chart` included.

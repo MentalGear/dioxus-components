@@ -5,13 +5,9 @@ use dioxus::prelude::*;
 /// grouped side by side per category, rather than stacked -- the `stacked`
 /// and `stacked_legend` variants are this same shape, stacked instead.
 ///
-/// Simplification, stated plainly: shadcn's own demo gives the tooltip a
-/// dashed-line indicator (`<ChartTooltipContent indicator="dashed" />`).
-/// `ChartTooltip` has no indicator-style prop yet (only `hide_label`/
-/// `hide_indicator` -- `primitives/src/chart/components/tooltip.rs`, owned
-/// by the `s2-tooltip` lane, not this one), so this demo uses the default
-/// swatch indicator instead. Everything else -- the two-series data, the
-/// grouped (non-stacked) bars, the Card chrome -- matches shadcn's demo.
+/// The tooltip uses the dashed-line indicator, as shadcn's demo does
+/// (`<ChartTooltipContent indicator="dashed" />` ->
+/// `ChartTooltip { indicator: TooltipIndicator::Dashed }`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -45,7 +41,7 @@ pub fn Demo() -> Element {
             CardContent {
                 ChartContainer { config, data: generate_data(), kind: ChartKind::Bar,
                     Chart { aria_label: "Visitors by month, desktop and mobile" }
-                    ChartTooltip {}
+                    ChartTooltip { indicator: TooltipIndicator::Dashed }
                 }
             }
             BarChartTrendFooter {}

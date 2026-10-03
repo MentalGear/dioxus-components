@@ -138,6 +138,7 @@ pub fn Demo() -> Element {
         .collect();
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/line_chart/style.css") }
         Card {
             CardHeader {
                 CardTitle { "Line Chart - Interactive" }
@@ -165,7 +166,17 @@ pub fn Demo() -> Element {
                 ChartContainer { config, data: visible, kind: ChartKind::Line,
                     Chart {
                         aria_label: "Visitors by day, {current.label()}",
+                        // shadcn's fixed `h-[250px]` hero chart: the width fills the card (the chart's
+                        // logical width follows its measured container, 1 unit = 1 CSS px), the height
+                        // is exactly 250px at every viewport, and x ticks thin to the real width.
+                        // `width` is only the server/first-render size (see `ChartProps::fit_width`).
+                        fit_width: true,
+                        width: 700.0,
+                        height: 250.0,
                         x_label: "Date",
+                        // Identity formatter: the labels are already "Mon D"; the default
+                        // 3-character truncation would make every tick read "Apr"/"May"/"Jun".
+                        x_tick_format: |label: String| label,
                         curve: Curve::Monotone,
                     }
                     ChartTooltip {}

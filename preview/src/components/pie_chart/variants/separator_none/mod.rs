@@ -1,5 +1,6 @@
 use super::super::component::*;
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
 /// See `variants/main/mod.rs`'s own doc comment for why this dataset is
 /// duplicated rather than shared -- every one of shadcn's eleven source
@@ -25,19 +26,19 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-separator-none.tsx`: a plain pie with the thin
-/// per-slice separator stroke removed (`<Pie stroke="none" />`). This
-/// crate's `chart-arc` draws no separator stroke at all in the first place
-/// (`chart/style.css` has no `stroke` rule for it) -- there is no
-/// `PieOptions` field for one to toggle off, so this demo is visually
-/// identical to `main`'s own default: a documented simplification, not a
-/// missing feature.
+/// Ports shadcn's `chart-pie-separator-none.tsx` (`<Pie stroke={0} />`).
+/// Upstream's default pie draws no visible separator either -- shadcn's
+/// `ChartContainer` forces Recharts' default white sector stroke
+/// (`stroke='#fff'`) to transparent -- so `chart-pie-simple` and this demo
+/// render identically on shadcn's own gallery, and `main` here is the same
+/// plain pie: this crate's `chart-arc` has no stroke (nor any `pad_angle`)
+/// to remove. The demo exists for gallery parity, not as a visual variant.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
         Card {
             CardHeader {
-                CardTitle { "Pie Chart - No Separator" }
+                CardTitle { "Pie Chart - Separator None" }
                 CardDescription { "January - June 2024" }
             }
             CardContent {
@@ -47,7 +48,10 @@ pub fn Demo() -> Element {
                 }
             }
             CardFooter { class: "dx-chart-footer",
-                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
                 div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }

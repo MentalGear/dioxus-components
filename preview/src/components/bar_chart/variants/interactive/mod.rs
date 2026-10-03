@@ -143,6 +143,13 @@ pub fn Demo() -> Element {
                 ChartContainer { config, data, kind: ChartKind::Bar,
                     Chart {
                         aria_label: "Visitors by day, {current.label()}",
+                        // shadcn's fixed `h-[250px]` hero chart: the width fills the card (the chart's
+                        // logical width follows its measured container, 1 unit = 1 CSS px), the height
+                        // is exactly 250px at every viewport, and x ticks thin to the real width.
+                        // `width` is only the server/first-render size (see `ChartProps::fit_width`).
+                        fit_width: true,
+                        width: 700.0,
+                        height: 250.0,
                         x_label: "Date",
                         // Identity formatter -- see `generate_data`'s doc for
                         // why the default 3-char truncation is wrong here.

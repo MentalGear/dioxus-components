@@ -170,7 +170,7 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Interactive" }
@@ -214,6 +214,13 @@ pub fn Demo() -> Element {
                             // (a deliberate, documented, non-stacked
                             // simplification of this same upstream demo).
                             aria_label: "Visitors by day, desktop and mobile",
+                            // shadcn's fixed `h-[250px]` hero chart: the width fills the card (the chart's
+                            // logical width follows its measured container, 1 unit = 1 CSS px), the height
+                            // is exactly 250px at every viewport, and x ticks thin to the real width.
+                            // `width` is only the server/first-render size (see `ChartProps::fit_width`).
+                            fit_width: true,
+                            width: 700.0,
+                            height: 250.0,
                             stacked: true,
                             x_label: "Date",
                             x_tick_format: |label: String| label,

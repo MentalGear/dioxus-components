@@ -51,9 +51,12 @@ pub fn Demo() -> Element {
                     ChartTooltip {}
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month " TrendingUp { size: "16px" } }
-                div { "January - June 2024" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "January - June 2024" }
             }
         }
     }

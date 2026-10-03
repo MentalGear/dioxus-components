@@ -1,6 +1,7 @@
 use super::super::component::*;
-use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
+use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
 /// Port of shadcn's `chart-line-dots-custom.tsx`: `LineOptions::dot`
 /// replaces the default filled circle with a caller-supplied renderer --
@@ -63,6 +64,13 @@ pub fn Demo() -> Element {
                     }
                     ChartTooltip { hide_label: true }
                 }
+            }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

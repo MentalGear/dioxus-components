@@ -48,16 +48,12 @@ pub fn Demo() -> Element {
                     ChartTooltip { hide_label: true }
                 }
             }
-            CardFooter {
-                div { style: "display: flex; flex-direction: column; align-items: flex-start; gap: var(--dx-space-2); font-size: var(--dx-text-sm);",
-                    div { style: "display: flex; align-items: center; gap: var(--dx-space-2); font-weight: 600; line-height: 1;",
-                        "Trending up by 5.2% this month"
-                        TrendingUp { size: "16px" }
-                    }
-                    div { style: "color: var(--secondary-color-5); line-height: 1;",
-                        "Showing total visitors for the last 6 months"
-                    }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
                 }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

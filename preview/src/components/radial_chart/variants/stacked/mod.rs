@@ -1,5 +1,6 @@
 use super::super::component::*;
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
 /// A single category (January) with two series -- shadcn's
 /// `chart-radial-stacked.tsx` stacks `desktop`/`mobile` cumulatively into
@@ -7,7 +8,7 @@ use dioxus::prelude::*;
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
         label: "January".to_string(),
-        values: vec![Some(186.0), Some(80.0)],
+        values: vec![Some(1260.0), Some(570.0)],
         ..Default::default()
     }]
 }
@@ -27,7 +28,7 @@ pub fn Demo() -> Element {
         Card {
             CardHeader {
                 CardTitle { "Radial Chart - Stacked" }
-                CardDescription { "January 2024" }
+                CardDescription { "January - June 2024" }
             }
             CardContent {
                 ChartContainer { config: chart_config(), data, kind: ChartKind::RadialBar,
@@ -47,8 +48,11 @@ pub fn Demo() -> Element {
                 }
             }
             CardFooter { class: "dx-chart-footer",
-                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
-                div { class: "dx-chart-footer-caption", "January 2024 total visitors" }
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }
