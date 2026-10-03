@@ -24,22 +24,11 @@
 //! it to flag either way, since a `pub use` of an existing themed
 //! component is not itself a `dioxus_primitives::` reference).
 //!
-//! One level deeper than it looks (`crate::components::chart::component::*`,
-//! not `crate::components::chart::*`): `chart`'s own module (built by this
-//! same `examples!` macro) also carries `pub(crate) mod component;`/
-//! `pub(crate) mod variants;` at that same level, which a glob import
-//! re-exports too (`pub(crate)` is still crate-visible to a glob from
-//! elsewhere in this crate) -- re-exported into *this* module's own
-//! `component`/`variants` names, which then collide with this module's own
-//! identically-named siblings once the outer macro's own `pub use
-//! component::*;` tries to glob them back up into `line_chart` itself
-//! (`error[E0659]`, confirmed by actually hitting it with `pub use
-//! crate::components::chart::*;` here). This is a cross-lane class, not a
-//! one-off: every "thin wrapper over `chart`" gallery lane hits it
-//! identically (`$S/stage2-lanes.md`'s s2-area cross-lane alert), and this
-//! import shape is that alert's own fix, applied here verbatim so every
-//! sibling gallery's `component.rs` reads the same way.
-pub use crate::components::chart::component::*;
+//! Re-exports `crate::components::chart::*`, the path a user's own tree has
+//! after `dx components add chart` (there `chart/mod.rs` is `mod component;
+//! pub use component::*;`). Never reach into `chart::component::` directly:
+//! that module is private once installed (`scripts/check-installed-paths.sh`).
+pub use crate::components::chart::*;
 
 /// `Curve` is a plain, render-nothing enum (dev-docs/preview-composition.md's
 /// allowlist rationale: no theme for a wrapper to attach), so it is
@@ -56,7 +45,7 @@ pub use dioxus_primitives::chart::Curve;
 /// `LineOptions` itself is already re-exported by `chart::component`
 /// (that package's own `component.rs`, added alongside the stage-2
 /// refactor's `Chart.line: LineOptions` field) -- reached here through
-/// the `pub use crate::components::chart::component::*;` above. Its own
+/// the `pub use crate::components::chart::*;` above. Its own
 /// nested types (`LineLabels`, `DotRenderer`, `DotContext`) landed after
 /// that re-export line was written and are not in it yet; re-exported
 /// straight from the primitive here for the same reason and with the same

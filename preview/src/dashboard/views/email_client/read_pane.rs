@@ -8,9 +8,7 @@ use crate::components::button::{Button, ButtonVariant};
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use crate::components::select::{SelectGroup, SelectGroupLabel, SelectMulti, SelectOption};
 use crate::components::textarea::Textarea;
-use crate::components::toolbar::component::{
-    Toolbar, ToolbarButton, ToolbarGroup, ToolbarSeparator,
-};
+use crate::components::toolbar::{Toolbar, ToolbarButton, ToolbarGroup, ToolbarSeparator};
 use crate::dashboard::common::{
     lookup_message, IconKind, LucideIcon, MessageState, MessageStateStoreExt, MessageTag,
     AVATAR_PROFILE_OPTIONS, LOREM_IPSUM,

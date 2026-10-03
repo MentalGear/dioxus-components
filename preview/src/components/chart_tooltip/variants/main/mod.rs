@@ -2,12 +2,7 @@ use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
 
-/// The same six-day running/swimming dataset every one of this gallery's
-/// nine demos shares -- ported verbatim (dates and calorie values) from
-/// shadcn's own `chartData` const, repeated identically across all nine
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-tooltip-*.tsx`
-/// source files rather than factored out there either, so each variant
-/// here stays the same copy-pasteable, self-contained unit its source is.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -26,18 +21,14 @@ fn chart_data() -> Vec<ChartDatum> {
     .collect()
 }
 
-/// The matching `chartConfig` -- two series, no icons (the `icons` variant
-/// adds those to its own local copy once `ChartSeries.icon` lands).
+/// The two series the data is plotted as.
 fn chart_config() -> ChartConfig {
     ChartConfig::new()
         .series("running", "Running", "var(--dx-chart-1)")
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// Ports shadcn's `chart-tooltip-default.tsx`: a stacked bar chart with
-/// `ChartTooltipContent`'s own defaults (dot indicator, label shown, every
-/// series' value shown) -- no props set on our `ChartTooltip` either, for
-/// the same reason.
+/// A stacked bar chart with the tooltip's defaults: dot indicator, label shown, every series' value shown.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -51,6 +42,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

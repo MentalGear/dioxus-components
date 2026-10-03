@@ -1,12 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-mixed.tsx`: the same horizontal browser
-/// layout as this gallery's own `horizontal` variant, but every bar gets
-/// its own distinct color (`ChartDatum::color`, one of the eight
-/// `--dx-chart-<1..8>` categorical tokens per browser) instead of one flat
-/// series color -- shadcn's own demo does this the same way, a per-row
-/// `fill` referencing that row's own `chartConfig` entry.
+/// Horizontal bars where each bar gets its own color (`ChartDatum::color`)
+/// instead of one series color.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, &str); 5] = [
         ("Chrome", 275.0, "var(--dx-chart-1)"),

@@ -1,12 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Two series, deliberately on a scale where stacking (rather than
-/// grouping/overlap) is the legible choice -- matches shadcn's own
-/// `chart-area-stacked`/`chart-bar-stacked` demo shapes. Shared between the
-/// area and bar chart below so the two are visibly the same data, just
-/// stacked with a different mark (dev-docs/research/chart-2026-09-19.md
-/// §6.7's brief for this variant: "stacked area + stacked bar").
+/// Two series on a scale where stacking is the legible choice, shared by the
+/// stacked area and stacked bar chart below so both show the same data.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [&str; 6] = ["January", "February", "March", "April", "May", "June"];
     MONTHS
@@ -32,12 +28,9 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        // Styled `p`, not a real heading: this demo is composed both on its
-        // own route and inlined into the home page's gallery (every
-        // variant's `Demo` renders there too), where the ambient heading
-        // level isn't fixed -- introducing a real `h*` here risks a skipped
-        // level in one context or the other. Same reasoning + precedent as
-        // `tooltip/variants/main/mod.rs`'s own "Tooltip title" label.
+        // A styled `p`, not a real heading: this demo is rendered on pages
+        // where the ambient heading level isn't fixed, so a real `h*` could
+        // skip a level.
         p { style: "margin: 0 0 8px; font-weight: 660;", "Stacked area" }
         ChartContainer { config: config.clone(), data: generate_data(), kind: ChartKind::Area,
             Chart {

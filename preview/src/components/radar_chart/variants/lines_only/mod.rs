@@ -5,14 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-lines-only.tsx`
-/// (data, config, copy, card chrome). Two stroke-only series, no fill.
-///
-/// shadcn's own demo also sets `radialLines={false}` on its grid; this port
-/// keeps the default polygon grid (with spokes) here instead, since
-/// `grid_circle_no_lines` already demonstrates a spokes-off grid on its
-/// own -- this variant's own point is the fill/stroke behavior below, not
-/// the grid.
+/// Two stroke-only series, no fill, on the default polygon grid.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 160.0),
@@ -55,9 +48,12 @@ pub fn Demo() -> Element {
                     ChartTooltip {}
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month " TrendingUp { size: "16px" } }
-                div { "January - June 2024" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "January - June 2024" }
             }
         }
     }

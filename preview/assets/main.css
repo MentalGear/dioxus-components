@@ -1751,6 +1751,346 @@ summary,
   }
 }
 
+/* Charts gallery (`/charts/`, `preview/src/charts_gallery.rs`): hero, the
+ * chart-type link row, and a card grid modeled on shadcn's `/charts/<type>`
+ * (1 column under 768px, 2 from 768px, 3 from 1024px; the `interactive`
+ * hero card of the Area/Bar/Line tabs spans every column). Page-level chrome
+ * lives here rather than in a component stylesheet: nothing in it ships via
+ * `dx components add`. */
+.dx-charts-sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dx-charts-page {
+  width: 100%;
+  max-width: var(--dx-content-width);
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding-block: 0 var(--dx-space-24);
+  padding-inline: var(--dx-space-6);
+}
+
+.dx-charts-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dx-space-4);
+  padding-block: var(--dx-space-12) var(--dx-space-10);
+  text-align: center;
+}
+
+.dx-charts-hero-title {
+  margin: 0;
+  color: var(--secondary-color-1);
+  font-size: var(--dx-text-4xl);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.dx-charts-hero-summary {
+  max-width: 40rem;
+  margin: 0;
+  color: var(--secondary-color-4);
+  font-size: var(--dx-text-lg);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.dx-charts-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--dx-space-3);
+  margin-block-start: var(--dx-space-2);
+}
+
+.dx-charts-hero-button {
+  display: inline-flex;
+  height: 2.25rem;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dx-radius-full);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  padding-inline: var(--dx-space-4);
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
+}
+
+.dx-charts-hero-button[data-style="primary"] {
+  background: var(--secondary-color);
+  color: var(--primary-color);
+}
+
+.dx-charts-hero-button[data-style="secondary"] {
+  background: var(--primary-color-5);
+  color: var(--secondary-color-4);
+}
+
+.dx-charts-hero-button:hover {
+  opacity: 0.85;
+}
+
+.dx-charts-hero-button:focus-visible,
+.dx-charts-tab:focus-visible {
+  box-shadow: var(--dx-ring);
+  outline: none;
+}
+
+/* Chart-type links: plain text, the current one in the foreground colour.
+ * The row scrolls inside itself on narrow screens (the page never does). */
+.dx-charts-tabs {
+  display: flex;
+  margin-block-end: var(--dx-space-6);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dx-charts-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.dx-charts-tab {
+  display: inline-flex;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: var(--dx-radius-full);
+  color: var(--secondary-color-5);
+  font-size: var(--dx-text-base);
+  font-weight: 500;
+  padding-inline: var(--dx-space-4);
+  text-decoration: none;
+  transition: color var(--dx-motion-duration-base) var(--dx-motion-ease);
+  white-space: nowrap;
+}
+
+.dx-charts-tab:hover {
+  color: var(--secondary-color-1);
+}
+
+.dx-charts-tab[aria-current="page"] {
+  color: var(--secondary-color-1);
+}
+
+.dx-charts-grid {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: var(--dx-space-10);
+  grid-template-columns: minmax(0, 1fr);
+  list-style: none;
+}
+
+.dx-charts-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.dx-charts-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--dx-space-2) var(--dx-space-3);
+  gap: var(--dx-space-3);
+}
+
+.dx-charts-toolbar-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  color: var(--secondary-color-5);
+  font-size: 0.8125rem;
+  gap: var(--dx-space-2);
+}
+
+.dx-charts-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--dx-space-2);
+}
+
+.dx-charts-toolbar-separator {
+  display: none;
+  width: 1px;
+  height: 1rem;
+  background: var(--primary-color-6);
+}
+
+.dx-charts-toolbar-actions .dx-button[data-copied="true"] {
+  color: var(--secondary-success-color);
+}
+
+/* The demo (a `Card`, sometimes inside a `display: contents` wrapper) fills
+ * the cell, so cards in one row share a height. The gallery draws cards flat
+ * (border only), like shadcn's. */
+.dx-charts-card-body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dx-charts-card-body .dx-card {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  flex: 1 1 0%;
+  box-shadow: none;
+}
+
+.dx-charts-card-body .dx-chart {
+  min-width: 0;
+}
+
+/* Code view: the filename bar (the dialog's title, plus copy) over the
+ * highlighted source. Sheet on the right from 768px, drawer under it. */
+.dx-sheet.dx-charts-sheet[data-side="right"] {
+  width: min(700px, 100%);
+  max-width: 700px;
+  box-sizing: border-box;
+  padding: var(--dx-space-12) var(--dx-space-4) var(--dx-space-4);
+}
+
+.dx-drawer[data-side="bottom"]:has(.dx-charts-code) {
+  overflow: hidden;
+  height: calc(100dvh - var(--dx-space-12));
+  max-height: calc(100dvh - var(--dx-space-12));
+  padding-inline: var(--dx-space-3);
+}
+
+.dx-charts-code {
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border: 1px solid var(--primary-color-6);
+  border-radius: var(--dx-radius-xl);
+  background: var(--primary-color-1);
+}
+
+.dx-charts-code-bar {
+  display: flex;
+  height: 3rem;
+  flex-shrink: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--primary-color-6);
+  background: var(--primary-color-3);
+  color: var(--secondary-color-5);
+  gap: var(--dx-space-3);
+  padding-inline: var(--dx-space-4) var(--dx-space-2);
+}
+
+.dx-charts-code .dx-charts-code-filename {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--secondary-color-4);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-charts-code-body {
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.dx-charts-code-body .dx-preview-code-theme {
+  overflow: visible;
+  min-width: max-content;
+  min-height: 100%;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dx-charts-not-found {
+  padding: var(--dx-space-16) var(--dx-space-6);
+  text-align: center;
+}
+
+/* "Browse all charts", under a chart component page's description. */
+.dx-charts-gallery-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--highlight-color-tertiary);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  gap: var(--dx-space-1);
+  justify-self: start;
+  text-decoration: none;
+}
+
+.dx-charts-gallery-link:hover {
+  text-decoration: underline;
+}
+
+@media (width >= 768px) {
+  .dx-charts-hero-title {
+    font-size: 3rem;
+  }
+
+  .dx-charts-grid {
+    gap: var(--dx-space-6);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dx-charts-cell[data-span="full"] {
+    grid-column: 1 / -1;
+  }
+
+  .dx-charts-toolbar-separator {
+    display: block;
+  }
+}
+
+@media (width >= 1024px) {
+  .dx-charts-page {
+    padding-inline: var(--dx-space-10);
+  }
+
+  .dx-charts-hero {
+    padding-block: var(--dx-space-16) var(--dx-space-12);
+  }
+
+  .dx-charts-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 1280px) {
+  .dx-charts-grid {
+    gap: var(--dx-space-10);
+  }
+}
+
+@media (width <= 760px) {
+  .dx-charts-page {
+    padding-inline: var(--dx-space-4);
+  }
+}
+
 /* Disable animations while the page is loading */
 .dx-preload * {
   animation-duration: 0.001s !important;

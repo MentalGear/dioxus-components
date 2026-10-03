@@ -122,24 +122,66 @@ pub(crate) fn focus_trap_script() -> Element {
     rsx! {}
 }
 
-/// Generate a runtime-unique id.
-fn use_unique_id() -> Signal<String> {
-    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+/// Process-global counter behind [`allocate_unique_id`].
+static NEXT_UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
 
-    #[allow(unused_mut)]
-    let mut initial_value = use_hook(|| {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let id_str = format!("dxc-{id}");
-        id_str
-    });
-
-    fullstack! {
-        let server_id = dioxus::prelude::use_server_cached(move || {
-            initial_value.clone()
-        });
-        initial_value = server_id;
+/// Format the `n`th generated id for the given side.
+///
+/// Ids come in two disjoint namespaces: `dxc-{n}` (server-allocated) and
+/// `dxc-c{n}` (anywhere else). A pure function so the prefix rule is unit
+/// testable.
+///
+/// # Why two namespaces (the collision class this prevents)
+///
+/// In fullstack SSG the *server* counter is process-global and shared by
+/// every concurrently prerendered page, so one page's SSR ids can be
+/// anything (`dxc-200..dxc-330`, ...). Hydrated components reuse the
+/// server's value via `use_server_cached`. But a component mounted on the
+/// client *after* hydration has no server-cached value and allocates from
+/// the *client* counter, which starts at 0. If both counters formatted into
+/// the same `dxc-{n}` namespace, such a late id could equal an SSR id still
+/// in the DOM -- two elements, one `id` -- and `getElementById` (hence every
+/// aria wiring, anchor binding and `showModal()` lookup) resolves to the
+/// wrong one. Observed: a hidden SSR checkbox input and the late-mounted
+/// command dialog both had `id="dxc-229"`, so the command palette never
+/// opened. Keeping client-allocated ids under a different prefix makes that
+/// collision impossible by construction, whatever the counters' values.
+fn format_unique_id(is_server: bool, n: usize) -> String {
+    if is_server {
+        format!("dxc-{n}")
+    } else {
+        format!("dxc-c{n}")
     }
-    use_signal(|| initial_value)
+}
+
+/// Allocate a fresh id for *this* build side (see [`format_unique_id`]).
+/// Only run on the server, on the client when nothing was server-cached for
+/// the hook (a post-hydration mount), or in a non-fullstack build.
+fn allocate_unique_id() -> String {
+    #[allow(unused_mut, unused_assignments)]
+    let mut is_server = false;
+    // `ssr` is on for the fullstack server build (`dioxus/server` implies
+    // it) and for plain SSR; off for every client build.
+    server_only!(is_server = true);
+    format_unique_id(is_server, NEXT_UNIQUE_ID.fetch_add(1, Ordering::Relaxed))
+}
+
+/// Generate a runtime-unique id.
+///
+/// On the server: `dxc-{n}`. On a hydrating client: exactly the server's
+/// value (read from the server cache, no allocation). On a client with no
+/// cached value (mounted after hydration) and in pure-CSR builds:
+/// `dxc-c{n}`, which can never equal any server id -- see
+/// [`format_unique_id`].
+fn use_unique_id() -> Signal<String> {
+    #[allow(unused_mut, unused_assignments)]
+    let mut cached: Option<String> = None;
+    fullstack! {
+        // The closure runs on the server, and on the client only on a cache
+        // miss -- so a hydrated component never touches the client counter.
+        cached = Some(dioxus::prelude::use_server_cached(allocate_unique_id));
+    }
+    use_signal(move || cached.unwrap_or_else(allocate_unique_id))
 }
 
 // Elements can only have one id so if the user provides their own, we must use it as the aria id.
@@ -1159,5 +1201,54 @@ mod tests {
 
         let result = merge_attributes(vec![vec![a1], vec![a2]]);
         assert!(result[0].volatile);
+    }
+}
+
+#[cfg(test)]
+mod unique_id_tests {
+    use super::format_unique_id;
+
+    #[test]
+    fn server_ids_keep_the_plain_shape() {
+        assert_eq!(format_unique_id(true, 0), "dxc-0");
+        assert_eq!(format_unique_id(true, 229), "dxc-229");
+    }
+
+    #[test]
+    fn client_ids_use_a_disjoint_prefix() {
+        assert_eq!(format_unique_id(false, 0), "dxc-c0");
+        assert_eq!(format_unique_id(false, 229), "dxc-c229");
+    }
+
+    /// The regression: a client-allocated id equal in counter value to an SSR
+    /// id (`dxc-229` vs the client's own 229th) must still differ.
+    #[test]
+    fn client_and_server_ids_never_collide_for_any_counter_values() {
+        for server_n in 0..400 {
+            for client_n in 0..400 {
+                assert_ne!(
+                    format_unique_id(true, server_n),
+                    format_unique_id(false, client_n),
+                    "server {server_n} vs client {client_n}"
+                );
+            }
+        }
+    }
+
+    /// Neither id is a substring of a different id of the same side with the
+    /// trailing `;` that `anchor-name: --dxa-{id};` selectors rely on (see
+    /// `top_layer::use_anchor_position_fallback`).
+    #[test]
+    fn terminated_ids_are_not_substrings_of_each_other() {
+        let ids: Vec<String> = (0..120)
+            .flat_map(|n| [format_unique_id(true, n), format_unique_id(false, n)])
+            .collect();
+        for a in &ids {
+            for b in &ids {
+                if a != b {
+                    assert!(!format!("{b};").contains(&format!("{a};")), "{a} in {b}");
+                }
+            }
+        }
     }
 }

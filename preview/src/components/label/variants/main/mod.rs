@@ -1,4 +1,4 @@
-use crate::components::input::component::Input;
+use crate::components::input::Input;
 
 use super::super::component::*;
 use dioxus::prelude::*;

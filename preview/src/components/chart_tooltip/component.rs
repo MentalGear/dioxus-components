@@ -12,19 +12,13 @@
 //! composes the SAME themed `Chart`/`ChartContainer`/`ChartTooltip`
 //! pieces the `chart` package ships (`componentDependencies: ["chart"]` in
 //! this folder's own `component.json`) -- this file re-exports them
-//! (`pub use crate::components::chart::component::*;`) purely so every
+//! (`pub use crate::components::chart::*;`) purely so every
 //! `variants/<name>/mod.rs` can `use super::super::component::*;`
 //! uniformly, matching `chart`'s own variant files' exact import shape.
-//! One level deeper than `chart::*` on purpose (`$S/stage2-lanes.md`'s
-//! cross-lane alert from s2-area): `preview/src/components/mod.rs`'s
-//! `examples!` macro gives every registered component, this one included,
-//! its own crate-visible `mod component;`, so a blanket `chart::*` would
-//! re-export `chart`'s `component` SUBMODULE NAME too and collide with
-//! this file's own macro-declared `component` module --
-//! `error[E0659]: `component` is ambiguous`. Importing from
-//! `chart::component::*` specifically re-exports that module's public
-//! items without also naming the module itself, so the collision can't
-//! arise.
+//! Re-exports `crate::components::chart::*`, the path a user's own tree has
+//! after `dx components add chart` (there `chart/mod.rs` is `mod component;
+//! pub use component::*;`). Never reach into `chart::component::` directly:
+//! that module is private once installed (`scripts/check-installed-paths.sh`).
 //!
 //! `TooltipIndicator`/`TooltipRow`/`ChartSeries`/`ChartIcon` are re-exported
 //! directly off `dioxus_primitives::chart` here rather than through
@@ -46,7 +40,7 @@
 
 use dioxus::prelude::*;
 
-pub use crate::components::chart::component::*;
+pub use crate::components::chart::*;
 pub use dioxus_primitives::chart::{ChartIcon, ChartSeries, TooltipIndicator, TooltipRow};
 
 /// Wraps every demo in this gallery in one `.dx-chart-tooltip-gallery` root

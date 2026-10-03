@@ -39,14 +39,11 @@
 //! ## Known, flagged limitations (both orthogonal to this file, see
 //! `$S/stage2-lanes.md`'s own `s2-radar` entries)
 //!
-//! 1. **Tooltip position.** `components::tooltip::ChartTooltip` positions
-//!    itself from `crate::chart::context::ChartLayout`'s `BandScale`/
-//!    `LinearScale` pair, which cannot express a radar vertex's position
-//!    (a sinusoidal, not affine, function of category index). This file
-//!    does not write to that layout signal, so `ChartTooltip` opens with
-//!    the correct label/values but falls back to its own `(50%, 50%)`
-//!    default position until a family-agnostic anchor representation
-//!    lands there.
+//! 1. **Tooltip position.** Solved in the shared layer: this family
+//!    publishes [`anchors`] (each spoke's vertex of the largest value, used
+//!    when the keyboard opens the tooltip) and `Chart` registers it with
+//!    `Follow::Pointer`, so on hover the tooltip follows the pointer, with
+//!    the active spoke picked by this file's own wedge hit-targets.
 //! 2. **Hidden data table.** `components::chart::Chart`'s own body still
 //!    picks `engine::table::table_rows_single_series` (category + first
 //!    series only) for every `!is_cartesian` kind unconditionally --
@@ -61,7 +58,8 @@
 use dioxus::prelude::*;
 
 use super::super::layout::SeriesRenderContext;
-use crate::chart::context::use_chart;
+use super::super::pointer::Sector;
+
 use crate::chart::engine::radar::{
     category_angles, grid_polygon_path, point_radial, radar_series_path, radial_scale, sector_path,
 };
@@ -165,16 +163,17 @@ fn nice_ring_values(scale: &crate::chart::LinearScale) -> Vec<f64> {
     scale.ticks(5)
 }
 
-/// Render every configured series' closed polygon, this family's own grid/
-/// spokes/rim labels, and the angular hit-sectors that drive hover -- see
-/// the module doc for why all of this (not just the per-series marks) is
-/// this file's own responsibility.
-pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element {
-    // See the module doc's "Hover" section for why a second `use_chart()`
-    // call here (not `ctx.active_index`) is correct and safe.
-    let mut active_index = use_chart().active_index;
+/// The radar's own plot geometry: its center, outermost ring radius and
+/// value -> radius scale. Shared by [`render`] (the marks) and [`anchors`]
+/// (the keyboard tooltip anchors), so the two cannot disagree.
+struct RadarGeometry {
+    cx: f64,
+    cy: f64,
+    outer_radius: f64,
+    scale: crate::chart::LinearScale,
+}
 
-    let n = ctx.data.len();
+fn geometry(ctx: &SeriesRenderContext, opts: &RadarOptions) -> RadarGeometry {
     let cx = ctx.width / 2.0;
     let cy = ctx.height / 2.0;
     let half_extent = ctx.width.min(ctx.height) / 2.0;
@@ -187,13 +186,6 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
     let outer_radius =
         ((half_extent - label_margin).max(0.0) * opts.outer_radius.clamp(0.0, 1.0)).max(1.0);
 
-    let angles = category_angles(n);
-    let angle_step = if n > 0 {
-        std::f64::consts::TAU / n as f64
-    } else {
-        0.0
-    };
-
     // The value domain across every series' every value -- always includes
     // 0.0 (`nice_domain`), same reasoning as a bar/area chart's y-axis: a
     // radar's radius must never float away from zero.
@@ -204,6 +196,86 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
         .fold((0.0f64, 0.0f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
     let domain = nice_domain(lo, hi);
     let scale = radial_scale(domain, outer_radius);
+    RadarGeometry {
+        cx,
+        cy,
+        outer_radius,
+        scale,
+    }
+}
+
+/// Each category's keyboard tooltip anchor, in the chart's logical SVG
+/// units: the vertex of the category's largest value on its own spoke (the
+/// center for a category with no values). A pointer hover instead follows
+/// the pointer (`Follow::Pointer`), so these only place a tooltip the
+/// keyboard opened.
+pub(crate) fn anchors(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Vec<(f64, f64)> {
+    let RadarGeometry { cx, cy, scale, .. } = geometry(ctx, opts);
+    category_angles(ctx.data.len())
+        .into_iter()
+        .zip(ctx.data.iter())
+        .map(|(angle, datum)| {
+            let top = datum
+                .values
+                .iter()
+                .take(ctx.config.series.len())
+                .flatten()
+                .copied()
+                .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+            let radius = top.map_or(0.0, |v| scale.scale(v));
+            let (x, y) = point_radial(angle, radius);
+            (cx + x, cy + y)
+        })
+        .collect()
+}
+
+/// The hit regions the pointer is resolved against (see
+/// `components::pointer`): one wedge per category around its spoke, out to
+/// the outermost ring -- the same wedges the (now decorative) hit-band
+/// paths draw.
+pub(crate) fn sectors(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Vec<Sector> {
+    let RadarGeometry { outer_radius, .. } = geometry(ctx, opts);
+    let n = ctx.data.len();
+    let step = if n > 0 {
+        std::f64::consts::TAU / n as f64
+    } else {
+        0.0
+    };
+    category_angles(n)
+        .into_iter()
+        .enumerate()
+        .map(|(index, angle)| Sector {
+            index,
+            r0: 0.0,
+            r1: outer_radius,
+            a0: angle - step / 2.0,
+            a1: angle + step / 2.0,
+        })
+        .collect()
+}
+
+/// Render every configured series' closed polygon, this family's own grid/
+/// spokes/rim labels, and the angular hit-sectors that drive hover -- see
+/// the module doc for why all of this (not just the per-series marks) is
+/// this file's own responsibility.
+pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element {
+    // See the module doc's "Hover" section for why a second `use_chart()`
+    // call here (not `ctx.active_index`) is correct and safe.
+
+    let n = ctx.data.len();
+    let RadarGeometry {
+        cx,
+        cy,
+        outer_radius,
+        scale,
+    } = geometry(ctx, opts);
+
+    let angles = category_angles(n);
+    let angle_step = if n > 0 {
+        std::f64::consts::TAU / n as f64
+    } else {
+        0.0
+    };
 
     let fill_opacity = if opts.lines_only {
         0.0
@@ -360,7 +432,6 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadarOptions) -> Element 
                                 d: "{d}",
                                 fill: "transparent",
                                 "pointer-events": "all",
-                                onpointerenter: move |_| active_index.set(Some(i)),
                             }
                         }
                     }

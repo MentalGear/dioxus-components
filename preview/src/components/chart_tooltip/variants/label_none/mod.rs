@@ -2,9 +2,7 @@ use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's nine source
-/// files does the same.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -29,9 +27,7 @@ fn chart_config() -> ChartConfig {
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// Ports shadcn's `chart-tooltip-label-none.tsx`
-/// (`<ChartTooltipContent hideIndicator hideLabel />`): neither the label
-/// row nor the swatches render -- just each series' name and value.
+/// Neither the label row nor the swatches render, just each series' name and value.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -45,6 +41,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

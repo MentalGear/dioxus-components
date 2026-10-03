@@ -22,6 +22,7 @@ pub mod container;
 mod fragment;
 mod layout;
 pub mod legend;
+mod pointer;
 pub mod series;
 pub mod tooltip;
 

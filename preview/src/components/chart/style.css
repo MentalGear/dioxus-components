@@ -112,11 +112,47 @@
    * as the axis text so values and ticks read as one typographic tier --
    * previously it inherited the page's 1em (16px), a third larger. */
   font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
+
+  /* Touch scrubs the tooltip along the category axis (see the tooltip
+   * section): horizontal drags go to the chart, vertical ones still scroll
+   * the page. `pinch-zoom` stays on: `pan-y` alone would turn the browser's
+   * pinch-zoom off over every chart (WCAG 1.4.4 resize). */
+  touch-action: pan-y pinch-zoom;
 }
 
 .dx-chart [data-slot="chart-grid"] line {
   stroke: var(--dx-chart-grid);
   stroke-width: 1;
+}
+
+/* `fit_width` before the first measurement (server render, pre-hydration, the
+ * first client render): the viewBox is the props' size stretched to the box
+ * (`preserveAspectRatio="none"`) -- exact height, so only x is scaled, and
+ * every mark lands within a few px of where the measured render puts it.
+ * What a non-uniform stretch would distort is made safe: strokes keep their
+ * width (`non-scaling-stroke`) and the text -- which would be stretched
+ * sideways -- is held back and fades in when the measured render replaces
+ * it (`data-measured="true"`). The result is a full-width chart of the final
+ * height from the first paint instead of a left-aligned strip, or ~5px text
+ * on a phone, that jumps. */
+.dx-chart [data-slot="chart-svg"][data-fit="width"] text {
+  transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease);
+}
+
+.dx-chart [data-slot="chart-svg"][data-fit="width"][data-measured="false"] text {
+  opacity: 0;
+}
+
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-line"],
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-grid"] line,
+.dx-chart [data-slot="chart-svg"][data-measured="false"] [data-slot="chart-cursor-line"] {
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-chart [data-slot="chart-svg"][data-fit="width"] text {
+    transition: none;
+  }
 }
 
 /* Base text fill for EVERY svg `<text>` a chart draws. An SVG text node with
@@ -131,8 +167,14 @@
   fill: var(--secondary-color-4);
 }
 
+/* Axis ticks are the muted tier (shadcn: `muted-foreground`), a step below
+ * the values and labels the chart itself draws (`--secondary-color-4`, the
+ * base rule above). `--secondary-color-5` is #707070 on the white card
+ * (4.95:1) and #a1a1a1 on the dark card #141313 (7.18:1) -- both clear 4.5:1
+ * -- whereas the token this used to read, `--dx-chart-axis-text`, is the body
+ * text colour. That token stays for the cursor, which is not a tick. */
 .dx-chart [data-slot="chart-axis"] text {
-  fill: var(--dx-chart-axis-text);
+  fill: var(--secondary-color-5);
   font-size: calc(var(--dx-text-xs) * var(--dx-chart-text-scale, 1));
 }
 
@@ -170,6 +212,19 @@
   fill: var(--series-color);
   stroke: var(--primary-color-1);
   stroke-width: 1.5;
+}
+
+/* The hovered point's dot on every series (`chart-active-dot`, area and line
+ * charts -- shadcn/Recharts' `activeDot`, r = 4): the series color with a ring
+ * in the card's own surface color so it reads against the line and the fill
+ * in both themes (same light/dark pair as `card/style.css`'s background). The
+ * ring scales with the text compensation, like the radius the primitive sets
+ * (`r` = 4 x scale), so the dot keeps its CSS size on a shrunken drawing. */
+.dx-chart [data-slot="chart-active-dot"] {
+  fill: var(--series-color);
+  pointer-events: none;
+  stroke: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+  stroke-width: calc(2px * var(--dx-chart-text-scale, 1));
 }
 
 /* The hover/keyboard crosshair: a dashed line for area/line charts
@@ -233,9 +288,33 @@
  * Tooltip
  * ---------------------------------------------------------------------- */
 
+/* The tooltip is pinned to the top-left of its containing block (the
+ * "chart" grid area -- the chart box itself, see `.dx-chart` above) and
+ * placed with a `transform: translate(x, y)` the primitive writes inline.
+ * That position follows the pointer like a shadcn/Recharts tooltip: x snaps
+ * to the hovered category, y tracks the pointer, 10px off the point, flipped
+ * left/above near the chart's right/bottom edge and clamped inside the box
+ * (`engine::placement`), so it can never leave the chart -- and therefore
+ * never lands on the legend or outside the card. `data-side-x`/`-y` record
+ * which side of its anchor it ended up on.
+ *
+ * Motion: the transform eases between positions, but a tooltip that has just
+ * (re)appeared must not fly in from wherever it last was. Two constructions
+ * guarantee that (Recharts/shadcn slide in from the top-left corner there;
+ * that quirk is deliberately not copied):
+ *  1. A closed tooltip is `display: none`, and an element that was not
+ *     rendered before a style change never transitions into it.
+ *  2. An open tooltip is laid out but `visibility: hidden` until it has
+ *     measured its own size (`data-placed="false"`), so its flip/clamp is
+ *     final on the first visible frame, and `data-motion` stays `false` for
+ *     the render that shows it -- the transition is enabled only from the
+ *     next position change on. Without this, a first open near the right
+ *     edge showed at an estimated, unflipped position and then slid across
+ *     the whole chart to the flipped one. */
 .dx-chart-tooltip {
   position: absolute;
   z-index: var(--dx-z-local-md);
+  left: 0; /* rtl-physical: the transform's x is measured from the chart box's physical left edge, whatever the text direction */
   min-width: 8rem;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: var(--dx-radius-lg);
@@ -253,72 +332,42 @@
    * comment (top of this file) for why this, not `.dx-chart` itself, must
    * be this element's containing block. */
   grid-area: chart;
+  inset-block-start: 0;
   pointer-events: none;
 
-  /* rtl-physical: centers the tooltip over its anchor point (the active
-     band's center, given as inline `left`/`top` percentages by the
-     primitive) -- a symmetric offset around a point, not a reading-
-     direction-dependent side, so it is identical under `dir="rtl"`. Same
-     reasoning as `tooltip/style.css`'s own arrow-centering `translateX`. */
-  transform: translate(-50%, -100%);
+  /* The primitive's inline `transform` overrides this; it is the closed /
+   * pre-measure fallback. rtl-physical: the position is a physical offset
+   * from the chart box's top-left (the drawing itself is never mirrored
+   * under `dir="rtl"`, so neither is the tooltip's coordinate frame). */
+  transform: translate(0, 0);
   white-space: nowrap;
+}
+
+.dx-chart-tooltip[data-motion="true"] {
+  transition: transform var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
+}
+
+.dx-chart-tooltip[data-placed="false"] {
+  visibility: hidden;
 }
 
 .dx-chart-tooltip[data-state="closed"] {
   display: none;
 }
 
-/* When the legend sits ABOVE the chart (`ChartLegend`'s `data-align="top"`
- * -- the `bar` demo variant), flip which direction the tooltip extends
- * from its anchor: downward, into the chart's own plot area (the ordinary
- * "a tooltip floats over the marks you're hovering" case every chart
- * tooltip does -- always safe, since nothing meaningful renders below the
- * plot when the legend has moved above it), instead of upward.
- *
- * This is not a style choice -- it fixes a real, measured escape the
- * `grid-area` fix above (this file's `.dx-chart` rule) does not, and
- * cannot, close by itself. `ChartTooltip` anchors to the *top* of the
- * tallest mark at the active index (`tooltip.rs`'s own doc: "the active
- * band center / max value point") and, by default, extends UPWARD from
- * there (`translate(-50%, -100%)`) -- deliberately, so it never covers a
- * BELOW legend (confirmed: an exhaustive hover sweep over every hit-band
- * in every demo with a bottom/default legend found zero overlap, in every
- * case, by construction -- upward can never reach something below).
- * But upward is exactly the direction a TOP legend sits in, immediately
- * adjacent to the chart's own top edge -- and a tooltip tall enough
- * (multiple series, e.g. the `bar` demo's 3) anchored near the top of the
- * plot (any near-peak value -- not a rare case, this is what hovering the
- * *tallest* bar/point does on every chart) can legitimately need more
- * headroom above that anchor than a themed stylesheet can reserve as
- * static space without either measuring the tooltip's own rendered size
- * (`tooltip.rs`'s own doc: deliberately "never a DOM measurement") or
- * guessing an arbitrary, content-dependent gap that's either too small for
- * some configurations or wastefully large for most. Flipping the escape
- * direction sidesteps the problem instead of bounding it: confirmed
- * (`$S/chart-legend-overlap/after-bar-crop-light.png`) against the `bar`
- * demo's actual worst case (hovering its 2nd, near-tallest bar, a 3-series
- * tooltip) with zero legend overlap, and true for ANY tooltip height in
- * this configuration specifically, not just this demo's current content --
- * "downward, when the legend is above" always lands in the chart's own
- * plot or in ordinary space beyond it, never in a legend, regardless of
- * how tall the tooltip is or how many series are configured.
- *
- * `:has()` targets `.dx-chart` (the parent) by a CHILD's attribute --
- * already used elsewhere in this theme (e.g. card/alert/button/sidebar's
- * own style.css) -- rather than a sibling combinator, because
- * `ChartTooltip`/`ChartLegend` are independent, order-agnostic siblings
- * per the primitive's own contract (either may be composed before the
- * other); a sibling-combinator rule would silently stop matching for a
- * caller who wrote them in the other order (this package's own `bar` demo
- * composes `ChartTooltip` BEFORE `ChartLegend`, which a forward-only `~`
- * selector keyed off the legend could never select). */
-.dx-chart:has(> [data-slot="chart-legend"][data-align="top"]) > .dx-chart-tooltip {
-  /* rtl-physical: keeps only the base rule's own horizontal centering
-     (dropping just its vertical `-100%` term) -- the same symmetric,
-     point-centered offset the base rule's own comment above already
-     justifies as identical under `dir="rtl"`; nothing here is a
-     reading-direction-dependent side. */
-  transform: translateX(-50%);
+@media (prefers-reduced-motion: reduce) {
+  .dx-chart-tooltip[data-motion="true"] {
+    transition: none;
+  }
+}
+
+/* Touch: a drag across the chart scrubs the tooltip along the category axis
+ * (the primitive resolves the nearest category from the pointer's own
+ * coordinates, since a touch pointer is captured by its first target), and
+ * the perpendicular direction still scrolls the page. A horizontal bar
+ * chart's categories run along y, so it scrubs vertically instead. */
+.dx-chart [data-slot="chart-svg"][data-bars="horizontal"] {
+  touch-action: pan-x pinch-zoom;
 }
 
 .dx-chart-tooltip [data-slot="chart-tooltip-label"] {
@@ -465,7 +514,19 @@
 }
 
 /* A ChartTooltipProps::formatter-built total row (chart_tooltip gallery's
- * `advanced` demo). */
+ * `advanced` demo). Its item becomes a three-column grid (swatch, name,
+ * value) with the total spanning a row of its own beneath: a plain flex row
+ * would keep the total beside the value, and `flex-wrap` would size the
+ * tooltip to all four pieces on one line. */
+.dx-chart-tooltip [data-slot="chart-tooltip-item"]:has(> [data-slot="chart-tooltip-total"]) {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+}
+
+.dx-chart-tooltip [data-slot="chart-tooltip-item"] > [data-slot="chart-tooltip-total"] {
+  grid-column: 1 / -1;
+}
+
 .dx-chart-tooltip [data-slot="chart-tooltip-total"] {
   display: flex;
   flex-basis: 100%;
@@ -621,14 +682,15 @@
 /* ---------------------------------------------------------------------- *
  * Demo card footer
  *
- * The "Trending up ... / Showing ..." footer the pie and radial galleries
- * repeat under their charts (the bar gallery has its own copy,
- * `dx-bar-chart-footer`, in `bar_chart/style.css`). `Card`'s footer is a row
- * flex box, so two bare `div`s become two side-by-side wrapped columns; this
- * stacks them, trend line over caption. Lives here, not in the gallery
- * stylesheets, because this file is the one every chart demo is guaranteed
- * to have loaded. The compound selector out-ranks `.dx-card-footer`
- * regardless of stylesheet order.
+ * The "Trending up ... / Showing ..." footer every chart demo (area, bar,
+ * line, pie, radar, radial) shares:
+ * `CardFooter.dx-chart-footer > .dx-chart-footer-trend +
+ * .dx-chart-footer-caption`. `Card`'s footer is a row flex box, so two bare
+ * `div`s become two side-by-side wrapped columns; this stacks them, trend
+ * line over caption, with the trend line's TrendingUp icon inline after its
+ * text. Lives here, not in the gallery stylesheets, because this file is the
+ * one every chart demo is guaranteed to have loaded. The compound selector
+ * out-ranks `.dx-card-footer` regardless of stylesheet order.
  * ---------------------------------------------------------------------- */
 
 [data-slot="card-footer"].dx-chart-footer {
@@ -639,7 +701,10 @@
 }
 
 .dx-chart-footer-trend {
+  display: flex;
+  align-items: center;
   font-weight: 600;
+  gap: var(--dx-space-2);
   line-height: 1;
 }
 

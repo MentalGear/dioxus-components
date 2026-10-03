@@ -3,23 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{TrendingDown, TrendingUp};
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-icons.tsx`
-/// (shadcn's `chart-area-icons` demo): the same stacked two-series data as
-/// `stacked`/`legend`/`gradient`, with each series' `chartConfig` icon
-/// (`TrendingDown` for desktop, `TrendingUp` for mobile, matching the
-/// upstream file exactly) ported to [`ChartSeries::icon`].
-///
-/// **Not yet visually wired up** -- stated plainly, not silently shipped:
-/// `ChartSeries::icon` is a stage-2 *extension point* the refactor lane
-/// added (`primitives/src/chart/config.rs`: "added ... unused until a
-/// later lane wires it into `ChartLegend`/`ChartTooltip`"); that wiring is
-/// `s2-tooltip`'s own task (`components::{tooltip,legend}`), not
-/// `s2-area`'s, and had not landed when this variant was written. This
-/// demo sets the config field correctly (so it renders the *rest* of the
-/// chart faithfully, and is ready to show icons the moment
-/// `ChartLegend`/`ChartTooltip` read this field) rather than skip the
-/// variant or fake the icon rendering here.
+/// The stacked two-series chart with an icon per series (`ChartSeries::icon`:
+/// `TrendingDown` for desktop, `TrendingUp` for mobile), shown in the legend
+/// and tooltip.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -47,7 +33,7 @@ pub fn Demo() -> Element {
     config.series[1].icon = Some(ChartIcon(Callback::new(|()| rsx! { TrendingUp {} })));
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Icons" }
@@ -63,16 +49,12 @@ pub fn Demo() -> Element {
                         ChartLegend {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

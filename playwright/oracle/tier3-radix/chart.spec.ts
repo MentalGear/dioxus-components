@@ -212,8 +212,9 @@ test.describe("R5 -- keyboard: ArrowRight/ArrowLeft step the active index, Home/
     await expect(container).toHaveAttribute("role", "group");
     await expect(container).toHaveAttribute("aria-roledescription", "chart");
 
+    // Focusing the chart opens its first point (so a keyboard user sees the
+    // tooltip at once); the arrows then step from there.
     await container.focus();
-    await page.keyboard.press("ArrowRight");
     await expect(tooltip).toHaveAttribute("data-state", "open");
     await expect(tooltip.locator('[data-slot="chart-tooltip-label"]')).toHaveText(firstLabel!);
 

@@ -5,9 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-multiple.tsx`
-/// (data, config, copy, card chrome). Two overlapping series, default grid,
-/// no legend (that's the dedicated `legend` variant's own job).
+/// Two overlapping series on the default grid, no legend.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -50,9 +48,12 @@ pub fn Demo() -> Element {
                     ChartTooltip {}
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month " TrendingUp { size: "16px" } }
-                div { "January - June 2024" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "January - June 2024" }
             }
         }
     }

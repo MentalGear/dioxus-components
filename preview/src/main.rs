@@ -24,6 +24,7 @@ use crate::components::{
     textarea::{Textarea, TextareaVariant},
     toggle_group::{ToggleGroup, ToggleItem},
 };
+use charts_gallery::{Charts, ChartsKind};
 use core::panic;
 use dioxus::prelude::{dioxus_router::LinkProps, *};
 use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
@@ -37,8 +38,10 @@ use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 use unic_langid::{langid, LanguageIdentifier};
 
+mod charts_gallery;
 mod components;
 mod dashboard;
+mod installed_source;
 mod theme;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -140,6 +143,20 @@ fn server_static_routes() -> Vec<String> {
         .iter()
         .map(ToString::to_string)
         .collect();
+    // The gallery's tabs: `Route::static_routes()` already lists the bare
+    // `/charts/` (all-literal), but `/charts/:kind/` has a dynamic segment,
+    // so every tab is enumerated here from `ChartKind::ALL` -- the same list
+    // the tab row renders, so a tab can never lack its prerendered page.
+    for kind in charts_gallery::ChartKind::ALL {
+        let route = Route::ChartsKind {
+            kind: kind.slug().to_string(),
+            dark_mode: None,
+        }
+        .to_string();
+        if !routes.contains(&route) {
+            routes.push(route);
+        }
+    }
     for demo in components::DEMOS {
         routes.push(
             Route::ComponentDemoPath {
@@ -208,6 +225,16 @@ pub enum Route {
     Docs { dark_mode: Option<bool> },
     #[route("/demos?:dark_mode")]
     Demos { dark_mode: Option<bool> },
+    // The charts gallery (`charts_gallery.rs`): `/charts/` is the Area tab,
+    // `/charts/<slug>/` every tab by name. The slug is a PATH segment, like
+    // `ComponentDemoPath`'s name, so each tab is its own prerendered file.
+    #[route("/charts/?:dark_mode")]
+    Charts { dark_mode: Option<bool> },
+    #[route("/charts/:kind/?:dark_mode")]
+    ChartsKind {
+        kind: String,
+        dark_mode: Option<bool>,
+    },
     // Legacy query-string deep link (dev-docs/backlog.md row 46). Kept ONLY
     // so old bookmarks/external links/the hundreds of existing Playwright
     // specs using this URL form keep working -- it is NOT SSG-enumerable by
@@ -268,6 +295,8 @@ impl Route {
             Route::Home { iframe, .. } => *iframe,
             Route::Docs { .. } => None,
             Route::Demos { .. } => None,
+            Route::Charts { .. } => None,
+            Route::ChartsKind { .. } => None,
             Route::ComponentDemo { iframe, .. } => *iframe,
             Route::ComponentDemoPath { iframe, .. } => *iframe,
             Route::ComponentBlockDemo { .. } => None,
@@ -286,6 +315,8 @@ impl Route {
             Route::Home { dark_mode, .. } => *dark_mode,
             Route::Docs { dark_mode, .. } => *dark_mode,
             Route::Demos { dark_mode, .. } => *dark_mode,
+            Route::Charts { dark_mode, .. } => *dark_mode,
+            Route::ChartsKind { dark_mode, .. } => *dark_mode,
             Route::ComponentDemo { dark_mode, .. } => *dark_mode,
             Route::ComponentDemoPath { dark_mode, .. } => *dark_mode,
             Route::ComponentBlockDemo { dark_mode, .. } => *dark_mode,
@@ -313,6 +344,21 @@ impl Route {
     pub fn demos() -> Self {
         let dark_mode = Self::in_dark_mode();
         Self::Demos { dark_mode }
+    }
+
+    /// The charts gallery's index (`/charts/`, which shows the Area tab).
+    pub fn charts_index() -> Self {
+        let dark_mode = Self::in_dark_mode();
+        Self::Charts { dark_mode }
+    }
+
+    /// One chart type's tab of the gallery (`/charts/<slug>/`).
+    pub fn charts(kind: charts_gallery::ChartKind) -> Self {
+        let dark_mode = Self::in_dark_mode();
+        Self::ChartsKind {
+            kind: kind.slug().to_string(),
+            dark_mode,
+        }
     }
 
     /// The canonical component-page link every internal caller (sidebar,
@@ -489,6 +535,7 @@ fn Navbar() -> Element {
                     }
                     Link { to: Route::docs(), class: "dx-navbar-link", "Docs" }
                     Link { to: Route::demos(), class: "dx-navbar-link", "Demos" }
+                    Link { to: Route::charts_index(), class: "dx-navbar-link", "Charts" }
                 }
                 div { class: "dx-navbar-utilities",
                     // TODO: restore once the primitives crate is published
@@ -562,6 +609,7 @@ fn Footer() -> Element {
                         Link { to: Route::home(), class: "dx-footer-link", "Components" }
                         Link { to: Route::docs(), class: "dx-footer-link", "Docs" }
                         Link { to: Route::demos(), class: "dx-footer-link", "Demos" }
+                        Link { to: Route::charts_index(), class: "dx-footer-link", "Charts" }
                     }
                     div { class: "dx-footer-nav-group",
                         span { class: "dx-footer-nav-heading", "Project" }
@@ -1478,11 +1526,19 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                         ComponentInstallCommand { name: raw_name }
                     }
                     p { "{description}" }
+                    if charts_gallery::offers_gallery_link(raw_name) {
+                        Link {
+                            to: Route::charts_index(),
+                            class: "dx-charts-gallery-link",
+                            "Browse all charts"
+                            ArrowRight { size: "1rem", "aria-hidden": "true" }
+                        }
+                    }
                 }
                 section { class: "dx-component-section",
                     match r#type {
                         ComponentType::Normal => rsx! {
-                            ComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: None }
+                            ComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: None, owner: raw_name }
                         },
                         ComponentType::Block => rsx! {
                             BlockComponentVariantHighlight { variant: main.clone(), main_variant: true, component_name: raw_name, show_install: false }
@@ -1517,7 +1573,7 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                             div { class: "dx-component-variant",
                                 match r#type {
                                     ComponentType::Normal => rsx! {
-                                        ComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: None }
+                                        ComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: None, owner: raw_name }
                                     },
                                     ComponentType::Block => rsx! {
                                         BlockComponentVariantHighlight { variant: variant.clone(), main_variant: false, component_name: raw_name, show_install: false }
@@ -1599,13 +1655,17 @@ fn ComponentVariantHighlight(
     variant: ComponentVariantDemoData,
     main_variant: bool,
     component_name: Option<&'static str>,
+    /// The component the variant belongs to (its folder name): the code tab
+    /// shows the source as it reads once that component is installed.
+    owner: &'static str,
 ) -> Element {
     let ComponentVariantDemoData {
         name,
-        rs_highlighted: highlighted,
+        rs_highlighted,
         css_highlighted: _,
         component: Comp,
     } = variant;
+    let highlighted = installed_source::installed(owner, name, &rs_highlighted);
     // Every variant of a "Normal" component renders on the SAME page (the
     // "Variants" section below loops over all of them, main included --
     // see `ComponentHighlight` above), so a literal `"component-preview-
@@ -1689,10 +1749,11 @@ fn BlockComponentVariantHighlight(
 ) -> Element {
     let ComponentVariantDemoData {
         name,
-        rs_highlighted: highlighted,
+        rs_highlighted,
         css_highlighted,
         component: _,
     } = variant;
+    let highlighted = installed_source::installed(component_name, name, &rs_highlighted);
 
     // The canonical, SSG-enumerable path route (row 46) -- NOT the legacy
     // `Route::ComponentBlockDemo` query form, so every block demo's iframe

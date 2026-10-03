@@ -5,9 +5,9 @@
 //! `chart` (`componentDependencies: ["chart", "card"]`, this folder's own
 //! `component.json`) already gives you everything below.
 //!
-//! Re-exports one level into `chart`'s own `component` submodule
-//! (`chart::component::*`), not the whole `chart` module (`chart::*`) --
-//! same `error[E0659]: "component" is ambiguous` trap
-//! `pie_chart`/`radar_chart`/`bar_chart`/etc. all document identically.
+//! Re-exports `crate::components::chart::*`, the path a user's own tree has
+//! after `dx components add chart` (there `chart/mod.rs` is `mod component;
+//! pub use component::*;`). Never reach into `chart::component::` directly:
+//! that module is private once installed (`scripts/check-installed-paths.sh`).
 pub use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
-pub use crate::components::chart::component::*;
+pub use crate::components::chart::*;

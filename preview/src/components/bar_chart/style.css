@@ -3,11 +3,12 @@
  * installable `chart` package's own themed pieces (Chart/ChartContainer/
  * ChartTooltip/ChartLegend, styled by `chart/style.css`) plus `Card`; the
  * rules below only cover this gallery's OWN bespoke chrome that neither of
- * those two packages provides -- shadcn's own repeated "trending" footer
- * (`BarChartTrendFooter`, `component.rs`) and the `interactive` variant's
- * split header (title/description beside a per-series total toggle, shadcn's
- * own `chart-bar-interactive.tsx`). Classes namespaced `dx-bar-chart-*`
- * (scripts/check-dx-class-prefix.sh's rule for the `bar_chart` folder).
+ * those two packages provides -- the `interactive` variant's split header
+ * (title/description beside a per-series total toggle, shadcn's own
+ * `chart-bar-interactive.tsx`). The "Trending up" card footer is the shared
+ * `dx-chart-footer` pattern in `chart/style.css`. Classes namespaced
+ * `dx-bar-chart-*` (scripts/check-dx-class-prefix.sh's rule for the
+ * `bar_chart` folder).
  *
  * Simplification, stated plainly: shadcn's own interactive header bleeds
  * edge-to-edge (`<Card className="py-0">`, a zero-padding-block override) so
@@ -19,26 +20,6 @@
  * the per-series total, and the `data-active` highlight are otherwise
  * unchanged from shadcn's demo.
  */
-
-.dx-bar-chart-footer {
-  flex-direction: column;
-  align-items: start;
-  font-size: var(--dx-text-sm);
-  gap: var(--dx-space-2);
-}
-
-.dx-bar-chart-footer-trend {
-  display: flex;
-  align-items: center;
-  font-weight: 600;
-  gap: var(--dx-space-2);
-  line-height: 1;
-}
-
-.dx-bar-chart-footer-caption {
-  color: var(--secondary-color-5);
-  line-height: 1;
-}
 
 .dx-bar-chart-interactive-header {
   display: flex;
@@ -73,9 +54,17 @@
   align-items: start;
   justify-content: center;
   padding: var(--dx-space-3) var(--dx-space-4);
+
+  /* Reset the UA button border (an outset 2px on every side) before the
+   * start-edge divider below puts one side back. */
+  border: 0;
   border-radius: 0;
   background-color: transparent;
   border-inline-start: 1px solid var(--primary-color-6);
+
+  /* A bare `<button>` takes the UA `buttontext` colour (black), which is
+   * unreadable on the dark card; the toggle should read as card text. */
+  color: inherit;
   gap: var(--dx-space-1);
   text-align: start;
 }

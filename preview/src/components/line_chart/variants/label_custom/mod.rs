@@ -1,15 +1,11 @@
 use super::super::component::*;
-use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
+use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-label-custom.tsx`: `LineOptions::labels:
-/// LineLabels::Custom` labels each point with its own category name
-/// (shadcn's own custom `<LabelList content={...} />` draws the month
-/// name above every point) instead of the default up-to-2-decimals value
-/// -- the callback closes over this demo's own `generate_data()` output by
-/// index, since [`LineLabels::Custom`]'s callback only ever receives the
-/// point's index (this crate's `ChartDatum` values, not a free-form
-/// payload object, are the source of truth a caller reaches back into).
+/// `LineLabels::Custom` labels each point with text you choose, here the
+/// category name. The callback only receives the point index, so it looks the
+/// text up in the chart data.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),
@@ -61,6 +57,13 @@ pub fn Demo() -> Element {
                         },
                     }
                 }
+            }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

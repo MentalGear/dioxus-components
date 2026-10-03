@@ -30,27 +30,29 @@
 //!
 //! ## Known cross-family limitation (not this file's to fix)
 //!
-//! `ChartTooltip`/`ChartLegend` (`components::{tooltip,legend}`, s2-tooltip-
-//! owned) both iterate `ctx.config.series` -- correct for every Cartesian
-//! family (one row/swatch per series IS the right shape there), but wrong
-//! for a single-series pie: shadcn's `chart-pie-legend` shows one swatch
-//! **per slice** (per datum), which today's `ChartLegend` cannot produce
-//! (it would render exactly one swatch, labeled by the pie's one series).
+//! `ChartLegend` (`components::legend`, s2-tooltip-owned) iterates
+//! `ctx.config.series` -- correct for every Cartesian family (one swatch
+//! per series IS the right shape there), but wrong for a single-series pie:
+//! shadcn's `chart-pie-legend` shows one swatch **per slice** (per datum),
+//! which today's `ChartLegend` cannot produce (it would render exactly one
+//! swatch, labeled by the pie's one series), so a pie demo needs its own
+//! legend handling. `ChartTooltip` had the same shape and no longer does:
+//! for a single-ring pie its row is the hovered slice (datum name, value,
+//! [`slice_color`]), and it anchors at the slice's [`anchors`] centroid.
 //! Radar independently hit the analogous `ChartTooltip` positioning gap
 //! (`$S/stage2-lanes.md`, s2-radar's own entries) -- two occurrences of
 //! "Cartesian-only assumption baked into the shared tooltip/legend", which
 //! is this repo's own trigger for treating it as a class needing a
-//! construction, not two one-off patches (`CLAUDE.md`). Flagged in this
-//! lane's own ledger entry for whoever owns that generalization; this
-//! file still renders `ChartTooltip`/`ChartLegend` in the variants that
-//! port a shadcn demo using them, since the content they DO show (however
-//! incomplete) is still correct and forward-compatible with that fix.
+//! construction, not two one-off patches (`CLAUDE.md`): the tooltip half of
+//! the class is closed by `ChartLayout`'s family-agnostic anchors + `Follow`
+//! rule; the legend half is still open.
 
 use dioxus::prelude::*;
 
 use super::super::center_text;
 use super::super::layout::SeriesRenderContext;
-use crate::chart::context::use_chart;
+use super::super::pointer::Sector;
+
 use crate::chart::engine::polar::{arc_path, centroid, pie_layout, PieArc};
 use crate::chart::engine::scale::{fmt_decimal, fmt_num};
 use crate::chart::{BandScale, ChartDatum};
@@ -122,13 +124,9 @@ pub struct PieOptions {
     pub center_text: Option<(String, String)>,
 }
 
-/// Render one ring (plain pie) or several concentric rings (stacked pie,
-/// `ctx.config.series.len() > 1` -- see the module doc), plus the
-/// optional donut center text.
-pub(crate) fn render(ctx: &SeriesRenderContext, opts: &PieOptions) -> Element {
-    let chart_ctx = use_chart();
-    let active_index_signal = chart_ctx.active_index;
-
+/// A pie's own plot geometry: center, hole radius and outer radius.
+/// Shared by [`render`] (the marks) and [`anchors`] (the tooltip anchors).
+fn geometry(ctx: &SeriesRenderContext, opts: &PieOptions) -> (f64, f64, f64, f64) {
     let cx = ctx.width / 2.0;
     let cy = ctx.height / 2.0;
     let max_radius = (ctx.width.min(ctx.height) / 2.0) * OUTER_RADIUS_FRACTION;
@@ -137,6 +135,106 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &PieOptions) -> Element {
         .inner_radius
         .max(0.0)
         .min((outer_radius - 1.0).max(0.0));
+    (cx, cy, inner_radius, outer_radius)
+}
+
+/// Each datum's tooltip anchor, in the chart's logical SVG units: the
+/// centroid of its slice (midway between the hole and the rim, at the
+/// slice's mid-angle) -- shadcn/Recharts anchor a pie tooltip there, so it
+/// jumps slice to slice instead of following the pointer. A stacked pie
+/// (several rings) uses the first ring's angles over the full radial range;
+/// it follows the pointer on hover (`Follow::Pointer`), so this only places
+/// a tooltip the keyboard opened.
+pub(crate) fn anchors(ctx: &SeriesRenderContext, opts: &PieOptions) -> Vec<(f64, f64)> {
+    let (cx, cy, inner_radius, outer_radius) = geometry(ctx, opts);
+    let values: Vec<f64> = ctx
+        .data
+        .iter()
+        .map(|d| d.values.first().copied().flatten().unwrap_or(0.0))
+        .collect();
+    pie_layout(
+        &values,
+        opts.pad_angle,
+        0.0,
+        crate::chart::engine::polar::PieSort::None,
+    )
+    .iter()
+    .map(|arc| {
+        let (x, y) = centroid(inner_radius, outer_radius, arc.start_angle, arc.end_angle);
+        (cx + x, cy + y)
+    })
+    .collect()
+}
+
+/// The hit regions the pointer is resolved against (see
+/// `components::pointer`): one sector per slice per ring, over the same
+/// resting geometry [`render`] draws -- contiguous in angle (the pad angle
+/// is ignored, so a pointer in a hairline gap between slices stays on the
+/// nearer slice instead of blinking the tooltip off).
+pub(crate) fn sectors(ctx: &SeriesRenderContext, opts: &PieOptions) -> Vec<Sector> {
+    let (_, _, inner_radius, outer_radius) = geometry(ctx, opts);
+    let n_series = ctx.config.series.len();
+    let rings: Vec<(f64, f64, Vec<f64>)> = if n_series > 1 {
+        let band = BandScale {
+            count: n_series,
+            range: (inner_radius, outer_radius),
+            padding: RING_PADDING,
+        };
+        (0..n_series)
+            .map(|s| {
+                let (ring_inner, ring_width) = band.band(s);
+                let values = ctx
+                    .series_values(s)
+                    .into_iter()
+                    .map(|v| v.unwrap_or(0.0))
+                    .collect();
+                (ring_inner, ring_inner + ring_width, values)
+            })
+            .collect()
+    } else {
+        let values = ctx
+            .data
+            .iter()
+            .map(|d| d.values.first().copied().flatten().unwrap_or(0.0))
+            .collect();
+        vec![(inner_radius, outer_radius, values)]
+    };
+    rings
+        .into_iter()
+        .flat_map(|(r0, r1, values)| {
+            pie_layout(
+                &values,
+                opts.pad_angle,
+                0.0,
+                crate::chart::engine::polar::PieSort::None,
+            )
+            .into_iter()
+            .enumerate()
+            .map(move |(index, arc)| Sector {
+                index,
+                r0,
+                r1,
+                a0: arc.start_angle,
+                a1: arc.end_angle,
+            })
+        })
+        .collect()
+}
+
+/// A slice's fill: the datum's own color, else the `--dx-chart-<1..8>`
+/// token by position (cycling). One definition, shared with the tooltip so
+/// a slice's swatch is always the color the slice is drawn in.
+pub(crate) fn slice_color(datum: Option<&ChartDatum>, index: usize) -> String {
+    datum
+        .and_then(|d| d.color.clone())
+        .unwrap_or_else(|| format!("var(--dx-chart-{})", (index % 8) + 1))
+}
+
+/// Render one ring (plain pie) or several concentric rings (stacked pie,
+/// `ctx.config.series.len() > 1` -- see the module doc), plus the
+/// optional donut center text.
+pub(crate) fn render(ctx: &SeriesRenderContext, opts: &PieOptions) -> Element {
+    let (cx, cy, inner_radius, outer_radius) = geometry(ctx, opts);
 
     let hover_active = ctx.active_index;
     let active = opts.active_index.or(hover_active);
@@ -150,9 +248,9 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &PieOptions) -> Element {
         g { "data-slot": "chart-series",
             g { transform: "{translate}",
                 if stacked_rings {
-                    {render_rings(ctx, opts, inner_radius, outer_radius, n_series, active, active_index_signal)}
+                    {render_rings(ctx, opts, inner_radius, outer_radius, n_series, active)}
                 } else {
-                    {render_single_ring(ctx, opts, inner_radius, outer_radius, active, active_index_signal)}
+                    {render_single_ring(ctx, opts, inner_radius, outer_radius, active)}
                 }
             }
             if let Some((primary, secondary)) = &opts.center_text {
@@ -170,7 +268,6 @@ fn render_single_ring(
     inner_radius: f64,
     outer_radius: f64,
     active: Option<usize>,
-    active_index_signal: Signal<Option<usize>>,
 ) -> Element {
     let values: Vec<f64> = ctx
         .data
@@ -198,7 +295,6 @@ fn render_single_ring(
                 is_active: active == Some(i),
                 labels: &opts.labels,
                 corner_radius: opts.corner_radius,
-                active_index_signal,
             })}
         }
     }
@@ -213,7 +309,6 @@ fn render_rings(
     outer_radius: f64,
     n_series: usize,
     active: Option<usize>,
-    active_index_signal: Signal<Option<usize>>,
 ) -> Element {
     let band = BandScale {
         count: n_series,
@@ -248,8 +343,7 @@ fn render_rings(
                                 is_active: active == Some(i),
                                 labels: &opts.labels,
                                 corner_radius: opts.corner_radius,
-                                active_index_signal,
-                            })}
+                                            })}
                         }
                     }
                 }
@@ -274,7 +368,6 @@ struct SliceParams<'a> {
     is_active: bool,
     labels: &'a PieLabels,
     corner_radius: f64,
-    active_index_signal: Signal<Option<usize>>,
 }
 
 /// One slice: the `path[data-slot="chart-arc"]` itself, plus its label
@@ -286,7 +379,6 @@ struct SliceParams<'a> {
 /// translated to -- see [`render`]'s own doc), not a second, larger
 /// `arc_path` computed here.
 fn render_slice(mut p: SliceParams<'_>) -> Element {
-    let mut active_index_signal = p.active_index_signal;
     let index = p.index;
     let d = arc_path(
         p.inner_radius,
@@ -296,10 +388,7 @@ fn render_slice(mut p: SliceParams<'_>) -> Element {
         p.arc.pad_angle,
         p.corner_radius,
     );
-    let color = p
-        .datum
-        .and_then(|d| d.color.clone())
-        .unwrap_or_else(|| format!("var(--dx-chart-{})", (p.index % 8) + 1));
+    let color = slice_color(p.datum, p.index);
     let label_text = label_text(&p);
     let (label_x, label_y) = centroid(
         p.inner_radius,
@@ -319,7 +408,6 @@ fn render_slice(mut p: SliceParams<'_>) -> Element {
             "data-end-angle": "{fmt_num(p.arc.end_angle)}",
             d: "{d}",
             fill: "{color}",
-            onpointerenter: move |_| active_index_signal.set(Some(index)),
         }
         if let Some(text_content) = label_text {
             text {

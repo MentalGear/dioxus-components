@@ -199,6 +199,35 @@ impl BandScale {
         let (start, width) = self.band(i);
         start + width / 2.0
     }
+
+    /// The index of the band whose [`Self::center`] is nearest `pos` -- the
+    /// "snap to the closest category" rule a pointer-following tooltip
+    /// uses. Unlike a hit test against each band's own `(start, width)`,
+    /// the padding gaps between bands belong to the nearer neighbour, so
+    /// the answer switches exactly at the midpoint between two centers, and
+    /// a position past either end clamps to the first/last band. `None`
+    /// only for a scale with no bands or a non-finite `pos`.
+    ///
+    /// ```
+    /// use dioxus_primitives::chart::BandScale;
+    ///
+    /// let s = BandScale { count: 3, range: (0.0, 120.0), padding: 0.0 };
+    /// assert_eq!(s.nearest_index(5.0), Some(0));
+    /// assert_eq!(s.nearest_index(59.0), Some(1));
+    /// assert_eq!(s.nearest_index(61.0), Some(1));
+    /// assert_eq!(s.nearest_index(1000.0), Some(2));
+    /// ```
+    pub fn nearest_index(&self, pos: f64) -> Option<usize> {
+        if self.count == 0 || !pos.is_finite() {
+            return None;
+        }
+        let step = self.step();
+        if step.is_nan() || step <= 0.0 {
+            return Some(0);
+        }
+        let i = ((pos - self.center(0)) / step).round();
+        Some(i.clamp(0.0, (self.count - 1) as f64) as usize)
+    }
 }
 
 /// Mirrors d3-array's `tickSpec` (see the module doc for the citation and
@@ -375,6 +404,42 @@ pub(in crate::chart) fn fmt_num(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn nearest_index_switches_at_the_midpoint_between_centers() {
+        let s = BandScale {
+            count: 4,
+            range: (0.0, 400.0),
+            padding: 0.2,
+        };
+        for i in 0..4 {
+            assert_eq!(s.nearest_index(s.center(i)), Some(i));
+        }
+        let mid = (s.center(1) + s.center(2)) / 2.0;
+        assert_eq!(s.nearest_index(mid - 0.01), Some(1));
+        assert_eq!(s.nearest_index(mid + 0.01), Some(2));
+        // The padding gap between two bars belongs to the nearer one.
+        let (start, width) = s.band(2);
+        assert_eq!(s.nearest_index(start + width + 1.0), Some(2));
+    }
+
+    #[test]
+    fn nearest_index_clamps_and_rejects_degenerate_input() {
+        let s = BandScale {
+            count: 3,
+            range: (10.0, 130.0),
+            padding: 0.2,
+        };
+        assert_eq!(s.nearest_index(-1e9), Some(0));
+        assert_eq!(s.nearest_index(1e9), Some(2));
+        assert_eq!(s.nearest_index(f64::NAN), None);
+        let empty = BandScale {
+            count: 0,
+            range: (0.0, 1.0),
+            padding: 0.0,
+        };
+        assert_eq!(empty.nearest_index(0.5), None);
+    }
     use super::*;
 
     /// Assert two `f64` slices are equal to within float rounding noise.

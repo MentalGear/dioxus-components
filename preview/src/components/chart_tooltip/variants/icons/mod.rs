@@ -3,9 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardHeader, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{Footprints, WavesHorizontal};
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's nine source
-/// files does the same.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -24,21 +22,7 @@ fn chart_data() -> Vec<ChartDatum> {
     .collect()
 }
 
-/// Adds an icon per series -- shadcn's `chartConfig` here sets `icon:
-/// Footprints`/`icon: Waves` (lucide-react). `ChartSeries::icon` has no
-/// builder method yet (`primitives/src/chart/config.rs`'s own doc: "set it
-/// with a struct update ... once a lane gives this a builder method of its
-/// own"), so each series is built via the normal `.series(...)` chain, then
-/// mapped through a struct update that attaches the icon -- this crate's
-/// `ChartConfig`/`ChartSeries` are `config.rs`-owned, not this lane's to add
-/// a convenience method to.
-///
-/// This crate's vendored `dioxus_icons::lucide` set has no plain `Waves`
-/// icon (only `WavesHorizontal`/`WavesVertical`/`WavesLadder`/
-/// `WavesArrowUp`/`WavesArrowDown` -- lucide's own icon appears to have
-/// been split into directional variants upstream of this vendored
-/// snapshot); `WavesHorizontal` is the closest visual match for the
-/// swimming series.
+/// Attaches an icon to each series by updating `ChartSeries::icon` after the normal `.series(...)` chain.
 fn chart_config() -> ChartConfig {
     let base = ChartConfig::new()
         .series("running", "Running", "var(--dx-chart-1)")
@@ -59,11 +43,7 @@ fn chart_config() -> ChartConfig {
     }
 }
 
-/// Ports shadcn's `chart-tooltip-icons.tsx` (`hideLabel`, each series'
-/// `icon` renders in place of its indicator swatch). The icon itself
-/// renders from `ChartSeries::icon` (read directly off `config` by the
-/// primitive), not from any `ChartTooltipProps` field this demo needs to
-/// set.
+/// Hides the label; each series' icon renders in place of its indicator swatch. The icon is read from `ChartSeries::icon` on the config, so the tooltip needs no extra props.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -77,6 +57,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

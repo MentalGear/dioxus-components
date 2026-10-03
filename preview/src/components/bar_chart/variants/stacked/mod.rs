@@ -1,13 +1,7 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// The same two-series stacking shadcn's `chart-bar-stacked.tsx` demo shows,
-/// without its legend -- a deliberately bare baseline this gallery adds
-/// alongside the faithful `stacked_legend` port (shadcn ships only the
-/// legend-bearing version; splitting it in two here lets each variant show
-/// exactly one thing: `Chart { stacked: true }` on its own here, plus
-/// `ChartLegend` there). Same data as `stacked_legend`, so the two are
-/// visibly the same chart, legend or not.
+/// Two series stacked per month (`stacked: true`), without a legend.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),

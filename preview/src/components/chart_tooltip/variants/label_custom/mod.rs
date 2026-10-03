@@ -2,9 +2,7 @@ use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's nine source
-/// files does the same.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -23,25 +21,14 @@ fn chart_data() -> Vec<ChartDatum> {
     .collect()
 }
 
-/// shadcn's own `chartConfig` here adds a THIRD entry, `activities: { label:
-/// "Activities" }`, with no color/series of its own -- purely so
-/// `labelKey="activities"` has something to look up (`getPayloadConfigFromPayload`,
-/// chart.tsx). This crate's `ChartConfig` has no such label-only, seriesless
-/// entry (every entry is a drawn series -- see `chart/mod.rs`'s own module
-/// doc on why `ChartConfig` stays a plain ordered `Vec`, not a free-form
-/// string-keyed map); `ChartTooltipProps::label_key` exposes the same
-/// *observable* result -- a fixed "Activities" heading -- directly as a
-/// literal string instead, so only the two real series are configured here.
+/// The two series the data is plotted as. The tooltip's heading is set with `label_key` instead of a config entry.
 fn chart_config() -> ChartConfig {
     ChartConfig::new()
         .series("running", "Running", "var(--dx-chart-1)")
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// Ports shadcn's `chart-tooltip-label-custom.tsx`
-/// (`<ChartTooltipContent labelKey="activities" indicator="line" />`): the
-/// label row reads "Activities" regardless of which day is hovered, instead
-/// of that day's own date.
+/// The label row reads "Activities" whichever day is hovered, instead of that day's date.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -55,6 +42,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

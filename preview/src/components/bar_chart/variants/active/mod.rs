@@ -1,12 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
 
-/// Port of shadcn's `chart-bar-active.tsx`: the same horizontal browser
-/// layout as this gallery's own `horizontal` variant, plus `BarOptions::
-/// active_index` fixed to the "Firefox" bar -- every other bar dims
-/// (`chart/style.css`'s own `[data-active="false"]` rule, gated on at
-/// least one sibling bar being active) so the highlighted one reads as
-/// the chart's own point of interest, independent of hover.
+/// Horizontal bars with the "Firefox" bar kept highlighted
+/// (`BarOptions::active_index`); every other bar dims.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64); 5] = [
         ("Chrome", 275.0),

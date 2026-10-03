@@ -3,10 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-legend.tsx`
-/// (shadcn's `chart-area-legend` demo): the same stacked two-series data as
-/// the `stacked` variant, with a `ChartLegend` added below the chart.
+/// The stacked two-series chart with a `ChartLegend` below it.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -32,7 +29,7 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Legend" }
@@ -48,16 +45,12 @@ pub fn Demo() -> Element {
                         ChartLegend {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

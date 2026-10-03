@@ -2,9 +2,7 @@ use super::super::component::*;
 use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's nine source
-/// files does the same.
+/// The six-day running and swimming dataset this gallery's demos share. Each demo keeps its own copy so it can be copied on its own.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("2024-07-15", 450.0, 300.0),
@@ -29,8 +27,7 @@ fn chart_config() -> ChartConfig {
         .series("swimming", "Swimming", "var(--dx-chart-2)")
 }
 
-/// See `variants/formatter/mod.rs`'s own copy of this helper for why `None`
-/// is handled explicitly.
+/// Formats a value as "{value} kcal", or "—" for a gap.
 fn kcal(value: Option<f64>) -> String {
     match value {
         Some(v) => format!("{v} kcal"),
@@ -38,16 +35,8 @@ fn kcal(value: Option<f64>) -> String {
     }
 }
 
-/// Ports shadcn's `chart-tooltip-advanced.tsx`: a `formatter` that rebuilds
-/// the default dot-swatch + name + value row by hand (so it can append the
-/// extra "Total" row after the last series -- `TooltipRow::is_last`, this
-/// crate's replacement for shadcn's `index === 1` -- generalizes to any
-/// series count rather than a fixture-specific magic index).
-/// `TooltipRow::total` is the precomputed cross-series sum shadcn instead
-/// reads out of Recharts' own raw per-datum payload (`item.payload.running
-/// + item.payload.swimming`) -- this crate's tooltip has no equivalent
-/// free-form payload object, so the sum is computed once and handed to
-/// every row instead.
+/// A `formatter` that rebuilds the default dot, name and value row by hand so it can append a "Total" row after the last series (`TooltipRow::is_last`).
+/// `TooltipRow::total` is the sum across series for the hovered point.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -61,6 +50,8 @@ pub fn Demo() -> Element {
                     ChartContainer { config: chart_config(), data: chart_data(), kind: ChartKind::Bar,
                         Chart {
                             aria_label: "Running and swimming calories by day",
+                            // Open on the third day so every tooltip variant is visible
+                            default_index: 2,
                             x_label: "Date",
                             stacked: true,
                             x_tick_format: |v: String| short_weekday(&v),

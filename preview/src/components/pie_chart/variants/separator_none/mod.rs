@@ -1,9 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared -- every one of shadcn's eleven source
-/// files does the same.
+/// Visitor counts per browser.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -25,19 +24,14 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-separator-none.tsx`: a plain pie with the thin
-/// per-slice separator stroke removed (`<Pie stroke="none" />`). This
-/// crate's `chart-arc` draws no separator stroke at all in the first place
-/// (`chart/style.css` has no `stroke` rule for it) -- there is no
-/// `PieOptions` field for one to toggle off, so this demo is visually
-/// identical to `main`'s own default: a documented simplification, not a
-/// missing feature.
+/// A plain pie with no separator between slices; slices are drawn without one
+/// by default.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
         Card {
             CardHeader {
-                CardTitle { "Pie Chart - No Separator" }
+                CardTitle { "Pie Chart - Separator None" }
                 CardDescription { "January - June 2024" }
             }
             CardContent {
@@ -47,7 +41,10 @@ pub fn Demo() -> Element {
                 }
             }
             CardFooter { class: "dx-chart-footer",
-                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
                 div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }

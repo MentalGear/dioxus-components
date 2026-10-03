@@ -5,8 +5,7 @@ use crate::components::card::{
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ported from `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-radar-grid-none.tsx`
-/// (data, config, copy, card chrome). No grid at all.
+/// No grid at all.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),
@@ -52,9 +51,12 @@ pub fn Demo() -> Element {
                     ChartTooltip { hide_label: true }
                 }
             }
-            CardFooter {
-                div { "Trending up by 5.2% this month " TrendingUp { size: "16px" } }
-                div { "January - June 2024" }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "January - June 2024" }
             }
         }
     }

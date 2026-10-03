@@ -3,16 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-axes.tsx`
-/// (shadcn's `chart-area-axes` demo): the same stacked two-series data,
-/// with the y axis shown (`show_y_axis: true`) alongside the default x
-/// axis, and a reduced tick count (`y_tick_count: 3`, matching the
-/// upstream demo's `tickCount={3}`). shadcn's own `YAxis`/`XAxis` also set
-/// `axisLine={false}` (no baseline stroke, only tick labels) -- this
-/// crate's `Chart` draws axis tick *labels* only in the first place (no
-/// baseline stroke to suppress; see `$S/chart-api.md`), so that prop has
-/// no equivalent to port.
+/// A stacked two-series area chart with both axes shown: the y axis is turned
+/// on (`show_y_axis: true`) and limited to three ticks (`y_tick_count: 3`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -38,7 +30,7 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Axes" }
@@ -55,16 +47,12 @@ pub fn Demo() -> Element {
                         ChartTooltip {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

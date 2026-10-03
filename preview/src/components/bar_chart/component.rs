@@ -24,6 +24,7 @@ use dioxus_icons::lucide::TrendingUp;
 pub use crate::components::card::{
     Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
 };
+pub use dioxus_primitives::chart::TooltipIndicator;
 pub use crate::components::chart::{
     BarOptions, Chart, ChartConfig, ChartContainer, ChartDatum, ChartKind, ChartLegend,
     ChartTooltip,
@@ -38,13 +39,12 @@ pub use crate::components::chart::{
 #[component]
 pub fn BarChartTrendFooter() -> Element {
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/src/components/bar_chart/style.css") }
-        CardFooter { class: "dx-bar-chart-footer",
-            div { class: "dx-bar-chart-footer-trend",
+        CardFooter { class: "dx-chart-footer",
+            div { class: "dx-chart-footer-trend",
                 "Trending up by 5.2% this month"
                 TrendingUp { size: "16px" }
             }
-            div { class: "dx-bar-chart-footer-caption", "Showing total visitors for the last 6 months" }
+            div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
         }
     }
 }

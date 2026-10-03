@@ -1,6 +1,6 @@
-use crate::components::button::component::Button;
+use crate::components::button::Button;
 use crate::components::dialog::DialogTitle;
-use crate::components::kbd::component::{Kbd, KbdGroup};
+use crate::components::kbd::{Kbd, KbdGroup};
 
 use super::super::component::{Command, CommandDialog, CommandEmpty, CommandGroup, CommandGroupLabel, CommandItem};
 use dioxus::prelude::*;

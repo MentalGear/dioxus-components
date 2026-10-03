@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 // `chart_tooltip`'s nine gallery variants -- one per shadcn
 // `chart-tooltip-*.tsx` demo (`$S/refs/ui/apps/v4/registry/new-york-v4/
@@ -33,7 +34,9 @@ function frameOf(page: Page, variant: (typeof VARIANTS)[number]): Locator {
 }
 
 async function goto(page: Page): Promise<void> {
-  await page.goto(URL, { timeout: 20 * 60 * 1000 });
+  // gotoHydrated: this suite hovers right after navigating, and on the SSG lane a hover
+  // before hydration attaches its listeners is dropped (dev-docs/backlog.md row 109).
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 }
 
 /** Hovers the first data point's hit-band and waits for the tooltip to open. */
@@ -53,6 +56,19 @@ test.describe("render: every variant shows a labelled chart and opens its toolti
       await openTooltip(frame);
       // Every demo's fixture is 2 series (running/swimming) -- one row each.
       await expect(frame.locator('[data-slot="chart-tooltip-item"]')).toHaveCount(2);
+    });
+  }
+});
+
+test.describe("default_index: every variant shows its tooltip open before any interaction", () => {
+  // shadcn's Tooltips tab shows each tooltip already open (`defaultIndex`).
+  for (const variant of VARIANTS) {
+    test(variant, async ({ page }) => {
+      await goto(page);
+      const tooltip = frameOf(page, variant).locator('[data-slot="chart-tooltip"]');
+      await expect(tooltip).toHaveAttribute("data-state", "open");
+      await expect(tooltip).toBeVisible();
+      await expect(tooltip.locator('[data-slot="chart-tooltip-item"]')).toHaveCount(2);
     });
   }
 });

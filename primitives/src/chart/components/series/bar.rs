@@ -74,37 +74,12 @@
 //! category labels positioned at the y-axis edge, hover tracks the bar
 //! under the pointer).
 //!
-//! What this does NOT (and structurally cannot, from inside this file)
-//! fix: `chart.rs`'s own `is_cartesian` hit-band/cursor block, which
-//! unconditionally builds a vertical full-height strip from `ctx.x_scale`
-//! for every Cartesian kind. Left as-is, that stale hit-band would sit on
-//! top of (later in paint order than) this family's own marks and win
-//! every pointer event, silently breaking hover for a horizontal bar chart.
-//! Fixed here by construction, not by ignoring the conflict: this family's
-//! own hit-bands additionally carry `data-orientation="horizontal"`, and
-//! the horizontal gallery variant's own stylesheet
-//! (`preview/src/components/bar_chart/style.css`) disables pointer events
-//! on chart.rs's un-marked ones with a plain CSS rule scoped to that one
-//! demo (`[data-slot="chart-hit-band"]:not([data-orientation="horizontal"])
-//! { pointer-events: none; }` under that page's own `.dx-bar-chart-
-//! horizontal` class) -- CSS legitimately overrides an SVG presentation
-//! attribute like chart.rs's inline `pointer-events="all"` regardless of
-//! source order, so this needs no chart.rs cooperation at all. The same
-//! construction (a `data-orientation` marker + a themed CSS override)
-//! resolves `chart.rs`'s own `chart-cursor-rect` the same way; this
-//! family's own equivalent (below) reads `ctx.active_index` directly (a
-//! plain snapshot `SeriesRenderContext` already carries) rather than
-//! needing write access to draw. A precise, ready-to-apply chart.rs diff
-//! that would make this whole workaround unnecessary is filed in
-//! `$S/stage2-lanes.md`.
-//!
-//! `ChartLayout` (`context.rs`, what `ChartTooltip` positions itself from)
-//! is a separate, already-known limitation, not a new one this lane
-//! introduces: `s2-radar` already filed the same "Cartesian-only" gap for
-//! its own tooltip positioning (`$S/stage2-lanes.md`) -- a horizontal
-//! `Chart`'s tooltip inherits that identical limitation (it opens with the
-//! correct content, just not necessarily anchored over the hovered bar)
-//! until that shared construction lands.
+//! `chart.rs` is orientation-aware for the two pieces it still owns: it
+//! skips its own vertical hit-band columns for a horizontal chart (this
+//! family draws row bands instead, below), draws the hover cursor band
+//! along the active row, and resolves hover from the pointer's nearest row
+//! (`components::pointer`). The tooltip anchors at the row's bar end and
+//! follows the pointer along x (`Follow::PointerX`).
 
 use dioxus::prelude::*;
 
@@ -113,7 +88,7 @@ use super::super::layout::{
 };
 use crate::chart::engine::geometry::bar_extent;
 use crate::chart::engine::scale::fmt_num;
-use crate::chart::{use_chart, BandScale, LinearScale};
+use crate::chart::{BandScale, LinearScale};
 
 /// Padding between grouped (non-stacked, multi-series) bars sharing one
 /// category band. Bar-only (grouped-bar sub-positioning is this family's
@@ -480,26 +455,18 @@ fn render_horizontal_category_labels(
 }
 
 /// This family's own hit-bands for a horizontal chart: full-width strips
-/// positioned by the category band scale (along y), each wired directly to
-/// [`crate::chart::use_chart`]'s own `active_index` signal -- see the
-/// module doc for why calling that "hook" from this plain (non-`#[component]`)
-/// function is safe: `try_consume_context` (what it wraps) is explicitly
-/// documented, in `dioxus-core` itself, as "not a hook" and callable "from
-/// anywhere the Dioxus runtime is active ... without following the rules of
-/// hooks" -- this runs synchronously on `Chart`'s own render call stack (the
-/// same scope `Chart`'s own top-level `use_chart()` call already reads
-/// from), never deferred, so there is no rules-of-hooks question here at
-/// all, only an ordinary context read.
+/// positioned by the category band scale (along y), one per datum. They
+/// are the stable per-datum hit regions tests and styles address; hover
+/// itself is resolved from the pointer's coordinates by `Chart`'s wrapper
+/// (`components::pointer`, nearest category along y), the same mechanism as
+/// the vertical charts.
 ///
 /// Deliberately marked `data-orientation="horizontal"`, distinct from
-/// `chart.rs`'s own (vertical-only) `[data-slot="chart-hit-band"]` group it
-/// renders unconditionally alongside this one -- the horizontal gallery
-/// variant's own stylesheet uses that marker to disable pointer events on
-/// the stale ones without disturbing this family's own, or any other
-/// kind's hit-bands elsewhere.
+/// `chart.rs`'s own `[data-slot="chart-hit-band"]` columns (which `Chart`
+/// no longer renders for a horizontal bar chart) so a stylesheet can tell
+/// the two layouts apart.
 fn render_horizontal_hit_bands(ctx: &SeriesRenderContext, category_scale: &BandScale) -> Element {
     let n = ctx.xs.len();
-    let mut active_index = use_chart().active_index;
     rsx! {
         g { "data-slot": "chart-hit-bands", "data-orientation": "horizontal",
             for i in 0..n {
@@ -517,7 +484,6 @@ fn render_horizontal_hit_bands(ctx: &SeriesRenderContext, category_scale: &BandS
                             height: "{fmt_num(bh)}",
                             fill: "transparent",
                             "pointer-events": "all",
-                            onpointerenter: move |_| active_index.set(Some(i)),
                         }
                     }
                 }

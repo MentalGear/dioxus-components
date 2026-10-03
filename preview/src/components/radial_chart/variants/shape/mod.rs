@@ -1,8 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/text/mod.rs`'s own doc comment -- a single-category
-/// dataset, same shape shadcn's `chart-radial-shape.tsx` uses.
+/// A single-category dataset.
 fn chart_data() -> Vec<ChartDatum> {
     vec![ChartDatum {
         label: "Visitors".to_string(),
@@ -15,8 +15,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-radial-shape.tsx`: a single ring with rounded
-/// corners (`RadialOptions::corner_radius > 0.0`).
+/// A single ring with rounded corners (`RadialOptions::corner_radius > 0.0`).
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -41,7 +40,10 @@ pub fn Demo() -> Element {
                 }
             }
             CardFooter { class: "dx-chart-footer",
-                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
                 div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }

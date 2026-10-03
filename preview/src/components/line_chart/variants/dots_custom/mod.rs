@@ -1,13 +1,10 @@
 use super::super::component::*;
-use crate::components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
+use crate::components::card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-dots-custom.tsx`: `LineOptions::dot`
-/// replaces the default filled circle with a caller-supplied renderer --
-/// here, a small diamond (`<rect>` rotated 45deg) at every defined point,
-/// reading [`DotContext::active`] to grow slightly when hovered/keyboard-
-/// focused, the same enlargement the default circle gets for free
-/// (`series::line::render_dot`'s own doc).
+/// `LineOptions::dot` replaces the default dot with your own renderer, here a
+/// small diamond that grows when hovered or focused (`DotContext::active`).
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64); 6] = [
         ("January", 186.0),
@@ -63,6 +60,13 @@ pub fn Demo() -> Element {
                     }
                     ChartTooltip { hide_label: true }
                 }
+            }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

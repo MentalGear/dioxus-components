@@ -3,14 +3,7 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-stacked.tsx`
-/// (shadcn's `chart-area-stacked` demo): two series, `stacked: true`.
-/// Series order here (`desktop` then `mobile`) is this config's own
-/// stacking order (`ChartConfig::series`, positional -- see that type's
-/// doc), not shadcn's JSX render order (`mobile` then `desktop`, both
-/// sharing `stackId="a"`); either order draws the same two regions, one
-/// stacked on the other.
+/// Two series stacked on top of each other (`stacked: true`).
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -36,7 +29,7 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Stacked" }
@@ -51,16 +44,12 @@ pub fn Demo() -> Element {
                         ChartTooltip {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

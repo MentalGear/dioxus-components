@@ -3,14 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-gradient.tsx`
-/// (shadcn's `chart-area-gradient` demo): the same stacked two-series data
-/// as `stacked`/`legend`, with `AreaOptions::gradient: true` -- a
-/// top-to-bottom `<linearGradient>` per series
-/// (`primitives/src/chart/components/series/area.rs`, id'd
-/// `"{chart-id}-gradient-{series-slot}"`, SSR-stable) instead of a flat
-/// fill, matching the upstream demo's own `stopOpacity` `0.8`/`0.1` pair.
+/// The stacked two-series chart with `AreaOptions::gradient: true`: each area
+/// fades from the series color at the top to transparent at the baseline
+/// instead of using a flat fill.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -36,7 +31,7 @@ pub fn Demo() -> Element {
         .series("mobile", "Mobile", "var(--dx-chart-2)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Gradient" }
@@ -55,16 +50,12 @@ pub fn Demo() -> Element {
                         ChartTooltip {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

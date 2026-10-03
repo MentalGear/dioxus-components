@@ -20,8 +20,9 @@ use dioxus::prelude::*;
 use super::super::center_text;
 use super::super::fragment::safe_fragment_id;
 use super::super::layout::SeriesRenderContext;
+use super::super::pointer::Sector;
 use crate::chart::context::use_chart;
-use crate::chart::engine::polar::{angle_scale, arc_path};
+use crate::chart::engine::polar::{angle_scale, arc_path, centroid};
 use crate::chart::engine::scale::{fmt_decimal, fmt_num};
 use crate::chart::{BandScale, ChartDatum, PieLabels};
 
@@ -121,15 +122,9 @@ impl Default for RadialOptions {
     }
 }
 
-/// Render one ring per datum (the default), or every configured series'
-/// value for the first datum stacked into one ring
-/// ([`RadialOptions::stacked`]), plus the optional center text.
-pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Element {
-    let chart_ctx = use_chart();
-    let chart_id = (chart_ctx.id)();
-    let active_index_signal = chart_ctx.active_index;
-    let hover_active = ctx.active_index;
-
+/// A radial chart's own plot geometry: center, innermost ring's inner radius
+/// and outermost ring's outer radius. Shared by [`render`] and [`anchors`].
+fn geometry(ctx: &SeriesRenderContext, opts: &RadialOptions) -> (f64, f64, f64, f64) {
     let cx = ctx.width / 2.0;
     let cy = ctx.height / 2.0;
     let auto_outer = (ctx.width.min(ctx.height) / 2.0) * OUTER_RADIUS_FRACTION;
@@ -142,6 +137,112 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Element
         .inner_radius
         .max(0.0)
         .min((outer_radius - 1.0).max(0.0));
+    (cx, cy, inner_radius, outer_radius)
+}
+
+/// Each datum's keyboard tooltip anchor, in the chart's logical SVG units:
+/// the centroid of its ring's value arc (the stacked layout has one ring,
+/// so one anchor, at the middle of the whole sweep). A pointer hover
+/// instead follows the pointer (`Follow::Pointer`): a ring can sweep most
+/// of a turn, so its centroid may sit on the far side of the chart from the
+/// cursor, where a tooltip would read as unrelated to what is hovered.
+pub(crate) fn anchors(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Vec<(f64, f64)> {
+    let (cx, cy, inner_radius, outer_radius) = geometry(ctx, opts);
+    if opts.stacked {
+        let (x, y) = centroid(inner_radius, outer_radius, opts.start_angle, opts.end_angle);
+        return vec![(cx + x, cy + y)];
+    }
+    let n = ctx.data.len().max(1);
+    let band = BandScale {
+        count: n,
+        range: (inner_radius, outer_radius),
+        padding: RING_PADDING,
+    };
+    let values: Vec<f64> = ctx
+        .data
+        .iter()
+        .map(|d| d.values.first().copied().flatten().unwrap_or(0.0))
+        .collect();
+    let max_value = values
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max)
+        .max(f64::EPSILON);
+    let scale = angle_scale((0.0, max_value), opts.start_angle, opts.end_angle);
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let (ring_inner, ring_width) = band.band(i);
+            let (x, y) = centroid(
+                ring_inner,
+                ring_inner + ring_width,
+                opts.start_angle,
+                scale.scale(*v),
+            );
+            (cx + x, cy + y)
+        })
+        .collect()
+}
+
+/// The hit regions the pointer is resolved against (see
+/// `components::pointer`): each ring's own value arc, or -- stacked -- the
+/// one ring's whole sweep. The empty angular remainder of a ring (and the
+/// gaps between rings) is outside every sector, so the tooltip shows only
+/// over a bar, as in shadcn.
+pub(crate) fn sectors(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Vec<Sector> {
+    let (_, _, inner_radius, outer_radius) = geometry(ctx, opts);
+    if opts.stacked {
+        return vec![Sector {
+            index: 0,
+            r0: inner_radius,
+            r1: outer_radius,
+            a0: opts.start_angle,
+            a1: opts.end_angle,
+        }];
+    }
+    let n = ctx.data.len().max(1);
+    let band = BandScale {
+        count: n,
+        range: (inner_radius, outer_radius),
+        padding: RING_PADDING,
+    };
+    let values: Vec<f64> = ctx
+        .data
+        .iter()
+        .map(|d| d.values.first().copied().flatten().unwrap_or(0.0))
+        .collect();
+    let max_value = values
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max)
+        .max(f64::EPSILON);
+    let scale = angle_scale((0.0, max_value), opts.start_angle, opts.end_angle);
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, v)| {
+            let (ring_inner, ring_width) = band.band(index);
+            Sector {
+                index,
+                r0: ring_inner,
+                r1: ring_inner + ring_width,
+                a0: opts.start_angle,
+                a1: scale.scale(*v),
+            }
+        })
+        .collect()
+}
+
+/// Render one ring per datum (the default), or every configured series'
+/// value for the first datum stacked into one ring
+/// ([`RadialOptions::stacked`]), plus the optional center text.
+pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Element {
+    let chart = use_chart();
+    let chart_id = (chart.id)();
+    let hover_active = ctx.active_index;
+
+    let (cx, cy, inner_radius, outer_radius) = geometry(ctx, opts);
 
     let translate = format!("translate({}, {})", fmt_num(cx), fmt_num(cy));
 
@@ -149,9 +250,9 @@ pub(crate) fn render(ctx: &SeriesRenderContext, opts: &RadialOptions) -> Element
         g { "data-slot": "chart-series",
             g { transform: "{translate}",
                 if opts.stacked {
-                    {render_stacked_ring(ctx, opts, &chart_id, inner_radius, outer_radius, hover_active, active_index_signal)}
+                    {render_stacked_ring(ctx, opts, &chart_id, inner_radius, outer_radius, hover_active)}
                 } else {
-                    {render_rings(ctx, opts, &chart_id, inner_radius, outer_radius, hover_active, active_index_signal)}
+                    {render_rings(ctx, opts, &chart_id, inner_radius, outer_radius, hover_active)}
                 }
             }
             if let Some((primary, secondary)) = &opts.center_text {
@@ -175,7 +276,6 @@ fn render_rings(
     inner_radius: f64,
     outer_radius: f64,
     hover_active: Option<usize>,
-    mut active_index_signal: Signal<Option<usize>>,
 ) -> Element {
     let n = ctx.data.len().max(1);
     let band = BandScale {
@@ -234,7 +334,6 @@ fn render_rings(
                             "data-end-angle": "{fmt_num(end)}",
                             d: "{arc_path(ring_inner, ring_outer, start, end, 0.0, opts.corner_radius)}",
                             fill: "{color}",
-                            onpointerenter: move |_| active_index_signal.set(Some(i)),
                         }
                         if let Some(label) = label {
                             {label.render()}
@@ -259,7 +358,6 @@ fn render_stacked_ring(
     inner_radius: f64,
     outer_radius: f64,
     hover_active: Option<usize>,
-    mut active_index_signal: Signal<Option<usize>>,
 ) -> Element {
     let datum = ctx.data.first();
     let n_series = ctx.config.series.len().max(1);
@@ -320,7 +418,6 @@ fn render_stacked_ring(
                         "data-end-angle": "{fmt_num(end)}",
                         d: "{arc_path(inner_radius, outer_radius, start, end, 0.0, opts.corner_radius)}",
                         fill: "{color}",
-                        onpointerenter: move |_| active_index_signal.set(Some(0)),
                     }
                     if let Some(label) = label {
                         {label.render()}

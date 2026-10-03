@@ -3,19 +3,9 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Ports
-/// `$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-area-stacked-expand.tsx`
-/// (shadcn's `chart-area-stacked-expand` demo, `stackOffset="expand"`):
-/// three series, percent-stacked via `AreaOptions::stack_mode:
-/// StackMode::Expand` (`primitives/src/chart/engine/stack.rs`'s
-/// `stack_with_mode`, d3 `offset/expand.js` semantics) so every month's
-/// stack reaches exactly 100% regardless of its raw total.
-///
-/// The grid is shown (unlike an earlier draft of this demo): stage-2's
-/// §4(c) construction made `components::layout::build` itself
-/// `StackMode`-aware, so `Chart`'s shared grid lines/y-axis ticks now
-/// reflect the same normalized 0..1 domain the marks draw against -- no
-/// more mismatch to work around by hiding the grid.
+/// Three series stacked to 100% (`AreaOptions::stack_mode: StackMode::Expand`):
+/// every month's stack fills the full height, so each area shows that series'
+/// share rather than its raw value.
 fn generate_data() -> Vec<ChartDatum> {
     const ROWS: [(&str, f64, f64, f64); 6] = [
         ("January", 186.0, 80.0, 45.0),
@@ -42,7 +32,7 @@ pub fn Demo() -> Element {
         .series("other", "Other", "var(--dx-chart-3)");
 
     rsx! {
-        div { class: "dx-area-chart-gallery",
+        AreaChartGallery {
             Card {
                 CardHeader {
                     CardTitle { "Area Chart - Stacked Expanded" }
@@ -61,16 +51,12 @@ pub fn Demo() -> Element {
                         ChartTooltip {}
                     }
                 }
-                CardFooter {
-                    div { style: "display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: var(--dx-text-sm);",
-                        div { style: "display: grid; gap: 8px;",
-                            div { style: "display: flex; align-items: center; gap: 8px; font-weight: 600;",
-                                "Trending up by 5.2% this month"
-                                TrendingUp { size: "16px" }
-                            }
-                            div { style: "color: var(--secondary-color-5);", "January - June 2024" }
-                        }
+                CardFooter { class: "dx-chart-footer",
+                    div { class: "dx-chart-footer-trend",
+                        "Trending up by 5.2% this month"
+                        TrendingUp { size: "16px" }
                     }
+                    div { class: "dx-chart-footer-caption", "January - June 2024" }
                 }
             }
         }

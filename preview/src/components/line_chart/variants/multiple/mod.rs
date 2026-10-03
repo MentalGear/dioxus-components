@@ -3,14 +3,8 @@ use crate::components::card::{Card, CardContent, CardDescription, CardFooter, Ca
 use dioxus::prelude::*;
 use dioxus_icons::lucide::TrendingUp;
 
-/// Port of shadcn's `chart-line-multiple.tsx`
-/// (`$S/refs/ui/apps/v4/registry/new-york-v4/charts/chart-line-multiple.tsx`,
-/// clone commit `a87a63b`): two series (desktop/mobile), `Curve::Monotone`
-/// (the source's own `type="monotone"` -- an exact match, unlike the
-/// `"natural"` demos this gallery's other variants substitute for). The
-/// tooltip keeps its label row (no `hideLabel` here, matching the source):
-/// with two series sharing one tooltip, the label is what tells them apart
-/// from each other's own category.
+/// Two series (desktop/mobile) sharing one tooltip; its label row shows the
+/// category they share.
 fn generate_data() -> Vec<ChartDatum> {
     const MONTHS: [(&str, f64, f64); 6] = [
         ("January", 186.0, 80.0),
@@ -52,16 +46,12 @@ pub fn Demo() -> Element {
                     ChartTooltip {}
                 }
             }
-            CardFooter {
-                div { style: "display: flex; flex-direction: column; align-items: flex-start; gap: var(--dx-space-2); font-size: var(--dx-text-sm);",
-                    div { style: "display: flex; align-items: center; gap: var(--dx-space-2); font-weight: 600; line-height: 1;",
-                        "Trending up by 5.2% this month"
-                        TrendingUp { size: "16px" }
-                    }
-                    div { style: "color: var(--secondary-color-5); line-height: 1;",
-                        "Showing total visitors for the last 6 months"
-                    }
+            CardFooter { class: "dx-chart-footer",
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
                 }
+                div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
     }

@@ -1,8 +1,8 @@
 use super::super::component::*;
 use dioxus::prelude::*;
+use dioxus_icons::lucide::TrendingUp;
 
-/// See `variants/main/mod.rs`'s own doc comment for why this dataset is
-/// duplicated rather than shared.
+/// Visitor counts per browser.
 fn chart_data() -> Vec<ChartDatum> {
     [
         ("Chrome", 275.0, "var(--dx-chart-1)"),
@@ -24,8 +24,7 @@ fn chart_config() -> ChartConfig {
     ChartConfig::new().series("visitors", "Visitors", "var(--dx-chart-1)")
 }
 
-/// Ports shadcn's `chart-pie-legend.tsx`: a plain pie with a legend below
-/// it instead of per-slice labels.
+/// A pie with a legend below it instead of per-slice labels.
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -41,7 +40,10 @@ pub fn Demo() -> Element {
                 }
             }
             CardFooter { class: "dx-chart-footer",
-                div { class: "dx-chart-footer-trend", "Trending up by 5.2% this month" }
+                div { class: "dx-chart-footer-trend",
+                    "Trending up by 5.2% this month"
+                    TrendingUp { size: "16px" }
+                }
                 div { class: "dx-chart-footer-caption", "Showing total visitors for the last 6 months" }
             }
         }
