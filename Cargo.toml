@@ -23,6 +23,28 @@ codegen-units = 1
 strip = true
 incremental = false
 
+# dx 0.7.9 builds every target under its own profile named `<platform>-<dev|release>`
+# (`wasm-release` for the shipped client, `server-release` for the SSG prerender server) and
+# passes `--profile <name>` to cargo (dioxus-cli src/platform.rs `profile_name`,
+# src/build/request.rs `cargo_build_arguments`). When a profile of that name is absent it is
+# synthesized as `inherits = "release"` (+ opt-level "s" for web); when it is defined here dx
+# uses OUR definition and injects nothing but `strip=false` (request.rs `profile_args`).
+# `server-release` below therefore overrides ONLY the server binary, which prerenders the static
+# pages and is never shipped: no LTO, 16 codegen units, low opt-level. It must keep
+# `inherits = "release"` (dx's release detection, workspace.rs `is_release_profile`, also keys on
+# the `-release` suffix) so debug-assertions/overflow-checks stay off as in today's server build.
+# Do NOT add a `[profile.wasm-release]` here without re-deriving the shipped wasm settings: dx
+# currently layers `opt-level="s"` onto `wasm-release` via `--config`, a user definition
+# replaces that. See dev-docs/backlog.md row 116.
+[profile.server-release]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
+debug = 0
+strip = false
+incremental = true
+
 [profile.dev]
 debug = 0
 
