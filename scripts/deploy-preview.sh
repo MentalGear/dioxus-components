@@ -10,7 +10,28 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root/preview"
 
-public_dir="$repo_root/target/dx/preview/release/web/public"
+# Honor CARGO_TARGET_DIR (CLAUDE.md: every lane builds into an isolated, ABSOLUTE
+# target dir; backlog rows 98/100/122) and fall back to the workspace's own
+# `target/` when it is unset. A relative value is rejected, not absolutized:
+# dioxus-cli 0.7.9's `--ssg` pass chdirs before exec'ing the still-relative
+# server binary path and dies with an opaque "No such file or directory
+# (os error 2)" (row 98) -- failing here names the real cause up front.
+target_dir="${CARGO_TARGET_DIR:-$repo_root/target}"
+target_dir="${target_dir%/}"
+case "$target_dir" in
+  /*) ;;
+  *)
+    echo "error: CARGO_TARGET_DIR must be an absolute path, got: '$target_dir'" >&2
+    echo "       (dx build --ssg breaks on relative target dirs -- dev-docs/backlog.md row 98;" >&2
+    echo "        e.g. CARGO_TARGET_DIR=/home/user/tgt/deploy)." >&2
+    exit 1
+    ;;
+esac
+# Only export when the caller chose one; unset keeps cargo's own default.
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then export CARGO_TARGET_DIR="$target_dir"; fi
+
+public_dir="$target_dir/dx/preview/release/web/public"
+echo "==> Target dir: $target_dir (public dir: $public_dir)"
 
 # dx's asset pipeline content-hashes the compiled wasm/js on every build but
 # never cleans the previous run's copies out of $public_dir, so repeated
@@ -18,11 +39,29 @@ public_dir="$repo_root/target/dx/preview/release/web/public"
 # first so only the build we're about to run ends up in /docs.
 rm -rf "$public_dir"
 
+# Freshness marker for the post-build check below: a 200/an existing dir does not
+# prove it is THIS build's output (same discipline as dev-docs/dx-serve-hot-reload.md).
+build_marker="$(mktemp)"
+trap 'rm -f "$build_marker"' EXIT
+
+# Tag this target tree as base-path-built. Backlog row 100: a no-base-path build made in
+# a tree that ever held a `--base-path` build emits `/dioxus-components/` URLs everywhere.
+# scripts/lane-target.sh refuses to use a tagged tree as a lane template.
+mkdir -p "$target_dir"
+echo "dx build ... --base-path dioxus-components ($(date -u +%FT%TZ))" > "$target_dir/.base-path-build"
+
 echo "==> Building preview (release, ssg, fullstack) ..."
 dx build --platform web --release --ssg --features fullstack --base-path dioxus-components --force-sequential=true
 
 if [ ! -d "$public_dir" ]; then
   echo "error: expected build output at $public_dir, not found" >&2
+  exit 1
+fi
+
+if [ -z "$(find "$public_dir" -type f -newer "$build_marker" -print -quit)" ]; then
+  echo "error: $public_dir exists but nothing in it was written after this build started --" >&2
+  echo "       it is a stale tree from an earlier build, not this build's output" >&2
+  echo "       (is dx writing to a different CARGO_TARGET_DIR than '$target_dir'?)." >&2
   exit 1
 fi
 

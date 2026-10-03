@@ -341,9 +341,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { gotoHydrated } from "../hydration";
+import { baseUrlOr } from "../base-url";
 
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app
-const BASE = "http://127.0.0.1:8090";
+// Default :8090 (the static SSG server -- see ssg.local.config.ts); override with
+// PLAYWRIGHT_BASE_URL (playwright/base-url.ts) to point at any server or base path.
+const BASE = baseUrlOr("http://127.0.0.1:8090");
+const BASE_PATH = new URL(BASE).pathname.replace(/\/$/, "");
 
 /**
  * Every component page this build actually prerendered, discovered from the
@@ -666,6 +670,27 @@ test.describe("hydration parity — synthesized attribute collisions (Rule 4c)",
 });
 
 test.describe("hydration parity — SSG server markup vs. wasm client", () => {
+  // Row 123 / row 100: a `--base-path dioxus-components` build (the deploy build) served at
+  // `/` makes every internal URL `/dioxus-components/...`, which fails several rules below
+  // for a test-setup reason that reads exactly like a hydration regression. Say so once, first.
+  // Skipped when BASE itself carries a path (a base-path build served under its prefix).
+  test("Rule 0: the served build matches the served base path (no base-path build served at root)", async ({
+    request,
+  }) => {
+    test.skip(BASE_PATH !== "", `BASE has a path prefix (${BASE_PATH}); a prefixed build is expected`);
+    const response = await request.get(`${BASE}/`, { timeout: NAV_TIMEOUT });
+    expect(response.ok()).toBeTruthy();
+    const html = await response.text();
+    const prefixed = html.match(/["'(]\/dioxus-components\//g) ?? [];
+    expect(
+      prefixed.length,
+      `WRONG BUILD SERVED, not a hydration failure: ${BASE}/ contains ${prefixed.length} ` +
+        `"/dioxus-components/" URL(s) -- a --base-path build (scripts/deploy-preview.sh, backlog row 100) ` +
+        `is being served at the root. Serve a no-base-path build at "/", or set ` +
+        `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090/dioxus-components to serve it under its prefix.`,
+    ).toBe(0);
+  });
+
   test("Rule 1: served HTML's ToastProvider region carries popover (web-arm markup canary)", async ({
     request,
   }) => {

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { perTestTimeoutMs, timingSpecIgnore } from "./base-url";
 import fs from "node:fs";
 // The SSG lane. Points at a plain static file server serving the
 // fullstack-SSG-prerendered site (`dx build --ssg --features fullstack
@@ -15,8 +16,8 @@ import fs from "node:fs";
 // base URL, so when running any of *those* against this lane, also serve
 // the same SSG site dir on port 8080 (two static-server processes over the
 // same directory is fine -- it's just files). The oracle spec this config
-// was added for (`oracle/hydration-parity.spec.ts`) hardcodes 8090 itself,
-// and reads `SSG_SITE_DIR` (the same site dir this config's own comment
+// was added for (`oracle/hydration-parity.spec.ts`) defaults to 8090 (override:
+// `PLAYWRIGHT_BASE_URL`, base-url.ts's `baseUrlOr`), and reads `SSG_SITE_DIR` (the same site dir this config's own comment
 // above names) to enumerate every prerendered component page for its row
 // 46 rules -- see that file's own header. See dev-docs/conformance-
 // harness.md, "SSG lane", for the full build+serve recipe this mirrors, and
@@ -42,7 +43,8 @@ export default defineConfig({
   fullyParallel: true,
   workers: 4,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
-  timeout: 90 * 1000,
+  timeout: perTestTimeoutMs(90 * 1000), // override: PW_TEST_TIMEOUT=<ms>
+  testIgnore: timingSpecIgnore(), // main-thread.spec.ts is skipped on a known-debug build (base-url.ts)
   projects: [{
     name: "chromium",
     // Same gap as baseline.local.config.ts (dev-docs/backlog.md row 105): no mobile-emulation
