@@ -19,8 +19,14 @@
    * previous #2b7fff, used as `color` (not a border/background) in 11
    * rules across this file, measured 3.76:1 on white -- below WCAG's
    * 4.5:1 for normal text. #0065ff keeps the same hue/saturation, darker
-   * lightness only, and clears 4.5:1 (measured 4.88:1 on white). */
-  --highlight-color-tertiary: #0065ff;
+   * lightness only, and clears 4.5:1 (measured 4.88:1 on white).
+   *
+   * Dark theme (reviewer finding, 2026-10-03): #0065ff measured 4.31:1 on
+   * the #000 page and 3.80:1 on the #141313 card -- under 4.5:1 again, in
+   * the other direction. The `--light`/`--dark` pair keeps light as-is and
+   * uses the lighter #4d94ff in dark (7.00:1 on #000, 6.18:1 on #141313,
+   * 5.04:1 on #262626). */
+  --highlight-color-tertiary: var(--dark, #4d94ff) var(--light, #0065ff);
   --dx-content-width: 1360px;
 
   /* Comfortably >= .dx-preview-navbar's tallest steady-state rendered
@@ -52,6 +58,17 @@ html {
      future same-page anchor jump elsewhere in the app should behave the
      same way. */
   scroll-behavior: smooth;
+
+  /* Reserve the classic-scrollbar gutter in the SSR/pre-hydration layout
+     too. `ensure_scrollbar_gutter_baseline` (`primitives/src/scroll_lock.rs`)
+     installs the same `scrollbar-gutter: stable` (as a zero-specificity
+     `:where(html)` rule) only once the WASM runtime runs, so without this
+     the page was laid out 15px wider before hydration and shifted
+     the instant it hydrated (CLS 0.115 on /component/chart/ at 390px with
+     classic scrollbars). Declaring it statically makes the SSR and hydrated
+     layouts identical; the runtime rule is a redundant, same-valued
+     declaration that this one simply outranks. */
+  scrollbar-gutter: stable;
 }
 
 html,
@@ -546,12 +563,18 @@ summary,
   padding: 3rem 1.5rem 5rem 4.25rem;
 }
 
+/* `grid-template-columns: minmax(0, 1fr)`, not the implicit `auto` track: an
+ * `auto` track grows to its widest child's min-content, so an unshrinkable
+ * child (the title row's `dx-component-inline-command`, `white-space:
+ * nowrap`) widened the whole header past the viewport at phone widths and
+ * pushed the copy button out of view. */
 .dx-docs-page-header,
 .dx-component-page-header {
   display: grid;
   padding-bottom: 1.75rem;
   border-bottom: 1px solid var(--primary-color-6);
   gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .dx-docs-page-header > *,
@@ -904,10 +927,18 @@ summary,
 
 .dx-component-inline-command code {
   overflow: hidden;
+  min-width: 0;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The copy button must stay visible however long the command is: the
+ * command text (the only flexible part) truncates, the button never
+ * shrinks. */
+.dx-component-inline-command > :not(code) {
+  flex-shrink: 0;
 }
 
 .dx-component-preview-frame {
@@ -927,6 +958,23 @@ summary,
     radial-gradient(circle, rgb(0 0 0 / 6%) 1px, transparent 1px);
   background-position: -1px -1px;
   background-size: 16px 16px;
+}
+
+/* At phone widths the frame's 32px-per-side padding plus a card's own 24px
+ * content padding left a chart 159 of 305px and its text unreadable; 12px
+ * (`--dx-space-3`) keeps a visible canvas edge without eating the demo.
+ *
+ * The frame element is ALSO a `.dx-tabs-content` (`ComponentVariantHighlight`,
+ * `preview/src/main.rs`), and `components/tabs/style.css` loads after this
+ * file and sets `.dx-tabs-content { padding: var(--dx-space-8) }` at the same
+ * single-class specificity -- so the 1.75rem above never applied at any
+ * width. The compound selector outranks that rule; it must stay ABOVE the
+ * `:has(.dx-code-block)` rule below (same specificity), which keeps the CODE
+ * tab at `padding: 0` by source order. */
+@media (width <= 480px) {
+  .dx-component-preview-frame.dx-tabs-content {
+    padding: var(--dx-space-3);
+  }
 }
 
 /* When the preview frame wraps a code block (the CODE tab), drop the
