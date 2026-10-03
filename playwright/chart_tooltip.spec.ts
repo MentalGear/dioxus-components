@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { type Page, type Locator } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 // `chart_tooltip`'s nine gallery variants -- one per shadcn
 // `chart-tooltip-*.tsx` demo (`$S/refs/ui/apps/v4/registry/new-york-v4/
@@ -33,7 +34,9 @@ function frameOf(page: Page, variant: (typeof VARIANTS)[number]): Locator {
 }
 
 async function goto(page: Page): Promise<void> {
-  await page.goto(URL, { timeout: 20 * 60 * 1000 });
+  // gotoHydrated: this suite hovers right after navigating, and on the SSG lane a hover
+  // before hydration attaches its listeners is dropped (dev-docs/backlog.md row 109).
+  await gotoHydrated(page, URL, { timeout: 20 * 60 * 1000 });
 }
 
 /** Hovers the first data point's hit-band and waits for the tooltip to open. */

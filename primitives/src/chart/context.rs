@@ -50,6 +50,58 @@ pub(crate) struct ChartLayout {
     /// shorter than the data) is treated exactly like `active_index ==
     /// None` -- see `ChartTooltip`'s own fallback.
     pub anchor_percent: Vec<(f64, f64)>,
+    /// Which axes of the tooltip position come from the pointer instead of
+    /// the active datum's anchor -- see [`Follow`].
+    pub follow: Follow,
+    /// Whether the tooltip's rows are the hovered *datum* (name, value, own
+    /// color) instead of one row per configured series: a single-ring pie
+    /// and an unstacked radial chart, whose one series only names the
+    /// measure while every datum is its own slice/ring -- shadcn's pie and
+    /// radial tooltips. Set by `Chart` from the family's own options, so
+    /// `ChartTooltip` has no per-`ChartKind` branch for it.
+    pub slice_rows: bool,
+}
+
+/// How the tooltip's position is derived from the pointer and the active
+/// datum's [`ChartLayout::anchor_percent`]. Chosen per chart family by
+/// `Chart` (the family knows its own geometry); `ChartTooltip` just applies
+/// it, with no per-`ChartKind` branch of its own.
+///
+/// With no pointer driving (keyboard focus, or a pointer that has not
+/// reported a position yet) every variant falls back to the anchor itself,
+/// so a keyboard user gets the tooltip at the data point.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum Follow {
+    /// The anchor on both axes, even with a pointer: a pie slice's
+    /// centroid (shadcn/Recharts: the tooltip does not move within a
+    /// slice, it jumps slice to slice).
+    #[default]
+    Anchor,
+    /// x from the anchor (snapped to the category), y from the pointer:
+    /// vertical Area/Bar/Line, shadcn/Recharts' category-chart rule.
+    PointerY,
+    /// y from the anchor (snapped to the category), x from the pointer:
+    /// horizontal bars.
+    PointerX,
+    /// Both axes from the pointer: the polar families, whose active index
+    /// is a spoke/ring/wedge rather than a column.
+    Pointer,
+}
+
+/// Where the pointer is, as far as the tooltip is concerned.
+///
+/// The pointer's position and the datum under it are published together
+/// (`components::pointer`), so a pointer-driven open never renders at the
+/// keyboard anchor first: the tooltip's first visible frame is already at
+/// the pointer.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub(crate) enum Cursor {
+    /// No pointer: nothing hovered, or the keyboard is driving.
+    #[default]
+    None,
+    /// The pointer's position in CSS px, relative to the chart box's
+    /// top-left (client coordinates minus a fresh bounding rect).
+    At(f64, f64),
 }
 
 /// The state `ChartContainer` provides to every descendant -- fetch it
@@ -87,6 +139,46 @@ pub struct ChartContext {
     /// lane commits to keeping stable for outside callers of
     /// [`use_chart`].
     pub(crate) layout: Signal<Option<ChartLayout>>,
+    /// The pointer, relative to the chart box -- see [`Cursor`]. Written by
+    /// `Chart`'s pointer/keyboard handlers, read by `ChartTooltip`.
+    pub(crate) cursor: Signal<Cursor>,
+    /// The chart box's CSS-pixel size (the tooltip's containing block),
+    /// from the box's bounding rect at pointer time and its `onresize`.
+    /// `None` until measured (always, on the server).
+    pub(crate) box_size: Signal<Option<(f64, f64)>>,
+    /// The tooltip's own measured border-box size, for flip/clamp. `None`
+    /// until measured; `ChartTooltip` assumes a typical size meanwhile.
+    pub(crate) tip_size: Signal<Option<(f64, f64)>>,
+}
+
+impl ChartContext {
+    /// Nothing is hovered or focused any more: close and forget the pointer.
+    pub(crate) fn clear(self) {
+        let (mut active, mut cursor) = (self.active_index, self.cursor);
+        if active().is_some() {
+            active.set(None);
+        }
+        if cursor() != Cursor::None {
+            cursor.set(Cursor::None);
+        }
+    }
+
+    /// Record the chart box's size, only when it changed (a stored-equal
+    /// write would still re-render the tooltip on every pointer move).
+    pub(crate) fn set_box_size(self, size: (f64, f64)) {
+        let mut slot = self.box_size;
+        if slot() != Some(size) {
+            slot.set(Some(size));
+        }
+    }
+}
+
+/// Whether a pointer event came from a finger (`pointerType == "touch"`).
+/// Touch gets its own rules: a lift fires `pointerleave`, which must not
+/// close a tooltip the user just tapped open, and a drag is scrubbed from
+/// coordinates because the browser pins every move to the first target.
+pub(crate) fn is_touch(evt: &Event<PointerData>) -> bool {
+    evt.data().pointer_type() == "touch"
 }
 
 /// Fetch the nearest ancestor `ChartContainer`'s [`ChartContext`].

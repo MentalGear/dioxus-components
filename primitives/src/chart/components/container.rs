@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::chart::config::ChartConfig;
-use crate::chart::context::{ChartContext, ChartLayout};
+use crate::chart::context::{ChartContext, ChartLayout, Cursor};
 use crate::chart::engine::{ChartDatum, ChartKind};
 use crate::dioxus_attributes::attributes;
 use crate::{merge_attributes, use_id_or, use_unique_id};
@@ -102,6 +102,9 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
     let id = use_id_or(use_unique_id(), props.id);
     let active_index = use_signal(|| None::<usize>);
     let layout = use_signal(|| None::<ChartLayout>);
+    let cursor = use_signal(Cursor::default);
+    let box_size = use_signal(|| None::<(f64, f64)>);
+    let tip_size = use_signal(|| None::<(f64, f64)>);
 
     use_context_provider(|| ChartContext {
         id,
@@ -110,6 +113,9 @@ pub fn ChartContainer(props: ChartContainerProps) -> Element {
         active_index,
         kind: props.kind,
         layout,
+        cursor,
+        box_size,
+        tip_size,
     });
 
     let kind_str = use_memo(move || (props.kind)().as_str());

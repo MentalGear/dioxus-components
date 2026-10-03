@@ -53,6 +53,8 @@
 //!   [`data::ChartKind`]). `ChartConfig`/`ChartSeries` are NOT here --
 //!   see `super::config`'s own module doc for why the series model
 //!   specifically had to move out of this dioxus-free tree.
+//! - [`placement`] -- [`placement::place_tooltip`], the tooltip's
+//!   offset/flip/clamp rule (shadcn/Recharts' `getTooltipTranslate`).
 //! - [`polar`]/[`radar`] -- reserved, currently-empty modules for the
 //!   Pie/RadialBar and Radar families' own math (owned by later stage-2
 //!   lanes `s2-polar`/`s2-radar`; see each module's own doc comment).
@@ -66,6 +68,7 @@
 pub mod curve;
 pub mod data;
 pub mod geometry;
+pub mod placement;
 pub mod polar;
 pub mod radar;
 pub mod scale;
