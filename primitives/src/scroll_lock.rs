@@ -136,6 +136,11 @@
 //!   including, `<body>`/`<html>`, checking `overflow-y` computes to
 //!   `auto`/`scroll`/`overlay`, `scrollHeight > clientHeight`, and the
 //!   relevant edge hasn't already been reached) is let through untouched.
+//!   The axis follows the gesture's dominant delta (`deltaX` vs `deltaY`
+//!   for wheel, the touch's dx vs dy), checking `overflow-x`/`scrollLeft`
+//!   for a horizontal one -- a vertical-only check blocked every purely
+//!   horizontal wheel/touch scroll (a code block or wide table inside a
+//!   locked dialog/sheet/drawer).
 //!   Confirmed by execution: wheeling over an unrelated `position: fixed`,
 //!   independently `overflow-y: auto` scrollable box (the shape every
 //!   `popover`-attributed element in this crate's web arm has by the
@@ -397,13 +402,28 @@ fn ensure_scroll_block_listeners_installed() {
             };
             // Walks from `el` up to (but not including) <body>/<html>
             // looking for a scroll container that can still consume `delta`
-            // in its own overflow-y direction -- see the module docs'
-            // "Not blocked unconditionally" section for why this exists.
-            const dxFindScrollableAncestor = (el, delta) => {
+            // along one axis (`horizontal` picks overflow-x/scrollLeft, else
+            // overflow-y/scrollTop) -- see the module docs' "Not blocked
+            // unconditionally" section for why this exists. The axis matters:
+            // a purely horizontal wheel/touch gesture has no vertical delta,
+            // so a vertical-only check never finds a horizontally scrollable
+            // region (a code block, a wide table) and blocks it.
+            const dxFindScrollableAncestor = (el, delta, horizontal) => {
                 while (el && el !== document.body && el !== document.documentElement) {
                     if (el.nodeType === 1) {
                         const style = getComputedStyle(el);
-                        if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+                        if (horizontal) {
+                            if (/(auto|scroll|overlay)/.test(style.overflowX) && el.scrollWidth > el.clientWidth) {
+                                // scrollLeft is 0 at the start edge and runs
+                                // negative in RTL, so normalise to "distance
+                                // scrolled from the start edge".
+                                const max = el.scrollWidth - el.clientWidth;
+                                const rtl = style.direction === 'rtl';
+                                const fromLeft = rtl ? el.scrollLeft + max : el.scrollLeft;
+                                if (delta < 0 && fromLeft > 0) return el;
+                                if (delta > 0 && fromLeft < max - 1) return el;
+                            }
+                        } else if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
                             if (delta < 0 && el.scrollTop > 0) return el;
                             if (delta > 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return el;
                         }
@@ -415,7 +435,8 @@ fn ensure_scroll_block_listeners_installed() {
 
             window.addEventListener('wheel', (e) => {
                 if (!window.__dxScrollLocked) return;
-                if (dxFindScrollableAncestor(e.target, e.deltaY)) return;
+                const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+                if (dxFindScrollableAncestor(e.target, horizontal ? e.deltaX : e.deltaY, horizontal)) return;
                 e.preventDefault();
             }, { passive: false, capture: true });
 
@@ -426,19 +447,24 @@ fn ensure_scroll_block_listeners_installed() {
                 if (!window.__dxScrollLocked) return;
                 if (!(e.key in DX_SCROLL_KEYS)) return;
                 if (dxIsFormControl(e.target) || dxHasRole(e.target)) return;
-                if (dxFindScrollableAncestor(e.target, DX_SCROLL_KEYS[e.key])) return;
+                if (dxFindScrollableAncestor(e.target, DX_SCROLL_KEYS[e.key], false)) return;
                 e.preventDefault();
             }, { passive: false, capture: true });
 
+            let dxTouchStartX = null;
             let dxTouchStartY = null;
             window.addEventListener('touchstart', (e) => {
-                dxTouchStartY = (e.touches && e.touches.length === 1) ? e.touches[0].clientY : null;
+                const one = e.touches && e.touches.length === 1;
+                dxTouchStartX = one ? e.touches[0].clientX : null;
+                dxTouchStartY = one ? e.touches[0].clientY : null;
             }, { passive: true, capture: true });
             window.addEventListener('touchmove', (e) => {
                 if (!window.__dxScrollLocked || dxTouchStartY === null) return;
                 if (!e.touches || e.touches.length !== 1) return;
-                const delta = dxTouchStartY - e.touches[0].clientY;
-                if (dxFindScrollableAncestor(e.target, delta)) return;
+                const dx = dxTouchStartX - e.touches[0].clientX;
+                const dy = dxTouchStartY - e.touches[0].clientY;
+                const horizontal = Math.abs(dx) > Math.abs(dy);
+                if (dxFindScrollableAncestor(e.target, horizontal ? dx : dy, horizontal)) return;
                 e.preventDefault();
             }, { passive: false, capture: true });
         }
