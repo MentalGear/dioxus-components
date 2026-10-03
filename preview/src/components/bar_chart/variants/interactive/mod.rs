@@ -217,31 +217,30 @@ pub fn Demo() -> Element {
         .collect();
 
     rsx! {
-        document::Link { rel: "stylesheet", href: asset!("/src/components/bar_chart/style.css") }
-        Card { class: "dx-bar-chart-interactive",
-            CardHeader { class: "dx-bar-chart-interactive-header",
-                div { class: "dx-bar-chart-interactive-heading",
+        Card { class: "dx-chart-interactive",
+            CardHeader { class: "dx-chart-interactive-header",
+                div { class: "dx-chart-interactive-heading",
                     CardTitle { "Bar Chart - Interactive" }
                     CardDescription { "Showing total visitors for the last 3 months" }
                 }
-                div { class: "dx-bar-chart-interactive-toggles",
+                div { class: "dx-chart-interactive-toggles",
                     for series in Series::ALL {
                         button {
                             key: "{series.key()}",
                             r#type: "button",
-                            class: "dx-bar-chart-interactive-toggle",
+                            class: "dx-chart-interactive-toggle",
                             "data-active": current == series,
                             "aria-pressed": current == series,
                             onclick: move |_| active.set(series),
-                            span { class: "dx-bar-chart-interactive-toggle-label", "{series.label()}" }
-                            span { class: "dx-bar-chart-interactive-toggle-total",
+                            span { class: "dx-chart-interactive-toggle-label", "{series.label()}" }
+                            span { class: "dx-chart-interactive-toggle-total",
                                 "{format_total(totals[series.index()])}"
                             }
                         }
                     }
                 }
             }
-            CardContent { class: "dx-bar-chart-interactive-content",
+            CardContent { class: "dx-chart-interactive-content",
                 ChartContainer { config, data: visible, kind: ChartKind::Bar,
                     Chart {
                         aria_label: "Visitors by day, {current.label()}",

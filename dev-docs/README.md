@@ -8,6 +8,8 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 
 **2026-09-18:** a fresh session evaluated `plan.md`/`backlog.md`'s queue and concurred, with three corrections (six idled "Ready" rows released into parallel lanes, an unstated row 7→19 dependency sequenced, the cheap-primitives wave's two cheapest members — Table, Data Table — added ahead of it). Ten parallel lanes then landed: Phase 6 rows 11 (typeahead) and 12 (`pub mod portal`, `Toggle`'s `class` prop, `CalendarDayState`); `backlog.md` rows 7, 8, 9 and 19 (the Wervice tooltip fade-out and its `use_popover_shown_while_mounted` dependency, the Select combobox role, and Select's scroll lock); the upstream cherry-pick (row 66); two harness fixes (axe scan readiness, a `top_layer` fixture z-index collision with the docs Sidebar); a scroll-animation regression fix; and five `component-backlog.md` catalog components (Table, Data Table, Drawer, Navigation Menu, Resizable). See `backlog.md`'s "2026-09-18 — queue evaluation and what was taken" for the full account and its "What a fresh session should pick up next" list for what remains open.
 
+**2026-10-03:** chart shadcn/Recharts parity landed (PRs #79-#81, `main` @ `62de3cb`; `backlog.md` rows 117-119, open follow-ups rows 120-127; row 128, a gate PR #81 left red, fixed in the follow-up). Next: row 116 (build/dev loop), then row 111 (theme) -- see [`next-steps-2026-10-03.md`](./next-steps-2026-10-03.md).
+
 | Document | Answers |
 |---|---|
 | [`plan.md`](./plan.md) | **The single authoritative sequence** — phases, dependencies, open decisions, and the definition of done. Start here. Where another document's ordering differs, the plan wins. |
@@ -17,6 +19,8 @@ What exists in the 81 forks of `DioxusLabs/dioxus-components` that upstream does
 | [`lifting-from-forks.md`](./lifting-from-forks.md) | **How to port** any of it: licensing, the three lift shapes, name mapping, the traps, and per-item recipes. |
 | [`recommended-implementations.md`](./recommended-implementations.md) | **What to build** for each gap, assembled from the best part of each source rather than copying any one wholesale. |
 | [`conformance-harness.md`](./conformance-harness.md) | The **harness design**: three labelled rule tiers (APG / HTML / Radix-opinion), verified sources for each, and how each tier calibrates itself against a known-correct reference. |
+| [`next-steps-2026-10-03.md`](./next-steps-2026-10-03.md) | **Paste-ready thread briefs** written after the chart-parity round: row 116 (build/dev loop) first, then row 111 (theme migration). |
+| [`research/chart-parity-2026-10-03/`](./research/chart-parity-2026-10-03/README.md) | The **2026-10-03 snapshot** behind `backlog.md` rows 117-119: shadcn `/charts` UX spec, our audit, area/line/bar and pie/radar/radial parity reports, the sizing contract, and the final visual comparison. |
 | `../playwright/oracle-focus-restore.spec.ts` | The **executable oracle**: APG conformance tests that turn a claim into a reproducible result. |
 
 ## The short version
