@@ -1,20 +1,15 @@
-RadarChart is the `Radar` family of the shared `chart` engine (`ChartConfig`/`ChartContainer`/`Chart`/
-`ChartTooltip`/`ChartLegend` -- see the [Chart](/component/?name=chart) docs for colors, the a11y
-contract, and the hidden data table shared by every chart family). This page covers what's specific
-to `ChartKind::Radar`: one polygon per series, category axes arranged around a circle, and the grid
-options a radar chart offers instead of a Cartesian axis/gridline pair.
+Radar charts compare several measures for the same item by laying categories out around a circle and drawing one polygon per series. This page covers what is specific to `kind: ChartKind::Radar`: the grid options, how series are drawn, and hover. Everything else (`ChartConfig`, colors, the data table, keyboard behavior) is shared with every chart; see [Chart](/component/?name=chart).
 
-## Component structure
+## Usage
 
 ```rust
 let config = ChartConfig::new()
     .series("desktop", "Desktop", "var(--dx-chart-1)")
     .series("mobile", "Mobile", "var(--dx-chart-2)");
 
-// One ChartDatum per category (an axis around the circle), same shape as
-// every other chart family.
+// One ChartDatum per category, which becomes one axis around the circle.
 let data = vec![
-    ChartDatum { label: "January".into(), values: vec![Some(186.0), Some(80.0)] },
+    ChartDatum { label: "January".into(), values: vec![Some(186.0), Some(80.0)], ..Default::default() },
     // ...
 ];
 
@@ -25,9 +20,9 @@ ChartContainer { config, data, kind: ChartKind::Radar,
             grid: RadarGrid::Polygon, // Polygon | Circle | CircleFill | CircleNoLines | Fill | None | Custom { .. }
             fill_opacity: 0.6,
             dots: false,       // a circle at every vertex
-            lines_only: false, // stroke-only series (fill_opacity forced to 0)
-            outer_radius: 0.8, // fraction of the available half-extent
-            axis_labels: true, // category labels around the rim
+            lines_only: false, // stroke only, no fill
+            outer_radius: 0.8, // fraction of the available radius
+            axis_labels: true, // category names around the rim
         },
     }
     ChartTooltip {}
@@ -35,36 +30,33 @@ ChartContainer { config, data, kind: ChartKind::Radar,
 }
 ```
 
+All of these are the defaults, so `radar: RadarOptions::default()` (or omitting the prop) gives the same chart.
+
 ## Grid
 
-`RadarGrid` picks the ring shape drawn at each nice tick of the magnitude axis:
+`RadarGrid` chooses the rings drawn at each value tick:
 
-- `Polygon` (default) -- straight-sided rings through every category's own angle, plus a spoke per
-  category. Matches shadcn's default `<PolarGrid />`.
-- `Circle` -- circular rings instead of polygon rings, still with spokes.
-- `CircleFill` / `Fill` -- circular or polygon rings, with the rings' interior tinted using the
-  first configured series' color (matches shadcn's `chart-radar-grid-circle-fill`/`-grid-fill`
-  demos, both of which tint the grid with their one series' own color).
-- `CircleNoLines` -- circular rings with no spokes.
-- `None` -- no grid at all.
-- `Custom { values, spokes }` -- draw rings at exactly these values (in the chart's own data
-  domain, not pixels), instead of the default nice-tick set, and choose whether spokes are drawn.
+- `Polygon` (default) — straight-sided rings with a spoke to each category.
+- `Circle` — circular rings, still with spokes.
+- `CircleFill` and `Fill` — circular or polygon rings with the interior tinted in the first series' color.
+- `CircleNoLines` — circular rings with no spokes.
+- `None` — no grid.
+- `Custom { values, spokes }` — rings at exactly the values you give, in your data's own units, and a flag for whether spokes are drawn.
 
-## Series rendering
+## How series are drawn
 
-Each series draws as one closed polygon (`path[data-slot="chart-radar-area"][data-series]`) --
-there is no separate fill/stroke path pair the way Area does; the same path is both filled
-(`fill-opacity`, from `RadarOptions::fill_opacity`) and stroked. Setting `lines_only: true` forces
-`fill_opacity` to `0`, leaving only the stroke -- shadcn's `chart-radar-lines-only` demo. `dots: true`
-adds a `circle[data-slot="chart-dot"][data-index]` at every defined vertex.
+Each series is one closed polygon (`path[data-slot="chart-radar-area"]`) that is both filled and stroked. `fill_opacity` sets the fill, and `lines_only: true` forces it to `0` so only the outline shows. `dots: true` adds a circle (`circle[data-slot="chart-dot"]`) at every vertex.
 
-A category with no value for a series (`None`) is skipped -- its vertex is omitted, connecting its
-two neighbors directly -- rather than drawn as a fabricated zero-radius point.
+A category with no value for a series (`None`) is skipped: its two neighbors are joined directly instead of drawing a made-up zero. `outer_radius` is the outermost ring's size as a fraction of the available space, and `axis_labels: false` removes the category names around the rim.
 
 ## Hover
 
-Each category gets its own angular hit-sector (a pie-slice-shaped wedge from the center to the
-outer radius) -- hovering anywhere inside a category's wedge activates it, the same "the hit
-target's own shape does the work, no coordinate math" principle the Cartesian families' hit-bands
-use. The hidden data table (categories x series) is unaffected by any visual option above; it
-always lists every category and every series' exact value.
+Each category owns an angular wedge reaching from the center to the outer edge. Hovering anywhere in a wedge activates that category, and the tooltip shows every series' value for it. Keyboard stepping activates categories in order.
+
+## Variants
+
+The gallery shows the default polygon grid, `dots`, `lines_only`, `multiple` series, a `legend`, series icons, a variant with the category labels hidden (`axis_labels: false`), and each grid type (`grid_circle`, `grid_circle_fill`, `grid_circle_no_lines`, `grid_fill`, `grid_none`, `grid_custom`).
+
+## Accessibility
+
+The hidden data table lists every category and every series' exact value regardless of the visual options above. The SVG is a named image and the wrapper is keyboard focusable; see [Chart](/component/?name=chart) for the full behavior.

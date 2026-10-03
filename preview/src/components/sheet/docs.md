@@ -84,5 +84,3 @@ Tailwind classes verbatim:
   Fixed by resetting `margin`/`inset`/`width`/`height` to a known, non-auto
   baseline on `.dx-sheet` itself and letting each `[data-side]` rule reopen
   (set back to `auto`) exactly the one edge it doesn't pin.
-
-See `dev-docs/backlog.md` for the session this alignment pass landed in.

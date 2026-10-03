@@ -1,22 +1,20 @@
-Chart is a themed, data-driven SVG chart engine (area, bar, line) built entirely from house
-primitives — no third-party charting dependency, no injected/opaque markup. It mirrors shadcn's
-own `ChartConfig` → CSS-variable theming idea, adapted to Dioxus's data-driven (not
-children-as-configuration) component model: the series/axis data is a **prop**, not something a
-parent introspects from nested children.
+Chart draws themed, accessible SVG charts from plain data. It covers area, bar, line, pie, radar and radial-bar charts with one set of building blocks: describe your series in a `ChartConfig`, supply one `ChartDatum` per category, and compose `ChartContainer`, `Chart`, and optionally `ChartTooltip` and `ChartLegend`. There is no charting library behind it and no injected markup — every mark is ordinary Dioxus RSX, so charts server-render and hydrate like any other component.
 
-## Component structure
+The other chart pages are galleries built on this same package: [Area chart](/component/?name=area_chart), [Bar chart](/component/?name=bar_chart), [Line chart](/component/?name=line_chart), [Pie chart](/component/?name=pie_chart), [Radar chart](/component/?name=radar_chart), [Radial chart](/component/?name=radial_chart), and [Chart tooltip](/component/?name=chart_tooltip). Install the `chart` package once and use any of them.
+
+## Usage
 
 ```rust
-// ChartConfig maps a series key to its label and color. Order matters -- it
-// is also the legend/tooltip row order. `color` can be any CSS color or a
-// `var(--token)` reference; the theme ships `--dx-chart-1..8` for this.
+// Series, in draw order (also the legend and tooltip row order). `color` is
+// any CSS color or a `var(--token)`; the theme ships `--dx-chart-1` to
+// `--dx-chart-8`, which adapt to light and dark mode.
 let config = ChartConfig::new()
     .series("desktop", "Desktop", "var(--dx-chart-1)")
     .series("mobile", "Mobile", "var(--dx-chart-2)");
 
 // One ChartDatum per x-axis category. `values` has one entry per series, in
-// the same order as `config` -- `None` renders as a gap (line/area) or a
-// zero-height bar, never a fabricated zero.
+// the same order as `config`. `None` means "no value": a gap in a line or
+// area, no bar, and an em dash in the data table -- never a made-up zero.
 let data = vec![
     ChartDatum { label: "January".into(), values: vec![Some(186.0), Some(80.0)], ..Default::default() },
     ChartDatum { label: "February".into(), values: vec![Some(305.0), Some(200.0)], ..Default::default() },
@@ -24,88 +22,67 @@ let data = vec![
 ];
 
 ChartContainer {
-    // Scopes the generated `--color-<key>` CSS variables to this instance
-    // via `data-chart="<id>"`. Auto-generated if omitted.
+    // Sets each series' `--color-<key>` CSS variable as an inline style on
+    // this element, which carries `data-chart="<id>"` as the instance id.
+    // `id` is generated when omitted.
     config,
     data,
-    kind: ChartKind::Area, // Area | Bar | Line
+    kind: ChartKind::Area, // Area | Bar | Line | Pie | Radar | RadialBar
 
-    // The chart itself: axes, grid, marks, the hidden data table, and the
-    // hover hit-bands. `aria_label` is required -- it is the chart's
-    // accessible name.
+    // The drawing surface: grid, axes, marks, and a hidden data table.
+    // `aria_label` is required and becomes the chart's accessible name.
     Chart {
         aria_label: "Visitors by month, desktop and mobile",
-        stacked: false,
-        line: LineOptions { dots: false }, // Line only
-        x_label: "Month", // hidden table's corner <th> -- default "Category"
-        max_x_ticks: 12, // thin x-axis labels on a dense chart -- see below
+        x_label: "Month", // header of the hidden table's first column
     }
 
-    // Optional: the hover tooltip. Rendered even when closed (CSS hides
-    // it) so hydration never has to attach it after the fact.
+    // Optional: hover/keyboard tooltip.
     ChartTooltip {}
 
-    // Optional: a legend with one swatch per configured series.
+    // Optional: one swatch and label per series.
     ChartLegend {}
 }
 ```
 
-`Chart`, `ChartTooltip`, and `ChartLegend` are independent, explicitly-rendered pieces (matching
-shadcn's own `<ChartTooltip content={<ChartTooltipContent />} />` idiom) — omit whichever your
-chart doesn't need, or a single/dual-series chart that doesn't need a legend at all.
+`Chart`, `ChartTooltip` and `ChartLegend` are independent siblings inside the container. Leave out whichever you do not need; a single-series chart often wants no legend.
+
+## Props you will use most
+
+On `Chart`:
+
+- `aria_label` (required) and `description` — the accessible name, and an optional longer description exposed as the SVG's `<desc>`.
+- `stacked` — stack series instead of overlaying (area) or grouping (bar). Ignored for other kinds.
+- `curve` — `Curve::Monotone` (default, smooth), `Curve::Linear` or `Curve::Step`. Applies to area and line.
+- `show_grid` (default on), `show_x_axis` (default on), `show_y_axis` (default off) and `y_tick_count` (default 5).
+- `x_label` — the name of the x-axis column in the hidden data table. Defaults to `"Category"`.
+- `x_tick_format` — format x-axis labels. By default a label is cut to its first three characters (`"January"` becomes `"Jan"`), so supply a formatter for anything that is not a month name.
+- `max_x_ticks` — cap on how many x-axis labels are drawn (see below).
+- `width` and `height` — the logical size (default 600 by 300). The SVG scales to its container, so these set the aspect ratio.
+- `keyboard` — keyboard stepping through data points, on by default.
+- `area`, `bar`, `line`, `pie`, `radar`, `radial` — per-kind options structs, such as `LineOptions { dots: true, .. }`. Each is described on its gallery page.
+
+On `ChartContainer`: `config`, `data`, `kind` and an optional `id`. Extra attributes you pass land on the container element.
+
+A `ChartDatum` can also carry a `color` to override the series color for that single point. Bar, line (dots), pie and radial charts honor it.
 
 ## Colors
 
-Every series color is applied as a real CSS custom property (`--color-<key>`), scoped by
-`data-chart="<id>"` and generated once by `ChartContainer` from its `config` prop — never inlined
-per-mark. A series' `color` field can be a literal CSS color or, more usefully, one of this
-theme's own categorical tokens (`--dx-chart-1` through `--dx-chart-8`), which are already tuned
-for both light and dark mode and for colorblind-safe adjacent contrast.
+Series colors are CSS custom properties. The container sets `--color-<key>` for every series as an inline style on its own element, where `<key>` is the series key lowercased with any character outside `a-z`, `0-9`, `_` and `-` replaced by `-`. Marks, legend swatches and tooltip swatches all read those variables, and so can your own CSS inside the container (`fill: var(--color-desktop)`). Because each chart sets its own variables on its own element, several charts on one page never interfere.
 
-## Accessibility contract
+Pie and radial charts color each slice or ring from its datum's `color`, falling back to `--dx-chart-1` to `--dx-chart-8` by position when the datum has none. The legend for a single-series pie or radial chart lists one entry per slice or ring.
 
-Chart does not use `role="application"` anywhere — that ARIA escape hatch hands every keystroke to
-the widget and strips a screen-reader user of ordinary browse-mode navigation, and neither the APG
-nor Radix defines a chart pattern to justify it. Instead:
+## Accessibility
 
-- The SVG root carries `role="img"`, a required non-empty `aria-label` (`Chart`'s `aria_label`
-  prop), and a `<title>`/optional `<desc>` — a single, indivisible graphic, per the WAI-ARIA
-  Graphics Module 1.0's own definition of that role.
-- A real, visually-hidden `<table>` mirrors the exact same series/category/value data as the
-  chart's actual screen-reader-facing path — one row per data point, one column per series,
-  natively and correctly keyboard-navigable with zero bespoke widget behavior to get wrong. Its
-  corner cell (`<th scope="col">`) carries `Chart`'s `x_label` prop (default `"Category"`) rather
-  than being left empty — an empty `<th>` has no accessible name and fails axe's
-  `empty-table-header` rule, since a screen-reader user browsing by column has no way to tell what
-  the first column represents. Set it to whatever the x-axis actually is (`"Date"`, `"Month"`,
-  `"Product"`, ...).
-- Legend swatches carry `role="graphics-symbol"` (the Graphics Module's own role for an atomic,
-  repeated glyph) plus an `aria-label` naming the series.
-- Optional arrow-key stepping of the visual tooltip (`Chart`'s `keyboard` prop, on by default) is
-  an *additive* sighted-keyboard-user affordance layered on top of the hidden table, cited to
-  Recharts' `accessibilityLayer` as a tier-3 opinion — never the only way to reach the data.
+A chart is a picture, so it comes with a real data table for anyone who cannot see it.
 
-## Keyboard
-
-When `keyboard: true` (the default), `Chart`'s own wrapping element (not the SVG itself) is
-focusable (`tabindex="0"`, `role="group"`, `aria-roledescription="chart"`):
-
-- `ArrowRight` / `ArrowLeft` step the active data point (clamped, no wraparound); swapped under an
-  RTL context.
-- `Home` / `End` jump to the first / last data point.
-- `Escape` clears the active point and closes the tooltip.
-
-Hovering a data point's invisible hit-band does the same thing via pointer input — both paths
-drive the same `active_index` state, so the tooltip and the visual cursor line always agree with
-whichever input method is in use.
+- **Screen readers.** The SVG has `role="img"`, an `aria-label` from `aria_label`, and a `<title>` (plus `<desc>` when you pass `description`). Alongside it, a visually hidden `<table>` lists every category and every series' value, with the series labels as column headers and the `x_label` as the first column's header. Missing values read as an em dash. Pie charts add a percent-of-total column; radial charts list the first series' value for each ring. Screen reader users browse this table with their normal table navigation.
+- **Keyboard.** With `keyboard` on, the chart's wrapper is focusable (`tabindex="0"`, `role="group"`, `aria-roledescription="chart"`, named by `aria_label`). `ArrowRight` and `ArrowLeft` move the active data point one step (clamped at the ends, and swapped in right-to-left layouts), `Home` and `End` jump to the first and last point, and `Escape` clears it. The active point drives the same tooltip and highlight as hovering, so sighted keyboard users see the same thing as mouse users. The first arrow press with nothing active selects the first point (`ArrowRight`) or last point (`ArrowLeft`).
+- **Tooltip.** The tooltip is hidden from assistive technology on purpose; it is a convenience for sighted users and the data table is the accessible route to the same numbers.
+- **Legend and swatches.** Each color swatch has `role="graphics-symbol"` and the series label as its accessible name; the label text beside it is ordinary text.
+- **Names matter.** Write an `aria_label` that says what the chart shows (`"Visitors by month, desktop and mobile"`), and set `x_label` to what the first column is (`"Month"`, `"Date"`, `"Product"`).
 
 ## Dense x-axes
 
-A chart with many data points (e.g. 90 daily values) would draw one x-axis tick label per datum by
-default and overlap them into an unreadable smear. `Chart`'s `max_x_ticks` prop (default `12`)
-caps how many tick *labels* are drawn — it labels only every `ceil(n / max_x_ticks)`-th datum
-(always including the first), leaving every hit band, mark, and hidden-table row exactly as before;
-this thins the visible axis labels only, never the underlying data or interactivity. This is MVP
-count-based thinning, not width-aware — a chart with unusually long labels at a narrow viewport can
-still overlap even within this limit; deriving the count from estimated rendered label width
-instead of a fixed count is the natural follow-up (see `dev-docs/research/chart-forks-2026-09-19.md`).
+By default every category gets an x-axis label, which turns a chart with many points (say 90 daily values) into an unreadable smear. `max_x_ticks` (default `12`) limits how many labels are drawn: the chart labels every n-th category, where n is the number of categories divided by `max_x_ticks`, rounded up, always starting with the first. Only the labels are thinned; every point stays hoverable and stays in the data table.
+
+The limit is a count, not a measurement of text width, so very long labels on a narrow screen can still collide even under the limit. Shorten them with `x_tick_format` or lower `max_x_ticks`.

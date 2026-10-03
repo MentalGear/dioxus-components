@@ -198,5 +198,3 @@ To record wheel gestures for a bug report, run `localStorage.setItem("dx-carouse
 
 - Safari, and possibly Firefox on some platforms, may draw their own edge bounce on a gesture that starts at rest, which could stack with the carousel's stretch into a double bounce. This is pending a check on real devices.
 - The pattern's "grouped" picker style (a plain button per slide, all in the Tab order) is not provided.
-
-<!-- For maintainers: design rationale, the wheel-band tuning constants and other engineering notes moved to dev-docs/research/carousel-engineering-notes.md -->

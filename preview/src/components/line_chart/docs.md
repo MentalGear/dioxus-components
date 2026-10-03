@@ -1,17 +1,12 @@
-Line Chart is shadcn's ten-demo `chart-line-*` gallery, ported onto this repo's own `Chart`
-primitive (`ChartKind::Line`) rather than Recharts. There is nothing to install beyond the shared
-`chart` package (`dx components add chart`) — every demo below is composed entirely from
-`ChartContainer`, `Chart`, and `ChartTooltip`; see `chart`'s own docs page for the full
-`ChartConfig`/`ChartDatum` model, the accessibility contract (hidden data table, `role="img"`,
-keyboard stepping), and the color-token system.
+Line charts show how values change across an ordered set of categories, such as months or dates. This page is a gallery of line configurations built from the [Chart](/component/?name=chart) package; install `chart` and you have everything. The Chart page explains the shared `ChartConfig` and `ChartDatum` model, colors and accessibility.
 
-## Basic usage
+## Usage
 
 ```rust
 let config = ChartConfig::new().series("desktop", "Desktop", "var(--dx-chart-1)");
 let data = vec![
-    ChartDatum { label: "January".into(), values: vec![Some(186.0)] },
-    ChartDatum { label: "February".into(), values: vec![Some(305.0)] },
+    ChartDatum { label: "January".into(), values: vec![Some(186.0)], ..Default::default() },
+    ChartDatum { label: "February".into(), values: vec![Some(305.0)], ..Default::default() },
     // ...
 ];
 
@@ -20,47 +15,31 @@ ChartContainer { config, data, kind: ChartKind::Line,
         aria_label: "Visitors by month, desktop",
         x_label: "Month",
     }
-    ChartTooltip { hide_label: true } // a single series' tooltip doesn't need to repeat its name
+    ChartTooltip { hide_label: true } // one series does not need its name repeated
 }
 ```
 
 ## Curve
 
-`Chart`'s `curve` prop selects the line's interpolation (`Curve::Linear`, `Curve::Monotone` —
-the default, a smooth monotonicity-preserving cubic — or `Curve::Step`, a step-after line).
-shadcn's own `type="natural"` (a natural cubic spline) is ported as `Curve::Monotone` throughout
-this gallery — the closest existing curve, and visually indistinguishable for these demos' data;
-see `primitives/src/chart/engine/curve.rs` for the exact algorithm and its own citation.
+`Chart`'s `curve` prop sets the interpolation: `Curve::Monotone` (the default) is a smooth curve that never overshoots a data point, `Curve::Linear` joins points with straight segments, and `Curve::Step` draws a horizontal run to the next point and then a vertical jump. A missing value (`None`) breaks the line at that point.
 
-## Dots
+## Line options
 
-`Chart { line: LineOptions { dots: true, .. } }` draws a small circle at every defined data
-point, filled with that series' color (or `ChartDatum::color` per point, when set) and doubled in
-radius when hovered/keyboard-focused. `LineOptions::dot` replaces the default circle entirely with
-a caller-supplied renderer, given a [`DotContext`] (already-scaled position, raw value, whether
-this point is active) for every defined point.
+Line-specific settings live in `line: LineOptions { .. }` on `Chart`:
 
-## Labels
-
-`LineOptions::labels` draws a text label above each defined point: `LineLabels::Value` (the
-point's own value, formatted like the hidden table's cells) or `LineLabels::Custom` (a
-caller-supplied callback given the point's index, e.g. to label by category instead of value).
+- `dots: true` draws a circle at every defined point, in the series color or in `ChartDatum::color` when a datum sets one. The active point's circle is drawn twice as large. `dot_radius` sets the base radius (default `3`).
+- `dot: Some(..)` replaces the circle with your own renderer. It receives a `DotContext` for each defined point, with the scaled position, the raw value and whether the point is active.
+- `labels` draws a text label above each point: `LineLabels::Value` shows the point's value, and `LineLabels::Custom(callback)` calls your callback with the point index so you can label by category or anything else.
+- `stroke_width` sets the line thickness (default `2`).
 
 ## Variants
 
-- **main** (`chart-line-default.tsx`) — one series, no dots, the baseline shape every other
-  variant below starts from.
-- **linear** (`chart-line-linear.tsx`) — same data, `Curve::Linear`.
-- **step** (`chart-line-step.tsx`) — same data, `Curve::Step`.
-- **multiple** (`chart-line-multiple.tsx`) — two series (desktop/mobile), legend-free tooltip
-  showing both rows.
-- **dots** (`chart-line-dots.tsx`) — `LineOptions::dots: true`.
-- **dots_colors** (`chart-line-dots-colors.tsx`) — one series over browser categories, each
-  point's own dot colored individually via `ChartDatum::color`.
-- **dots_custom** (`chart-line-dots-custom.tsx`) — `LineOptions::dot` draws a diamond in place of
-  the default circle.
-- **label** (`chart-line-label.tsx`) — `LineLabels::Value`, grid and y-axis hidden.
-- **label_custom** (`chart-line-label-custom.tsx`) — `LineLabels::Custom` labels each point by its
-  own category name instead of its value.
-- **interactive** (`chart-line-interactive.tsx`) — a two-button header (a `CardAction`) toggles
-  which of two series the chart actually draws, each button showing that series' running total.
+- **Default** — one series, no dots.
+- **Linear** and **Step** — the same data with `Curve::Linear` and `Curve::Step`.
+- **Multiple** — two series, with a tooltip that shows both rows.
+- **Dots** — `dots: true`.
+- **Dots with colors** — one series over browser categories, each dot colored through `ChartDatum::color`.
+- **Custom dots** — a diamond drawn through `dot`.
+- **Label** — `LineLabels::Value`, with the grid and y-axis hidden.
+- **Custom label** — `LineLabels::Custom`, labeling each point with its category.
+- **Interactive** — two header buttons toggle which of two series is drawn, each showing that series' total.

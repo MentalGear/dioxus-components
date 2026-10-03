@@ -3,7 +3,7 @@ controls -- `Checkbox`, `Switch`, `RadioGroup`, and `Select` -- each set up
 with its documented `name` (and `required`, where it exists) exactly as an
 app would use it. Every row places the library control beside a native
 reference control sharing a parallel `name`, per the tier 2 (HTML)
-calibration rule in `docs/conformance-harness.md`: native controls are the
+calibration rule: native controls are the
 ground truth for `FormData` and constraint validation, so if a rule fails on
 them, the test is wrong, not the component.
 
@@ -48,9 +48,9 @@ Select::<String> { name: "fruit-lib",
 
 `RadioGroup` and `Select` document `name` (and `RadioGroup` also documents
 `required`) as being for form submission, but neither currently renders a
-submittable element for it -- see `docs/plan.md` Phase 1. Their rows
+submittable element for it yet. Their rows
 contribute nothing to `FormData` today and never block submission. `Select`
 additionally has no `required` prop yet, so its row in the required-blocking
 form only has a native reference to test against. This fixture sets those
 props anyway, per each component's documented API, so the same fixture goes
-red today and green once Phase 1 lands.
+red today and green once that lands.

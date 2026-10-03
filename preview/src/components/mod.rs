@@ -50,6 +50,7 @@ pub enum ComponentCategory {
     Feedback,
     Disclosure,
     DataDisplay,
+    Charts,
 }
 
 impl ComponentCategory {
@@ -60,6 +61,7 @@ impl ComponentCategory {
         Self::Feedback,
         Self::Disclosure,
         Self::DataDisplay,
+        Self::Charts,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -70,6 +72,7 @@ impl ComponentCategory {
             Self::Feedback => "Feedback",
             Self::Disclosure => "Disclosure",
             Self::DataDisplay => "Data display",
+            Self::Charts => "Charts",
         }
     }
 }
@@ -89,8 +92,11 @@ pub fn category_of(name: &str) -> ComponentCategory {
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "chart"
-        | "resizable" => ComponentCategory::DataDisplay,
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable" => {
+            ComponentCategory::DataDisplay
+        }
+        "chart" | "area_chart" | "bar_chart" | "line_chart" | "pie_chart" | "radar_chart"
+        | "radial_chart" | "chart_tooltip" => ComponentCategory::Charts,
         _ => ComponentCategory::DataDisplay,
     }
 }

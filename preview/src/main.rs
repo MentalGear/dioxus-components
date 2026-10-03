@@ -29,9 +29,9 @@ use dioxus::prelude::{dioxus_router::LinkProps, *};
 use dioxus_code::{advanced::HighlightedSource, Code, CodeTheme, Theme};
 use dioxus_i18n::prelude::{i18n, use_init_i18n, I18nConfig};
 use dioxus_icons::lucide::{
-    ArrowRight, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronLeft, ChevronsUpDown,
-    Compass, Copy, ExternalLink, FileText, Hash, House, Layers, LayoutGrid, Mail, Pause, Play,
-    SkipBack, SkipForward, SquareCheck,
+    ArrowRight, ArrowUpRight, Bell, BookOpen, ChartColumn, Check, ChevronDown, ChevronLeft,
+    ChevronsUpDown, Compass, Copy, ExternalLink, FileText, Hash, House, Layers, LayoutGrid, Mail,
+    Pause, Play, SkipBack, SkipForward, SquareCheck,
 };
 use std::str::FromStr;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -1233,6 +1233,9 @@ fn DocsLayout(
                                         },
                                         components::ComponentCategory::DataDisplay => rsx! {
                                             LayoutGrid { size: "1rem", "aria-hidden": "true" }
+                                        },
+                                        components::ComponentCategory::Charts => rsx! {
+                                            ChartColumn { size: "1rem", "aria-hidden": "true" }
                                         },
                                     }
                                     span { "{cat.label()}" }

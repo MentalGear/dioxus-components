@@ -1,65 +1,60 @@
-Radial chart is the other arc-based member of the [Chart](/component/?name=chart) family:
-`kind: ChartKind::RadialBar` plus a `RadialOptions` prop. Like [Pie chart](/component/?name=
-pie_chart), there is no separate installable package — `chart` is everything a radial bar chart
-needs.
+Radial charts draw each value as a bar wrapped around a circle, which suits a handful of progress-style measures or a single gauge. They are the other arc-based member of the [Chart](/component/?name=chart) family: `kind: ChartKind::RadialBar` plus a `RadialOptions` value. Like [Pie chart](/component/?name=pie_chart), there is nothing extra to install; `chart` is everything a radial chart needs.
 
-## Component structure
+## Usage
 
 ```rust
 let config = ChartConfig::new()
     .series("visitors", "Visitors", "var(--dx-chart-1)");
 
-// Unlike Pie, each ChartDatum here is its own concentric RING (innermost =
-// index 0, the same "series 0 innermost" convention Pie's own stacked-ring
-// mode uses) -- not an angular slice of one ring.
+// Each ChartDatum is its own concentric ring, with the first one innermost.
+// Without a `color`, rings use --dx-chart-1, --dx-chart-2, ... by position.
 let data = vec![
     ChartDatum { label: "Chrome".into(), values: vec![Some(275.0)], color: Some("var(--dx-chart-1)".into()) },
     ChartDatum { label: "Safari".into(), values: vec![Some(200.0)], color: Some("var(--dx-chart-2)".into()) },
     // ...
 ];
 
-ChartContainer {
-    config,
-    data,
-    kind: ChartKind::RadialBar,
-
+ChartContainer { config, data, kind: ChartKind::RadialBar,
     Chart {
         aria_label: "Visitors by browser",
         radial: RadialOptions {
-            inner_radius: 30.0,
-            outer_radius: 110.0,
-            start_angle: 0.0,
-            end_angle: std::f64::consts::TAU, // may exceed a full turn, e.g. shadcn's 380°
+            inner_radius: 30.0, // where the innermost ring starts
+            outer_radius: 110.0, // 0.0 sizes it from the chart automatically
+            start_angle: 0.0,   // radians; 0.0 is three o'clock
+            end_angle: std::f64::consts::TAU, // may exceed a full turn
             corner_radius: 0.0,
-            grid: false,   // a muted background track behind every ring
+            grid: false,        // a muted background track behind each ring
             labels: PieLabels::None,
-            stacked: false, // true stacks every configured series into ONE ring instead
+            stacked: false,     // true stacks all series into one ring
+            center_text: None,  // Some((primary, secondary)) in the hole
         },
     }
     ChartTooltip {}
 }
 ```
 
-Each ring renders the same `path[data-slot="chart-arc"][data-index][data-series]` shape Pie chart
-does (plus `data-start-angle`/`data-end-angle`), so the two families share one mental model even
-though what a "slice" represents differs (an angular share of the whole, versus a bar wrapped
-around a circle).
+Each ring is scaled against the largest value in the data, so the biggest value fills the whole sweep from `start_angle` to `end_angle`.
 
-## The six variants
+## Options
 
-Each ports one of shadcn/ui's own `chart-radial-*.tsx` demos:
+- `inner_radius` should normally be above zero; otherwise the innermost ring starts at a single point and its length is hard to judge. `outer_radius` defaults to `0.0`, which fits the ring stack to the chart's size.
+- `start_angle` and `end_angle` set the sweep in radians, where `0.0` is three o'clock. Shift both to rotate the chart (a start of `-FRAC_PI_2` is twelve o'clock), or make the sweep longer than a full turn so the ends of the first and last rings do not touch.
+- `grid: true` draws a muted full-sweep track behind every ring.
+- `labels` takes the same `PieLabels` values as the pie chart (`None`, `Value`, `Percent`, `List`) and prints text on each ring.
+- `center_text` writes a two-line total in the hole, which is the usual way to make a gauge. It needs `inner_radius` above zero.
+- `stacked: true` puts every configured series' value for the first datum into one ring, end to end. It only makes sense with two or more series.
 
-- **Simple** (`main`) — five rings, one per browser, each with its own background track.
-- **Label** — each ring's own category name, drawn inside its own arc.
-- **Grid** — a background track shown as its own element (`grid: true`) rather than each bar's own
-  `background`; visually the same idea (shadcn spells these two differently — a `RadialBar`
-  `background` prop versus a `PolarGrid` element — this crate unifies both as one `grid: bool`).
-- **Text** — a single ring with a two-line total centered in its hole, gauge-style.
-- **Shape** — a single ring with rounded corners (`corner_radius > 0.0`).
-- **Stacked** — two series (mobile, desktop) stacked cumulatively into one ring rather than each
-  getting its own (`stacked: true`).
+Rings are `path[data-slot="chart-arc"]` elements with `data-index`, `data-start-angle` and `data-end-angle`, the same shape the pie chart uses, so one stylesheet can cover both.
+
+## Variants
+
+- **Simple** — five rings, one per browser.
+- **Label** — each ring's category name drawn on its arc.
+- **Grid** — `grid: true`.
+- **Text** — one ring with a total in the hole, gauge-style.
+- **Shape** — one ring with rounded ends through `corner_radius`.
+- **Stacked** — two series stacked into one ring with `stacked: true`.
 
 ## Accessibility
 
-Same contract as every other chart kind: `role="img"` + accessible name on the SVG, and a real
-hidden `table[data-slot="chart-data"]` listing every ring's category and value for assistive tech.
+Radial charts share the [Chart](/component/?name=chart) behavior: the SVG is a named image (`role="img"`), and a visually hidden data table lists every ring's category and value for assistive technology. The chart's wrapper is focusable, and `ArrowLeft`, `ArrowRight`, `Home`, `End` and `Escape` move through the rings.
