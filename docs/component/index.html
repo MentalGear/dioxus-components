@@ -4,10 +4,105 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dioxus Componentsdioxus | ⛺</title>
-  <link rel="preload" as="script" href="/dioxus-components/assets/preview-dxhe342e5f31537aabb.js" crossorigin><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&#38;family=Geist+Mono:wght@400;500;700&#38;display=swap"/><link rel="stylesheet" href="/dioxus-components/assets/main-dxh9841f2a59bf8a2.css"/><link rel="stylesheet" href="/dioxus-components/assets/dx-components-theme-dxh8b578cd881e696e.css"/><link rel="stylesheet" href="/dioxus-components/assets/hero-dxh136bdaf165c153a5.css"/><link rel="stylesheet" href="/dioxus-components/assets/language-select-dxh5e99e33b6dedf4b.css" type="text/css"/></head>
+    <!-- Applies the saved light/dark mode, theme preset and radius from their cookies to <html>
+         BEFORE first paint (the SSG HTML is static, so nothing later can). Keep this script byte-identical
+         to theme::PREPAINT_JS in src/theme.rs; a unit test fails if they drift. -->
+    <script>(function(){var K=['theme','theme-base','theme-accent','theme-radius'],R=document.documentElement;function A(k,v){if(K.indexOf(k)<0)return;if(v&&/^[a-z0-9.]{1,16}$/.test(v)&&(k!=='theme'||v==='dark'||v==='light'))R.setAttribute('data-'+k,v);else R.removeAttribute('data-'+k)}window.__dxTheme=A;try{var C=document.cookie.split(';');K.forEach(function(k){var n='dx_'+k.replace('-','_')+'=',v=null;C.forEach(function(c){c=c.trim();if(c.indexOf(n)===0)v=decodeURIComponent(c.slice(n.length))});A(k,v)})}catch(e){}})()</script>
+    <!-- Same-page anchors over `content-visibility: auto` cards (main.css `--dx-cv`; dev-docs/research/
+         scroll-jank-2026-10-04.md section 8). A card that has not been rendered yet is laid out at its size
+         ESTIMATE and resizes when it is rendered, so a `#fragment` scroll over such cards was computed against
+         geometry that is about to change and landed up to ~1,200 px off. This switches every card to
+         `content-visibility: visible` (`html[data-cv-settle]`) BEFORE the scroll offset is computed, then
+         releases it ~300 ms after the last scroll event (4 s at most), by which time each card has recorded its
+         true height for `contain-intrinsic-size: auto`. Three entry points, all fragment navigations:
+           * a click on a same-page `a[href^="#"]`: capture phase, so the layout is final before the browser's own
+             (smooth) scroll runs; it is left to do the scrolling;
+           * a fresh load of `<page>#id`: set from the first layout, so the browser's load-time fragment scroll of
+             the static HTML is exact; and, because a client-rendered page has no target yet when the browser looks
+             for it, scrolls there itself once the element exists;
+           * Back/Forward to a hash (`hashchange`): the router sets `history.scrollRestoration = "manual"`, so the
+             browser scrolls nowhere; scrolls there itself, as a fragment navigation would.
+         Our own scrolls are instant, aimed with `scrollIntoView` (which honours `html`'s `scroll-padding-top`)
+         and re-aimed for up to 1 s while the layout settles; any wheel/touch/key/pointer input ends that. -->
+    <script>
+(function () {
+  var R = document.documentElement, ATTR = 'data-cv-settle';
+  var held = false, timer = 0, t0 = 0, last = 0, skip = '', skipAt = 0, quit = null;
+
+  function id(h) { try { return decodeURIComponent((h || '').replace(/^#/, '')); } catch (e) { return ''; } }
+  function el(n) { return n ? document.getElementById(n) : null; }
+
+  function bump() { last = performance.now(); }
+  function arm() {
+    if (held) return;
+    held = true; R.setAttribute(ATTR, ''); addEventListener('scroll', bump, { passive: true });
+  }
+  function release() {
+    clearTimeout(timer); held = false; R.removeAttribute(ATTR); removeEventListener('scroll', bump);
+  }
+  function tick() {
+    var now = performance.now();
+    if (now - t0 < 4000 && (now - t0 < 500 || now - last < 300)) { timer = setTimeout(tick, 100); return; }
+    release();
+  }
+  /* Render every card for real and lay it out NOW; keep doing so until the page has stopped scrolling. */
+  function settle(t) {
+    arm(); t0 = last = performance.now();
+    clearTimeout(timer); timer = setTimeout(tick, 100);
+    void t.offsetTop;
+  }
+
+  /* Our own scroll (load, Back/Forward): aim, then re-aim while late layout (fonts, hydration) moves the target. */
+  function aim(t) {
+    if (quit) quit();
+    var pad = parseFloat(getComputedStyle(R).scrollPaddingTop) || 0, until = performance.now() + 1000, calm = 0, done = false;
+    var ev = ['wheel', 'touchstart', 'keydown', 'pointerdown'], opt = { passive: true, capture: true };
+    quit = function () { done = true; ev.forEach(function (e) { removeEventListener(e, quit, opt); }); quit = null; };
+    ev.forEach(function (e) { addEventListener(e, quit, opt); });
+    t.scrollIntoView({ block: 'start', behavior: 'instant' });
+    (function frame() {
+      if (done) return;
+      if (performance.now() > until || calm >= 3) return quit();
+      if (Math.abs(t.getBoundingClientRect().top - pad) > 1) { calm = 0; t.scrollIntoView({ block: 'start', behavior: 'instant' }); } else calm++;
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
+    var n = id(a.getAttribute('href')), t = el(n);
+    if (!t) return;
+    skip = n; skipAt = performance.now();   /* the hashchange this click causes needs no second scroll */
+    settle(t);
+  }, true);
+
+  addEventListener('hashchange', function () {
+    var n = id(location.hash), t = el(n);
+    if (n && n === skip && performance.now() - skipAt < 1500) { skip = ''; return; }
+    skip = '';
+    if (t) { settle(t); aim(t); }
+  });
+
+  var n0 = id(location.hash);   /* read now: the router may normalise the URL once it mounts */
+  if (n0) {
+    arm();   /* from the first layout on, cards render for real */
+    timer = setTimeout(release, 15000);   /* a stray hash with no element: do not hold forever */
+    var go = function () { var t = el(n0); if (!t) return false; settle(t); aim(t); return true; };
+    var start = function () {
+      if (go()) return;
+      var mo = new MutationObserver(function () { if (go()) mo.disconnect(); });
+      mo.observe(R, { childList: true, subtree: true });
+      setTimeout(function () { mo.disconnect(); }, 15000);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  }
+})();
+    </script>
+  <link rel="preload" as="script" href="/dioxus-components/assets/preview-dxh8c812b55b9150dc.js" crossorigin><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&#38;family=Geist+Mono:wght@400;500;700&#38;display=swap"/><link rel="stylesheet" href="/dioxus-components/assets/main-dxh670f4682345f72.css"/><link rel="stylesheet" href="/dioxus-components/assets/dx-components-theme-dxhbe89ad605f37c4ac.css"/><link rel="stylesheet" href="/dioxus-components/assets/dx-effects-dxha27e2d35cfd086a3.css"/><link rel="stylesheet" href="/dioxus-components/assets/theme-presets-dxhe6da812974eb5e.css"/><link rel="stylesheet" href="/dioxus-components/assets/hero-dxh136bdaf165c153a5.css"/><link rel="stylesheet" href="/dioxus-components/assets/language-select-dxh5e99e33b6dedf4b.css" type="text/css"/><link rel="stylesheet" href="/dioxus-components/assets/style-dxhdcb8203af8a15240.css"/></head>
   <body>
     <div id="main"><script>window.hydrate_queue=[];window.dx_hydrate=(id,data,debug_types,debug_locations)=>{let decoded=atob(data),bytes=Uint8Array.from(decoded,(c)=>c.charCodeAt(0));if(window.hydration_callback)window.hydration_callback(id,bytes,debug_types,debug_locations);else window.hydrate_queue.push([id,bytes,debug_types,debug_locations])};
-</script><!--placeholder0--><!--placeholder1--><!--placeholder2--><!--placeholder3--><!--placeholder4--><!--placeholder5--><nav class="dx-preview-navbar" aria-label="Primary" data-node-hydration="6"><div class="dx-navbar-inner"><div class="dx-navbar-primary"><!--placeholder7--><a href="/dioxus-components/?" class="dx-navbar-brand" data-node-hydration="8,click:1"><img src="/dioxus-components/assets/dioxus_color-dxh58ce279eab44129d.svg" alt="Dioxus Logo" width="18" height="18" data-node-hydration="9"/><span data-node-hydration="10">dioxus-components</span></a><a href="/dioxus-components/docs?" class="dx-navbar-link" data-node-hydration="11,click:1"><!--node-id12-->Docs<!--#--></a><a href="/dioxus-components/demos?" class="dx-navbar-link" data-node-hydration="13,click:1"><!--node-id14-->Demos<!--#--></a><a href="/dioxus-components/charts/?" class="dx-navbar-link" data-node-hydration="15,click:1"><!--node-id16-->Charts<!--#--></a></div><div class="dx-navbar-utilities"><a href="https://github.com/DioxusLabs/components" class="dx-navbar-link" rel="noopener noreferrer" data-node-hydration="17,click:1"><img class="dx-light-mode-only" src="/dioxus-components/assets/github-mark-dxh7fd362519ed29496.svg" alt="GitHub" width="22" height="22" data-node-hydration="18"/><img class="dx-dark-mode-only" src="/dioxus-components/assets/github-mark-white-dxhc3b3dae6cbf63fd5.svg" alt="GitHub" width="22" height="22" data-node-hydration="19"/></a><button class="dx-dark-mode-toggle dx-dark-mode-only" type="button" aria-label="Enable light mode" data-node-hydration="20,click:1"><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-node-hydration="21"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></button><button class="dx-dark-mode-toggle dx-light-mode-only" type="button" aria-label="Enable dark mode" data-node-hydration="22,click:1"><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-node-hydration="23"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></button><!--placeholder24--><div class="dx-language-container" data-node-hydration="25"><span class="dx-language-select-container"><select class="dx-language-select" aria-label="Language" data-node-hydration="26,change:1"><option value="English" selected=true data-node-hydration="27"><!--node-id28-->🇬🇧 English<!--#--></option><option value="French" data-node-hydration="29"><!--node-id30-->🇫🇷 Français<!--#--></option><option value="Spanish" data-node-hydration="31"><!--node-id32-->🇪🇸 Español<!--#--></option><option value="German" data-node-hydration="33"><!--node-id34-->🇩🇪 Deutsch<!--#--></option></select><span class="dx-language-select-value"><!--node-id35-->🇬🇧<!--#--><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dx-select-expand-icon" stroke="var(--dx-foreground)" data-node-hydration="36"><path d="m6 9 6 6 6-6"></path></svg></span></span></div></div></div></nav><main class="dx-component-demo-redirect" role="main" data-node-hydration="37"><p>Loading component…</p></main><footer class="dx-preview-footer" data-node-hydration="38"><div class="dx-footer-inner"><div class="dx-footer-brand"><a href="/dioxus-components/?" class="dx-footer-brand-link" data-node-hydration="39,click:1"><img src="/dioxus-components/assets/dioxus_color-dxh58ce279eab44129d.svg" alt="Dioxus Logo" width="22" height="22" data-node-hydration="40"/><span data-node-hydration="41">Dioxus Components</span></a><p class="dx-footer-tagline">Accessible, themeable interface pieces for Dioxus apps.</p></div><nav class="dx-footer-nav" aria-label="Footer"><div class="dx-footer-nav-group"><span class="dx-footer-nav-heading">Library</span><a href="/dioxus-components/?" class="dx-footer-link" data-node-hydration="42,click:1"><!--node-id43-->Components<!--#--></a><a href="/dioxus-components/docs?" class="dx-footer-link" data-node-hydration="44,click:1"><!--node-id45-->Docs<!--#--></a><a href="/dioxus-components/demos?" class="dx-footer-link" data-node-hydration="46,click:1"><!--node-id47-->Demos<!--#--></a><a href="/dioxus-components/charts/?" class="dx-footer-link" data-node-hydration="48,click:1"><!--node-id49-->Charts<!--#--></a></div><div class="dx-footer-nav-group"><span class="dx-footer-nav-heading">Project</span><a href="https://github.com/DioxusLabs/dioxus-components" class="dx-footer-link" rel="noopener noreferrer" data-node-hydration="50,click:1"><!--node-id51-->GitHub<!--#--></a><a href="https://dioxuslabs.com" class="dx-footer-link" rel="noopener noreferrer" data-node-hydration="52,click:1"><!--node-id53-->Dioxus<!--#--></a></div></nav></div><div class="dx-footer-base"><span class="dx-footer-copy">Built with Dioxus.</span></div></footer><script>window.initial_dioxus_hydration_data="ioEY9pMYchgvGGMYbxhtGHAYbxhuGGUYbhh0GC8YPxhuGGEYbRhlGD0YJvaBGPWBGPWBGPWBGPWBGPWBGPWBGPU=";</script></div>
-  <script type="module" async src="/dioxus-components/assets/preview-dxhe342e5f31537aabb.js"></script>
+</script><!--placeholder0--><!--placeholder1--><!--placeholder2--><!--placeholder3--><!--placeholder4--><!--placeholder5--><!--placeholder6--><!--placeholder7--><nav class="dx-preview-navbar" aria-label="Primary" data-node-hydration="8"><div class="dx-navbar-inner"><div class="dx-navbar-primary"><!--placeholder9--><a href="/dioxus-components/?" class="dx-navbar-brand" data-node-hydration="10,click:1"><img src="/dioxus-components/assets/dioxus_color-dxh58ce279eab44129d.svg" alt="Dioxus Logo" width="18" height="18" data-node-hydration="11"/><span data-node-hydration="12">dioxus-components</span></a><a href="/dioxus-components/docs?" class="dx-navbar-link" data-node-hydration="13,click:1"><!--node-id14-->Docs<!--#--></a><a href="/dioxus-components/demos?" class="dx-navbar-link" data-node-hydration="15,click:1"><!--node-id16-->Demos<!--#--></a><a href="/dioxus-components/charts/?" class="dx-navbar-link" data-node-hydration="17,click:1"><!--node-id18-->Charts<!--#--></a></div><div class="dx-navbar-utilities"><a href="https://github.com/DioxusLabs/components" class="dx-navbar-link" rel="noopener noreferrer" data-node-hydration="19,click:1"><img class="dx-light-mode-only" src="/dioxus-components/assets/github-mark-dxh7fd362519ed29496.svg" alt="GitHub" width="22" height="22" data-node-hydration="20"/><img class="dx-dark-mode-only" src="/dioxus-components/assets/github-mark-white-dxhc3b3dae6cbf63fd5.svg" alt="GitHub" width="22" height="22" data-node-hydration="21"/></a><!--placeholder22--><div id="dxc-862" class="dx-popover" data-state="closed" data-node-hydration="23"><!--placeholder24--><button id="dxc-861" aria-expanded=false aria-haspopup="dialog" aria-label="Theme" class="dx-popover-trigger dx-theme-picker-trigger" style="anchor-name: --dxa-dxc-863;" title="Theme" type="button" data-node-hydration="25,click:1"><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-node-hydration="26"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"></path><circle cx="13.5" cy="6.5" fill="currentColor" r=".5"></circle><circle cx="17.5" cy="10.5" fill="currentColor" r=".5"></circle><circle cx="6.5" cy="12.5" fill="currentColor" r=".5"></circle><circle cx="8.5" cy="7.5" fill="currentColor" r=".5"></circle></svg></button><!--placeholder27--><!--placeholder28--><!--placeholder29--></div><button class="dx-dark-mode-toggle dx-dark-mode-only" type="button" aria-label="Enable light mode" data-node-hydration="30,click:1"><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-node-hydration="31"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></button><button class="dx-dark-mode-toggle dx-light-mode-only" type="button" aria-label="Enable dark mode" data-node-hydration="32,click:1"><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-node-hydration="33"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></button><!--placeholder34--><div class="dx-language-container" data-node-hydration="35"><span class="dx-language-select-container"><select class="dx-language-select" aria-label="Language" data-node-hydration="36,change:1"><option value="English" selected=true data-node-hydration="37"><!--node-id38-->🇬🇧 English<!--#--></option><option value="French" data-node-hydration="39"><!--node-id40-->🇫🇷 Français<!--#--></option><option value="Spanish" data-node-hydration="41"><!--node-id42-->🇪🇸 Español<!--#--></option><option value="German" data-node-hydration="43"><!--node-id44-->🇩🇪 Deutsch<!--#--></option></select><span class="dx-language-select-value"><!--node-id45-->🇬🇧<!--#--><svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dx-select-expand-icon" stroke="var(--dx-foreground)" data-node-hydration="46"><path d="m6 9 6 6 6-6"></path></svg></span></span></div></div></div></nav><main class="dx-component-demo-redirect" role="main" data-node-hydration="47"><p>Loading component…</p></main><footer class="dx-preview-footer" data-node-hydration="48"><div class="dx-footer-inner"><div class="dx-footer-brand"><a href="/dioxus-components/?" class="dx-footer-brand-link" data-node-hydration="49,click:1"><img src="/dioxus-components/assets/dioxus_color-dxh58ce279eab44129d.svg" alt="Dioxus Logo" width="22" height="22" data-node-hydration="50"/><span data-node-hydration="51">Dioxus Components</span></a><p class="dx-footer-tagline">Accessible, themeable interface pieces for Dioxus apps.</p></div><nav class="dx-footer-nav" aria-label="Footer"><div class="dx-footer-nav-group"><span class="dx-footer-nav-heading">Library</span><a href="/dioxus-components/?" class="dx-footer-link" data-node-hydration="52,click:1"><!--node-id53-->Components<!--#--></a><a href="/dioxus-components/docs?" class="dx-footer-link" data-node-hydration="54,click:1"><!--node-id55-->Docs<!--#--></a><a href="/dioxus-components/demos?" class="dx-footer-link" data-node-hydration="56,click:1"><!--node-id57-->Demos<!--#--></a><a href="/dioxus-components/charts/?" class="dx-footer-link" data-node-hydration="58,click:1"><!--node-id59-->Charts<!--#--></a></div><div class="dx-footer-nav-group"><span class="dx-footer-nav-heading">Project</span><a href="https://github.com/DioxusLabs/dioxus-components" class="dx-footer-link" rel="noopener noreferrer" data-node-hydration="60,click:1"><!--node-id61-->GitHub<!--#--></a><a href="https://dioxuslabs.com" class="dx-footer-link" rel="noopener noreferrer" data-node-hydration="62,click:1"><!--node-id63-->Dioxus<!--#--></a></div></nav></div><div class="dx-footer-base"><span class="dx-footer-copy">Built with Dioxus.</span></div></footer><script>window.initial_dioxus_hydration_data="k4EY9pMYchgvGGMYbxhtGHAYbxhuGGUYbhh0GC8YPxhuGGEYbRhlGD0YJvaBGPWBGPWBGPWBGPWBGPWBGPWBGPWBGPWBGPWBGPWIGGcYZBh4GGMYLRg4GDYYMYgYZxhkGHgYYxgtGDgYNhgyiBhnGGQYeBhjGC0YOBg2GDOBGPWBGPWIGGcYZBh4GGMYLRg4GDYYNA==";</script></div>
+  <script type="module" async src="/dioxus-components/assets/preview-dxh8c812b55b9150dc.js"></script>
             </body>
 </html>
