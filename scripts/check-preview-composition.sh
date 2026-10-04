@@ -119,6 +119,9 @@ done
 declare -A allowed_qualified=(
     ["toast::use_toast"]=1        # hook, not markup -- toast/variants/main/mod.rs,
                                    # dashboard/views/email_client/{compose,read_pane}.rs
+    ["interval::use_interval"]=1  # hook, not markup (a component-owned timer, renders
+                                   # nothing) -- main.rs `BlockPlayer`,
+                                   # progress/variants/main/mod.rs
     ["toast::ToastOptions"]=1     # plain builder struct, not markup -- same call sites
     ["checkbox::CheckboxState"]=1 # plain enum, not markup -- main.rs,
                                    # preview/src/components/form/component.rs
@@ -139,6 +142,8 @@ declare -A allowed_qualified=(
 declare -A allowed_root=(
     ["ContentSide"]=1 # plain enum re-exported off the crate root, not markup --
                        # hover_card & tooltip variants/main
+    ["ContentAlign"]=1 # sibling of `ContentSide`: plain enum off the crate root, not
+                       # markup -- preview/src/theme.rs (`ThemePicker`'s end-aligned panel)
 )
 
 trim() {

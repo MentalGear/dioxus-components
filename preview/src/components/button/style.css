@@ -137,8 +137,34 @@
   color: var(--dx-primary-foreground);
 }
 
+/* Nova's hover is `bg-primary/80`, kept as is for the library's own look (a
+ * black / #e5e5e5 fill, where the page showing through cannot threaten the
+ * text) and for a base colour alone (a near-black / near-white fill). */
 .dx-button[data-style="primary"]:not(:disabled):hover {
   background-color: color-mix(in oklab, var(--dx-primary) 80%, transparent);
+}
+
+/* Under an accent preset (`<html data-theme-accent>`, the docs site's theme
+ * picker) the fill is a saturated mid-tone that clears 4.5:1 against its
+ * foreground by a hair at rest (shadcn's green, lime, amber, ...). `/80` lets
+ * the page show through and moves the fill TOWARD the text colour (a light page
+ * under a light-on-dark button), which measured 3.0-3.4:1 in 100 of 180 light
+ * and 20 of 180 dark base x accent combinations. So here the hover moves the
+ * fill AWAY from the text instead: 15% toward black under light text, toward
+ * white under dark text, the direction keyed on the foreground's OKLCH lightness
+ * (`round(1 - l)`: 0 for a light foreground, 1 for a dark one). Darkening under
+ * light ink and lightening under dark ink only ever raises the contrast, so
+ * every accent keeps at least its rest ratio, and the step stays visible.
+ * This is the one rule in a component stylesheet that reads the preset
+ * attribute: the theme file deliberately knows no attribute, and the library's
+ * own black button must keep Nova's `/80` hover (away-from-white on black is no
+ * hover at all). Guard: playwright/theme-preset-contrast.spec.ts. */
+:root[data-theme-accent] .dx-button[data-style="primary"]:not(:disabled):hover {
+  background-color: color-mix(
+    in oklab,
+    var(--dx-primary),
+    oklch(from var(--dx-primary-foreground) round(nearest, calc(1 - l), 1) 0 0) 15%
+  );
 }
 
 .dx-button[data-style="secondary"] {
@@ -183,18 +209,27 @@
 /* Nova tints its destructive button (`bg-destructive/10 text-destructive`).
  * That pairing measures 4.1:1 in light and about 2.7:1 in dark against this
  * theme's `--dx-destructive` (a dark-red fill colour, not a text colour), so
- * the solid fill stays until the role gets a text-safe dark value (phase C). */
+ * the fill stays solid (backlog row 134).
+ *
+ * The fill, shared with the destructive Badge: solid in light, 60% over the
+ * page in dark, because shadcn's own dark `--destructive` is a light salmon
+ * that carries the near-white foreground at only 2.8:1. `--dx-destructive-fill`
+ * is defined once, in `dx-components-theme.css`.
+ *
+ * Hover is the Secondary button's own move (`color-mix(fill, foreground 5%)`,
+ * style-nova.css `.cn-button-variant-secondary`), not a lighter alpha: the old
+ * `destructive 90% over transparent` lightened the fill and dropped the text
+ * to 4.35:1 in light and 3.2:1 in dark under shadcn's palette. */
 .dx-button[data-style="destructive"] {
-  background-color: var(--light, var(--dx-destructive))
-    var(--dark, color-mix(in oklab, var(--dx-destructive) 60%, transparent));
+  background-color: var(--dx-destructive-fill);
   color: var(--dx-destructive-foreground);
 }
 
 .dx-button[data-style="destructive"]:not(:disabled):hover {
   background-color: color-mix(
     in oklab,
-    var(--dx-destructive) 90%,
-    transparent
+    var(--dx-destructive-fill),
+    var(--dx-foreground) 8%
   );
 }
 
@@ -205,9 +240,20 @@
     var(--dark, color-mix(in oklab, var(--dx-destructive) 40%, transparent));
 }
 
+/* Nova's link is `text-primary underline-offset-4 hover:underline`; so is
+ * this, except that the colour is `--dx-primary` kept readable AS TEXT.
+ * shadcn's `--primary` is a fill: under an accent it is a dark blue in dark
+ * mode (1.5:1 on the page) and a light lime or amber in light mode (1.5:1 on
+ * white). The lightness is clamped (OKLCH `l` to at most 0.5 in light, at
+ * least 0.75 in dark, hue and chroma kept), which is a no-op for every ink that
+ * already reads (the library's own #000 / #e5e5e5, a base colour's near-black
+ * and near-white) and pulls only the offending accents into range: 5.4:1 or
+ * better on the page, the card and the popover across every base x accent
+ * (playwright/theme-preset-contrast.spec.ts). `--dx-primary-ink` is defined
+ * once, in `dx-components-theme.css`. */
 .dx-button[data-style="link"] {
   background-color: transparent;
-  color: var(--dx-primary);
+  color: var(--dx-primary-ink);
   text-decoration: none;
   text-underline-offset: 0.25rem;
 }

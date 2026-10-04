@@ -112,6 +112,11 @@ html[data-theme="light"] [class~="dxc-system"] {
    * `data-theme`, `prefers-color-scheme` and non-browser renderers. A shadcn
    * theme's own `.dark { --border: ... }` override is the host's job.
    *
+   * Presets: `preview/assets/theme-presets.css` is shadcn's customizer as data
+   * (`[data-theme-base]` / `[data-theme-accent]` / `[data-theme-radius]` on
+   * <html>), each block setting these same bare names for both modes. Nothing
+   * here needs to know about it: no attribute, no bare variable, no change.
+   *
    * `--dx-border-strong` and the status roles (`-subtle`, success/warning/info)
    * are NOT shadcn roles and have no shadcn fallback. The phase-A `-alt` /
    * `-alt-2` variants were review markers; phase B moved every site onto a
@@ -142,6 +147,26 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-destructive: var(--destructive, var(--primary-error-color));
   --dx-destructive-foreground: var(--destructive-foreground, var(--contrast-error-color));
 
+  /* The destructive Button's and Badge's solid fill (one definition, read by
+   * both): `--dx-destructive` itself in light, 60% of it over the page in dark.
+   * shadcn's own dark `--destructive` is a light salmon that carries the
+   * near-white `--dx-destructive-foreground` at only 2.8:1; at 60% it is 5.6:1
+   * or better under every base x accent (playwright/theme-preset-contrast.spec.ts).
+   * Nova tints these instead (`bg-destructive/10 text-destructive`), which needs
+   * a text-grade destructive colour this role is not. */
+  --dx-destructive-fill: var(--light, var(--dx-destructive))
+    var(--dark, color-mix(in oklab, var(--dx-destructive) 60%, transparent));
+
+  /* `--dx-primary` kept readable AS TEXT (the link Button's ink). shadcn's
+   * `--primary` is a fill: under an accent it is a dark blue in dark mode (1.5:1
+   * on the page) and a light lime or amber in light mode (1.5:1 on white).
+   * OKLCH lightness is clamped (at most 0.5 in light, at least 0.75 in dark; hue
+   * and chroma kept), a no-op for every ink that already reads (the library's own
+   * #000 / #e5e5e5, a base colour's near-black and near-white). 5.4:1 or better on
+   * the page, card and popover across every base x accent. */
+  --dx-primary-ink: var(--light, oklch(from var(--dx-primary) min(l, 0.5) c h))
+    var(--dark, oklch(from var(--dx-primary) max(l, 0.75) c h));
+
   /* Lines and focus. shadcn's `--ring` is a colour, so it is `--dx-ring-color`
    * here: `--dx-ring` (below) already means the focus-ring box-shadow. */
   --dx-border: var(--border, var(--primary-color-6));
@@ -149,8 +174,12 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-ring-color: var(--ring, var(--focused-border-color));
 
   /* Non-shadcn role: a stronger line than `--dx-border` (hover borders,
-   * checkbox ring). Phase B removed every other `-alt` role variant. */
-  --dx-border-strong: var(--primary-color-7);
+   * checkbox ring). Phase B removed every other `-alt` role variant. There is
+   * no shadcn variable to read, so a theme preset
+   * (`preview/assets/theme-presets.css`) supplies the optional `--border-strong`
+   * hook, derived from its own ink and page so the line keeps the preset's tint;
+   * with none set this is the ramp step, as before. */
+  --dx-border-strong: var(--border-strong, var(--primary-color-7));
 
   /* Status -- shadcn ships no success/warning/info roles; these are plain
    * aliases of the existing status colours so sites can leave the ramp. */
@@ -290,6 +319,35 @@ html[data-theme="light"] [class~="dxc-system"] {
   --dx-motion-ease-in: ease-in;
   --dx-motion-ease-out: ease-out;
   --dx-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* icon rotate */
+
+  /* Modal overlay -- the one token set every native-<dialog> overlay (Dialog,
+   * AlertDialog, Sheet, Drawer, CommandDialog) and the modal Popover read for
+   * their scrim and its fade. Panel and scrim take the SAME duration/easing, so
+   * they cannot disagree. `-scrim` is Nova's `bg-black/10`, `-blur` its
+   * `backdrop-blur-xs`. Retune here, not per component: the components carry no
+   * fallback literals (scripts/check-css-vars-defined.sh), and
+   * playwright/assert-backdrop-fade.ts pins what these resolve to. */
+  --dx-overlay-duration: var(--dx-motion-duration-slow);
+  --dx-overlay-ease: var(--dx-motion-ease);
+  --dx-overlay-scrim: rgb(0 0 0 / 10%);
+  --dx-overlay-blur: 4px;
+
+  /* Menu-item indicator slot -- ONE construction shared by every menu-like
+   * stylesheet (select, combobox, native_select, dropdown_menu, context_menu,
+   * menubar, command). An item that can draw a check / radio dot / chevron
+   * reserves `inset + size + gap` of inline padding on the indicator's side and
+   * the indicator is absolutely positioned inside that room, so a long label
+   * wraps before it can meet the icon (shadcn's `pr-8` + `absolute right-2
+   * size-4`; select/style.css documents the construction in full). `-size` is
+   * the indicator's box, `-gap` the guaranteed clear space between label and
+   * indicator, `-inset` its distance from the item's edge. `-inset` follows the
+   * item's OWN inline padding, so the two components whose items pad by
+   * `--dx-space-2` (select and combobox options) override just that one token
+   * locally; everything else inherits these. Guard:
+   * playwright/menu-indicator-gap.spec.ts. */
+  --dx-menu-item-indicator-size: 1rem;
+  --dx-menu-item-indicator-inset: var(--dx-space-3);
+  --dx-menu-item-indicator-gap: var(--dx-space-2);
 
   /* Breakpoints. CSS custom properties cannot be substituted into an
    * `@media` condition (no browser resolves `var()` there -- a media

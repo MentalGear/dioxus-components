@@ -4,6 +4,101 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dioxus Components</title>
+    <!-- Applies the saved light/dark mode, theme preset and radius from their cookies to <html>
+         BEFORE first paint (the SSG HTML is static, so nothing later can). Keep this script byte-identical
+         to theme::PREPAINT_JS in src/theme.rs; a unit test fails if they drift. -->
+    <script>(function(){var K=['theme','theme-base','theme-accent','theme-radius'],R=document.documentElement;function A(k,v){if(K.indexOf(k)<0)return;if(v&&/^[a-z0-9.]{1,16}$/.test(v)&&(k!=='theme'||v==='dark'||v==='light'))R.setAttribute('data-'+k,v);else R.removeAttribute('data-'+k)}window.__dxTheme=A;try{var C=document.cookie.split(';');K.forEach(function(k){var n='dx_'+k.replace('-','_')+'=',v=null;C.forEach(function(c){c=c.trim();if(c.indexOf(n)===0)v=decodeURIComponent(c.slice(n.length))});A(k,v)})}catch(e){}})()</script>
+    <!-- Same-page anchors over `content-visibility: auto` cards (main.css `--dx-cv`; dev-docs/research/
+         scroll-jank-2026-10-04.md section 8). A card that has not been rendered yet is laid out at its size
+         ESTIMATE and resizes when it is rendered, so a `#fragment` scroll over such cards was computed against
+         geometry that is about to change and landed up to ~1,200 px off. This switches every card to
+         `content-visibility: visible` (`html[data-cv-settle]`) BEFORE the scroll offset is computed, then
+         releases it ~300 ms after the last scroll event (4 s at most), by which time each card has recorded its
+         true height for `contain-intrinsic-size: auto`. Three entry points, all fragment navigations:
+           * a click on a same-page `a[href^="#"]`: capture phase, so the layout is final before the browser's own
+             (smooth) scroll runs; it is left to do the scrolling;
+           * a fresh load of `<page>#id`: set from the first layout, so the browser's load-time fragment scroll of
+             the static HTML is exact; and, because a client-rendered page has no target yet when the browser looks
+             for it, scrolls there itself once the element exists;
+           * Back/Forward to a hash (`hashchange`): the router sets `history.scrollRestoration = "manual"`, so the
+             browser scrolls nowhere; scrolls there itself, as a fragment navigation would.
+         Our own scrolls are instant, aimed with `scrollIntoView` (which honours `html`'s `scroll-padding-top`)
+         and re-aimed for up to 1 s while the layout settles; any wheel/touch/key/pointer input ends that. -->
+    <script>
+(function () {
+  var R = document.documentElement, ATTR = 'data-cv-settle';
+  var held = false, timer = 0, t0 = 0, last = 0, skip = '', skipAt = 0, quit = null;
+
+  function id(h) { try { return decodeURIComponent((h || '').replace(/^#/, '')); } catch (e) { return ''; } }
+  function el(n) { return n ? document.getElementById(n) : null; }
+
+  function bump() { last = performance.now(); }
+  function arm() {
+    if (held) return;
+    held = true; R.setAttribute(ATTR, ''); addEventListener('scroll', bump, { passive: true });
+  }
+  function release() {
+    clearTimeout(timer); held = false; R.removeAttribute(ATTR); removeEventListener('scroll', bump);
+  }
+  function tick() {
+    var now = performance.now();
+    if (now - t0 < 4000 && (now - t0 < 500 || now - last < 300)) { timer = setTimeout(tick, 100); return; }
+    release();
+  }
+  /* Render every card for real and lay it out NOW; keep doing so until the page has stopped scrolling. */
+  function settle(t) {
+    arm(); t0 = last = performance.now();
+    clearTimeout(timer); timer = setTimeout(tick, 100);
+    void t.offsetTop;
+  }
+
+  /* Our own scroll (load, Back/Forward): aim, then re-aim while late layout (fonts, hydration) moves the target. */
+  function aim(t) {
+    if (quit) quit();
+    var pad = parseFloat(getComputedStyle(R).scrollPaddingTop) || 0, until = performance.now() + 1000, calm = 0, done = false;
+    var ev = ['wheel', 'touchstart', 'keydown', 'pointerdown'], opt = { passive: true, capture: true };
+    quit = function () { done = true; ev.forEach(function (e) { removeEventListener(e, quit, opt); }); quit = null; };
+    ev.forEach(function (e) { addEventListener(e, quit, opt); });
+    t.scrollIntoView({ block: 'start', behavior: 'instant' });
+    (function frame() {
+      if (done) return;
+      if (performance.now() > until || calm >= 3) return quit();
+      if (Math.abs(t.getBoundingClientRect().top - pad) > 1) { calm = 0; t.scrollIntoView({ block: 'start', behavior: 'instant' }); } else calm++;
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
+    var n = id(a.getAttribute('href')), t = el(n);
+    if (!t) return;
+    skip = n; skipAt = performance.now();   /* the hashchange this click causes needs no second scroll */
+    settle(t);
+  }, true);
+
+  addEventListener('hashchange', function () {
+    var n = id(location.hash), t = el(n);
+    if (n && n === skip && performance.now() - skipAt < 1500) { skip = ''; return; }
+    skip = '';
+    if (t) { settle(t); aim(t); }
+  });
+
+  var n0 = id(location.hash);   /* read now: the router may normalise the URL once it mounts */
+  if (n0) {
+    arm();   /* from the first layout on, cards render for real */
+    timer = setTimeout(release, 15000);   /* a stray hash with no element: do not hold forever */
+    var go = function () { var t = el(n0); if (!t) return false; settle(t); aim(t); return true; };
+    var start = function () {
+      if (go()) return;
+      var mo = new MutationObserver(function () { if (go()) mo.disconnect(); });
+      mo.observe(R, { childList: true, subtree: true });
+      setTimeout(function () { mo.disconnect(); }, 15000);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  }
+})();
+    </script>
   </head>
   <body>
     <div id="main"></div>

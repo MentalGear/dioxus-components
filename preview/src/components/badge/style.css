@@ -47,10 +47,20 @@
   color: var(--dx-foreground);
 }
 
-/* Nova tints its destructive badge (`bg-destructive/10 text-destructive`);
- * 12px text on that pairing misses WCAG AA against this theme's
- * `--dx-destructive` (see button/style.css), so the solid fill stays. */
+/* Nova tints its destructive badge (`bg-destructive/10 dark:bg-destructive/20
+ * text-destructive`, style-nova.css `.cn-badge-variant-destructive`). That
+ * needs a text-grade destructive colour, which `--dx-destructive` is not (a
+ * fill colour: dark red on the ramp, shadcn's light salmon under a preset), so
+ * the fill stays solid and the text is `--dx-destructive-foreground`.
+ *
+ * The fill is the Button's: solid in light, 60% over the page in dark. A solid
+ * dark fill is shadcn's `oklch(0.704 0.191 22.216)`, which under any preset
+ * carries the near-white foreground at only 2.8:1; at 60% it is 5.6:1 or
+ * better in every base x accent (playwright/theme-preset-contrast.spec.ts).
+ * Nova's badge text is 12px/500, not "large text", so the bar is 4.5:1.
+ * `--dx-destructive-fill` is defined once, in `dx-components-theme.css`, and
+ * shared with the destructive Button. */
 .dx-badge[data-style="destructive"] {
-  background-color: var(--dx-destructive);
+  background-color: var(--dx-destructive-fill);
   color: var(--dx-destructive-foreground);
 }

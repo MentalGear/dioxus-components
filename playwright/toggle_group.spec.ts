@@ -1,6 +1,8 @@
 import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 test("test", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=toggle_group&`);
@@ -54,10 +56,65 @@ for (const dark of [false, true]) {
     expect(await bButton.evaluate((el) => el.matches(":hover"))).toBe(true);
     const onAndHovered = await bButton.evaluate((el) => getComputedStyle(el).backgroundColor);
 
-    // Exact values confirmed identical before and after the `:where()` fix
-    // (light: rgb(176, 176, 176); dark: rgb(62, 62, 62)).
+    // The invariant the `:where()` fix makes durable (pressed keeps its own
+    // background under the pointer), not a particular colour -- the pressed
+    // colour is derived from the preset-aware role tokens.
     expect(onAndHovered, `onAtRest=${onAtRest} onAndHovered=${onAndHovered}`).toBe(onAtRest);
   });
+}
+
+// The pressed background is derived from the preset-aware role tokens (it used to be the ramp step
+// `--primary-color-7`, grey under every base), so under a TINTED base it must (a) carry the tint and
+// (b) still be three visibly different backgrounds: resting, hovered, pressed. The exhaustive base x
+// accent x mode proof is `theme-preset-contrast.spec.ts`; this keeps the same assertion next to the
+// component's own specs.
+const GAP_PRESSED = 16; // per channel, 0-255
+const GAP_HOVER = 6;
+
+async function paintedRgb(page: Page, css: string): Promise<[number, number, number]> {
+  return page.evaluate((c) => {
+    const cx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+    cx.canvas.width = cx.canvas.height = 1;
+    cx.fillStyle = c;
+    cx.fillRect(0, 0, 1, 1);
+    const d = cx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2]] as [number, number, number];
+  }, css);
+}
+
+const gap = (a: number[], b: number[]) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+
+for (const dark of [false, true]) {
+  for (const base of ["slate", "gray"]) {
+    test(`resting, hovered and pressed items are three different backgrounds under a ${base} base (${dark ? "dark" : "light"} mode)`, async ({ page }) => {
+      // Settled first: a late (re)render of the page would drop the attribute set below.
+      await gotoHydrated(page, `${BASE_URL}/component/?name=toggle_group&${dark ? "dark_mode=true" : ""}`);
+      await page.evaluate((b) => {
+        document.documentElement.setAttribute("data-theme-base", b);
+        // Settled values, not a mid-transition read.
+        document.head.insertAdjacentHTML("beforeend", "<style>*{transition:none!important}</style>");
+      }, base);
+      const item = (name: string) => page.getByRole("button", { name, exact: true });
+      const paint = async (name: string) =>
+        paintedRgb(page, await item(name).evaluate((el) => getComputedStyle(el).backgroundColor));
+
+      // B pressed, I hovered, U resting: all three states at once.
+      await item("B").click();
+      await expect(item("B")).toHaveAttribute("data-state", "on");
+      await item("I").hover();
+      expect(await item("I").evaluate((el) => el.matches(":hover"))).toBe(true);
+      const pressed = await paint("B");
+      const hovered = await paint("I");
+      const rest = await paint("U");
+
+      const msg = `rest=${rest} hovered=${hovered} pressed=${pressed}`;
+      expect(gap(pressed, hovered), msg).toBeGreaterThanOrEqual(GAP_PRESSED);
+      expect(gap(pressed, rest), msg).toBeGreaterThanOrEqual(GAP_PRESSED);
+      expect(gap(hovered, rest), msg).toBeGreaterThanOrEqual(GAP_HOVER);
+      // The tint reaches the pressed state: the old ramp step was pure grey (r == g == b) under every base.
+      expect(new Set(pressed).size, `pressed ${pressed} is neutral grey, not ${base}-tinted`).toBeGreaterThan(1);
+    });
+  }
 }
 
 test.describe("Axe automated scan", () => {

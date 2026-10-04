@@ -36,6 +36,23 @@
   --dx-navbar-height: 60px;
 }
 
+/* The docs site's own accent ink (the eyebrows, the `$` in the CLI chip, prose
+ * links, card CTAs) follows the picker's ACCENT choice. With no accent preset
+ * it is the blue above, unchanged; a base colour alone is not an accent choice.
+ *
+ * It is `--dx-primary` kept readable AS TEXT, not `--dx-primary` itself:
+ * shadcn's `--primary` is a fill (a dark blue in dark mode, a pale lime or
+ * amber in light mode, 1.5:1 on the page), so the lightness is clamped (OKLCH
+ * `l` to at most 0.5 in light, at least 0.75 in dark; hue and chroma kept),
+ * the same construction as the link-variant Button (`button/style.css`).
+ * 5.4:1 or better on the page, card and popover across every base x accent
+ * (playwright/theme-preset-contrast.spec.ts). `:root[data-theme-accent]`
+ * out-ranks the `:root` block above whatever the source order. */
+:root[data-theme-accent] {
+  --highlight-color-tertiary: var(--light, oklch(from var(--dx-primary) min(l, 0.5) c h))
+    var(--dark, oklch(from var(--dx-primary) max(l, 0.75) c h));
+}
+
 html {
   /* Every programmatic/anchor/focus scroll (`scrollIntoView`, a `#hash`
      link, a focused element scrolled into view) that would otherwise land
@@ -224,6 +241,25 @@ summary,
      since both agree on the same value -- this only matters for an
      element the component layer has not covered. */
   touch-action: manipulation !important;
+}
+
+/*
+ * The one exception to the catch-all above: a window-splitter drag handle. A touch that starts on
+ * it is a drag, never a page pan, so its effective `touch-action` must be `none`. The catch-all's
+ * `!important` otherwise beats the handle's own `touch-action: none` (resizable/style.css), and
+ * under `manipulation` Chromium starts a pan once the finger leaves the touch slop and CANCELS the
+ * pointer (`pointercancel` after ~20px: the drag dies). That was masked by a
+ * `ontouchstart: prevent_default` on the handle, which Dioxus delegates to `#main` as a
+ * NON-passive root listener -- making every wheel/touch on the whole page wait for the main thread
+ * (dev-docs/research/scroll-jank-2026-10-04.md, Cause 2b; scripts/check-blocking-scroll-listeners.sh).
+ * The slider thumb and the color area need no such rule: their non-focusable containers
+ * (`.dx-slider`, `.dx-color-picker-area-container`) are `touch-action: none` ancestors, and the
+ * effective value is the intersection down the ancestor chain. Specificity (0,2,0) and source
+ * order beat the catch-all's `[tabindex]:not([tabindex="-1"])`.
+ * Oracle exemption: `touch-double-tap.spec.ts` accepts `none` for `role="separator"`.
+ */
+.dx-resizable-handle[role="separator"] {
+  touch-action: none !important;
 }
 
 /* Modern browsers with `scrollbar-*` support */
@@ -441,6 +477,212 @@ summary,
   display: block;
   width: 24px;
   height: 24px;
+}
+
+/* Theme picker (preview/src/theme.rs `ThemePicker`): an icon button that opens a popover of swatches.
+ * The trigger is the Popover wrapper's own button, whose look is owned by the popover (and, once it
+ * composes it, the shared outline `Button`) and loads AFTER this file. `button.` + two classes outranks
+ * each of those rules (`.dx-button[data-size=...]`, `.dx-button svg:not(...)`) without depending on load
+ * order, and turns the trigger into a bare icon like the sun/moon toggle next to it. */
+button.dx-popover-trigger.dx-theme-picker-trigger {
+  display: flex;
+  width: auto;
+  height: auto;
+  padding: var(--dx-space-1);
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--dx-foreground);
+}
+
+button.dx-popover-trigger.dx-theme-picker-trigger svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+/* Two presentations of ONE panel (theme.rs `ThemePickerPanel`), chosen here, by the header's own phone
+ * breakpoint, rather than by measuring the window in Rust (different markup before and after hydration,
+ * and a flash). Both triggers are always rendered; exactly one is visible, so exactly one panel mounts.
+ *
+ *   > 760px  the header's icon button opens the panel as a popover (`.dx-popover:has(> ...)` below).
+ *   <= 760px the header's items already fill a 360-390px row (the `<= 760px` / `<= 360px` blocks further
+ *            down reclaim space for exactly that) and one more 24px icon plus its gap overlaps "Charts"
+ *            and the GitHub link; a popover anchored to a trigger near the middle of the screen would also
+ *            open off-screen. So the popover's trigger is hidden and the sidebar sheet's own "Theme"
+ *            footer (`ThemePickerSidebarFooter`) is shown instead; it opens the same panel as a bottom
+ *            Drawer, the native phone idiom. `display: none` also takes the hidden one out of the
+ *            accessibility tree, so there is only ever one "Theme" button.
+ *
+ * The sidebar footer's selector doubles up on classes (not bare `.dx-theme-sidebar-footer`) to outrank
+ * `.dx-sidebar-footer { display: flex }` in sidebar/style.css whichever sheet loads last. 760px is the
+ * header's breakpoint, not the sidebar's own 768px switch to a sheet: between the two the header still
+ * has its popover trigger and the sidebar (already a sheet) correctly shows no second one. */
+.dx-sidebar-footer.dx-theme-sidebar-footer {
+  display: none;
+}
+
+@media (width <= 760px) {
+  .dx-popover:has(> .dx-theme-picker-trigger) {
+    display: none;
+  }
+
+  .dx-sidebar-footer.dx-theme-sidebar-footer {
+    display: flex;
+    padding-bottom: max(var(--dx-space-2), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--dx-sidebar-border);
+  }
+}
+
+/* The popover's own chrome. The content (head, swatches, radius) is `.dx-theme-picker-panel`, shared with
+ * the phone drawer. */
+.dx-popover-content.dx-theme-picker {
+  width: 20.5rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--dx-space-4);
+}
+
+.dx-theme-picker-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-space-4);
+  text-align: start;
+}
+
+/* In the drawer the panel sits between the drawer's own handle and footer, which bring their own
+ * padding; the panel only needs side gutters. Touch targets are bigger there (36px swatches and chips,
+ * against the popover's 24px pointer-sized ones): the drawer is the phone presentation. */
+.dx-theme-picker-panel[data-presentation="drawer"] {
+  padding: 0 var(--dx-space-4);
+}
+
+.dx-theme-picker-panel[data-presentation="drawer"] .dx-theme-swatch {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.dx-theme-picker-panel[data-presentation="drawer"] .dx-theme-swatch-dot {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.dx-theme-picker-panel[data-presentation="drawer"] :is(.dx-theme-swatches, .dx-theme-chips) {
+  gap: var(--dx-space-2);
+}
+
+.dx-theme-picker-panel[data-presentation="drawer"] .dx-button[data-size="xs"] {
+  min-width: 2.75rem;
+  height: 2.25rem;
+}
+
+/* The six radius chips share the row evenly instead of wrapping one orphan onto a second line at 360px. */
+.dx-theme-picker-panel[data-presentation="drawer"] .dx-theme-chips .dx-button[data-size="xs"] {
+  min-width: 2.5rem;
+  flex: 1 1 0%;
+  padding-inline: var(--dx-space-1);
+}
+
+.dx-theme-picker-intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-space-1);
+}
+
+.dx-theme-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dx-theme-picker-title {
+  color: var(--dx-foreground);
+  font-size: var(--dx-text-base);
+  font-weight: 600;
+}
+
+.dx-theme-picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-space-2);
+}
+
+.dx-theme-picker-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dx-foreground);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+}
+
+.dx-theme-picker-current {
+  color: var(--dx-muted-foreground);
+  font-weight: 400;
+}
+
+.dx-theme-swatches,
+.dx-theme-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.dx-theme-chips {
+  gap: var(--dx-space-1);
+}
+
+/* A swatch paints its dot from the SAME `[data-theme-base]` / `[data-theme-accent]` block the preset
+ * applies (theme-presets.css), read back as the bare variable on the swatch itself -- the colour data
+ * lives in one file. Forcing the light half of the space toggle on the swatch shows each preset's
+ * canonical (light-mode) colour in both modes, so a dark popover does not turn every accent into its
+ * muted dark primary. */
+.dx-theme-swatch {
+  --dark: ;
+  --light: initial;
+
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--dx-border);
+  border-radius: var(--dx-radius-full);
+  background: var(--dx-popover);
+  cursor: pointer;
+}
+
+.dx-theme-swatch:hover {
+  border-color: var(--dx-border-strong);
+}
+
+.dx-theme-swatch:focus-visible {
+  box-shadow: var(--dx-ring);
+}
+
+.dx-theme-swatch[aria-pressed="true"] {
+  border-color: var(--dx-foreground);
+  box-shadow: 0 0 0 1px var(--dx-foreground);
+}
+
+.dx-theme-swatch-dot {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--dx-radius-full);
+}
+
+.dx-theme-swatch[data-theme-base] .dx-theme-swatch-dot {
+  background: var(--muted-foreground);
+}
+
+.dx-theme-swatch[data-theme-accent] .dx-theme-swatch-dot {
+  background: var(--primary);
+}
+
+/* "Default" (no preset): a slashed circle, which is also what the library's own look is -- no colour. */
+.dx-theme-swatch-dot[data-none] {
+  border: 1px dashed var(--dx-muted-foreground);
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--dx-muted-foreground) 50%, transparent calc(50% + 1px));
 }
 
 .dx-copy-button {
@@ -1256,6 +1498,68 @@ summary,
  * need to escape the card's overflow clip. */
 .dx-widget-card-popout {
   overflow: visible;
+}
+
+/* Scroll cost (dev-docs/research/scroll-jank-2026-10-04.md, Cause 3): the home page is 70 live
+ * demos + 14 blocks (~4.4k nodes, ~29k px), so any main-thread frame -- a skeleton pulse, a
+ * spinner, a ticking player -- re-walked ALL of it (`PrePaint` 1.85 s over one scroll). Cards
+ * that are off screen are skipped entirely (no style, layout or paint; their animations stop
+ * costing frames); visible ones are an independent layout/paint/style boundary, so a pulse in
+ * one card never re-walks the page. `auto` in `contain-intrinsic-block-size` remembers a
+ * card's real height after it has been rendered once, so the scrollbar stops moving once a
+ * card has been seen; the length is only the first guess (measured heights at 1280 px:
+ * component cards mean 371 / median 256, blocks median 333, component-page variants mean 505).
+ * Skipped contents stay searchable by find-in-page, focusable and reachable by `#fragment`
+ * (find-in-page: not in Safari 18-25 -- WebKit bug 283846; fixed in Safari 26).
+ * Popout cards are excluded on purpose: `content-visibility: auto` implies paint containment,
+ * which would clip the dropdown they exist to let escape (`.dx-widget-card-popout`). Top-layer
+ * overlays (popover, dialog) are not clipped by containment.
+ * `.dx-component-variant` (the "Variants" demos stacked below a component page's main demo, up
+ * to 13 live demos on the chart pages) is deliberately NOT skipped: a skipped subtree has no layout
+ * box, so a demo that measures itself when it mounts (carousel slides and its virtual window, a chart's
+ * width and so its default tooltip) measured 0 there and never recovered -- 33 Playwright tests red
+ * (`carousel-virtual-wheel` 18, `carousel` 7, `chart_tooltip` `default_index` 8; 51/51 green once
+ * variants are `visible`, verified 2026-10-04). Home-page cards are unaffected: their demos are measured the
+ * same with and without the skip. If variants ever get it back, those demos must re-measure on
+ * un-skip first.
+ *
+ * `--dx-cv` is the ONE switch for all of them: every `content-visibility: auto` in this file is
+ * written `var(--dx-cv, auto)`, and `html[data-cv-settle]` (below) flips it to `visible`. A skipped
+ * card lays out at its estimate, so a jump over never-rendered cards (a `#fragment` link, a deep
+ * link, Back/Forward to a hash) was computed against geometry that changes the moment the cards are
+ * rendered, and landed up to ~1,200 px off (dev-docs/research/scroll-jank-2026-10-04.md section 8).
+ * The shell's anchor handler (the inline script in `preview/index.html`) sets the attribute BEFORE
+ * it scrolls, so every card is laid out for real when the scroll offset is computed, and removes it
+ * once the page has settled; each card has by then recorded its true height for `auto`. A new
+ * `content-visibility: auto` rule MUST use the variable, or it is exempt from that protocol. */
+
+/* `overflow-clip-margin`: `content-visibility: auto` implies paint containment, which clips at
+ * the box's padding edge, and these two boxes have no horizontal padding -- a focus ring on the
+ * title link at the card's left edge (`outline-offset: 3px`) lost its left side. The margin
+ * lets such ink out by 0.75rem without changing layout (not Safari: there the ring is clipped). */
+.dx-component-card {
+  contain-intrinsic-block-size: auto 380px;
+  content-visibility: var(--dx-cv, auto);
+  overflow-clip-margin: 0.75rem;
+}
+
+.dx-widget-card:not(.dx-widget-card-popout) {
+  contain-intrinsic-block-size: auto 330px;
+  content-visibility: var(--dx-cv, auto);
+}
+
+/* Forced-render window, set and cleared by the anchor handler in `preview/index.html` (see the
+ * `--dx-cv` note above). Never set by hand; never left on: the handler releases it ~300 ms after the
+ * last scroll event, and at the latest after 4 s. */
+html[data-cv-settle] {
+  --dx-cv: visible;
+}
+
+@media (width <= 640px) {
+  /* Narrow cards stack and wrap (component cards mean 451 px, variants 427 px, at 390 px wide). */
+  .dx-component-card {
+    contain-intrinsic-block-size: auto 450px;
+  }
 }
 
 @media (width <= 1100px) {

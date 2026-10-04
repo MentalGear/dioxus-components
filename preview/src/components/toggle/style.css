@@ -23,17 +23,15 @@
    unlike calendar/tabs's own row 89 fix (an *accidental* extra-specificity
    bump from a stray `:not(...)`), this is a genuine tie, broken only by
    source order: `[data-state="on"]` happens to be declared after this rule,
-   so it already wins today (verified: an ON toggle stays at its `on`
-   background, `rgb(176, 176, 176)` light / `rgb(62, 62, 62)` dark, while
-   hovered -- confirmed via computed styles in both themes, not just the one
-   `:hover` this rule's own hover-tint would otherwise apply,
-   `rgb(248, 248, 248)` light / `rgb(26, 26, 26)` dark). `:where(:hover)`
-   makes that unconditional (drops this branch's contribution to (0,1,0),
-   below `[data-state="on"]`'s (0,2,0)) rather than order-dependent, so
-   reordering these rules -- or `:hover` later picking up an extra clause
-   the way calendar/tabs's did -- can no longer silently flip the winner.
-   `:focus-visible` is untouched (kept at its own (0,2,0), same as today):
-   this row is about the hover/active tie only. */
+   so it already wins today (an ON toggle keeps its `on` background while
+   hovered, in both themes -- confirmed via computed styles, not just the
+   one `:hover` this rule's own hover-tint would otherwise apply).
+   `:where(:hover)` makes that unconditional (drops this branch's
+   contribution to (0,1,0), below `[data-state="on"]`'s (0,2,0)) rather than
+   order-dependent, so reordering these rules -- or `:hover` later picking up
+   an extra clause the way calendar/tabs's did -- can no longer silently flip
+   the winner. `:focus-visible` is untouched (kept at its own (0,2,0), same as
+   today): this row is about the hover/active tie only. */
 .dx-toggle:where(:hover), .dx-toggle:focus-visible {
   background-color: var(--dx-accent);
   cursor: pointer;
@@ -44,7 +42,19 @@
   outline-offset: 2px;
 }
 
+/* Pressed. Nova paints it `data-[state=on]:bg-muted` (and `aria-pressed:bg-muted`)
+ * on top of a `hover:bg-muted` hover, so on and hover are the SAME colour there.
+ * Here they must differ (a pressed toggle that looks hovered says nothing), and
+ * the old ramp step `--primary-color-7` did not follow a preset at all: it
+ * stayed grey under every base.
+ *
+ * So pressed is the hover surface (`--dx-accent`) pushed 15% toward the ink
+ * (`--dx-foreground`): a role-derived colour, so a preset recolours it, and
+ * distinct from hover BY CONSTRUCTION -- always the hover colour plus a fixed
+ * step, in either mode, under any base. Across every base x accent the step is
+ * 20/255 or more from hover and 40/255 or more from rest, and the ink on it
+ * stays at 5.2:1 or better (playwright/theme-preset-contrast.spec.ts). */
 .dx-toggle[data-state="on"] {
-  background-color: var(--primary-color-7);
-  color: var(--dx-accent-foreground);
+  background-color: color-mix(in oklab, var(--dx-accent), var(--dx-foreground) 15%);
+  color: var(--dx-foreground);
 }
