@@ -26,6 +26,8 @@ lazy-js-bundle = "0.7.9"
 
 [dev-dependencies]
 dioxus-ssr = "0.7.0"
+# `interval.rs` tests drive a VirtualDom on tokio's paused clock (already in the tree via dioxus-sdk-time).
+tokio = { version = "1", features = ["rt", "macros", "time", "test-util"] }
 
 [features]
 default = ["router"]

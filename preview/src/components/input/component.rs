@@ -47,7 +47,17 @@ pub fn Input(
     children: Element,
 ) -> Element {
     let base = attributes!(input { class: "dx-input" });
-    let merged = merge_attributes(vec![base, attributes]);
+    // `onwheel` is attached ONLY when the caller passed one. Dioxus registers every bubbling rsx
+    // handler once on `#main` with no options (dioxus-interpreter-js `createListener`), so an
+    // `onwheel: move |e| _ = onwheel.map(..)` shim on every `<input>` -- the previous shape, set
+    // even when the prop was `None` -- made the whole page's wheel input non-passive: each wheel
+    // tick had to wait for the main thread before the compositor could scroll
+    // (dev-docs/research/scroll-jank-2026-10-04.md, Cause 2b). An rsx event attribute cannot take
+    // an `Option<EventHandler>`, so the optional listener is built as an `Attribute` and spread.
+    let wheel: Vec<Attribute> = onwheel
+        .map(|handler| vec![dioxus::html::events::onwheel(handler)])
+        .unwrap_or_default();
+    let merged = merge_attributes(vec![base, attributes, wheel]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/input/style.css") }
@@ -64,7 +74,6 @@ pub fn Input(
             onkeydown: move |e| _ = onkeydown.map(|callback| callback(e)),
             onkeypress: move |e| _ = onkeypress.map(|callback| callback(e)),
             onkeyup: move |e| _ = onkeyup.map(|callback| callback(e)),
-            onwheel: move |e| _ = onwheel.map(|callback| callback(e)),
             oncompositionstart: move |e| _ = oncompositionstart.map(|callback| callback(e)),
             oncompositionupdate: move |e| _ = oncompositionupdate.map(|callback| callback(e)),
             oncompositionend: move |e| _ = oncompositionend.map(|callback| callback(e)),
