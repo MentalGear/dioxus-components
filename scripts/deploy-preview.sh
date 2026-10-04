@@ -12,58 +12,19 @@ cd "$repo_root/preview"
 
 # Honor CARGO_TARGET_DIR (CLAUDE.md: every lane builds into an isolated, ABSOLUTE
 # target dir; backlog rows 98/100/122) and fall back to the workspace's own
-# `target/` when it is unset. A relative value is rejected, not absolutized:
-# dioxus-cli 0.7.9's `--ssg` pass chdirs before exec'ing the still-relative
-# server binary path and dies with an opaque "No such file or directory
-# (os error 2)" (row 98) -- failing here names the real cause up front.
-target_dir="${CARGO_TARGET_DIR:-$repo_root/target}"
-target_dir="${target_dir%/}"
-case "$target_dir" in
-  /*) ;;
-  *)
-    echo "error: CARGO_TARGET_DIR must be an absolute path, got: '$target_dir'" >&2
-    echo "       (dx build --ssg breaks on relative target dirs -- dev-docs/backlog.md row 98;" >&2
-    echo "        e.g. CARGO_TARGET_DIR=/home/user/tgt/deploy)." >&2
-    exit 1
-    ;;
-esac
-# Only export when the caller chose one; unset keeps cargo's own default.
-if [ -n "${CARGO_TARGET_DIR:-}" ]; then export CARGO_TARGET_DIR="$target_dir"; fi
+# `target/` when it is unset. The build itself -- absolute-path / base-path-marker
+# guards, wiping public/, the dx invocation, the freshness check -- lives in
+# scripts/build-ssg.sh, the single implementation shared with verification lanes.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$repo_root/target}"
+target_dir="${CARGO_TARGET_DIR%/}"
 
+# Same path build-ssg.sh derives for `release` (it also prints it as PUBLIC_DIR=).
 public_dir="$target_dir/dx/preview/release/web/public"
-echo "==> Target dir: $target_dir (public dir: $public_dir)"
 
-# dx's asset pipeline content-hashes the compiled wasm/js on every build but
-# never cleans the previous run's copies out of $public_dir, so repeated
-# builds accumulate multiple stale preview_bg-*.wasm/preview-*.js -- wipe it
-# first so only the build we're about to run ends up in /docs.
-rm -rf "$public_dir"
-
-# Freshness marker for the post-build check below: a 200/an existing dir does not
-# prove it is THIS build's output (same discipline as dev-docs/dx-serve-hot-reload.md).
-build_marker="$(mktemp)"
-trap 'rm -f "$build_marker"' EXIT
-
-# Tag this target tree as base-path-built. Backlog row 100: a no-base-path build made in
-# a tree that ever held a `--base-path` build emits `/dioxus-components/` URLs everywhere.
-# scripts/lane-target.sh refuses to use a tagged tree as a lane template.
-mkdir -p "$target_dir"
-echo "dx build ... --base-path dioxus-components ($(date -u +%FT%TZ))" > "$target_dir/.base-path-build"
-
-echo "==> Building preview (release, ssg, fullstack) ..."
-dx build --platform web --release --ssg --features fullstack --base-path dioxus-components --force-sequential=true
-
-if [ ! -d "$public_dir" ]; then
-  echo "error: expected build output at $public_dir, not found" >&2
-  exit 1
-fi
-
-if [ -z "$(find "$public_dir" -type f -newer "$build_marker" -print -quit)" ]; then
-  echo "error: $public_dir exists but nothing in it was written after this build started --" >&2
-  echo "       it is a stale tree from an earlier build, not this build's output" >&2
-  echo "       (is dx writing to a different CARGO_TARGET_DIR than '$target_dir'?)." >&2
-  exit 1
-fi
+# Wipes public/ first (dx's asset pipeline never cleans previous content-hashed
+# wasm/js out of it), tags the tree `.base-path-build` (row 100) and verifies every
+# page is fresh. `--force-sequential=true` is passed there, see the note below.
+"$repo_root/scripts/build-ssg.sh" release --base-path dioxus-components
 
 # `dx build --ssg` has a known, pre-existing race (unrelated to any one
 # source change -- reproduced identically on an untouched checkout, see
@@ -111,7 +72,7 @@ if [ "${#missing_script[@]}" -gt 0 ]; then
   echo "hydrating pages:" >&2
   printf '  - %s\n' "${missing_script[@]}" >&2
   echo "This looks like the dx/dioxus-fullstack SSG server/client-build race" >&2
-  echo "described above -- but this script already passes --force-sequential=true" >&2
+  echo "described above -- but scripts/build-ssg.sh already passes --force-sequential=true" >&2
   echo "specifically to avoid it, so seeing this means that mitigation didn't hold" >&2
   echo "(different environment, dx version, core count, ...). A cold cache alone" >&2
   echo "did NOT fix this when it was tested (see the comment above) -- diagnose" >&2
