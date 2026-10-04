@@ -1,15 +1,28 @@
-/* Alert Dialog Backdrop */
+/* Alert Dialog Backdrop -- the wrapper `div` `AlertDialogRoot` renders around the
+ * content. On the web arm (`<dialog>` + `showModal()`) it paints nothing: the
+ * scrim is the dialog's own `::backdrop` (the shared block below) and this
+ * element only holds the `<dialog>` and its animation times `use_animated_open`'s
+ * unmount hold. On the non-web arm the content is a plain `div` with no top
+ * layer and no `::backdrop`, so there this element IS the scrim, from the same
+ * tokens. */
 .dx-alert-dialog-backdrop {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  background: rgb(0 0 0 / 30%);
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
+.dx-alert-dialog-backdrop:has(> dialog) {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-alert-dialog-backdrop[data-state="closed"] {
-  animation: dx-alert-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-alert-animate-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
+  pointer-events: none;
 }
 
 @keyframes dx-alert-animate-out {
@@ -23,7 +36,7 @@
 }
 
 .dx-alert-dialog-backdrop[data-state="open"] {
-  animation: dx-alert-animate-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+  animation: dx-alert-animate-in var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
 }
 
 @keyframes dx-alert-animate-in {
@@ -33,6 +46,85 @@
 
   100% {
     opacity: 1;
+  }
+}
+
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
+ * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts.
+ *
+ * The dialog's own top-layer `::backdrop` is the only thing that paints the
+ * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
+ * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
+ * timings) and, alone on Popover and Sheet, snapped in and out with no
+ * transition at all. It fades in via `@starting-style` and out via
+ * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
+ * from the top layer synchronously and the `::backdrop` goes with it, so
+ * without that keep-alive no exit transition could ever play. In and out are
+ * one `transition`, so they cannot differ in length. Engines without
+ * `overlay` transitions keep the old snap-out; nothing else changes.
+ *
+ * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
+ * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
+.dx-alert-dialog::backdrop {
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
+}
+
+.dx-alert-dialog[open]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
+}
+
+@starting-style {
+  .dx-alert-dialog[open]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
+/* The panel fades and zooms with the same tokens (Nova's `fade-in-0 zoom-in-95`
+ * / `fade-out-0 zoom-out-95`), and the `overlay` entry is what keeps the closing
+ * dialog -- and with it the `::backdrop` fade above -- in the top layer for the
+ * exit. `dialog.` is deliberate: the non-web arm is a plain `div` that is never
+ * `[open]` and must stay visible. A mounted-but-not-yet-shown dialog is `opacity: 0`
+ * too, so it no longer flashes in place for the frames before `showModal()`. */
+dialog.dx-alert-dialog {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  transition:
+    opacity var(--dx-overlay-duration) var(--dx-overlay-ease),
+    transform var(--dx-overlay-duration) var(--dx-overlay-ease),
+    overlay var(--dx-overlay-duration) allow-discrete;
+}
+
+dialog.dx-alert-dialog[open] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1); /* rtl-physical: the viewport-centering below */
+}
+
+@starting-style {
+  dialog.dx-alert-dialog[open] {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.dx-alert-dialog,
+  .dx-alert-dialog::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-alert-dialog-backdrop {
+    animation-duration: var(--dx-motion-duration-reduced);
   }
 }
 

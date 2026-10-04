@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
+import { assertSharedBackdrop, captureBackdrop, resolveOverlayMs } from "./assert-backdrop-fade";
 
 test('test', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -89,5 +90,25 @@ test.describe('Axe automated scan', () => {
     await page.getByRole('button', { name: 'Show Dialog' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectNoAxeViolations(page, 'dialog: open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+// The scrim every modal overlay shares (assert-backdrop-fade.ts has the full
+// claim; popover/dialog/alert-dialog/sheet/drawer specs all run the identical
+// assertion): the dialog's own `::backdrop` is the only painter, black/10 with a
+// 4px blur, and it fades in and out for the same length. Before this, Dialog
+// stacked its own animated wrapper scrim on the UA's un-animated one and the
+// exit snapped.
+test.describe("Scrim", () => {
+  test("Dialog paints the shared scrim and fades it in and out", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 });
+    const trigger = page.getByRole("button", { name: "Show Dialog", exact: true });
+    await expect(trigger).toBeVisible();
+    const capture = await captureBackdrop(
+      page,
+      () => trigger.click(),
+      () => page.keyboard.press("Escape"),
+    );
+    assertSharedBackdrop(capture, await resolveOverlayMs(page), "dialog");
   });
 });

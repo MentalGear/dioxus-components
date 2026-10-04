@@ -57,3 +57,50 @@ pub fn PopoverContent(props: PopoverContentProps) -> Element {
         }
     }
 }
+
+/// shadcn's `PopoverHeader`: the title and description, stacked.
+#[component]
+pub fn PopoverHeader(
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let base = attributes!(div { class: "dx-popover-header" });
+    let merged = merge_attributes(vec![base, attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
+        div { ..merged, {children} }
+    }
+}
+
+/// shadcn's `PopoverTitle`. A plain heading: the content is labelled by its
+/// trigger (`aria-labelledby` points at it), so this is visual structure, not
+/// the dialog's accessible name.
+#[component]
+pub fn PopoverTitle(
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let base = attributes!(h3 { class: "dx-popover-title" });
+    let merged = merge_attributes(vec![base, attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
+        h3 { ..merged, {children} }
+    }
+}
+
+/// shadcn's `PopoverDescription`.
+#[component]
+pub fn PopoverDescription(
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let base = attributes!(p { class: "dx-popover-description" });
+    let merged = merge_attributes(vec![base, attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
+        p { ..merged, {children} }
+    }
+}

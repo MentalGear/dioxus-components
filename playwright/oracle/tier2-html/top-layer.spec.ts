@@ -199,8 +199,9 @@ const gotoFixture = (page: Page) =>
  * if it did not (the pre-Phase-4.4 behaviour this rule was written to
  * catch).
  *
- * Candidate probe points are the content box's four corners (inset 2px)
- * plus its center, not just "just past the ancestor's edge": a top-layer
+ * Candidate probe points are the content box's four corners (inset 2px, or by
+ * the content's computed border radius if that is larger, so the probe lands
+ * inside a rounded corner rather than on the notch cut out of it) plus its center, not just "just past the ancestor's edge": a top-layer
  * element's landing spot varies by engine/positioning support (an
  * anchor-positioned popover lands right next to its trigger, which sits
  * inside the clip ancestor; the native `<div popover>` reference here has
@@ -263,7 +264,21 @@ async function escapesClip(
       );
       const c = content.getBoundingClientRect();
       const a = ancestor.getBoundingClientRect();
-      const inset = 2;
+      // Inset each corner probe by at least the content's own border radius. A box's
+      // corner is not painted where its rounded border has cut it away: a probe 2px
+      // inside the corner of a 10px-radius panel (Nova's `rounded-lg`, the popover
+      // and every menu panel) lands on whatever is BEHIND that notch, so the content
+      // is reported as clipped when it merely has a rounded corner. A point `radius`
+      // in from both edges is the arc's own centre, always inside the painted shape,
+      // so the probe still asks the only question this rule has: "does the content
+      // paint here, outside the clip ancestor's box?".
+      const cs = getComputedStyle(content);
+      const radius = Math.max(
+        ...["borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius"].map(
+          (p) => parseFloat((cs as unknown as Record<string, string>)[p]) || 0,
+        ),
+      );
+      const inset = Math.max(2, radius);
       const candidates: [number, number][] = [
         [c.left + inset, c.top + inset],
         [c.right - inset, c.top + inset],

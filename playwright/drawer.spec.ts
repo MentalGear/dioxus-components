@@ -24,6 +24,7 @@ import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
 import { gotoHydrated } from './hydration';
 import { awaitAnimationsSettled } from './animations';
+import { assertSharedBackdrop, captureBackdrop, resolveOverlayMs } from "./assert-backdrop-fade";
 
 const URL = `${BASE_URL}/component/?name=drawer&`;
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
@@ -248,6 +249,10 @@ test('a long, slow drag past the dismiss threshold closes the drawer', async ({ 
   const root = page.locator('[data-slot="drawer-root"]');
   const content = page.locator('[data-slot="drawer-content"]');
   await expect(root).toHaveAttribute('data-state', 'open');
+  // `data-state="open"` is set before the panel has slid in: the handle is still below the fold
+  // (y ~ 749 of a 720px viewport) and a pointer pressed there lands on nothing, so the drag never
+  // starts. Measure the settled panel (backlog row 115's class; the sibling drag tests above do).
+  await awaitAnimationsSettled(content);
 
   const contentBox = await content.boundingBox();
   const handleBox = await page.locator('[data-slot="drawer-handle"]').boundingBox();
@@ -289,6 +294,7 @@ test('a short, slow drag snaps back without closing the drawer', async ({ page }
   const root = page.locator('[data-slot="drawer-root"]');
   const content = page.locator('[data-slot="drawer-content"]');
   await expect(root).toHaveAttribute('data-state', 'open');
+  await awaitAnimationsSettled(content); // see the long-drag test above: the handle is off-screen mid slide-in
 
   const handleBox = await page.locator('[data-slot="drawer-handle"]').boundingBox();
   if (!handleBox) throw new Error('drawer handle has no bounding box');
@@ -367,5 +373,25 @@ test.describe('Axe automated scan', () => {
     await expectNoAxeViolations(page, 'drawer: top variant, dark mode, open', {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
+  });
+});
+
+// The scrim every modal overlay shares (assert-backdrop-fade.ts has the full
+// claim; popover/dialog/alert-dialog/sheet/drawer specs all run the identical
+// assertion): the dialog's own `::backdrop` is the only painter, black/10 with a
+// 4px blur, and it fades in and out for the same length. Before this, Drawer
+// stacked its own animated wrapper scrim on the UA's un-animated one and the
+// exit snapped.
+test.describe("Scrim", () => {
+  test("Drawer paints the shared scrim and fades it in and out", async ({ page }) => {
+    await gotoHydrated(page, URL, GOTO_OPTS);
+    const trigger = page.getByRole("button", { name: "Move Goal", exact: true });
+    await expect(trigger).toBeVisible();
+    const capture = await captureBackdrop(
+      page,
+      () => trigger.click(),
+      () => page.keyboard.press("Escape"),
+    );
+    assertSharedBackdrop(capture, await resolveOverlayMs(page), "drawer");
   });
 });

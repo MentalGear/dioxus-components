@@ -40,7 +40,6 @@
 //! keeps the modal arm trigger-anchored rather than falling back to the
 //! UA's viewport-centered default.
 
-#[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -487,15 +486,96 @@ fn PopoverModalContent(
     }
 }
 
+/// Drive `showModal()`/`close()` on the modal arm's `<dialog>` from `open`,
+/// guarded by the element's own `.open` -- exactly [`crate::use_dialog_open_driver`]
+/// (including the ink-baseline injection that its doc explains), except that
+/// `close()` is deferred until every animation targeting the dialog (its
+/// `data-state="closed"` content fade, and the transition on its `::backdrop`)
+/// has settled. `data-state` is rendered in the same pass that flips `open`, so
+/// by the next frame those animations exist; a reopen while one is still
+/// running leaves `data-state="open"`, which the final check reads, so the
+/// stale close never runs. With no animation at all (no stylesheet, reduced
+/// motion) the wait is empty and the dialog closes at once.
+#[cfg(feature = "web")]
+fn use_popover_modal_driver(
+    id: impl Readable<Target = String> + Copy + 'static,
+    open: impl Readable<Target = bool> + Copy + 'static,
+) {
+    use_effect(crate::top_layer::ensure_top_layer_ink_styles);
+
+    use_effect(move || {
+        let want_open = open.cloned();
+        let id = id.cloned();
+        // Prepended into this one script rather than left to the separate
+        // effect above, for the reason `use_dialog_open_driver`'s doc gives.
+        let inject = crate::top_layer::TOP_LAYER_INK_STYLES_INJECT_JS;
+        document::eval(&format!(
+            "{inject}
+            const dialog = document.getElementById('{id}');
+            if (!dialog) return;
+            if ({want_open}) {{
+                if (!dialog.open) dialog.showModal();
+                return;
+            }}
+            if (!dialog.open) return;
+            requestAnimationFrame(async () => {{
+                const running = document
+                    .getAnimations()
+                    .filter((a) => a.effect && a.effect.target === dialog);
+                await Promise.allSettled(running.map((a) => a.finished));
+                if (dialog.open && dialog.dataset.state === 'closed') dialog.close();
+            }});"
+        ));
+    });
+}
+
+/// Route the dialog's native `cancel` (Escape) through `set_open` instead of
+/// letting the browser close it on the spot. `cancel`'s default action is an
+/// immediate `close()`, which would skip the exit animation
+/// [`use_popover_modal_driver`] waits for; preventing it and closing via the
+/// signal sends Escape down the same path as every other dismissal. Same
+/// eval-channel shape as [`crate::use_dialog_close_sync`].
+#[cfg(feature = "web")]
+fn use_popover_modal_cancel(
+    id: impl Readable<Target = String> + Copy + 'static,
+    set_open: Callback<bool>,
+) {
+    crate::use_effect_with_cleanup(move || {
+        let mut eval = document::eval(
+            "const id = await dioxus.recv();
+            const dialog = document.getElementById(id);
+            const onCancel = (e) => { e.preventDefault(); dioxus.send(true); };
+            dialog.addEventListener('cancel', onCancel);
+            await dioxus.recv();
+            dialog.removeEventListener('cancel', onCancel);",
+        );
+        let _ = eval.send(id.cloned());
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                set_open.call(false);
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+}
+
 /// Web arm (native-dialog engine, two-engine overlay architecture
-/// completion): a real `<dialog>` opened with `showModal()`, driven by the
-/// exact same [`crate::use_dialog_open_driver`]/[`crate::use_dialog_close_sync`]/
-/// [`crate::use_dialog_backdrop_dismiss`] trio `dialog.rs`'s web modal arm
-/// uses. No `use_global_escape_listener`/`use_outside_dismiss` and no
-/// focus-trap eval on this arm -- the browser's own `showModal()` supplies
-/// the focus trap, focus restore, background inertness, and top-layer
-/// rendering; its `cancel`/`close` events (synced below) already handle
-/// Escape.
+/// completion): a real `<dialog>` opened with `showModal()`, driven like
+/// `dialog.rs`'s web modal arm by [`crate::use_dialog_close_sync`] and
+/// [`crate::use_dialog_backdrop_dismiss`], but with its own open driver and
+/// `cancel` routing ([`use_popover_modal_driver`]/[`use_popover_modal_cancel`])
+/// so that closing *waits for the exit animation*: the dialog stays modal -- in
+/// the top layer, with its `::backdrop` and its anchored position -- until the
+/// content fade and the scrim fade have both finished, and only then is
+/// `close()` called. `crate::use_dialog_open_driver` closes at once, and a
+/// native `close()` takes the dialog out of the top layer synchronously: the
+/// `::backdrop` scrim vanished in one frame, and the anchored-position rules
+/// (keyed on `:modal`, `top_layer.rs`) stopped matching mid-fade. No
+/// `use_global_escape_listener`/`use_outside_dismiss` and no focus-trap eval
+/// on this arm -- the browser's own `showModal()` supplies the focus trap,
+/// focus restore, background inertness, and top-layer rendering.
 ///
 /// Carries `dx-anchor-popover`/`position-anchor` -- see this module's doc
 /// comment ("trigger-anchored, not centered") for why a modal `Popover`
@@ -531,7 +611,8 @@ fn PopoverModalContent(
     let id_signal = use_signal(|| id.clone());
 
     crate::use_dialog_close_sync(id_signal, set_open);
-    crate::use_dialog_open_driver(id_signal, open);
+    use_popover_modal_driver(id_signal, open);
+    use_popover_modal_cancel(id_signal, set_open);
     // Native <dialog> has no built-in "click outside to dismiss" the way
     // `popover=` does -- see `crate::use_dialog_backdrop_dismiss`'s doc for
     // why `use_outside_dismiss` itself can't be reused for a `showModal()`
@@ -836,9 +917,17 @@ pub fn PopoverTrigger(props: PopoverTriggerProps) -> Element {
         .into_iter()
         .filter(|a| a.name != "id")
         .collect();
+    // Radix/shadcn's Popover trigger semantics: `aria-haspopup="dialog"` (the content is a `role=dialog`,
+    // modal or not) and `aria-expanded` mirroring the open state. Both sit in the BASE attributes, so a
+    // caller's own `aria-*` still wins `merge_attributes`. `aria-controls` is deliberately absent: the
+    // content is not in the DOM while closed, so the IDREF would dangle (`ctx.content_id` is only a
+    // placeholder until `PopoverContent` mounts). `aria-expanded` is also what the themed trigger's
+    // `[aria-expanded="true"]` rule keys off (`preview/src/components/popover/style.css`).
     let merged = merge_attributes(vec![
         attributes!(button {
             type: "button",
+            aria_haspopup: "dialog",
+            aria_expanded: (ctx.open)(),
         }),
         attributes,
     ]);
