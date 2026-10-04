@@ -28,7 +28,7 @@ pub fn Demo() -> Element {
             for (label , gap) in presets {
                 div { key: "{label}",
                     p {
-                        style: "margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--secondary-color-3);",
+                        style: "margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--dx-foreground);",
                         "{label}"
                     }
                     Carousel { aria_label: "Spacing preset: {label}",

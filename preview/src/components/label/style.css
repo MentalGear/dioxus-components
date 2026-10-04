@@ -2,7 +2,7 @@
 .dx-label {
   display: flex;
   align-items: center;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 0.8rem;
   line-height: 1;
 }

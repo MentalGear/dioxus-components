@@ -44,15 +44,18 @@ use dioxus_icons::lucide::{ChevronDown, ChevronUp};
 /// comes from `CarouselContent`'s explicit height, not from the slide's
 /// own aspect ratio).
 ///
-/// **The `Card` must be `box-sizing: border-box`.** `Card` (`.dx-card`)
-/// carries `padding: 24px 0` plus a 1px border and no `box-sizing`, i.e.
-/// the `content-box` default, so `height: 100%` alone means "the slide's
-/// usable block size *plus* 50px of padding/border on top". Measured live
-/// before this fix: each item is 135px (half of the 270px content box),
-/// 119px of it usable after the 16px leading gap padding, and the Card
-/// rendered 169px tall (119 + 48 + 2) -- card 2 overlapped card 1 and the
-/// bottom card ran past the clip viewport. `border-box` makes the Card
-/// exactly the slide's usable size; `CardContent` then takes the Card's
+/// **The `Card` must be `box-sizing: border-box`** -- and is, from the
+/// theme (`dx-components-theme.css`'s box-model rule), not from this demo.
+/// `Card` (`.dx-card`) carries `padding: 24px 0` plus a 1px border, so
+/// under the browser's `content-box` default `height: 100%` meant "the
+/// slide's usable block size *plus* 50px of padding/border on top".
+/// Measured live before the fix (`09cd59e`, which declared it inline here):
+/// each item is 135px (half of the 270px content box), 119px of it usable
+/// after the 16px leading gap padding, and the Card rendered 169px tall
+/// (119 + 48 + 2; the Nova card pass has since changed the padding to
+/// `--dx-card-spacing` and dropped the border) -- card 2 overlapped card 1
+/// and the bottom card ran past the clip viewport. `border-box` makes the
+/// Card exactly the slide's usable size; `CardContent` then takes the Card's
 /// remaining height with `flex: 1` (the Card is a flex column) instead of a
 /// second, again-overflowing `height: 100%`. The gap is the default
 /// spacing (`--dx-space-4`, 16px), the same as the horizontal demos, so the
@@ -71,7 +74,7 @@ pub fn Demo() -> Element {
                 CarouselContent { style: "height: 16.875rem; --dx-carousel-per-view: 2;",
                     for i in 0..4usize {
                         CarouselItem { key: "{i}", index: i,
-                            Card { style: "height: 100%; box-sizing: border-box;",
+                            Card { style: "height: 100%;",
                                 CardContent {
                                     style: "display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; font-size: var(--dx-text-3xl); font-weight: 600;",
                                     "{i + 1}"

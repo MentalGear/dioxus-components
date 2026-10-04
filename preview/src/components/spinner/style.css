@@ -2,7 +2,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-spinner svg {

@@ -3,9 +3,8 @@
     overflow: hidden;
     min-width: 200px;
     height: .5rem;
-    box-sizing: border-box;
     border-radius: var(--dx-radius-full);
-    background: var(--primary-color-5);
+    background: var(--dx-muted);
 }
 
 .dx-progress[data-state='indeterminate'] .dx-progress-indicator {
@@ -16,7 +15,7 @@
 .dx-progress-indicator {
     width: var(--progress-value, 0%);
     height: 100%;
-    background-color: var(--secondary-color-1);
+    background-color: var(--dx-primary);
     transition: width 250ms var(--dx-motion-ease);
 }
 

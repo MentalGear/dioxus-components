@@ -23,13 +23,6 @@
 }
 
 .dx-sidebar-wrapper {
-  --dx-sidebar-background: var(--primary-color-2);
-  --dx-sidebar-foreground: var(--secondary-color-4);
-  --dx-sidebar-border: var(--primary-color-6);
-  --dx-sidebar-accent: var(--primary-color-4);
-  --dx-sidebar-accent-foreground: var(--secondary-color-4);
-  --dx-sidebar-ring: var(--primary-color-7);
-
   display: flex;
   overflow: hidden;
   width: 100%;
@@ -101,7 +94,6 @@
   display: none;
   width: var(--dx-sidebar-width);
   height: 100svh;
-  box-sizing: border-box;
   transition: left var(--dx-motion-duration-slow) var(--dx-motion-ease-out), right var(--dx-motion-duration-slow) var(--dx-motion-ease-out), width var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
 }
 
@@ -158,7 +150,6 @@
   display: flex;
   width: 100%;
   height: 100%;
-  box-sizing: border-box;
   flex-direction: column;
   background: var(--dx-sidebar-background);
 }
@@ -334,7 +325,7 @@
   min-width: 0;
   flex: 1 1 0%;
   flex-direction: column;
-  background: var(--primary-color-1);
+  background: var(--dx-background);
 }
 
 /* rtl-physical: default (side="left", the common case with no `[data-side]`
@@ -580,7 +571,6 @@
   display: flex;
   overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
   align-items: center;
   padding: var(--dx-space-2);
   border: none;
@@ -659,7 +649,7 @@
 }
 
 .dx-sidebar-menu-button[data-sidebar="menu-button"][data-variant="outline"] {
-  background: var(--primary-color-1);
+  background: var(--dx-background);
   box-shadow: 0 0 0 1px var(--dx-sidebar-border);
 }
 
@@ -877,7 +867,6 @@
   width: 100%;
   min-width: 0;
   height: 1.75rem;
-  box-sizing: border-box;
   align-items: center;
   padding: 0 var(--dx-space-2);
   border: none;

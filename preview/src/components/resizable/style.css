@@ -30,7 +30,7 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  background: var(--dx-border);
   outline: none;
 
   /* Full-viewport drag tracking (primitives/src/move_interaction.rs) means the handle itself
@@ -107,10 +107,10 @@
   height: var(--dx-space-4);
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  border: 1px solid var(--dx-input);
   border-radius: var(--dx-radius-xs);
-  background: var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
-  color: var(--secondary-color-5);
+  background: var(--dx-border);
+  color: var(--dx-muted-foreground);
 
   /* Purely decorative -- the handle div itself (not the grip) carries the interactive
      role/handlers, so a pointer landing on the grip must fall through to it. */

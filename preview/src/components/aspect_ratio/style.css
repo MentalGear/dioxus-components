@@ -1,6 +1,5 @@
 .dx-aspect-ratio-container {
   overflow: hidden;
-  box-sizing: border-box;
   padding: var(--dx-space-4);
   border-radius: var(--dx-radius-lg);
 }

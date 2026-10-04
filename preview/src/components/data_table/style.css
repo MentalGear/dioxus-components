@@ -34,7 +34,7 @@
   align-items: center;
   justify-content: space-between;
   padding-top: var(--dx-space-2);
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   gap: var(--dx-space-4);
 }

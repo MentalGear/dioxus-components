@@ -2,7 +2,6 @@
   display: flex;
   overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
@@ -11,7 +10,7 @@
   padding-bottom: var(--dx-space-4);
   border: none;
   background-color: transparent;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   outline: none;
   text-align: start;
 
@@ -20,7 +19,7 @@
 }
 
 .dx-collapsible-trigger:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--focused-border-color);
+  box-shadow: inset 0 0 0 2px var(--dx-ring-color);
 }
 
 .dx-collapsible-trigger:hover {

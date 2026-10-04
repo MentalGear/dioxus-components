@@ -1,7 +1,7 @@
 .dx-skeleton {
   border-radius: var(--dx-radius-md);
   animation: dx-skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  background-color: var(--primary-color-5);
+  background-color: var(--dx-muted);
 }
 
 @keyframes dx-skeleton-pulse {

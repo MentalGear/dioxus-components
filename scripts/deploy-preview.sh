@@ -10,21 +10,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root/preview"
 
-public_dir="$repo_root/target/dx/preview/release/web/public"
+# Honor CARGO_TARGET_DIR (CLAUDE.md: every lane builds into an isolated, ABSOLUTE
+# target dir; backlog rows 98/100/122) and fall back to the workspace's own
+# `target/` when it is unset. The build itself -- absolute-path / base-path-marker
+# guards, wiping public/, the dx invocation, the freshness check -- lives in
+# scripts/build-ssg.sh, the single implementation shared with verification lanes.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$repo_root/target}"
+target_dir="${CARGO_TARGET_DIR%/}"
 
-# dx's asset pipeline content-hashes the compiled wasm/js on every build but
-# never cleans the previous run's copies out of $public_dir, so repeated
-# builds accumulate multiple stale preview_bg-*.wasm/preview-*.js -- wipe it
-# first so only the build we're about to run ends up in /docs.
-rm -rf "$public_dir"
+# Same path build-ssg.sh derives for `release` (it also prints it as PUBLIC_DIR=).
+public_dir="$target_dir/dx/preview/release/web/public"
 
-echo "==> Building preview (release, ssg, fullstack) ..."
-dx build --platform web --release --ssg --features fullstack --base-path dioxus-components --force-sequential=true
-
-if [ ! -d "$public_dir" ]; then
-  echo "error: expected build output at $public_dir, not found" >&2
-  exit 1
-fi
+# Wipes public/ first (dx's asset pipeline never cleans previous content-hashed
+# wasm/js out of it), tags the tree `.base-path-build` (row 100) and verifies every
+# page is fresh. `--force-sequential=true` is passed there, see the note below.
+"$repo_root/scripts/build-ssg.sh" release --base-path dioxus-components
 
 # `dx build --ssg` has a known, pre-existing race (unrelated to any one
 # source change -- reproduced identically on an untouched checkout, see
@@ -72,7 +72,7 @@ if [ "${#missing_script[@]}" -gt 0 ]; then
   echo "hydrating pages:" >&2
   printf '  - %s\n' "${missing_script[@]}" >&2
   echo "This looks like the dx/dioxus-fullstack SSG server/client-build race" >&2
-  echo "described above -- but this script already passes --force-sequential=true" >&2
+  echo "described above -- but scripts/build-ssg.sh already passes --force-sequential=true" >&2
   echo "specifically to avoid it, so seeing this means that mitigation didn't hold" >&2
   echo "(different environment, dx version, core count, ...). A cold cache alone" >&2
   echo "did NOT fix this when it was tested (see the comment above) -- diagnose" >&2

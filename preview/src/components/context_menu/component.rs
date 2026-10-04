@@ -30,8 +30,8 @@ pub fn ContextMenuTrigger(props: ContextMenuTriggerProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
         context_menu::ContextMenuTrigger {
             padding: "20px",
-            background: "var(--primary-color)",
-            border: "1px dashed var(--primary-color-6)",
+            background: "var(--dx-background)",
+            border: "1px dashed var(--dx-border)",
             border_radius: ".5rem",
             cursor: "context-menu",
             user_select: "none",

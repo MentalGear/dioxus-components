@@ -1,15 +1,21 @@
+/* Nova dialog (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
+ * `.cn-dialog-*`): a `bg-black/10` overlay with `backdrop-blur-xs`, a
+ * `popover`-coloured panel with a 1px `foreground/10` ring and no drop shadow,
+ * `rounded-xl`, p-4 / gap-4 / text-sm, `sm:max-w-sm`, 100ms transitions. */
+
 /* Dialog Backdrop */
 .dx-dialog-backdrop {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  background: rgb(0 0 0 / 30%);
+  backdrop-filter: blur(4px);
+  background: rgb(0 0 0 / 10%);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
 .dx-dialog-backdrop[data-state="closed"] {
-  animation: dx-dialog-backdrop-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-dialog-backdrop-animate-out var(--dx-motion-duration-fast) var(--dx-motion-ease-in) forwards;
   pointer-events: none;
 }
 
@@ -24,7 +30,7 @@
 }
 
 .dx-dialog-backdrop[data-state="open"] {
-  animation: dx-dialog-backdrop-animate-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+  animation: dx-dialog-backdrop-animate-in var(--dx-motion-duration-fast) var(--dx-motion-ease-out) forwards;
 }
 
 @keyframes dx-dialog-backdrop-animate-in {
@@ -49,60 +55,81 @@
   display: flex;
   width: 100%;
   max-width: calc(100% - var(--dx-space-8));
-  box-sizing: border-box;
   flex-direction: column;
-  padding: var(--dx-space-8) var(--dx-space-6) var(--dx-space-6);
-  border: 1px solid var(--primary-color-6);
-  border-radius: var(--dx-radius-lg);
+  padding: var(--dx-space-4);
+  border: none;
+  border-radius: var(--dx-radius-xl);
   margin: 0;
-  background: var(--primary-color-2);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 18%);
-  color: var(--secondary-color-4);
+  background: var(--dx-popover);
+  box-shadow: var(--dx-ring-subtle);
+  color: var(--dx-popover-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+  font-size: var(--dx-text-sm);
   gap: var(--dx-space-4);
-  text-align: center;
+  text-align: start;
   transform: translate(-50%, -50%); /* rtl-physical: see comment above */
 }
 
 .dx-dialog-title {
   margin: 0;
-  color: var(--secondary-color-4);
-  font-size: var(--dx-text-xl);
-  font-weight: 700;
+  color: var(--dx-popover-foreground);
+  font-size: var(--dx-text-base);
+  font-weight: 500;
+  line-height: 1;
 }
 
+/* Nova groups title + description in a header with `gap-2` inside the
+ * panel's `gap-4`; this panel has no header wrapper, so the description
+ * pulls back by the difference. */
 .dx-dialog-description {
   margin: 0;
-  color: var(--secondary-color-5);
-  font-size: var(--dx-text-base);
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-sm);
+  margin-block-start: calc(var(--dx-space-2) * -1);
 }
 
 @media (width >= 40rem) {
   .dx-dialog {
-    max-width: 32rem;
-    text-align: start;
+    max-width: 24rem;
   }
 }
 
+/* Nova's close is a ghost `icon-sm` button at `top-2 right-2`: 28px square,
+ * `min(radius-md, 12px)` corners, `muted` fill on hover. */
 .dx-dialog-close {
   position: absolute;
-  top: 1rem;
+  top: var(--dx-space-2);
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
   align-self: flex-start;
+  justify-content: center;
   padding: 0;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: min(var(--dx-radius-md), 12px);
   margin: 0;
   background: none;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-lg);
-  inset-inline-end: 1rem;
+  inset-inline-end: var(--dx-space-2);
   line-height: 1;
+  outline: none;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
+  transition-duration: var(--dx-motion-duration-base);
+  transition-property: background-color, border-color, box-shadow;
 }
 
 .dx-dialog-close:hover {
-  color: var(--secondary-color-1);
+  background-color: var(--light, var(--dx-muted))
+    var(--dark, color-mix(in oklab, var(--dx-muted) 50%, transparent));
+}
+
+.dx-dialog-close:focus-visible {
+  border-color: var(--dx-ring-color);
+  box-shadow: var(--dx-ring-focus);
 }

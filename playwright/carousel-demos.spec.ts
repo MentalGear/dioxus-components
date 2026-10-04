@@ -89,7 +89,10 @@ for (const vp of VIEWPORTS) {
         const m = await page.evaluate(() => {
           const frame = document.querySelector("#component-preview-frame-api")!;
           const root = frame.querySelector(".dx-carousel")!;
-          const card = root.querySelector(".dx-card")!;
+          // The square is the slide's `CardContent` (it carries `aspect-ratio: 1`); the
+          // outer `.dx-card` is block-padded by `--dx-card-spacing` (row 111, Nova card:
+          // 320 x 352, as in shadcn) so it is deliberately taller than wide.
+          const card = root.querySelector(".dx-card .dx-card-content")!;
           const viewport = root.querySelector(".dx-carousel-content")!;
           const caption = [...root.querySelectorAll("p")].find((p) => /^Slide \d+ of \d+$/.test(p.textContent ?? ""))!;
           const r = (el: Element) => el.getBoundingClientRect().toJSON();

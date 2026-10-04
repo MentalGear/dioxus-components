@@ -18,7 +18,7 @@ pub fn Demo() -> Element {
             Badge { variant: BadgeVariant::Outline, "Outline" }
             Badge {
                 variant: BadgeVariant::Secondary,
-                style: "background-color: var(--focused-border-color)",
+                style: "background-color: var(--dx-ring-color)",
                 VerifiedIcon {}
                 "Verified"
             }

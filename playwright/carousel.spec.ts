@@ -571,7 +571,11 @@ test.describe("Carousel: arrows never overflow their frame (carousel-narrow regr
         page,
       }) => {
         await page.setViewportSize({ width, height: 900 });
-        await page.goto(
+        // `gotoHydrated`, not a bare `page.goto`: the frames' buttons only exist once the
+        // page has hydrated, and the 3 s `toPass` below used to race that under load (the
+        // debug build with 4 workers, 4-10 of 12 red; row 109's class).
+        await gotoHydrated(
+          page,
           `${BASE_URL}/component/?name=carousel&variant=main&${dark ? "dark_mode=true" : ""}`,
           GOTO_OPTS,
         );

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { perTestTimeoutMs, timingSpecIgnore } from "./base-url";
 const path = require("path");
 
 /**
@@ -33,8 +34,14 @@ export default defineConfig({
     trace: "on-first-retry",
   },
 
-  // Each test is given 5 minutes.
-  timeout: 5 * 60 * 1000,
+  // Per-test budget. Was a flat 5 minutes, which let a hung test (e.g. row 73's
+  // drawer-drag hang) burn 5 min x retries before surfacing. 120s: the local
+  // configs already run the whole suite at 90s (1391 passed, row 116 follow-up),
+  // plus headroom for this config's slower firefox/webkit projects. Genuinely long
+  // tests keep their own `test.setTimeout(...)` (absolute, unaffected). Override
+  // without editing: PW_TEST_TIMEOUT=<ms>. `webServer.timeout` below is separate.
+  timeout: perTestTimeoutMs(2 * 60 * 1000),
+  testIgnore: timingSpecIgnore(),
 
   /* Configure projects for major browsers */
   projects: [

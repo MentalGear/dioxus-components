@@ -12,7 +12,6 @@
 /* Base Item */
 .dx-item {
   display: flex;
-  box-sizing: border-box;
   flex-wrap: wrap;
   align-items: center;
   border: 1px solid transparent;
@@ -26,9 +25,9 @@
 }
 
 .dx-item:focus-visible {
-  border-color: var(--focused-border-color);
+  border-color: var(--dx-ring-color);
   box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--focused-border-color) 50%, transparent);
+    color-mix(in srgb, var(--dx-ring-color) 50%, transparent);
 }
 
 a.dx-item {
@@ -38,7 +37,7 @@ a.dx-item {
 }
 
 a.dx-item:hover {
-  background-color: var(--primary-color-5);
+  background-color: var(--dx-muted);
 }
 
 /* Item Variants */
@@ -47,12 +46,12 @@ a.dx-item:hover {
 }
 
 .dx-item[data-variant="outline"] {
-  border-color: var(--primary-color-6);
+  border-color: var(--dx-border);
 }
 
 .dx-item[data-variant="muted"] {
   border-color: transparent;
-  background-color: color-mix(in srgb, var(--primary-color-5) 50%, transparent);
+  background-color: color-mix(in srgb, var(--dx-muted) 50%, transparent);
 }
 
 /* Item Sizes */
@@ -141,7 +140,7 @@ a.dx-item:hover {
   overflow: hidden;
   margin: 0;
   -webkit-box-orient: vertical;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 400;
   -webkit-line-clamp: 2;
@@ -156,7 +155,7 @@ a.dx-item:hover {
 }
 
 .dx-item-description a:hover {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 /* Item Actions */

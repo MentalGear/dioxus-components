@@ -18,7 +18,7 @@
 }
 
 .dx-table-row {
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
   transition: background-color var(--dx-motion-duration-base) var(--dx-motion-ease);
 }
 
@@ -27,18 +27,18 @@
 }
 
 .dx-table-row:hover {
-  background-color: var(--primary-color-4);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
 }
 
 .dx-table-row[data-state="selected"] {
-  background-color: var(--primary-color-5);
+  background-color: var(--dx-muted);
 }
 
 .dx-table-head {
   overflow: hidden;
   height: 2.5rem;
   padding: 0 var(--dx-space-2);
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-weight: 500;
   text-align: start;
   text-overflow: ellipsis;
@@ -64,13 +64,13 @@
 
 .dx-table-caption {
   margin-top: var(--dx-space-4);
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
 }
 
 .dx-table-footer {
-  border-top: 1px solid var(--primary-color-6);
-  background-color: var(--primary-color-4);
+  border-top: 1px solid var(--dx-border);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
   font-weight: 500;
 }
 

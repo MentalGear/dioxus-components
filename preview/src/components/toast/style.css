@@ -72,12 +72,10 @@
   overflow: hidden;
   width: 18rem;
   height: var(--dx-space-16);
-  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   padding: var(--dx-space-3) var(--dx-space-4);
-  border: 1px solid var(--light, var(--primary-color-6))
-    var(--dark, var(--primary-color-7));
+  border: 1px solid var(--dx-input);
   border-radius: var(--dx-radius-lg);
   margin-top: calc(-1 * var(--dx-space-16));
   box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
@@ -173,30 +171,30 @@
 
 .dx-toast-container:hover .dx-toast,
 .dx-toast-container:focus-within .dx-toast {
-  margin-top: var(--toast-padding);
+  margin-top: 0;
   filter: brightness(1);
   opacity: 1;
   transform: scale(calc(100%));
 }
 
 .dx-toast[data-type="success"] {
-  background-color: var(--primary-success-color);
-  color: var(--secondary-success-color);
+  background-color: var(--dx-success-subtle);
+  color: var(--dx-success);
 }
 
 .dx-toast[data-type="error"] {
-  background-color: var(--primary-error-color);
-  color: var(--contrast-error-color);
+  background-color: var(--dx-destructive);
+  color: var(--dx-destructive-foreground);
 }
 
 .dx-toast[data-type="warning"] {
-  background-color: var(--primary-warning-color);
-  color: var(--secondary-warning-color);
+  background-color: var(--dx-warning-subtle);
+  color: var(--dx-warning);
 }
 
 .dx-toast[data-type="info"] {
-  background-color: var(--primary-info-color);
-  color: var(--secondary-info-color);
+  background-color: var(--dx-info-subtle);
+  color: var(--dx-info);
 }
 
 .dx-toast-content {
@@ -207,12 +205,12 @@
 
 .dx-toast-title {
   margin-bottom: var(--dx-space-1);
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-weight: 600;
 }
 
 .dx-toast-description {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
 }
 
@@ -222,7 +220,7 @@
   border: none;
   margin: 0;
   background: none;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-lg);
   line-height: 1;
@@ -232,5 +230,5 @@
 }
 
 .dx-toast-close:hover {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }

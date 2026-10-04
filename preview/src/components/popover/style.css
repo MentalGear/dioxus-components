@@ -10,7 +10,6 @@
   overflow: visible;
   min-width: 200px;
   max-width: calc(100% - 2rem);
-  box-sizing: border-box;
   flex-direction: column;
   padding: var(--dx-space-1);
 
@@ -35,9 +34,8 @@
   border: none;
   border-radius: var(--dx-radius-lg);
   margin-top: var(--dx-space-2);
-  background: var(--light, var(--primary-color))
-      var(--dark, var(--primary-color-5));
-  box-shadow: inset 0 0 0 1px var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  background: var(--dx-popover);
+  box-shadow: inset 0 0 0 1px var(--dx-input);
   text-align: center;
 
   /* rtl-physical: this content's own *modal* centering trick (this rule's
@@ -128,7 +126,7 @@
 .dx-popover-content[data-side="top"]::after {
   top: calc(100% - 0.25rem);
   left: 50%;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0 0.1rem;
 }
 
@@ -143,7 +141,7 @@
 .dx-popover-content[data-side="right"]::after {
   top: calc(50% - 0.25rem);
   left: 0;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0 0 0.1rem;
 }
 
@@ -158,7 +156,7 @@
 .dx-popover-content[data-side="bottom"]::after {
   bottom: calc(100% - 0.25rem);
   left: 50%;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0.1rem 0 0;
 }
 
@@ -173,7 +171,7 @@
 .dx-popover-content[data-side="left"]::after {
   top: calc(50% - 0.25rem);
   right: -0.25rem;
-  border-color: var(--secondary-color-4);
+  border-color: var(--dx-foreground);
   border-radius: 0 0.1rem 0 0;
 }
 
@@ -217,14 +215,14 @@
 
 .dx-popover-content-title {
   margin: 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-xl);
   font-weight: 700;
 }
 
 .dx-popover-content-description {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-base);
 }
 
@@ -248,18 +246,17 @@
 
 .dx-popover-content-cancel {
   padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-lg);
-  background-color: var(--light, var(--primary-color))
-    var(--dark, var(--primary-color-3));
-  color: var(--secondary-color-4);
+  background-color: var(--dx-card);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-base);
   transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-popover-content-cancel:hover {
-  background-color: var(--primary-color-4);
+  background-color: var(--dx-accent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -276,17 +273,17 @@
 
 .dx-popover-content-action {
   padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--primary-error-color);
+  border: 1px solid var(--dx-destructive);
   border-radius: var(--dx-radius-lg);
-  background-color: var(--primary-error-color);
-  color: var(--contrast-error-color);
+  background-color: var(--dx-destructive);
+  color: var(--dx-destructive-foreground);
   cursor: pointer;
   font-size: var(--dx-text-base);
   transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
 }
 
 .dx-popover-content-action:hover {
-  background-color: var(--secondary-error-color);
+  background-color: color-mix(in oklab, var(--dx-destructive) 90%, transparent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
@@ -303,11 +300,10 @@
 
 .dx-popover-trigger {
   padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-lg);
-  background-color: var(--light, var(--primary-color))
-    var(--dark, var(--primary-color-3));
-  color: var(--secondary-color-4);
+  background-color: var(--dx-card);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-base);
 
@@ -317,7 +313,7 @@
 }
 
 .dx-popover-trigger:hover {
-  background-color: var(--primary-color-4);
+  background-color: var(--dx-accent);
 }
 
 /* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),

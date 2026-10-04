@@ -16,7 +16,7 @@
 
 .dx-form-hint {
     margin: 0 0 var(--dx-space-4);
-    color: var(--secondary-color-5);
+    color: var(--dx-muted-foreground);
     font-size: 0.9rem;
 }
 
@@ -52,22 +52,25 @@
 
 .dx-form-actions button {
     padding: var(--dx-space-2) var(--dx-space-4);
-    border: 1px solid var(--primary-color-6);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
-    background-color: var(--primary-color-1);
-    color: var(--secondary-color-4);
+    background-color: var(--dx-card);
+    color: var(--dx-foreground);
     cursor: pointer;
     font-size: var(--dx-text-sm);
 }
 
 .dx-form-result {
-    min-height: 1.5rem;
+    /* One line of content (1.5rem) plus the padding and border below. The
+       theme makes this border-box, where the bare `1.5rem` would otherwise be
+       the whole box and shrink the empty result by 24px. */
+    min-height: calc(1.5rem + var(--dx-space-3) * 2 + 2px);
     padding: var(--dx-space-3) var(--dx-space-4);
-    border: 1px solid var(--primary-color-6);
+    border: 1px solid var(--dx-border);
     border-radius: var(--dx-radius-sm);
     margin: 0;
-    background-color: var(--primary-color-1);
-    color: var(--secondary-color-4);
+    background-color: var(--dx-card);
+    color: var(--dx-foreground);
     font-size: 0.85rem;
     white-space: pre-wrap;
 }
@@ -83,6 +86,6 @@
  * marker.
  */
 .dx-form [data-invalid="true"] {
-    box-shadow: 0 0 0 2px var(--primary-error-color);
+    box-shadow: 0 0 0 2px var(--dx-destructive);
     outline: none;
 }

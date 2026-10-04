@@ -81,8 +81,8 @@ body {
 body {
   padding: 0;
   margin: 0;
-  background-color: var(--primary-color);
-  color: var(--secondary-color-4);
+  background-color: var(--dx-background);
+  color: var(--dx-foreground);
   font-family: Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
   font-optical-sizing: auto;
   font-style: normal;
@@ -233,7 +233,7 @@ summary,
   }
 
   :hover {
-    scrollbar-color: var(--secondary-color-2) rgb(0 0 0 / 0%);
+    scrollbar-color: var(--dx-foreground) rgb(0 0 0 / 0%);
   }
 }
 
@@ -258,38 +258,36 @@ summary,
   top: 0;
   display: flex;
   width: 100%;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   padding: 0;
-  background-color: var(--primary-color);
+  background-color: var(--dx-background);
   inset-block-start: 0;
 }
 
 .dx-navbar-inner {
   display: flex;
   width: min(var(--dx-content-width), calc(100vw - 2rem));
-  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 4.5rem;
-  border-right: 1px solid var(--primary-color-6);
-  border-bottom: 1px solid var(--primary-color-6);
-  border-left: 1px solid var(--primary-color-6);
+  border-right: 1px solid var(--dx-border);
+  border-bottom: 1px solid var(--dx-border);
+  border-left: 1px solid var(--dx-border);
 }
 
 .dx-navbar-link {
   display: inline-flex;
   align-items: center;
   padding: 0.5em 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 0.95rem;
   font-weight: 450;
   text-decoration: none;
 }
 
 .dx-navbar-link:hover {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
 }
 
 .dx-navbar-primary,
@@ -302,7 +300,7 @@ summary,
 .dx-navbar-brand {
   display: flex;
   align-items: center;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 0.98rem;
   font-weight: 400;
   gap: 0.55rem;
@@ -324,9 +322,9 @@ summary,
 .dx-preview-code-theme {
   display: grid;
   overflow: auto;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.5rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
 
   /* Line-number gutter, then the code (`1fr` keeps the code at least as wide as its longest line). */
   grid-template-columns: auto 1fr;
@@ -354,12 +352,11 @@ summary,
 .dx-preview-code-theme .dx-code-gutter {
   position: sticky;
   z-index: 1;
-  box-sizing: border-box;
   padding: 1rem 0.75rem 1rem 1.1rem;
   margin: 0;
-  background-color: var(--primary-color-1);
-  border-inline-end: 1px solid var(--primary-color-6);
-  color: var(--secondary-color-5);
+  background-color: var(--dx-card);
+  border-inline-end: 1px solid var(--dx-border);
+  color: var(--dx-muted-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
@@ -415,7 +412,6 @@ summary,
   max-width: calc(100vw - 2rem);
   height: 100%;
   max-height: 80vh;
-  box-sizing: border-box;
   border-radius: 0.5rem;
   margin: 0;
 }
@@ -437,7 +433,7 @@ summary,
   padding: 0;
   border: none;
   background: none;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   cursor: pointer;
 }
 
@@ -456,7 +452,7 @@ summary,
   border-radius: 0.5rem;
   margin: 0;
   background: none;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   cursor: pointer;
   gap: 0.5em;
 }
@@ -466,7 +462,7 @@ summary,
 }
 
 .dx-copy-button[data-copied="true"] {
-  color: var(--secondary-success-color);
+  color: var(--dx-success);
 }
 
 /* Docs, component and home pages: real site nav via the themed `Sidebar`
@@ -538,8 +534,8 @@ summary,
   width: min(var(--dx-content-width), calc(100vw - 2rem));
   min-height: calc(100vh - var(--dx-navbar-height));
   overflow: visible;
-  border-right: 1px solid var(--primary-color-6);
-  border-left: 1px solid var(--primary-color-6);
+  border-right: 1px solid var(--dx-border);
+  border-left: 1px solid var(--dx-border);
   margin: 0 auto;
 }
 
@@ -593,7 +589,6 @@ summary,
 .dx-component-page {
   min-width: 0;
   max-width: 840px;
-  box-sizing: border-box;
   padding: 3rem 1.5rem 5rem 4.25rem;
 }
 
@@ -606,7 +601,7 @@ summary,
 .dx-component-page-header {
   display: grid;
   padding-bottom: 1.75rem;
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
   gap: 1rem;
   grid-template-columns: minmax(0, 1fr);
 }
@@ -630,7 +625,7 @@ summary,
 
 .dx-component-page-title-row .dx-component-inline-command {
   padding: 0.4rem 0.45rem 0.4rem 0.65rem;
-  border-color: var(--primary-color-6);
+  border-color: var(--dx-border);
 }
 
 .dx-component-page-title-row .dx-component-inline-command code {
@@ -649,7 +644,7 @@ summary,
 .dx-docs-page-header h1,
 .dx-component-page-header h1 {
   margin: 0;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 2.5rem;
   font-weight: 700;
   letter-spacing: -0.015em;
@@ -663,7 +658,7 @@ summary,
 .dx-docs-page-header p,
 .dx-component-page-header p {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 1rem;
   line-height: 1.65;
 }
@@ -681,9 +676,9 @@ summary,
 .dx-docs-section h2,
 .dx-component-section-heading h2 {
   padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
   margin: 0 0 0.75rem;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1.5rem;
   font-weight: 660;
   letter-spacing: -0.005em;
@@ -693,7 +688,7 @@ summary,
 .dx-docs-section p,
 .dx-component-section-heading p {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   line-height: 1.6;
 }
 
@@ -701,7 +696,7 @@ summary,
   display: grid;
   padding: 0;
   margin: 1rem 0 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   counter-reset: dx-docs-steps;
   gap: 0.625rem;
   list-style: none;
@@ -724,10 +719,10 @@ summary,
   height: 1.35rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 999px;
-  background-color: var(--primary-color-1);
-  color: var(--secondary-color-5);
+  background-color: var(--dx-card);
+  color: var(--dx-muted-foreground);
   content: counter(dx-docs-steps);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.75rem;
@@ -737,14 +732,13 @@ summary,
   display: flex;
   width: fit-content;
   max-width: 100%;
-  box-sizing: border-box;
   align-items: center;
   padding: 0.5rem 0.5rem 0.5rem 0.75rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.4rem;
   margin: 0.85rem 0 1.25rem;
-  background-color: var(--primary-color);
-  color: var(--secondary-color-4);
+  background-color: var(--dx-background);
+  color: var(--dx-foreground);
   gap: 1rem;
 }
 
@@ -758,13 +752,13 @@ summary,
 
 .dx-docs-muted {
   margin-top: 0.75rem;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.9rem;
 }
 
 /* GitHub-flavored markdown prose for docs pages */
 .dx-docs-prose {
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 1rem;
   line-height: 1.65;
 }
@@ -779,9 +773,9 @@ summary,
 
 .dx-docs-prose .dx-docs-section h2 {
   padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
   margin: 0 0 1rem;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1.5rem;
   font-weight: 660;
   letter-spacing: -0.005em;
@@ -790,7 +784,7 @@ summary,
 
 .dx-docs-prose .dx-docs-section h3 {
   margin: 1.5rem 0 0.5rem;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1.15rem;
   font-weight: 600;
   line-height: 1.3;
@@ -798,7 +792,7 @@ summary,
 
 .dx-docs-prose .dx-docs-section p {
   margin: 0 0 0.95rem;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 1rem;
   line-height: 1.65;
 }
@@ -812,8 +806,8 @@ summary,
 .dx-docs-prose li code {
   padding: 0.15em 0.4em;
   border-radius: 0.25rem;
-  background-color: var(--primary-color-2);
-  color: var(--secondary-color-3);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875em;
 }
@@ -824,8 +818,8 @@ summary,
   padding: 1rem 1.1rem;
   border-radius: 0.5rem;
   margin: 0 0 1.1rem;
-  background-color: var(--primary-color-1);
-  color: var(--secondary-color-3);
+  background-color: var(--dx-card);
+  color: var(--dx-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875rem;
   line-height: 1.5;
@@ -844,7 +838,7 @@ summary,
 .dx-docs-prose .dx-docs-section ul {
   padding-left: 1.25rem;
   margin: 0 0 1rem;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
 }
 
 .dx-docs-prose .dx-docs-section ul li {
@@ -863,7 +857,7 @@ summary,
 .dx-docs-prose table {
   min-width: 100%;
   border-collapse: collapse;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -871,27 +865,27 @@ summary,
 .dx-docs-prose th,
 .dx-docs-prose td {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   text-align: start;
   vertical-align: top;
 }
 
 .dx-docs-prose th {
-  background-color: var(--primary-color-2);
-  color: var(--secondary-color-3);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .dx-docs-prose tbody tr:nth-child(even) td {
-  background-color: var(--primary-color-1);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
 }
 
 .dx-docs-prose td code {
   padding: 0.15em 0.4em;
   border-radius: 0.25rem;
-  background-color: var(--primary-color-2);
-  color: var(--secondary-color-3);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875em;
 }
@@ -949,13 +943,12 @@ summary,
 .dx-component-inline-command {
   display: inline-flex;
   max-width: 100%;
-  box-sizing: border-box;
   align-items: center;
   padding: 0.3rem 0.35rem 0.3rem 0.55rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.4rem;
-  background-color: var(--primary-color-1);
-  color: var(--secondary-color-4);
+  background-color: var(--dx-card);
+  color: var(--dx-foreground);
   gap: 0.75rem;
 }
 
@@ -980,14 +973,13 @@ summary,
   width: 100%;
   min-height: 11rem;
   max-height: 100%;
-  box-sizing: border-box;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 1.75rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.5rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
   background-image:
     radial-gradient(circle, rgb(0 0 0 / 6%) 1px, transparent 1px);
   background-position: -1px -1px;
@@ -1023,16 +1015,16 @@ summary,
 
 .dx-component-manual-install {
   overflow: hidden;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.5rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
 }
 
 .dx-component-manual-install summary {
   display: flex;
   align-items: center;
   padding: 0.85rem 1rem;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   cursor: pointer;
   font-weight: 600;
   gap: 0.6rem;
@@ -1047,8 +1039,8 @@ summary,
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
-  border-right: 1.5px solid var(--secondary-color-5);
-  border-bottom: 1.5px solid var(--secondary-color-5);
+  border-right: 1.5px solid var(--dx-muted-foreground);
+  border-bottom: 1.5px solid var(--dx-muted-foreground);
   content: "";
   transform: rotate(-45deg);
   transition: transform 0.15s ease;
@@ -1061,7 +1053,7 @@ summary,
 }
 
 .dx-component-manual-install summary:hover {
-  background-color: var(--primary-color-2);
+  background-color: var(--dx-accent);
 }
 
 .dx-component-manual-copy {
@@ -1070,7 +1062,7 @@ summary,
 
 .dx-component-manual-copy p {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-component-manual-code {
@@ -1098,7 +1090,6 @@ summary,
 }
 
 .dx-component-manual-install-code .dx-component-manual-code {
-  box-sizing: border-box;
   padding: 0;
 }
 
@@ -1118,7 +1109,7 @@ summary,
 }
 
 .dx-component-description {
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 1rem;
   line-height: 1.65;
 
@@ -1128,7 +1119,7 @@ summary,
 
 .dx-component-description p {
   margin: 0 0 0.95rem;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
 }
 
 .dx-component-description p:last-child {
@@ -1137,7 +1128,7 @@ summary,
 
 .dx-component-description h2,
 .dx-component-description h3 {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
 }
 
 .dx-component-description h3 {
@@ -1152,8 +1143,8 @@ summary,
 .dx-component-description li code {
   padding: 0.15em 0.4em;
   border-radius: 0.25rem;
-  background-color: var(--primary-color-2);
-  color: var(--secondary-color-3);
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875em;
 }
@@ -1185,7 +1176,7 @@ summary,
 
 .dx-component-variant-title {
   margin: 0 0 0.75rem;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1rem;
   text-transform: capitalize;
 }
@@ -1195,7 +1186,6 @@ summary,
  * `DocsLayout`) -- this only needs to fill the sidebar inset's own
  * remaining width, not independently re-center against the viewport. */
 .dx-home-page {
-  box-sizing: border-box;
   padding-right: 4.5rem;
   padding-left: 4.25rem;
 }
@@ -1204,7 +1194,7 @@ summary,
 .dx-home-section {
   width: 100%;
   padding: 4.5rem 0;
-  border-bottom: 1px solid var(--primary-color-6);
+  border-bottom: 1px solid var(--dx-border);
 }
 
 .dx-home-section:last-child {
@@ -1230,7 +1220,7 @@ summary,
 
 .dx-section-title {
   margin: 0;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 2.25rem;
   font-weight: 720;
   letter-spacing: -0.01em;
@@ -1239,7 +1229,7 @@ summary,
 
 .dx-section-summary {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 1rem;
   line-height: 1.6;
 }
@@ -1254,12 +1244,11 @@ summary,
   display: block;
   overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
   padding: 1.75rem 1.75rem 1.85rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.5rem;
   margin: 0 0 1.5rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
   break-inside: avoid;
 }
 
@@ -1297,22 +1286,22 @@ summary,
   overflow: hidden;
   width: 100%;
   flex-direction: column;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.5rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
   color: inherit;
   text-decoration: none;
   transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .dx-demos-card:hover {
-  border-color: var(--primary-color-7);
+  border-color: var(--dx-border-strong);
   box-shadow: 0 12px 32px -20px rgb(0 0 0 / 35%);
   transform: translateY(-2px);
 }
 
 .dx-demos-card:focus-visible {
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 3px;
 }
 
@@ -1321,8 +1310,8 @@ summary,
   height: 180px;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid var(--primary-color-6);
-  background: linear-gradient(135deg, var(--primary-color-2), var(--primary-color));
+  border-bottom: 1px solid var(--dx-border);
+  background: linear-gradient(135deg, var(--dx-card), var(--dx-background));
   color: var(--highlight-color-tertiary);
 }
 
@@ -1337,10 +1326,10 @@ summary,
 .dx-demos-card-tag {
   align-self: flex-start;
   padding: 0.2rem 0.55rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 999px;
-  background-color: var(--primary-color);
-  color: var(--secondary-color-5);
+  background-color: var(--dx-background);
+  color: var(--dx-muted-foreground);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1349,7 +1338,7 @@ summary,
 
 .dx-demos-card-title {
   margin: 0;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1.15rem;
   font-weight: 660;
   line-height: 1.25;
@@ -1357,7 +1346,7 @@ summary,
 
 .dx-demos-card-description {
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.92rem;
   line-height: 1.55;
 }
@@ -1383,7 +1372,6 @@ summary,
 
 .dx-component-card {
   display: grid;
-  box-sizing: border-box;
   align-items: start;
   padding: 3rem 0;
   gap: 2rem;
@@ -1409,7 +1397,7 @@ summary,
 .dx-component-card-title-link {
   display: inline-flex;
   align-items: center;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   gap: 0.35rem;
   text-decoration: none;
 }
@@ -1420,14 +1408,14 @@ summary,
 
 .dx-component-card-title-link:focus-visible {
   border-radius: 0.25rem;
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 3px;
 }
 
 .dx-component-card-description {
   max-width: 36rem;
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.95rem;
   line-height: 1.55;
 }
@@ -1444,13 +1432,12 @@ summary,
 .dx-component-card-command {
   display: inline-flex;
   max-width: 100%;
-  box-sizing: border-box;
   align-items: center;
   padding: 0.375rem 0.375rem 0.375rem 0.5rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.25rem;
-  background-color: var(--primary-color);
-  color: var(--secondary-color-4);
+  background-color: var(--dx-background);
+  color: var(--dx-foreground);
   gap: 1rem;
 }
 
@@ -1466,7 +1453,7 @@ summary,
   width: 1rem;
   height: 1rem;
   flex: 0 0 auto;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-component-card-copy svg {
@@ -1479,7 +1466,7 @@ summary,
   min-height: 6rem;
   align-items: center;
   justify-content: center;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: 0.925rem;
   font-weight: 600;
   gap: 0.35rem;
@@ -1487,12 +1474,12 @@ summary,
 }
 
 .dx-component-card-block-link:hover {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
 }
 
 .dx-component-card-block-link:focus-visible {
   border-radius: 0.25rem;
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 3px;
 }
 
@@ -1501,13 +1488,12 @@ summary,
   overflow: visible;
   min-width: 0;
   min-height: 10rem;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: 0.25rem;
-  background-color: var(--primary-color-1);
+  background-color: var(--dx-card);
 }
 
 .dx-component-card-preview > * {
@@ -1535,31 +1521,28 @@ summary,
 /* A bare chart sits straight on the dotted frame canvas; give it the same
  * surface the `Card`-wrapped demos have so its axis labels stay legible. */
 .dx-component-preview-frame > .dx-chart {
-  box-sizing: border-box;
   padding: var(--dx-space-4);
-  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-2xl);
-  background-color: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+  background-color: var(--dx-card);
 }
 
 /* Footer */
 .dx-preview-footer {
   display: flex;
   width: 100%;
-  box-sizing: border-box;
   flex-direction: column;
   align-items: center;
-  border-top: 1px solid var(--primary-color-6);
-  background-color: var(--primary-color);
+  border-top: 1px solid var(--dx-border);
+  background-color: var(--dx-background);
 }
 
 .dx-footer-inner {
   display: grid;
   width: min(var(--dx-content-width), calc(100vw - 2rem));
-  box-sizing: border-box;
   padding: 3rem 4.5rem 2.5rem;
-  border-right: 1px solid var(--primary-color-6);
-  border-left: 1px solid var(--primary-color-6);
+  border-right: 1px solid var(--dx-border);
+  border-left: 1px solid var(--dx-border);
   gap: 3rem;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
@@ -1573,7 +1556,7 @@ summary,
 .dx-footer-brand-link {
   display: inline-flex;
   align-items: center;
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 1rem;
   font-weight: 700;
   gap: 0.55rem;
@@ -1583,7 +1566,7 @@ summary,
 .dx-footer-tagline {
   max-width: 32rem;
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.9rem;
   line-height: 1.55;
 }
@@ -1601,7 +1584,7 @@ summary,
 }
 
 .dx-footer-nav-heading {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1609,7 +1592,7 @@ summary,
 }
 
 .dx-footer-link {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.92rem;
   font-weight: 500;
   text-decoration: none;
@@ -1617,29 +1600,28 @@ summary,
 }
 
 .dx-footer-link:hover {
-  color: var(--secondary-color-3);
+  color: var(--dx-foreground);
 }
 
 .dx-footer-link:focus-visible {
   border-radius: 0.25rem;
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 3px;
 }
 
 .dx-footer-base {
   display: flex;
   width: min(var(--dx-content-width), calc(100vw - 2rem));
-  box-sizing: border-box;
   align-items: center;
   justify-content: flex-start;
   padding: 1rem 4.5rem 1.5rem;
-  border-right: 1px solid var(--primary-color-6);
-  border-bottom: 1px solid var(--primary-color-6);
-  border-left: 1px solid var(--primary-color-6);
+  border-right: 1px solid var(--dx-border);
+  border-bottom: 1px solid var(--dx-border);
+  border-left: 1px solid var(--dx-border);
 }
 
 .dx-footer-copy {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.82rem;
 }
 
@@ -1806,7 +1788,6 @@ summary,
 .dx-charts-page {
   width: 100%;
   max-width: var(--dx-content-width);
-  box-sizing: border-box;
   margin-inline: auto;
   padding-block: 0 var(--dx-space-24);
   padding-inline: var(--dx-space-6);
@@ -1823,7 +1804,7 @@ summary,
 
 .dx-charts-hero-title {
   margin: 0;
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-4xl);
   font-weight: 600;
   letter-spacing: -0.04em;
@@ -1834,7 +1815,7 @@ summary,
 .dx-charts-hero-summary {
   max-width: 40rem;
   margin: 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-lg);
   line-height: 1.55;
   text-wrap: balance;
@@ -1851,7 +1832,6 @@ summary,
 .dx-charts-hero-button {
   display: inline-flex;
   height: 2.25rem;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   border-radius: var(--dx-radius-full);
@@ -1864,13 +1844,13 @@ summary,
 }
 
 .dx-charts-hero-button[data-style="primary"] {
-  background: var(--secondary-color);
-  color: var(--primary-color);
+  background: var(--dx-primary);
+  color: var(--dx-primary-foreground);
 }
 
 .dx-charts-hero-button[data-style="secondary"] {
-  background: var(--primary-color-5);
-  color: var(--secondary-color-4);
+  background: var(--dx-secondary);
+  color: var(--dx-foreground);
 }
 
 .dx-charts-hero-button:hover {
@@ -1902,7 +1882,7 @@ summary,
   flex-shrink: 0;
   align-items: center;
   border-radius: var(--dx-radius-full);
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-base);
   font-weight: 500;
   padding-inline: var(--dx-space-4);
@@ -1912,11 +1892,11 @@ summary,
 }
 
 .dx-charts-tab:hover {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-charts-tab[aria-current="page"] {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-charts-grid {
@@ -1946,7 +1926,7 @@ summary,
   display: flex;
   min-width: 0;
   align-items: center;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: 0.8125rem;
   gap: var(--dx-space-2);
 }
@@ -1962,11 +1942,11 @@ summary,
   display: none;
   width: 1px;
   height: 1rem;
-  background: var(--primary-color-6);
+  background: var(--dx-border);
 }
 
 .dx-charts-toolbar-actions .dx-button[data-copied="true"] {
-  color: var(--secondary-success-color);
+  color: var(--dx-success);
 }
 
 /* The demo (a `Card`, sometimes inside a `display: contents` wrapper) fills
@@ -1979,11 +1959,11 @@ summary,
 }
 
 .dx-charts-card-body .dx-card {
-  /* border-box: the Tooltips tab wraps each card in a block (not the flex
-   * row the other tabs use), where a content-box `width: 100%` plus the
-   * card's 1px border overflowed the cell by 2px. */
+  /* The Tooltips tab wraps each card in a block (not the flex row the other
+   * tabs use), where a content-box `width: 100%` plus the card's border
+   * overflowed the cell. `.dx-card` is border-box from the theme's box-model
+   * rule (dx-components-theme.css), so `width: 100%` is the cell. */
   width: 100%;
-  box-sizing: border-box;
   min-width: 0;
   max-width: none;
   flex: 1 1 0%;
@@ -1999,7 +1979,6 @@ summary,
 .dx-sheet.dx-charts-sheet[data-side="right"] {
   width: min(700px, 100%);
   max-width: 700px;
-  box-sizing: border-box;
   padding: var(--dx-space-12) var(--dx-space-4) var(--dx-space-4);
 }
 
@@ -2016,9 +1995,9 @@ summary,
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-xl);
-  background: var(--primary-color-1);
+  background: var(--dx-card);
 }
 
 .dx-charts-code-bar {
@@ -2026,9 +2005,9 @@ summary,
   height: 3rem;
   flex-shrink: 0;
   align-items: center;
-  border-bottom: 1px solid var(--primary-color-6);
-  background: var(--primary-color-3);
-  color: var(--secondary-color-5);
+  border-bottom: 1px solid var(--dx-border);
+  background: var(--dx-muted);
+  color: var(--dx-muted-foreground);
   gap: var(--dx-space-3);
   padding-inline: var(--dx-space-4) var(--dx-space-2);
 }
@@ -2038,7 +2017,7 @@ summary,
   min-width: 0;
   flex: 1 1 auto;
   margin: 0;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: var(--dx-text-sm);
   font-weight: 500;
@@ -2057,7 +2036,6 @@ summary,
   overflow: visible;
   min-width: max-content;
   min-height: 100%;
-  box-sizing: border-box;
   border: none;
   border-radius: 0;
   background: transparent;

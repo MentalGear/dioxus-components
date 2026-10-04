@@ -558,6 +558,8 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     let is_focused = move || item.focused() && !nav_ctx.focus.any_focused();
     let onmounted = item.onmounted();
     let is_open = nav_ctx.is_open;
+    // See the `onpointerdown`/`onclick` pair below (docs/backlog.md row 40).
+    let mut open_at_down: Signal<Option<bool>> = use_signal(|| None);
 
     // docs/backlog.md row 36: `nav_ctx.trigger_id` is the same signal
     // `NavbarContent`'s `aria-labelledby` reads back (row 41, below) -- a
@@ -618,6 +620,18 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
     rsx! {
         button {
             onmounted,
+            // docs/backlog.md row 40: the toggle happens on `click`, NOT on
+            // `pointerdown`. `NavbarContent` is `popover="auto"`, and the
+            // browser's native light dismiss reads only `pointerdown` +
+            // `pointerup` (WHATWG HTML "popover light dismiss"): a popover
+            // shown between a gesture's `pointerdown` and its `pointerup`
+            // (any hold longer than a render + effect -- every real
+            // finger) sees `null === null` at `pointerup` and is hidden by
+            // the very gesture that opened it. `click` fires after
+            // `pointerup`, so opening here cannot be self-dismissed on any
+            // engine. Contract: an `auto` popover is shown only from
+            // `click`/`pointerup`/keyboard/timer, never from `pointerdown`
+            // (see `top_layer::PopoverKind::Auto`).
             onpointerdown: move |event| {
                 if !disabled() {
                     // Suppress the synthesized focus shift so that tapping a child
@@ -625,9 +639,29 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
                     // which would close the nav mid-tap and detach the menuitem
                     // before Playwright (or a real user) can complete the tap.
                     event.prevent_default();
-                    let new_open = if is_open() { None } else { Some(nav_ctx.index.cloned()) };
+                    // Snapshot the state this gesture started from. On touch the
+                    // compat `mouseenter` (`NavbarNav`'s hover-open) fires
+                    // between `pointerup` and `click`, so by `click` time
+                    // `is_open()` is already true -- toggling off that would
+                    // close the menu the tap was opening. Desktop hover-open
+                    // happens before `pointerdown`, so the snapshot is `true`
+                    // there and the click closes it, as before.
+                    open_at_down.set(Some(is_open()));
+                }
+            },
+            onclick: move |_| {
+                // `None`: a click with no preceding pointerdown (Space
+                // button activation, assistive tech) -- toggle live state.
+                let was_open = open_at_down.write().take().unwrap_or_else(|| is_open());
+                if !disabled() {
+                    let new_open = if was_open { None } else { Some(nav_ctx.index.cloned()) };
                     ctx.set_open_nav.call(new_open);
                 }
+            },
+            // Any key activation invalidates a stale pointerdown snapshot
+            // (a pointerdown that never produced a click, e.g. dragged off).
+            onkeydown: move |_| {
+                open_at_down.set(None);
             },
             onblur: move |_| {
                 if is_focused() {

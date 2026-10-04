@@ -1,21 +1,58 @@
+/* Nova card (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css, `.cn-card*`):
+ * no border and no drop shadow -- a 1px `foreground/10` ring, 16px spacing
+ * (12px at `data-size="sm"`), `rounded-xl`, `text-sm`. Nova also sets
+ * `overflow-hidden`; it is left off here and the header/footer/edge images carry
+ * their own corner radii instead, so a child's focus ring or a non-top-layer
+ * overlay inside the card is never clipped. */
 .dx-card {
+  --dx-card-spacing: var(--dx-space-4);
+
   display: flex;
   flex-direction: column;
-  padding: var(--dx-space-6) 0;
-  border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-5));
-  border-radius: var(--dx-radius-2xl);
-  background-color: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
-  box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
-  color: var(--secondary-color-4);
-  gap: var(--dx-space-6);
+  padding: var(--dx-card-spacing) 0;
+  border: none;
+  border-radius: var(--dx-radius-xl);
+  background-color: var(--dx-card);
+  box-shadow: var(--dx-ring-subtle);
+  color: var(--dx-card-foreground);
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-card-spacing);
+}
+
+.dx-card[data-size="sm"] {
+  --dx-card-spacing: var(--dx-space-3);
+}
+
+/* A footer sits flush with the bottom edge (it carries its own padding). */
+.dx-card:has([data-slot="card-footer"]) {
+  padding-block-end: 0;
+}
+
+.dx-card:has(> img:first-child) {
+  padding-block-start: 0;
+}
+
+.dx-card > img:first-child {
+  border-start-end-radius: var(--dx-radius-xl);
+  border-start-start-radius: var(--dx-radius-xl);
+}
+
+.dx-card > img:last-child {
+  border-end-end-radius: var(--dx-radius-xl);
+  border-end-start-radius: var(--dx-radius-xl);
 }
 
 .dx-card-header {
   display: grid;
   align-items: start;
-  padding: 0 var(--dx-space-6);
-  gap: var(--dx-space-2);
+  padding: 0 var(--dx-card-spacing);
+  border-start-end-radius: var(--dx-radius-xl);
+  border-start-start-radius: var(--dx-radius-xl);
+  gap: var(--dx-space-1);
   grid-auto-rows: min-content;
+}
+
+.dx-card-header:has([data-slot="card-description"]) {
   grid-template-rows: auto auto;
 }
 
@@ -25,12 +62,16 @@
 
 .dx-card-title {
   font-size: var(--dx-text-base);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: 500;
+  line-height: 1.375;
+}
+
+.dx-card[data-size="sm"] .dx-card-title {
+  font-size: var(--dx-text-sm);
 }
 
 .dx-card-description {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   line-height: 1.25rem;
 }
@@ -42,11 +83,15 @@
 }
 
 .dx-card-content {
-  padding: 0 var(--dx-space-6);
+  padding: 0 var(--dx-card-spacing);
 }
 
 .dx-card-footer {
   display: flex;
   align-items: center;
-  padding: 0 var(--dx-space-6);
+  padding: var(--dx-card-spacing);
+  border-top: 1px solid var(--dx-border);
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
+  border-end-end-radius: var(--dx-radius-xl);
+  border-end-start-radius: var(--dx-radius-xl);
 }

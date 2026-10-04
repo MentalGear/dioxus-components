@@ -42,7 +42,7 @@ pub fn Demo() -> Element {
                     y: "{ctx.cy - r / 2.0}",
                     width: "{r}",
                     height: "{r}",
-                    fill: "var(--primary-color-1)",
+                    fill: "var(--dx-card)",
                     stroke: "var(--series-color)",
                 }
             }

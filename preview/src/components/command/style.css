@@ -85,15 +85,14 @@
   overflow: hidden;
   width: 100%;
   max-width: calc(100% - var(--dx-space-8));
-  box-sizing: border-box;
   flex-direction: column;
   padding: 0;
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
   border-radius: var(--dx-radius-xl);
   margin: 0;
-  background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+  background: var(--dx-card);
   box-shadow: var(--dx-shadow-2xl);
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   transform: translateX(-50%); /* rtl-physical: see comment above */
 }
 
@@ -115,7 +114,7 @@
   flex-shrink: 0;
   align-items: center;
   padding: 0 var(--dx-space-4);
-  box-shadow: inset 0 -1px 0 0 var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+  box-shadow: inset 0 -1px 0 0 var(--dx-input);
   gap: var(--dx-space-2);
 }
 
@@ -129,7 +128,7 @@
   padding: var(--dx-space-3) 0;
   border: none;
   background: transparent;
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   font-family: inherit;
   font-size: var(--dx-text-base);
   outline: none;
@@ -139,7 +138,7 @@
 }
 
 .dx-command-input::placeholder {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-command-list {
@@ -150,14 +149,14 @@
 
 .dx-command-empty {
   padding: var(--dx-space-6) 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   text-align: center;
 }
 
 .dx-command-group-label {
   padding: var(--dx-space-2) var(--dx-space-3) var(--dx-space-1);
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-xs);
 }
 
@@ -177,8 +176,8 @@
 }
 
 .dx-command-item[data-highlighted="true"] {
-  background: var(--light, var(--primary-color-4)) var(--dark, var(--primary-color-7));
-  color: var(--secondary-color-1);
+  background: var(--dx-accent);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-command-item[data-disabled="true"] {

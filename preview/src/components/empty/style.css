@@ -22,7 +22,7 @@
   align-items: center;
   justify-content: center;
   margin-bottom: var(--dx-space-2);
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
 }
 
 .dx-empty-media svg {
@@ -34,24 +34,24 @@
   width: 3rem;
   height: 3rem;
   border-radius: var(--dx-radius-full);
-  background-color: var(--primary-color-5);
+  background-color: var(--dx-muted);
 }
 
 .dx-empty-title {
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-lg);
   font-weight: 500;
   line-height: 1.5;
 }
 
 .dx-empty-description {
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   line-height: 1.5;
 }
 
 .dx-empty-description a {
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   text-underline-offset: 0.25rem;
 }
 

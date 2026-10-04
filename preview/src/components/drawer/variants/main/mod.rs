@@ -62,7 +62,7 @@ pub fn Demo() -> Element {
                         div { font_size: "3rem", font_weight: "700", line_height: "1", "{goal()}" }
                         div {
                             margin_top: "0.5rem",
-                            color: "var(--secondary-color-5)",
+                            color: "var(--dx-muted-foreground)",
                             font_size: "0.75rem",
                             text_transform: "uppercase",
                             "Calories/day"

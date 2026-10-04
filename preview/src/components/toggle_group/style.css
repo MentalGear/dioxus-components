@@ -8,7 +8,7 @@
   border: none;
   border-radius: 0;
   background-color: transparent;
-  color: var(--secondary-color-4);
+  color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   outline: none;
 
@@ -19,9 +19,9 @@
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
   .dx-toggle-group-item {
-  border-top: 1px solid var(--primary-color-6);
-  border-bottom: 1px solid var(--primary-color-6);
-  border-inline-end: 1px solid var(--primary-color-6);
+  border-top: 1px solid var(--dx-border);
+  border-bottom: 1px solid var(--dx-border);
+  border-inline-end: 1px solid var(--dx-border);
 }
 
 /* docs/backlog.md row 89: same construction as `toggle/style.css`'s
@@ -34,32 +34,32 @@
    `:focus-visible` is untouched, same (0,2,0) it already has. */
 .dx-toggle-group-item:where(:hover),
 .dx-toggle-group-item:focus-visible {
-  background-color: var(--primary-color-4);
+  background-color: var(--dx-accent);
   cursor: pointer;
 }
 
 .dx-toggle-group-item[data-state="on"] {
   background-color: var(--primary-color-7);
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-toggle-group-item:focus-visible {
   position: relative;
   z-index: var(--dx-z-raise);
-  outline: 2px solid var(--focused-border-color);
+  outline: 2px solid var(--dx-ring-color);
   outline-offset: 2px;
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
   .dx-toggle-group-item[data-state="on"] {
-  border-top: 1px solid var(--secondary-color-6);
-  border-bottom: 1px solid var(--secondary-color-6);
-  border-inline-end: 1px solid var(--secondary-color-6);
+  border-top: 1px solid var(--dx-input);
+  border-bottom: 1px solid var(--dx-input);
+  border-inline-end: 1px solid var(--dx-input);
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"]
   .dx-toggle-group-item:first-child[data-state="on"] {
-  border: 1px solid var(--secondary-color-6);
+  border: 1px solid var(--dx-input);
 }
 
 .dx-toggle-group-item:first-child {
@@ -68,7 +68,7 @@
 }
 
 .dx-toggle-group[data-allow-multiple-pressed="true"] .dx-toggle-group-item:first-child {
-  border: 1px solid var(--primary-color-6);
+  border: 1px solid var(--dx-border);
 }
 
 .dx-toggle-group-item:last-child {

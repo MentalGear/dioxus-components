@@ -16,10 +16,9 @@
 .dx-slider-track {
     position: relative;
     height: 0.5rem;
-    box-sizing: border-box;
     flex-grow: 1;
     border-radius: var(--dx-radius-full);
-    background: var(--primary-color-5);
+    background: var(--dx-muted);
 }
 
 .dx-slider[data-orientation="vertical"] .dx-slider-track {
@@ -31,7 +30,7 @@
     position: absolute;
     height: 100%;
     border-radius: var(--dx-radius-full);
-    background-color: var(--secondary-color-2);
+    background-color: var(--dx-primary);
 }
 
 .dx-slider[data-orientation="vertical"] .dx-slider-range {
@@ -48,8 +47,8 @@
     box-sizing: border-box;
     border: 0;
     border-radius: 50%;
-    background-color: var(--primary-color-1);
-    box-shadow: inset 0 0 0 1px var(--secondary-color-2);
+    background-color: var(--dx-background);
+    box-shadow: inset 0 0 0 1px var(--dx-primary);
     cursor: pointer;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
@@ -82,8 +81,8 @@
 .dx-slider-thumb:focus-visible[data-dragging="true"],
 .dx-slider-thumb:focus-visible,
 .dx-slider-thumb:hover {
-    box-shadow: inset 0 0 0 1px var(--secondary-color-2),
-        0 0 0 4px color-mix(in oklab, var(--primary-color-7) 50%, transparent);
+    box-shadow: inset 0 0 0 1px var(--dx-primary),
+        0 0 0 4px color-mix(in oklab, var(--dx-ring-color) 50%, transparent);
     transition: box-shadow var(--dx-motion-duration-base);
 }
 

@@ -68,10 +68,6 @@
     user-select: none;
 }
 
-.dx-carousel-item {
-    box-sizing: border-box;
-}
-
 .dx-carousel-previous,
 .dx-carousel-next {
     position: absolute;
@@ -87,12 +83,11 @@
        matches the measured element, not the un-overridden default class. */
     width: var(--dx-space-7);
     height: var(--dx-space-7);
-    box-sizing: border-box;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    border: 1px solid var(--dx-input);
     border-radius: var(--dx-radius-full);
-    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+    background: var(--dx-card);
 
     /* shadcn's measured `box-shadow` is `none` in both themes (same live
        capture as the size above -- `getComputedStyle(button).boxShadow`),
@@ -101,7 +96,7 @@
        the 1px border alone) is the actual shadcn look, so `--dx-shadow-sm`
        is dropped rather than kept for light mode only. */
     box-shadow: none;
-    color: var(--secondary-color-1);
+    color: var(--dx-foreground);
     cursor: pointer;
 
     /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on
@@ -305,14 +300,13 @@
     display: inline-flex;
     width: var(--dx-space-7);
     height: var(--dx-space-7);
-    box-sizing: border-box;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--light, var(--primary-color-6)) var(--dark, var(--primary-color-7));
+    border: 1px solid var(--dx-input);
     border-radius: var(--dx-radius-full);
-    background: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
+    background: var(--dx-card);
     box-shadow: none;
-    color: var(--secondary-color-1);
+    color: var(--dx-foreground);
     cursor: pointer;
     touch-action: manipulation;
 }
@@ -368,7 +362,6 @@
 .dx-carousel-indicator {
     width: var(--dx-space-2);
     height: var(--dx-space-2);
-    box-sizing: border-box;
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);
@@ -378,7 +371,7 @@
        dot white on the white light-theme frame -- invisible -- and the
        inactive ones barely off it. `--secondary-color-*` is the
        foreground ramp. */
-    background: var(--secondary-color-5);
+    background: var(--dx-muted-foreground);
     cursor: pointer;
     opacity: 0.5;
     touch-action: manipulation;
@@ -398,7 +391,7 @@
 
 .dx-carousel-indicator[aria-selected="true"] {
     width: var(--dx-space-4);
-    background: var(--secondary-color-1);
+    background: var(--dx-primary);
     opacity: 1;
 }
 
@@ -434,18 +427,17 @@
 .dx-carousel-picker-dot {
     width: var(--dx-space-2);
     height: var(--dx-space-2);
-    box-sizing: border-box;
     padding: 0;
     border: none;
     border-radius: var(--dx-radius-full);
-    background: var(--secondary-color-5);
+    background: var(--dx-muted-foreground);
     cursor: pointer;
     opacity: 0.5;
     touch-action: manipulation;
 }
 
 .dx-carousel-picker-dot[data-active="true"] {
-    background: var(--secondary-color-1);
+    background: var(--dx-primary);
     opacity: 1;
 }
 

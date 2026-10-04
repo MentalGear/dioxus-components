@@ -8,7 +8,7 @@
   align-items: center;
   padding: 0;
   margin: 0;
-  color: var(--secondary-color-5);
+  color: var(--dx-muted-foreground);
   font-size: var(--dx-text-sm);
   gap: var(--dx-space-1);
   list-style: none;
@@ -29,7 +29,7 @@
 
 .dx-breadcrumb-link:hover,
 .dx-breadcrumb-link:focus-visible {
-  color: var(--secondary-color-1);
+  color: var(--dx-accent-foreground);
 }
 
 .dx-breadcrumb-link:focus-visible {
@@ -39,7 +39,7 @@
 }
 
 .dx-breadcrumb-page {
-  color: var(--secondary-color-1);
+  color: var(--dx-foreground);
   font-weight: 500;
 }
 

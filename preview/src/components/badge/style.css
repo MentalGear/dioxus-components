@@ -4,16 +4,27 @@
   gap: var(--dx-space-4);
 }
 
+/* Nova badge (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
+ * `.cn-badge*`): h-5, `rounded-4xl` (a pill at this height), 1px transparent
+ * border, px-2, text-xs/medium, 12px icons, no halo or shadow. */
 .dx-badge {
   display: inline-flex;
   min-width: 20px;
   height: 20px;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--primary-color-2);
+  border: 1px solid transparent;
+  border-radius: var(--dx-radius-4xl);
   font-size: var(--dx-text-xs);
-  gap: var(--dx-space-1)
+  font-weight: 500;
+  gap: var(--dx-space-1);
+  white-space: nowrap;
+}
+
+.dx-badge svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  pointer-events: none;
 }
 
 .dx-badge[padding="true"] {
@@ -21,22 +32,25 @@
 }
 
 .dx-badge[data-style="primary"] {
-  background-color: var(--secondary-color-2);
-  color: var(--primary-color);
+  background-color: var(--dx-primary);
+  color: var(--dx-primary-foreground);
 }
 
 .dx-badge[data-style="secondary"] {
-  background-color: var(--primary-color-5);
-  color: var(--secondary-color-1);
+  background-color: var(--dx-secondary);
+  color: var(--dx-secondary-foreground);
 }
 
 .dx-badge[data-style="outline"] {
-  border: 1px solid var(--primary-color-6);
-  background-color: var(--light, var(--primary-color)) var(--dark, var(--primary-color-3));
-  color: var(--secondary-color-4);
+  border-color: var(--dx-border);
+  background-color: transparent;
+  color: var(--dx-foreground);
 }
 
+/* Nova tints its destructive badge (`bg-destructive/10 text-destructive`);
+ * 12px text on that pairing misses WCAG AA against this theme's
+ * `--dx-destructive` (see button/style.css), so the solid fill stays. */
 .dx-badge[data-style="destructive"] {
-  background-color: var(--primary-error-color);
-  color: var(--contrast-error-color);
+  background-color: var(--dx-destructive);
+  color: var(--dx-destructive-foreground);
 }

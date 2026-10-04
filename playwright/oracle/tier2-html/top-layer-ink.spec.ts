@@ -296,11 +296,13 @@ const SURFACES: Surface[] = [
     text: (page) => page.locator('.dx-calendar-grid-cell[data-month="current"]').first(),
   },
   {
-    // `.dx-select-list` declares its own `color: var(--secondary-color-1)`
+    // `.dx-select-list` declares its own `color: var(--dx-popover-foreground)`
     // directly (author origin, already winning over the UA default with no
-    // help needed from this file's fix) -- a deliberate, different token
-    // from the general ink token every other surface in this file uses, not
-    // an instance of the bug. `expectedVar` reflects that; this case exists
+    // help needed from this file's fix). Row 111 moved it from the ramp's
+    // `--secondary-color-1` to the popover role, which resolves to
+    // `--secondary-color-4` (#111 | #d4d4d4), so `expectedVar` names that
+    // token; it is still the surface's OWN declared colour, not an instance
+    // of the bug. This case exists
     // to prove the shared `:where()` rule leaves it alone, the same
     // load-bearing negative shape as the Tooltip case above.
     name: "select",
@@ -321,11 +323,12 @@ const SURFACES: Surface[] = [
     },
     wrapper: (page) => page.locator('.dx-select-list[data-state="open"]'),
     text: (page) => page.getByRole("option", { name: "Apple" }),
-    expectedVar: "--secondary-color-1",
+    expectedVar: "--secondary-color-4",
   },
   {
     // Same shape as `select` immediately above: `.dx-combobox-list` also
-    // declares its own `color: var(--secondary-color-1)` directly.
+    // declares its own `color: var(--dx-foreground)` directly
+    // (`--secondary-color-4`, row 111; was `--secondary-color-1`).
     name: "combobox",
     open: async (page) => {
       await goto(page, "combobox");
@@ -335,8 +338,11 @@ const SURFACES: Surface[] = [
       await expect(page.locator('.dx-combobox-list[data-state="open"]')).toBeVisible();
     },
     wrapper: (page) => page.locator('.dx-combobox-list[data-state="open"]'),
-    text: (page) => page.locator('.dx-combobox-list[data-state="open"] .dx-combobox-option').first(),
-    expectedVar: "--secondary-color-1",
+    // The first option is highlighted on open and so carries `--dx-accent-foreground`
+    // (its own, deliberate colour since row 111); the first un-highlighted one inherits the list's.
+    text: (page) =>
+      page.locator('.dx-combobox-list[data-state="open"] .dx-combobox-option:not([data-highlighted="true"])').first(),
+    expectedVar: "--secondary-color-4",
   },
   {
     name: "dialog",
