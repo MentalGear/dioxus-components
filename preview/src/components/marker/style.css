@@ -1,0 +1,94 @@
+.dx-marker {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: var(--dx-space-4);
+  align-items: center;
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+  text-align: start;
+}
+
+/* A marker rendered as a link or button (`as`): the UA's own control styling is
+ * reset (a Tailwind install gets this from preflight), then it reads as an
+ * underlined link that firms up on hover. */
+.dx-marker:is(a, button) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--dx-motion-duration-base);
+}
+
+.dx-marker:is(a) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dx-marker:is(a, button):hover {
+  color: var(--dx-foreground);
+}
+
+.dx-marker:is(a, button):focus-visible {
+  border-radius: var(--dx-radius-sm);
+  box-shadow: var(--dx-ring-focus);
+  outline: none;
+}
+
+.dx-marker[data-variant="separator"]::before,
+.dx-marker[data-variant="separator"]::after {
+  min-width: 0;
+  height: 1px;
+  flex: 1;
+  background-color: var(--dx-border);
+  content: "";
+}
+
+.dx-marker[data-variant="separator"]::before {
+  margin-inline-end: var(--dx-space-1);
+}
+
+.dx-marker[data-variant="separator"]::after {
+  margin-inline-start: var(--dx-space-1);
+}
+
+.dx-marker[data-variant="border"] {
+  padding-bottom: var(--dx-space-2);
+  border-bottom: 1px solid var(--dx-border);
+}
+
+.dx-marker-icon {
+  display: flex;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.dx-marker-icon svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
+.dx-marker-content {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.dx-marker[data-variant="separator"] .dx-marker-content {
+  flex: none;
+  text-align: center;
+}
+
+.dx-marker-content a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dx-marker-content a:hover {
+  color: var(--dx-foreground);
+}

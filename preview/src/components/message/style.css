@@ -1,0 +1,80 @@
+.dx-message-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--dx-space-2);
+}
+
+.dx-message {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+.dx-message[data-align="end"] {
+  flex-direction: row-reverse;
+}
+
+.dx-message-avatar {
+  display: flex;
+  overflow: hidden;
+  width: fit-content;
+  min-width: var(--dx-space-8);
+  flex-shrink: 0;
+  align-items: center;
+  align-self: flex-end;
+  justify-content: center;
+  border-radius: var(--dx-radius-full);
+  background-color: var(--dx-muted);
+}
+
+/* Keep the avatar level with the message surface, not the footer below it. */
+.dx-message:has([data-slot="message-footer"]) > .dx-message-avatar {
+  transform: translateY(calc(-1 * var(--dx-space-8)));
+}
+
+.dx-message-content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.625rem;
+  overflow-wrap: break-word;
+}
+
+/* Every part of an end-aligned row hugs the end, including a `Bubble` that sits
+ * directly in the row (matched by its `data-slot`, not its class, because a
+ * component stylesheet may only define its own `dx-message-*` classes). */
+.dx-message[data-align="end"] > .dx-message-content > [data-slot] {
+  align-self: flex-end;
+}
+
+.dx-message[data-align="end"] [data-slot="bubble"] {
+  align-self: flex-end;
+}
+
+.dx-message-header,
+.dx-message-footer {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-xs);
+  font-weight: 500;
+  line-height: 1.3333;
+  padding-inline: var(--dx-space-3);
+}
+
+.dx-message[data-align="end"] .dx-message-footer {
+  justify-content: flex-end;
+}
+
+/* An unframed (ghost) bubble has no inset, so the header and footer lose theirs. */
+.dx-message:has([data-slot="bubble"][data-variant="ghost"]) .dx-message-header,
+.dx-message:has([data-slot="bubble"][data-variant="ghost"]) .dx-message-footer {
+  padding-inline: 0;
+}

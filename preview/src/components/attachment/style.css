@@ -1,0 +1,254 @@
+.dx-attachment {
+  /* Text-safe destructive ink, as in bubble/style.css: `--dx-destructive` is a
+   * fill colour, and as text it falls below 4.5:1 on its own tint (light) and on
+   * the card (dark). Retire once the theme has a text-safe destructive role (backlog row 134). */
+  --dx-attachment-destructive-ink: var(
+      --light,
+      color-mix(in oklab, var(--dx-destructive) 80%, var(--dx-foreground))
+    )
+    var(
+      --dark,
+      color-mix(in oklab, var(--dx-destructive) 45%, var(--dx-foreground))
+    );
+
+  position: relative;
+  display: flex;
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  border: 1px solid var(--dx-border);
+  border-radius: var(--dx-radius-xl);
+  background-color: var(--dx-card);
+  color: var(--dx-card-foreground);
+  transition: background-color var(--dx-motion-duration-base);
+}
+
+.dx-attachment:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--dx-ring-color) 50%, transparent);
+}
+
+/* A card with a trigger or link directly in it is clickable as a whole. */
+.dx-attachment:has(> a, > button):hover {
+  background-color: color-mix(in oklab, var(--dx-muted) 50%, transparent);
+}
+
+.dx-attachment[data-state="error"] {
+  border-color: color-mix(in oklab, var(--dx-destructive) 30%, transparent);
+}
+
+.dx-attachment[data-state="idle"] {
+  border-style: dashed;
+}
+
+.dx-attachment[data-orientation="horizontal"] {
+  min-width: 10rem;
+  align-items: center;
+}
+
+.dx-attachment[data-orientation="vertical"] {
+  width: 6rem;
+  flex-direction: column;
+}
+
+.dx-attachment[data-orientation="vertical"]:has([data-slot="attachment-content"]) {
+  width: 7.5rem;
+}
+
+/* Sizes. Padding follows what the card holds: with content it is
+ * `py px`, with media alone it is even all round. */
+.dx-attachment[data-size="default"] {
+  font-size: var(--dx-text-sm);
+  gap: var(--dx-space-2);
+}
+
+.dx-attachment[data-size="default"]:has([data-slot="attachment-media"]) {
+  padding: var(--dx-space-2);
+}
+
+.dx-attachment[data-size="default"]:has([data-slot="attachment-content"]) {
+  padding: var(--dx-space-2) 0.625rem;
+}
+
+.dx-attachment[data-size="sm"] {
+  font-size: var(--dx-text-xs);
+  gap: 0.625rem;
+}
+
+.dx-attachment[data-size="sm"]:has([data-slot="attachment-media"]) {
+  padding: 0.375rem;
+}
+
+.dx-attachment[data-size="sm"]:has([data-slot="attachment-content"]) {
+  padding: 0.375rem var(--dx-space-2);
+}
+
+.dx-attachment[data-size="xs"] {
+  border-radius: var(--dx-radius-lg);
+  font-size: var(--dx-text-xs);
+  gap: 0.375rem;
+}
+
+.dx-attachment[data-size="xs"]:has([data-slot="attachment-media"]) {
+  padding: var(--dx-space-1);
+}
+
+.dx-attachment[data-size="xs"]:has([data-slot="attachment-content"]) {
+  padding: var(--dx-space-1) 0.375rem;
+}
+
+.dx-attachment-media {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  width: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dx-radius-lg);
+  aspect-ratio: 1;
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
+}
+
+.dx-attachment-media svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+}
+
+.dx-attachment[data-size="sm"] .dx-attachment-media {
+  width: 2rem;
+}
+
+.dx-attachment[data-size="xs"] .dx-attachment-media {
+  width: 1.75rem;
+  border-radius: var(--dx-radius-md);
+}
+
+.dx-attachment[data-size="xs"] .dx-attachment-media svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.dx-attachment[data-orientation="vertical"] .dx-attachment-media {
+  width: 100%;
+}
+
+.dx-attachment[data-orientation="vertical"] .dx-attachment-media svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.dx-attachment[data-state="error"] .dx-attachment-media {
+  background-color: color-mix(in oklab, var(--dx-destructive) 10%, transparent);
+  color: var(--dx-attachment-destructive-ink);
+}
+
+.dx-attachment-media[data-variant="image"] > img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+/* An image dims while it is still in flight. */
+.dx-attachment-media[data-variant="image"] {
+  opacity: 0.6;
+}
+
+.dx-attachment[data-state="idle"] .dx-attachment-media[data-variant="image"],
+.dx-attachment[data-state="done"] .dx-attachment-media[data-variant="image"] {
+  opacity: 1;
+}
+
+.dx-attachment-content {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.dx-attachment[data-orientation="vertical"] .dx-attachment-content {
+  padding-inline: var(--dx-space-1);
+}
+
+.dx-attachment-title {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-attachment-description {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 0.125rem;
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-attachment[data-state="error"] .dx-attachment-description {
+  color: var(--dx-attachment-destructive-ink);
+}
+
+/* Actions sit above the trigger (z-index) so both stay separately clickable. */
+.dx-attachment-actions {
+  position: relative;
+  z-index: var(--dx-z-local-md);
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.dx-attachment[data-orientation="vertical"] .dx-attachment-actions {
+  position: absolute;
+  gap: var(--dx-space-1);
+  inset-block-start: var(--dx-space-3);
+  inset-inline-end: var(--dx-space-3);
+}
+
+/* A full-card overlay behind the actions. The focus ring is the card's own
+ * (`:focus-within` above), so the overlay draws none. */
+.dx-attachment-trigger {
+  position: absolute;
+  z-index: var(--dx-z-local-sm);
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+  inset: 0;
+  outline: none;
+}
+
+/* A horizontally scrolling, snapping row. The fade is the `dx-scroll-fade-x`
+ * utility (assets/dx-effects.css), applied in the markup. */
+.dx-attachment-group {
+  display: flex;
+  min-width: 0;
+  gap: var(--dx-space-3);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-block: var(--dx-space-1);
+  scroll-padding-inline: var(--dx-space-1);
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.dx-attachment-group::-webkit-scrollbar {
+  display: none;
+}
+
+.dx-attachment-group > [data-slot="attachment"] {
+  flex: none;
+  scroll-snap-align: start;
+}

@@ -1,0 +1,10 @@
+{
+  "name": "marker",
+  "description": "An inline conversation marker: a streaming status, a system note, a bordered row or a labeled separator.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "globalAssets": [
+    "../../../assets/dx-components-theme.css",
+    "../../../assets/dx-effects.css"
+  ]
+}

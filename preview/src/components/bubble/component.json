@@ -1,0 +1,7 @@
+{
+  "name": "bubble",
+  "description": "A message bubble: framed conversational content with seven variants, alignment, grouping and reactions.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}
