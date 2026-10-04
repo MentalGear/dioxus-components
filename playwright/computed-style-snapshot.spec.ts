@@ -67,6 +67,8 @@ const CMP_A = process.env.CSS_SNAPSHOT_A;
 const CMP_B = process.env.CSS_SNAPSHOT_B;
 const DO_CHROME = process.env.DX_SNAPSHOT_CHROME !== "0";
 const DO_FOCUS = process.env.DX_SNAPSHOT_FOCUS !== "0";
+/** Comma list of component names to capture (debugging aid; default all). */
+const ONLY = process.env.DX_SNAPSHOT_ONLY?.split(",").filter(Boolean);
 
 const MODES = ["light", "dark"] as const;
 type Mode = (typeof MODES)[number];
@@ -215,33 +217,44 @@ function settleAndCapture(args: CaptureArgs) {
       }
     });
 
-    if (args.doFocus) {
-      const focusable = 'a[href], button, input, textarea, select, summary, [tabindex], [contenteditable="true"]';
-      els.forEach((el, n) => {
-        if (!el.matches(focusable) || el.matches(":disabled")) return;
-        const h = el as HTMLElement;
-        h.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
-        if (document.activeElement !== h) return;
-        for (const a of document.getAnimations()) {
-          try {
-            if (w.CSSTransition && a instanceof w.CSSTransition) a.finish();
-          } catch (_) {
-            /* ignore */
-          }
+    const finishTransitions = () => {
+      for (const a of document.getAnimations()) {
+        try {
+          if (w.CSSTransition && a instanceof w.CSSTransition) a.finish();
+        } catch (_) {
+          /* ignore */
         }
+      }
+    };
+    const result = { themeAttr, mediaDark, forced, section: { base, pseudo, focus } as Section };
+    if (!args.doFocus) return result;
+
+    // The focus pass YIELDS to the event loop between elements. Run as one
+    // synchronous loop it hung the renderer at 100% CPU on `calendar` (focus
+    // handlers of ~200 grid cells in a row; reproduced with a plain
+    // focus()/blur() loop, no snapshot code involved, and never when each
+    // focus() is its own task). The base/pseudo sections above are already
+    // read, so yielding here cannot change them.
+    const focusable = 'a[href], button, input, textarea, select, summary, [tabindex], [contenteditable="true"]';
+    const targets: [Element, number][] = [];
+    els.forEach((el, n) => {
+      if (el.matches(focusable) && !el.matches(":disabled")) targets.push([el, n]);
+    });
+    const step = (k: number): Promise<typeof result> => {
+      if (k >= targets.length) return Promise.resolve(result);
+      const [el, n] = targets[k];
+      if (!el.isConnected) return step(k + 1);
+      const h = el as HTMLElement;
+      h.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+      if (document.activeElement === h) {
+        finishTransitions();
         focus.push(sorted(getComputedStyle(el), el, args.focusProps, { n, state: h.matches(":focus-visible") ? "focus-visible" : "focus" }));
         h.blur();
-        for (const a of document.getAnimations()) {
-          try {
-            if (w.CSSTransition && a instanceof w.CSSTransition) a.finish();
-          } catch (_) {
-            /* ignore */
-          }
-        }
-      });
-    }
-
-    return { themeAttr, mediaDark, forced, section: { base, pseudo, focus } as Section };
+        finishTransitions();
+      }
+      return new Promise<void>((r) => setTimeout(r, 0)).then(() => step(k + 1));
+    };
+    return step(0);
   });
 }
 
@@ -262,6 +275,7 @@ async function capturePage(
   selector: string,
   into: Record<string, Section>,
 ) {
+  if (process.env.DX_SNAPSHOT_VERBOSE) console.log(`[snapshot] ${mode} ${key}`);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // Let the wasm client render, its stylesheets attach and theme_seed run.
   await page.waitForTimeout(1500);
@@ -301,6 +315,7 @@ test.describe("computed style snapshot", () => {
     const names = fs
       .readdirSync(base)
       .filter((n) => fs.existsSync(path.join(base, n, "style.css")))
+      .filter((n) => !ONLY || ONLY.includes(n))
       .sort();
     const chrome = DO_CHROME ? [...CHROME_ROUTES].sort() : [];
 
@@ -315,6 +330,21 @@ test.describe("computed style snapshot", () => {
         focusProperties: DO_FOCUS ? FOCUS_PROPERTIES : [],
       },
     };
+
+    // Two demos advance their own state from a `setInterval(() => dioxus.send(...))`
+    // ticker (progress: `Math.random() * 30` every 1s; the home music player:
+    // elapsed wall-clock every 100ms), so `.dx-progress-indicator` (0/18/26px) and
+    // the player's `.dx-slider-range` (116.891 vs 116.922px) differed between two
+    // captures of an unchanged build. Their value depends on how many ticks ran
+    // before the read, which no wait can make equal. Freeze every such ticker (the
+    // demos stay at their initial value); no other preview code uses setInterval.
+    await page.addInitScript(() => {
+      const realSetInterval = window.setInterval.bind(window);
+      (window as any).setInterval = (handler: any, timeout?: number, ...rest: any[]) =>
+        typeof handler === "function" && String(handler).includes("dioxus.send(")
+          ? 0
+          : realSetInterval(handler, timeout, ...rest);
+    });
 
     const host = new URL(BASE_URL).hostname;
     let total = 0;
@@ -366,7 +396,7 @@ test.describe("computed style snapshot", () => {
       const seen = new Map<string, number>();
       const m = new Map<string, Rec>();
       for (const r of recs) {
-        const id = `${r.tag}.${r.cls}${r.pseudo ?? ""}${r.state ? `:${r.state}` : ""}`;
+        const id = `${r.tag}.${stripHash(String(r.cls))}${r.pseudo ?? ""}${r.state ? `:${r.state}` : ""}`;
         const k = (seen.get(id) ?? 0) + 1;
         seen.set(id, k);
         m.set(`${id}#${k}`, r);
@@ -374,6 +404,12 @@ test.describe("computed style snapshot", () => {
       return m;
     };
     const IDENT = new Set(["n", "tag", "cls", "pseudo", "state"]);
+    // Build identity, not style: `#[css_module]` appends a hash of the source path
+    // to every class (`dx-top-layer-hint-e446a291`, different per worktree), and
+    // chart SVG ids carry a build-specific counter (`dxc-220-gradient-mobile`).
+    // Two captures of the same sources can differ in both, so strip them.
+    const stripHash = (cls: string) => cls.replace(/(\bdx-[a-z0-9-]*?)-[0-9a-f]{8}\b/g, "$1");
+    const norm = (v: unknown) => String(v).replace(/\bdxc-\d+-/g, "dxc-#-");
 
     for (const mode of MODES) {
       const pa: Record<string, Section> = a[mode] ?? {};
@@ -394,7 +430,7 @@ test.describe("computed style snapshot", () => {
               continue;
             }
             for (const p of Object.keys(ra).filter((k) => !IDENT.has(k)).sort()) {
-              if (ra[p] !== rb[p]) lines.push(`${mode} ${pg} ${sec} ${id} ${p}: ${JSON.stringify(ra[p])} -> ${JSON.stringify(rb[p])}`);
+              if (norm(ra[p]) !== norm(rb[p])) lines.push(`${mode} ${pg} ${sec} ${id} ${p}: ${JSON.stringify(ra[p])} -> ${JSON.stringify(rb[p])}`);
             }
           }
         }
