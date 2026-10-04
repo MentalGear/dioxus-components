@@ -94,7 +94,7 @@ pub fn Demo() -> Element {
     let visible_ids: Vec<&'static str> = page_rows.iter().map(|p| p.id).collect();
 
     rsx! {
-        div { class: "dx-data-table-demo", style: "display: flex; flex-direction: column; gap: 1rem;",
+        div { class: "dx-data-table-demo", style: "display: flex; flex-direction: column; gap: 1rem; width: 100%;",
             DataTableToolbar {
                 value: filter(),
                 oninput: move |value| {

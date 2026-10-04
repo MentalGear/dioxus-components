@@ -46,6 +46,15 @@
   gap: var(--dx-space-6);
 }
 
+.dx-data-table-pagination-selected {
+  /* Digits are the only part of this line that changes when a row is
+     toggled ("0 of 12" -> "1 of 12"); proportional figures make a `1` ~2px
+     narrower than a `0` in Geist, so the line's width -- and, in a demo
+     that shrink-wraps to its widest child, the whole table's x and width --
+     moved on every toggle. Tabular figures keep every digit the same width. */
+  font-variant-numeric: tabular-nums;
+}
+
 .dx-data-table-pagination-size {
   display: flex;
   align-items: center;
@@ -57,6 +66,8 @@
 }
 
 .dx-data-table-pagination-page {
+  /* Same reason as the selected count above: "Page 1 of 3" -> "Page 2 of 3". */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
