@@ -652,7 +652,7 @@ pub fn NavbarTrigger(props: NavbarTriggerProps) -> Element {
             onclick: move |_| {
                 // `None`: a click with no preceding pointerdown (Space
                 // button activation, assistive tech) -- toggle live state.
-                let was_open = open_at_down.write().take().unwrap_or_else(|| is_open());
+                let was_open = open_at_down.write().take().unwrap_or_else(&*is_open);
                 if !disabled() {
                     let new_open = if was_open { None } else { Some(nav_ctx.index.cloned()) };
                     ctx.set_open_nav.call(new_open);
