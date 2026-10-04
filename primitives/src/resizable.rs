@@ -166,6 +166,27 @@ fn home_end_target(key: &Key, panel: &PanelConstraints) -> Option<f64> {
     }
 }
 
+/// How far a [`MoveEvent`] grows the primary pane (the one at a handle's `index`), in the same
+/// units as the event. The pointer drag and the arrow keys BOTH go through this, so the two input
+/// paths can never disagree about which way "growing" is.
+///
+/// `MoveEvent`'s `delta_x`/`delta_y` are physical (a pointer moving right is `+x`; so is
+/// ArrowRight). `resize_pair` always grows `index` for a positive delta regardless of which side
+/// of the handle that pane is on, so under RTL -- where a horizontal group's panels mirror and the
+/// primary pane sits on the physical RIGHT of its handle -- moving right must *shrink* it: the
+/// negation. A vertical group never mirrors; see [`ResizableGroupContext::text_direction`].
+fn primary_delta(
+    direction: ResizableDirection,
+    text_direction: Direction,
+    event: &MoveEvent,
+) -> f64 {
+    match direction {
+        ResizableDirection::Horizontal if text_direction == Direction::Rtl => -event.delta_x,
+        ResizableDirection::Horizontal => event.delta_x,
+        ResizableDirection::Vertical => event.delta_y,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct ResizableGroupContext {
     direction: ReadSignal<ResizableDirection>,
@@ -638,10 +659,7 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
         let Some(move_event) = movement.pointer_move() else {
             return;
         };
-        let delta_axis = match (direction)() {
-            ResizableDirection::Horizontal => move_event.delta_x,
-            ResizableDirection::Vertical => move_event.delta_y,
-        };
+        let delta_axis = primary_delta((direction)(), ctx.text_direction, &move_event);
         let delta_pct = delta_axis / size * 100.0;
 
         let mut d = raw_delta.cloned();
@@ -684,10 +702,13 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
             aria_label,
             aria_labelledby,
 
+            // No `ontouchstart` twin: it would be a non-passive root listener on `#main` that
+            // makes every touch/wheel on the page wait for the main thread. A touch drag is kept
+            // from becoming a page pan by the handle's effective `touch-action: none`
+            // (resizable/style.css; in the docs app `preview/assets/main.css` re-asserts it
+            // against its `manipulation !important` catch-all), and drags are pointer-driven
+            // (scripts/check-blocking-scroll-listeners.sh).
             onmousedown: move |evt| {
-                evt.prevent_default();
-            },
-            ontouchstart: move |evt| {
                 evt.prevent_default();
             },
 
@@ -735,18 +756,11 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
                         // for a positive delta regardless of visual side, so
                         // moving the divider physically rightward now means
                         // *shrinking* `index` (and growing `index + 1`) --
-                        // the negation below. A vertical handle never flips
-                        // -- see `ResizableGroupContext::text_direction`'s
-                        // doc.
-                        let delta = match dir {
-                            ResizableDirection::Horizontal
-                                if ctx.text_direction == Direction::Rtl =>
-                            {
-                                -move_event.delta_x
-                            }
-                            ResizableDirection::Horizontal => move_event.delta_x,
-                            ResizableDirection::Vertical => move_event.delta_y,
-                        };
+                        // the negation in `primary_delta` (shared with the
+                        // pointer drag, so it can't disagree with this key
+                        // path). A vertical handle never flips -- see
+                        // `ResizableGroupContext::text_direction`'s doc.
+                        let delta = primary_delta(dir, ctx.text_direction, &move_event);
                         let new_sizes = resize_pair(&full, index, delta, &constraints);
                         ctx.commit(new_sizes);
                     }
@@ -812,6 +826,43 @@ pub fn ResizableHandle(props: ResizableHandleProps) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::move_interaction::MoveModifiers;
+
+    fn move_event(delta_x: f64, delta_y: f64) -> MoveEvent {
+        MoveEvent {
+            delta_x,
+            delta_y,
+            modifiers: MoveModifiers::default(),
+        }
+    }
+
+    #[test]
+    fn primary_delta_follows_the_physical_axis_in_ltr() {
+        let e = move_event(7.0, -3.0);
+        assert_eq!(
+            primary_delta(ResizableDirection::Horizontal, Direction::Ltr, &e),
+            7.0
+        );
+        assert_eq!(
+            primary_delta(ResizableDirection::Vertical, Direction::Ltr, &e),
+            -3.0
+        );
+    }
+
+    #[test]
+    fn primary_delta_negates_horizontal_movement_under_rtl_only() {
+        // Under RTL the primary pane is on the handle's right, so moving right (a pointer drag
+        // or ArrowRight alike) shrinks it. A vertical group never mirrors.
+        let e = move_event(7.0, -3.0);
+        assert_eq!(
+            primary_delta(ResizableDirection::Horizontal, Direction::Rtl, &e),
+            -7.0
+        );
+        assert_eq!(
+            primary_delta(ResizableDirection::Vertical, Direction::Rtl, &e),
+            -3.0
+        );
+    }
 
     #[test]
     fn resize_pair_moves_boundary_within_bounds() {
