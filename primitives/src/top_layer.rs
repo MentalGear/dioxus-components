@@ -685,6 +685,15 @@ pub(crate) enum PopoverKind {
     /// which layers light dismiss on top of -- not instead of -- their own
     /// existing blur-driven dismissal as a backstop; see each's own doc for
     /// why `auto` is safe there specifically.
+    ///
+    /// **Opening-gesture contract (docs/backlog.md row 40):** the browser's
+    /// light dismiss reads only trusted `pointerdown`/`pointerup`, so an
+    /// `auto` popover that becomes open *between* a gesture's `pointerdown`
+    /// and `pointerup` is hidden by that same gesture's `pointerup`. An
+    /// `auto` popover must therefore only be shown from `click`,
+    /// `pointerup`, keyboard, hover-compat or timer handlers -- never from
+    /// `onpointerdown`. Pinned by
+    /// `playwright/oracle/tier2-html/auto-popover-opening-gesture.spec.ts`.
     Auto,
     /// `popover="manual"` — no light-dismiss; only an explicit
     /// `hidePopover()` (here, driven by our own `open` signal going false)
