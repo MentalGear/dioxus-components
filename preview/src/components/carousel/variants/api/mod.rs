@@ -45,12 +45,12 @@ pub fn Demo() -> Element {
                                 Card {
                                     // shadcn: `CardContent className="flex aspect-square
                                     // items-center justify-center p-6"` + `text-4xl font-semibold`.
-                                    // `.dx-card-content`'s own `0 space-6` padding stands in
-                                    // for `p-6`: `aspect-ratio` here applies to the CONTENT box
-                                    // (272 square at a 320 card) and the `Card`'s own block
-                                    // padding (24 + 24) brings the whole card back to a true
-                                    // 320 square, like every other demo -- an extra vertical
-                                    // `p-6` on top would make the card 48px taller than wide.
+                                    // `.dx-card-content`'s own inline padding stands in for
+                                    // `p-6`. The theme is `border-box` for every `dx-` element
+                                    // (as Tailwind's preflight is for shadcn), so `aspect-ratio`
+                                    // squares the whole CardContent (320 x 320 at a 320 card) and
+                                    // the `Card`'s own block padding sits on top of it (320 x 352),
+                                    // exactly as in shadcn, where the card is taller than wide.
                                     CardContent {
                                         style: "display: flex; align-items: center; justify-content: center; aspect-ratio: 1; font-size: var(--dx-text-4xl); font-weight: 600;",
                                         "{i + 1}"

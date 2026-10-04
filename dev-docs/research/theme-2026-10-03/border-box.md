@@ -61,7 +61,7 @@ was meant as the visible box) and are left as the fix; `yes` rows were compensat
 | file:line (current) | element | old -> new | intended? / action |
 |---|---|---|---|
 | `assets/main.css:532` `.dx-docs-shell-body` | docs layout div, `width: min(--dx-content-width, 100vw - 2rem)`, 1px L/R border | outer 1362 -> 1360 px (inner 1360 -> 1358) | no. Now matches `.dx-navbar-inner` (border-box, same width expression) edge to edge |
-| `assets/main.css:1284` `.dx-demos-card` | home card, `width: 100%` + 1px border | 100% + 2px -> 100% | no (overflow fix) |
+| `assets/main.css:1284` `.dx-demos-card` | home card, `width: 100%` + 1px border, a flex item of `li.dx-demos-item` | predicted 100% + 2px -> 100%; **observed: no change (361.66 both)** | no. `flex-shrink: 1` already absorbed the 2px (same mechanism as `.dx-calendar-grid`), so `width: 100%` never overflowed the track. Only the thumb (181 -> 180) and the card height (392.81 -> 391.81) moved |
 | `assets/main.css:1308` `.dx-demos-card-thumb` | `height: 180px` + 1px border-bottom | 181 -> 180 px | no |
 | `assets/main.css:2003` `.dx-charts-code-bar` | `height: 3rem` + 1px border-bottom | 49 -> 48 px | no |
 | `src/components/alert/style.css:1` `.dx-alert` | div, `width: 100%` + 16px padding both sides | 100% + 32px -> 100% | no (overflow fix) |
@@ -128,3 +128,45 @@ Comment fixed: `assets/main.css` `.dx-charts-card-body .dx-card` (a third instan
 All 14 `scripts/check-*.sh` (incl. `check-css-vars-defined`), `cargo fmt --all -- --check`,
 `cd preview && npx stylelint "src/**/*.css"`, `node scripts/generate-dx-utilities.js --check`: green.
 Not run (build lane owns them): `cargo clippy`, `cargo test`, Playwright.
+
+## 6. Observed changes the prediction in section 3 missed (verify lane, B -> tip)
+
+Measured with `rect-B.json` / `rect-tip.json` (`getBoundingClientRect` of every `dx-` element), not with the
+computed-style snapshot: `getComputedStyle().width/height` returns the CONTENT size under `content-box` and the
+border size under `border-box`, so the snapshot diff reports a "size change" for every padded or bordered element
+whose box did not move (`ul.dx-chart-legend` 16 -> 28 px, `a.dx-demos-card` 359.66 -> 361.66, every
+`.dx-preview-code-theme`). Treat `width`/`height` lines in `diff-B-to-tip.txt` as noise, and see the caveat after
+the table for the home page.
+
+| # | element | old -> new | mechanism (file:line) | verdict |
+|---|---|---|---|---|
+| 1 | carousel slide `.dx-card` / `.dx-card-content` (~90 cards: `sizes`, `spacing`, `peek`, `align`, `api`, `indicators`, `rtl`, `rewind`, `autoplay`, `virtual_*`; the home gallery) and everything above them (`.dx-carousel-item`, `-content`, `.dx-carousel`, `.dx-tabs`, `.dx-component-variant`, docs page height) | Card 320x320 -> 320x352 (+32 tall) | each demo gives `CardContent` an inline `aspect-ratio: 1`; `.dx-card-content` has `padding: 0 var(--dx-card-spacing)` (`card/style.css:85`) and `.dx-card` `padding: 16px 0` (`:7`). `aspect-ratio` squares the box named by `box-sizing`: content-box -> 288x288 content, card 288 + 32 = 320; border-box -> 320x320 content box, card 320 + 32 = 352. Width is unchanged, only the height moves | **intended, shadcn parity.** shadcn's slide is `<Card><CardContent className="flex aspect-square ... p-6">` under preflight border-box, so its CardContent is a full square and the card is taller than wide (py-6 there). The old 320x320 was a content-box artifact that the `api` demo had even compensated for in a comment; that comment is now corrected (`variants/api/mod.rs:46`). No CSS change |
+| 2 | `.dx-select` / `.dx-select-trigger` on `/`, `.dx-card-action`, `.dx-data-table-pagination-size`, `.dx-card-header` | 153.81 -> 128 / 139.7 | **not a box-sizing effect.** `.dx-select-trigger` is a `button` (UA border-box) and already had its own `box-sizing: border-box` in B (`select/style.css:27` before `bcfba01`), so its `min-width: 8rem` (`:25`) is 128 in both builds. 153.81 is the width of the SSR text "Select an option" (the pre-hydration placeholder, in `tip-public/index.html`); the hydrated values are "Last 3 months" (139.7) and "10" (128, the floor). The computed-style snapshot, taken after hydration, has 139.703 / 128 in `before`, `after-A`, `after-B` and `after-tip` alike. `rect-B.json` of `/` was captured before the client rendered | **artifact (probe race), no change** |
+| 3 | `.dx-avatar-fallback` 29.8 -> 32, `img.dx-avatar-image` 48 -> 64 on `/` | | same race: computed width of both is 32 / 64 in all four snapshots, and neither `.dx-avatar-fallback` nor `.dx-avatar-image` (`width/height: 100%`, `aspect-ratio: 1`, `avatar/style.css:28`) has padding or a border for `box-sizing` to act on. `rect-B` caught the SSR frame | **artifact, no change** |
+| 4 | `.dx-scroll-area-auto-hide` (`scroll_area` demo, home) | 194x178 -> 160x160 | `ScrollArea { width: 10em; height: 10em; border: 1px; padding: 0 1em 1em }` (`scroll_area/variants/main/mod.rs:10`, class from `primitives/src/scroll_area.rs:130`). Content-box: 160 + 32 + 2 = 194, 160 + 16 + 2 = 178. Border-box: the declared 10em x 10em is the visible box; the text area is 126 px wide | **intended.** shadcn's demo is `h-72 w-48 rounded-md border` (border-box); the declared size is now the real size |
+| 5 | `.dx-resizable-panel-group` / `-panel` / `-handle` | group 452x322 -> 450x320, panels and handles -2 | `DemoGroup` sets `min-width: 450px; max-width: 28rem; height: 20rem; border: 1px` (`resizable/variants/main/mod.rs:46`). The +2 was the border | **intended.** shadcn's `md:min-w-[450px]` is border-box; 450 is now the outer width. Handles and panels shrink by the same 1 px borders (the nested vertical group is `height: 100%` of its panel) |
+| 6a | `.dx-preview-code-theme` in `.dx-code-block` (61 pages) | 746x578 -> 746x576 | `max-height: 80vh` (`assets/main.css:422`) on an element with a 1px border (`:325`): at the 720 px test viewport 80vh = 576, content-box 576 + 2 = 578 | **intended.** The cap is now exactly 80vh of visible box |
+| 6b | `.dx-block-demo-iframe` (`sidebar` page) | 822x602 -> 820x600 | `min-width: 820px` (`assets/main.css:938`), `height="600px"` and a 1px border (`src/main.rs:1913`) | **intended.** The declared 820 / 600 are now the outer box (the comment at `src/main.rs:1877` quotes 822 only as a measured symptom of the intended 820); the iframe viewport is 818x598, still above the 768 px breakpoint that rule exists for |
+| 7 | `th.dx-table-head`, `thead`, `tr.dx-table-row`, `.dx-table-container`, `table.dx-table` | row 40.5 -> 40 | `.dx-table-head { height: 2.5rem }` (`table/style.css:39`) in a `border-collapse: collapse` table whose rows carry `border-bottom: 1px` (`:21`): half of the collapsed border (0.5 px) lies inside the row, so a content-box 40 px cell is a 40.5 px row | **intended, shadcn parity** (`TableHead` is `h-10`, border-box under preflight: a 40 px header row) |
+| 8 | `.dx-chart` (home only, 3 charts), `ul.dx-chart-legend` | height -0.24 px; the "Visitors" card chart 405.27 -> 391.16 wide | `.dx-chart` (`chart/style.css:64`) has no padding, border or size, so its `box-sizing` cannot move it. The 14.11 px width is exactly 153.81 - 139.7 from item 2 (the select in the same header sizes the card's grid column before hydration); the 0.24 px is the same SSR-vs-hydrated frame. No other `.dx-chart` (85 on 9 chart pages) changed | **artifact (same probe race as item 2), no change** |
+
+Home-page caveat: `rect-B.json` for `route:/` was captured in the SSR frame (placeholder text, unhydrated charts),
+`rect-tip.json` in the hydrated one, so a home-page rect difference is only real when its component page agrees
+(carousel, resizable, scroll_area, table, sidebar did, and rows 1 and 4-7 above are from those pages). The probe
+should wait for hydration, e.g. `await page.waitForFunction(() => document.querySelector("[data-node-hydration]") === null)`
+or the snapshot spec's own 1.5 s settle, before the home rows are trusted. `route:/` differences caused by the
+2 px shell shrink (471.5 -> 470.5, 1107 -> 1105, `.dx-component-card-*`, `.dx-form-*`, `.dx-tag-group`, ...) are
+the `.dx-docs-shell-body` row of section 3 propagating through percentage and `auto` widths, not separate changes.
+
+### The two new SVG `text` elements (`area_chart` #66, `chart` #31)
+
+They are the grey 12 px axis tick labels (`fill: rgb(112,112,112)`) of an x axis, one more than in phase A
+(65 -> 66 and 30 -> 31 `text` nodes), and they exist in `after-B` already, not only in `after-tip`. Cause: the Nova
+card pass (`99f00b1`) cut the card's inline padding from 24 to 16 px, so the first chart on both pages went from
+592 to 608 px wide (`diff-A-to-B.txt`; identical in `after-tip`), and `layout.rs:489` thins x tick labels
+by a minimum gap against the chart width: at 608 px one more label fits. Intended, from phase B, not from border-box.
+
+## 7. Gates re-run after the section 6 edits
+
+Only a comment in `carousel/variants/api/mod.rs` changed. All `scripts/check-*.sh`, `cargo fmt --all -- --check`
+and `cd preview && npx stylelint "src/**/*.css"` were re-run: results in the lane report.
