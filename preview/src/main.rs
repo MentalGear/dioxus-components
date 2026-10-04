@@ -49,6 +49,7 @@ mod installed_source;
 #[cfg(test)]
 mod polar_parity;
 mod theme;
+mod wasm_libc_shim;
 
 #[derive(Copy, Clone, PartialEq)]
 enum ComponentType {
