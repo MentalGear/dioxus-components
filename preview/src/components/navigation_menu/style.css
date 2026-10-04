@@ -92,11 +92,19 @@
    * changed -- but is one accidental future layout change away from no
    * longer being guaranteed). `min-width`/`max-width` below still clamp it
    * either way; only `opacity`/`transform` are ever transitioned below --
-   * never this, never `padding`. */
+   * never this, never `padding`.
+   *
+   * `max-content` is only safe when a child states its own width: it is the
+   * longest unwrapped line, so a panel whose grid had no width contract
+   * (the demo's `fr` tracks around one-line descriptions) sized itself to
+   * ~900px and ran off the right edge of the viewport. shadcn gives the
+   * panel's `ul` an explicit width (`md:w-[400px] lg:w-[500px]`, see
+   * `.dx-navigation-menu-grid` below) and keeps `p-1` of padding (Nova) here,
+   * so a 500px grid is a ~508px panel. */
   width: max-content;
   min-width: 280px;
   max-width: calc(100vw - var(--dx-space-8));
-  padding: var(--dx-space-3);
+  padding: var(--dx-space-1);
   border: none;
   border-radius: var(--dx-radius-lg);
   margin-top: var(--dx-space-2);
@@ -215,70 +223,153 @@
   }
 }
 
-/* The link grid a themed panel's children compose -- e.g.
- * `.dx-navigation-menu-grid.dx-navigation-menu-grid-2col` for a two-column
- * "featured card + list" layout, a plain `.dx-navigation-menu-grid` for a
- * simple multi-column list of links. */
+/* The link grid a themed panel's children compose -- shadcn's demo `ul`
+ * (shadcn-ui/ui@295a1f1, apps/v4/registry/new-york-v4/examples/
+ * navigation-menu-demo.tsx). The grid, not the panel, owns the width, in
+ * the same three steps shadcn uses (Tailwind's `sm`/`md`/`lg` = 40/48/64rem):
+ *
+ *   plain `.dx-navigation-menu-grid`        sm:w-[400px] md:w-[500px]
+ *                                           md:grid-cols-2 lg:w-[600px]
+ *   `.dx-navigation-menu-grid-2col`         md:w-[400px] lg:w-[500px]
+ *   (featured card + list)                  lg:grid-cols-[.75fr_1fr]
+ *
+ * Below `sm`/`md` there is no explicit width, so the panel falls back to its
+ * own `max-content`, clamped by `max-width`, and the grid is one column.
+ * `minmax(0, ...)` rather than Tailwind's bare `fr`: a track may never grow
+ * past its share to fit one long unbroken word. */
 .dx-navigation-menu-grid {
   display: grid;
   gap: var(--dx-space-2);
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
 }
 
-.dx-navigation-menu-grid-2col {
-  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.5fr);
+@media (width >= 40rem) {
+  .dx-navigation-menu-grid {
+    width: 25rem;
+  }
 }
 
+@media (width >= 48rem) {
+  .dx-navigation-menu-grid {
+    width: 31.25rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dx-navigation-menu-grid-2col {
+    width: 25rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (width >= 64rem) {
+  .dx-navigation-menu-grid {
+    width: 37.5rem;
+  }
+
+  .dx-navigation-menu-grid-2col {
+    width: 31.25rem;
+    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
+  }
+
+  .dx-navigation-menu-grid-2col > .dx-navigation-menu-featured {
+    grid-row: span 3;
+  }
+}
+
+/* Every link inside a panel -- shadcn's `NavigationMenuLink`
+ * (`flex flex-col gap-1 rounded-sm p-2 text-sm ...`, Nova's `rounded-md` in a
+ * panel). `font-size` is set HERE, on the link, so a link whose child is
+ * bare text ("Button") renders at exactly the size of one whose child is a
+ * title + description: before this, only the `-link-title`/`-description`
+ * wrappers set a size and a bare-text link inherited the page's 16px/400,
+ * which is the "Button and Input are larger and lighter than Introduction"
+ * bug. The link does not set `height: 100%` -- it is a direct grid child and
+ * stretches to its row on its own. */
 .dx-navigation-menu-content .dx-navigation-menu-link {
   display: flex;
-  height: 100%;
   flex-direction: column;
-  padding: var(--dx-space-2) var(--dx-space-3);
-  border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
+  padding: var(--dx-space-2);
+  border-radius: var(--dx-radius-md);
   color: inherit;
   cursor: pointer;
+  font-size: var(--dx-text-sm);
   gap: var(--dx-space-1);
   text-decoration: none;
   touch-action: manipulation;
 }
 
+/* `background-color`, not the `background` shorthand: the featured card
+ * paints a `background-image` gradient, and the shorthand would reset it to a
+ * flat accent on hover (shadcn's `hover:bg-accent` is colour-only too). */
 .dx-navigation-menu-content .dx-navigation-menu-link:hover:not([data-disabled="true"]),
 .dx-navigation-menu-content .dx-navigation-menu-link:focus-visible {
-  background: var(--dx-accent);
+  background-color: var(--dx-accent);
   outline: none;
 }
 
+/* shadcn `ListItem`: title `text-sm leading-none font-medium`, description
+ * `line-clamp-2 text-sm leading-snug text-muted-foreground`. */
 .dx-navigation-menu-link-title {
   color: var(--dx-foreground);
   font-size: var(--dx-text-sm);
   font-weight: 500;
+  line-height: 1;
 }
 
 .dx-navigation-menu-link-description {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  color: var(--dx-foreground);
-  font-size: var(--dx-text-xs);
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-sm);
   -webkit-line-clamp: 2;
-  line-height: 1.4;
+  line-height: 1.375;
 }
 
-.dx-navigation-menu-featured {
-  display: flex;
-  height: 100%;
-  flex-direction: column;
-  justify-content: flex-end;
+/* The featured card -- shadcn's `row-span-3` link
+ * (`flex h-full w-full flex-col justify-end rounded-md
+ * bg-linear-to-b from-muted/50 to-muted p-4 md:p-6`), with two deliberate
+ * owner-driven departures: its copy is top-aligned (`flex-start`, not
+ * `justify-end` -- the card is as tall as the three list rows beside it, and
+ * bottom-pinned text left an empty block above it), and it keeps `p-4` at
+ * every width (`md:p-6` leaves the 211px left track 163px of text width, too
+ * narrow for the 18px "Component Library" title, which then wrapped). Written as
+ * `.dx-navigation-menu-content .dx-navigation-menu-featured` (two classes) so
+ * it beats the generic panel-link rule above on specificity: with one class
+ * its `padding`/`gap`/`border-radius` silently lost to that rule's.
+ *
+ * The surface: shadcn's `--muted` is a step lighter than `--popover` in both
+ * modes. Here `--dx-muted` and `--dx-popover` resolve to the SAME colour in
+ * dark (`dx-components-theme.css`: both `--primary-color-5`), so a
+ * `from-muted/50 to-muted` card is invisible on the panel. Light keeps
+ * `--dx-muted`; dark mixes `--dx-accent` into `--dx-popover` (about the
+ * 15-level step Nova's muted-on-popover gives, and still >= 4.5:1 for
+ * `--dx-muted-foreground` text). Once the theme gives dark popover its own
+ * step, the dark arm can collapse to plain `--dx-muted`. */
+.dx-navigation-menu-content .dx-navigation-menu-featured {
+  --dx-navigation-menu-featured-surface:
+    var(--light, var(--dx-muted))
+    var(--dark, color-mix(in oklab, var(--dx-accent) 60%, var(--dx-popover)));
+
+  justify-content: flex-start;
   padding: var(--dx-space-4);
-  border-radius: var(--dx-radius-lg);
-  background: linear-gradient(
+  border-radius: var(--dx-radius-md);
+  background-image: linear-gradient(
     to bottom,
-    var(--dx-accent),
-    var(--dx-muted)
+    color-mix(in oklab, var(--dx-navigation-menu-featured-surface) 50%, transparent),
+    var(--dx-navigation-menu-featured-surface)
   );
   gap: var(--dx-space-2);
 }
 
 .dx-navigation-menu-featured .dx-navigation-menu-link-title {
   font-size: var(--dx-text-lg);
+  line-height: calc(1.75 / 1.125);
+}
+
+/* Featured copy is `text-sm leading-tight text-muted-foreground`, never
+ * clamped -- a two-line clamp would ellipsize it in the narrow left track. */
+.dx-navigation-menu-featured .dx-navigation-menu-link-description {
+  display: block;
+  overflow: visible;
+  line-height: 1.25;
 }

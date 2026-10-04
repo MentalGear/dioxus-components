@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
+import { gotoHydrated } from './hydration';
 
 const URL = `${BASE_URL}/component/?name=navigation_menu&`;
 const GOTO = { timeout: 20 * 60 * 1000 }; // Increase timeout to 20 minutes
@@ -211,6 +212,163 @@ test.describe('Open animation never reflows the content (user-reported)', () => 
     expect(settledClosedTransform).not.toBeNull();
     expect(settledClosedTransform).not.toBe('none');
   });
+});
+
+test.describe('Panel layout matches shadcn (owner report: oversized panel, invisible featured card, mismatched list items)', () => {
+  // Owner report (dark mode, "Getting started" open): the panel ran ~900px+
+  // wide (a `width: max-content` box around `fr` tracks with no width
+  // contract), the featured card was indistinguishable from the panel
+  // (`--dx-muted` and `--dx-popover` are the same colour in dark), and
+  // "Button"/"Input" -- bare-text links -- rendered at 16px/400 next to
+  // "Introduction"'s 14px/500 title. Reference: shadcn's NavigationMenu demo,
+  // shadcn-ui/ui@295a1f1 apps/v4/registry/new-york-v4/examples/
+  // navigation-menu-demo.tsx (grid `md:w-[400px] lg:w-[500px]
+  // lg:grid-cols-[.75fr_1fr]`, featured `from-muted/50 to-muted`, `ListItem`).
+  const OPEN_PANEL = '.dx-navigation-menu-content[data-state="open"]';
+
+  async function openPanel(page: Page, name: string) {
+    const trigger = nav(page).getByRole('button', { name });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    // Past the open animation (transform scale .98 -> 1), so rects are final.
+    await expect
+      .poll(() =>
+        page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          return !!el && el.getAnimations().every((a) => a.playState === 'finished');
+        }, OPEN_PANEL),
+      )
+      .toBe(true);
+  }
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test.describe(`${scheme} scheme, 1440px viewport`, () => {
+      test.beforeEach(async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.emulateMedia({ colorScheme: scheme });
+        // Hydrated, not just loaded: a panel opened before hydration attaches its listeners is read
+        // mid-way (the featured title measured 16px/400, its pre-theme default, in ~10% of runs at
+        // --workers=4); backlog row 109's class.
+        await gotoHydrated(page, URL, GOTO);
+        // The emulation must actually reach the theme's `--light`/`--dark`
+        // toggle, or the dark half of this block silently re-tests light.
+        expect(
+          await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches),
+        ).toBe(scheme === 'dark');
+      });
+
+      test('the panel is compact (<= 520px wide) and stays inside the viewport', async ({ page }) => {
+        await openPanel(page, 'Getting started');
+        const box = await page.evaluate((sel) => {
+          const el = document.querySelector<HTMLElement>(sel)!;
+          const r = el.getBoundingClientRect();
+          return { width: el.offsetWidth, left: r.left, right: r.right, vw: innerWidth };
+        }, OPEN_PANEL);
+        // shadcn's grid is `lg:w-[500px]`; plus the panel's own padding.
+        expect(box.width).toBeLessThanOrEqual(520);
+        expect(box.left).toBeGreaterThanOrEqual(0);
+        expect(box.right).toBeLessThanOrEqual(box.vw);
+      });
+
+      test('the Components panel is shadcn-sized too (lg:w-[600px], two columns)', async ({ page }) => {
+        await openPanel(page, 'Components');
+        const m = await page.evaluate((sel) => {
+          const el = document.querySelector<HTMLElement>(sel)!;
+          const grid = el.querySelector<HTMLElement>('.dx-navigation-menu-grid')!;
+          return {
+            width: el.offsetWidth,
+            columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+          };
+        }, OPEN_PANEL);
+        expect(m.width).toBeLessThanOrEqual(620);
+        expect(m.columns).toBe(2);
+      });
+
+      test('the featured card is visibly a different surface from the panel', async ({ page }) => {
+        await openPanel(page, 'Getting started');
+        const m = await page.evaluate((sel) => {
+          const panel = document.querySelector<HTMLElement>(sel)!;
+          const card = panel.querySelector<HTMLElement>('.dx-navigation-menu-featured')!;
+          // Normalise any CSS colour (rgb(), color(srgb ...), oklab(...)) to
+          // sRGB bytes through a 1x1 canvas, so no colour-function syntax is
+          // parsed by hand.
+          const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+          const rgba = (css: string) => {
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = '#000';
+            ctx.fillStyle = css;
+            ctx.fillRect(0, 0, 1, 1);
+            return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+          };
+          const image = getComputedStyle(card).backgroundImage;
+          const stops = image.match(/(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\)/g) ?? [];
+          return {
+            image,
+            // The gradient's last stop is where the card's text sits.
+            cardBottom: stops.length ? rgba(stops[stops.length - 1]) : null,
+            panel: rgba(getComputedStyle(panel).backgroundColor),
+          };
+        }, OPEN_PANEL);
+        expect(m.image).toContain('linear-gradient');
+        expect(m.cardBottom).not.toBeNull();
+        const delta = Math.max(...m.cardBottom!.slice(0, 3).map((c, i) => Math.abs(c - m.panel[i])));
+        // >= 6/255 on some channel: the card reads against the panel (shadcn's
+        // muted on popover is 10 in light, ~15 in dark).
+        expect(delta, `card ${m.cardBottom} vs panel ${m.panel}`).toBeGreaterThanOrEqual(6);
+      });
+
+      test('the featured copy sits at the top of the card, and its title stays on one line', async ({ page }) => {
+        // Owner report: "the text [is] at the bottom" -- shadcn's `justify-end`
+        // pinned the title to the foot of a card as tall as the three list rows.
+        await openPanel(page, 'Getting started');
+        const m = await page.evaluate((sel) => {
+          const card = document.querySelector<HTMLElement>(`${sel} .dx-navigation-menu-featured`)!;
+          const title = card.querySelector<HTMLElement>('.dx-navigation-menu-link-title')!;
+          const t = getComputedStyle(title);
+          return {
+            titleOffset: title.getBoundingClientRect().top - card.getBoundingClientRect().top,
+            titleHeight: title.getBoundingClientRect().height,
+            titleSize: t.fontSize,
+            titleWeight: t.fontWeight,
+          };
+        }, OPEN_PANEL);
+        expect(m.titleOffset).toBeLessThanOrEqual(24);
+        // text-lg line-height is 28px: one line, not two (a wrapped title is 56px).
+        expect(m.titleHeight).toBeLessThanOrEqual(32);
+        // text-lg font-medium
+        expect([m.titleSize, m.titleWeight]).toEqual(['18px', '500']);
+      });
+
+      test('every list link has the same title size/weight and a same-sized description', async ({ page }) => {
+        for (const name of ['Getting started', 'Components']) {
+          await openPanel(page, name);
+          const links = await page.evaluate((sel) => {
+            const panel = document.querySelector(sel)!;
+            return Array.from(panel.querySelectorAll<HTMLElement>('.dx-navigation-menu-link'))
+              .filter((a) => !a.classList.contains('dx-navigation-menu-featured'))
+              .map((a) => {
+                // A bare-text link (no title wrapper) is measured as itself,
+                // so it cannot hide behind a missing `-link-title`.
+                const title = a.querySelector<HTMLElement>('.dx-navigation-menu-link-title') ?? a;
+                const desc = a.querySelector<HTMLElement>('.dx-navigation-menu-link-description');
+                const t = getComputedStyle(title);
+                return {
+                  text: a.textContent?.trim().slice(0, 24),
+                  title: `${t.fontSize}/${t.fontWeight}`,
+                  desc: desc ? getComputedStyle(desc).fontSize : null,
+                };
+              });
+          }, OPEN_PANEL);
+          expect(links.length, `${name}: list links found`).toBeGreaterThanOrEqual(3);
+          expect(new Set(links.map((l) => l.title)).size, `${name} titles: ${JSON.stringify(links)}`).toBe(1);
+          expect(links.every((l) => l.desc !== null), `${name}: every link has a description`).toBe(true);
+          expect(new Set(links.map((l) => l.desc)).size, `${name} descriptions`).toBe(1);
+          await page.keyboard.press('Escape');
+          await expect(nav(page).getByRole('button', { name })).toHaveAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+  }
 });
 
 test.describe('Axe automated scan', () => {
