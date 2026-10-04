@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
+import { gotoHydrated } from './hydration';
 
 test('test', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
@@ -122,6 +123,249 @@ test('a raw .focus() call on a plain item does not close the menu (row 85)', asy
   await expect(editItem, 'the item must simply be focused in place').toBeFocused();
 });
 
+// --- Checkable items: DropdownMenuCheckboxItem / DropdownMenuRadioGroup / DropdownMenuRadioItem ---
+//
+// shadcn's DropdownMenu has CheckboxItem and RadioGroup + RadioItem; this one
+// had neither. They are one construction shared with ContextMenu and Menubar
+// (`primitives/src/menu_item.rs`), graded here for DropdownMenu's own wiring:
+// role/aria contract, click + keyboard behaviour, close semantics, roving
+// focus and typeahead. The shared role contract is also graded across all
+// three hosts by `oracle/tier1-apg/menu-roles.spec.ts`; the label/indicator
+// geometry by `menu-indicator-gap.spec.ts`.
+//
+// The `checkboxes` and `radio_group` variants keep the menu open after a
+// toggle (`close_on_select: false`) so several toggles fit in one visit -- the
+// APG-optional behaviour for Space ("changes the state without closing the
+// menu", menu-and-menubar-pattern.html, "Keyboard Interaction"). The `rtl`
+// variant's "Pinned"/"Ascending" items use the primitive's default, Radix's
+// `onSelect` default: selecting closes the menu.
+const block = (variant: string) => `${BASE_URL}/component/block/?name=dropdown_menu&variant=${variant}&`;
+
+test.describe('Checkable items', () => {
+  test('checkbox items: menuitemcheckbox with an always-present aria-checked; a click toggles, a disabled item does not, the menu stays open', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    const trigger = page.getByRole('button', { name: 'Checkboxes' });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    const items = page.getByRole('menuitemcheckbox');
+    await expect(items, 'three checkbox items, none of them a plain menuitem').toHaveCount(3);
+    await expect(page.getByRole('menuitem'), 'only the "More options" sub-trigger is a plain menuitem').toHaveCount(1);
+    const statusBar = page.getByRole('menuitemcheckbox', { name: 'Status Bar' });
+    const activityBar = page.getByRole('menuitemcheckbox', { name: 'Activity Bar' });
+    const panel = page.getByRole('menuitemcheckbox', { name: 'Panel' });
+
+    // aria-checked is present on every item, "true"/"false", never absent.
+    await expect(statusBar).toHaveAttribute('aria-checked', 'true');
+    await expect(statusBar).toHaveAttribute('data-state', 'checked');
+    await expect(activityBar).toHaveAttribute('aria-checked', 'false');
+    await expect(activityBar).toHaveAttribute('data-state', 'unchecked');
+    await expect(panel).toHaveAttribute('aria-checked', 'false');
+    await expect(activityBar).toHaveAttribute('aria-disabled', 'true');
+    await expect(statusBar).toHaveAttribute('aria-disabled', 'false');
+
+    await panel.click();
+    await expect(panel).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Status bar true, panel true')).toBeVisible();
+    await expect(trigger, 'close_on_select: false keeps the menu open').toHaveAttribute('data-state', 'open');
+
+    await statusBar.click();
+    await expect(statusBar).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByText('Status bar false, panel true')).toBeVisible();
+
+    // A disabled item cannot be toggled (`force`: Playwright otherwise waits
+    // forever for an `aria-disabled` element to become actionable).
+    await activityBar.click({ force: true });
+    await expect(activityBar).toHaveAttribute('aria-checked', 'false');
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+  });
+
+  test('checkbox items: arrow keys skip the disabled item, Space and Enter toggle in place, typeahead reaches them', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    const trigger = page.getByRole('button', { name: 'Checkboxes' });
+    await trigger.click();
+    const statusBar = page.getByRole('menuitemcheckbox', { name: 'Status Bar' });
+    const panel = page.getByRole('menuitemcheckbox', { name: 'Panel' });
+
+    await page.keyboard.press('ArrowDown');
+    await expect(statusBar).toBeFocused();
+    // Status Bar(0) -> Activity Bar(1, disabled, skipped) -> Panel(2).
+    await page.keyboard.press('ArrowDown');
+    await expect(panel).toBeFocused();
+
+    // APG (Optional): Space on a menuitemcheckbox "changes the state without
+    // closing the menu" -- what close_on_select: false gives.
+    await page.keyboard.press('Space');
+    await expect(panel).toHaveAttribute('aria-checked', 'true');
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+    await expect(panel, 'focus stays on the toggled item').toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(panel).toHaveAttribute('aria-checked', 'false');
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    // Typeahead: a checkbox item is a target when it has a text_value...
+    await page.keyboard.press('s');
+    await expect(statusBar, "typeahead 's' wraps past Panel to Status Bar").toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press('p');
+    await expect(panel, "typeahead 'p' reaches Panel").toBeFocused();
+    // ...and a disabled one is never a candidate.
+    await page.waitForTimeout(1100);
+    await page.keyboard.press('a');
+    await expect(panel, "typeahead 'a' must not land on the disabled Activity Bar").toBeFocused();
+  });
+
+  test('a checkbox item inside a submenu registers in the submenu, not the root: keyboard opens it, Space toggles it in place, the root keeps its own roving focus', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    const trigger = page.getByRole('button', { name: 'Checkboxes' });
+    await trigger.click();
+    const statusBar = page.getByRole('menuitemcheckbox', { name: 'Status Bar' });
+    const subTrigger = page.getByRole('menuitem', { name: 'More options' });
+    const wordWrap = page.getByRole('menuitemcheckbox', { name: 'Word Wrap' });
+
+    // The 1st ArrowDown lands on Status Bar(0); then Activity Bar(1, disabled,
+    // skipped) -> Panel(2) -> More options(3): 3 presses in all.
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    await expect(subTrigger).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    // The submenu's first item is `Word Wrap` (its own index 0). Had it
+    // registered in the root collection it would have collided with
+    // `Status Bar` (also index 0) and focus would not have landed on it.
+    await expect(wordWrap).toBeVisible();
+    await expect(wordWrap).toBeFocused();
+    await expect(wordWrap).toHaveAttribute('aria-checked', 'false');
+
+    await page.keyboard.press('Space');
+    await expect(wordWrap).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('word wrap true')).toBeVisible();
+    await expect(trigger, 'close_on_select: false keeps the whole menu open').toHaveAttribute('data-state', 'open');
+    await expect(wordWrap, 'focus stays on the toggled item').toBeFocused();
+
+    // Escape/ArrowLeft hands focus back to the sub-trigger; the root's own
+    // roving focus is intact (ArrowDown from the last item wraps to Status Bar).
+    await page.keyboard.press('ArrowLeft');
+    await expect(subTrigger).toBeFocused();
+    await expect(wordWrap).toBeHidden();
+    await page.keyboard.press('ArrowDown');
+    await expect(statusBar).toBeFocused();
+  });
+
+  test('a checkbox item inside a submenu: a click toggles it, and by default it closes the whole menu tree', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    const trigger = page.getByRole('button', { name: 'Checkboxes' });
+    await trigger.click();
+    const subTrigger = page.getByRole('menuitem', { name: 'More options' });
+    await subTrigger.click();
+    const wordWrap = page.getByRole('menuitemcheckbox', { name: 'Word Wrap' });
+    const minimap = page.getByRole('menuitemcheckbox', { name: 'Minimap' });
+    await expect(wordWrap).toBeVisible();
+
+    await wordWrap.click();
+    await expect(wordWrap).toHaveAttribute('aria-checked', 'true');
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    // `Minimap` uses the primitive's default: choosing it closes the menu --
+    // the entire tree, submenu included, like `DropdownMenuSubItem`.
+    await minimap.click();
+    await expect(trigger, 'the default close takes the whole tree with it').toHaveAttribute('data-state', 'closed');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(page.getByText('minimap true')).toBeVisible();
+  });
+
+  test('radio group: role=group named by its label, exactly one item checked, a choice moves the check, the disabled item cannot be chosen', async ({ page }) => {
+    await gotoHydrated(page, block('radio_group'));
+    const trigger = page.getByRole('button', { name: 'Radio Group' });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    const group = page.getByRole('group', { name: 'Panel Position' });
+    await expect(group, 'the group is named by its heading via aria-labelledby').toBeVisible();
+    const radios = group.getByRole('menuitemradio');
+    await expect(radios).toHaveCount(3);
+    const top = group.getByRole('menuitemradio', { name: 'Top' });
+    const bottom = group.getByRole('menuitemradio', { name: 'Bottom' });
+    const right = group.getByRole('menuitemradio', { name: 'Right' });
+    const checkedCount = () => group.locator('[role="menuitemradio"][aria-checked="true"]').count();
+
+    await expect(top).toHaveAttribute('aria-checked', 'false');
+    await expect(bottom).toHaveAttribute('aria-checked', 'true');
+    await expect(right).toHaveAttribute('aria-checked', 'false');
+    await expect(right).toHaveAttribute('aria-disabled', 'true');
+    expect(await checkedCount(), 'exactly one radio is checked').toBe(1);
+
+    await top.click();
+    await expect(top).toHaveAttribute('aria-checked', 'true');
+    await expect(bottom).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByText('Panel position top')).toBeVisible();
+    expect(await checkedCount(), 'still exactly one radio checked after a choice').toBe(1);
+    await expect(trigger, 'close_on_select: false keeps the menu open').toHaveAttribute('data-state', 'open');
+
+    await right.click({ force: true });
+    await expect(right, 'a disabled radio cannot be chosen').toHaveAttribute('aria-checked', 'false');
+    await expect(top).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('radio group: arrow keys skip the disabled radio, Space and Enter choose it, typeahead falls back to the value', async ({ page }) => {
+    await gotoHydrated(page, block('radio_group'));
+    const trigger = page.getByRole('button', { name: 'Radio Group' });
+    await trigger.click();
+    const top = page.getByRole('menuitemradio', { name: 'Top' });
+    const bottom = page.getByRole('menuitemradio', { name: 'Bottom' });
+
+    await page.keyboard.press('ArrowDown');
+    await expect(top).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(top).toHaveAttribute('aria-checked', 'true');
+    await expect(bottom).toHaveAttribute('aria-checked', 'false');
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    await page.keyboard.press('ArrowDown');
+    await expect(bottom).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(bottom).toHaveAttribute('aria-checked', 'true');
+    await expect(top).toHaveAttribute('aria-checked', 'false');
+
+    // Bottom(1) -> Right(2, disabled, skipped) -> wraps to Top(0).
+    await page.keyboard.press('ArrowDown');
+    await expect(top).toBeFocused();
+
+    // A radio item has no text_value here: typeahead falls back to its value.
+    await page.keyboard.press('b');
+    await expect(bottom, "typeahead 'b' reaches Bottom via its value").toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press('r');
+    await expect(bottom, "typeahead 'r' must not land on the disabled Right").toBeFocused();
+  });
+
+  test('by default (Radix onSelect default) choosing a checkable item closes the menu and the new state is kept', async ({ page }) => {
+    await gotoHydrated(page, block('rtl'));
+    const trigger = page.getByRole('button', { name: 'Launch Menu' });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    const pinned = page.getByRole('menuitemcheckbox', { name: 'Pinned' });
+    await expect(pinned).toHaveAttribute('aria-checked', 'true');
+    await pinned.click();
+    await expect(trigger, 'a checkbox item closes the menu by default').toHaveAttribute('data-state', 'closed');
+    await expect(trigger, 'focus returns to the trigger like any other close').toBeFocused();
+
+    await trigger.click();
+    await expect(pinned, 'the (controlled) state survived the close').toHaveAttribute('aria-checked', 'false');
+
+    // Keyboard: Enter on a radio item chooses it and closes the menu. End
+    // lands on the last item, "Descending".
+    await page.keyboard.press('End');
+    const descending = page.getByRole('menuitemradio', { name: 'Descending' });
+    await expect(descending).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(trigger).toHaveAttribute('data-state', 'closed');
+
+    await trigger.click();
+    await expect(descending).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('menuitemradio', { name: 'Ascending' })).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
@@ -136,5 +380,21 @@ test.describe('Axe automated scan', () => {
     await page.getByRole('button', { name: 'Open Menu' }).click();
     await expect(page.getByRole('menu')).toBeVisible();
     await expectNoAxeViolations(page, 'dropdown-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // Checkable items: role="menuitemcheckbox"/"menuitemradio" need aria-checked
+  // and a menu/group context; a radio group needs to be a real `group`.
+  test('menu with checkbox items open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
+    await page.getByRole('button', { name: 'Checkboxes' }).click();
+    await expect(page.getByRole('menuitemcheckbox', { name: 'Status Bar' })).toBeVisible();
+    await expectNoAxeViolations(page, 'dropdown-menu: checkboxes open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test('menu with a radio group open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
+    await page.getByRole('button', { name: 'Radio Group' }).click();
+    await expect(page.getByRole('menuitemradio', { name: 'Top' })).toBeVisible();
+    await expectNoAxeViolations(page, 'dropdown-menu: radio group open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

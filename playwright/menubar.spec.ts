@@ -1,6 +1,8 @@
 import { test, expect } from "./fixtures";
+import { type Locator, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 test("pointer navigation", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -102,6 +104,205 @@ test("a raw .focus() call on the trigger does not close its own open content (ro
   await expect(fileMenuButton, "the trigger must simply be focused in place").toBeFocused();
 });
 
+// --- Checkable items: MenubarCheckboxItem / MenubarRadioGroup / MenubarRadioItem ---
+//
+// shadcn's Menubar has CheckboxItem and RadioGroup + RadioItem; this one had
+// neither. They are one construction shared with DropdownMenu and ContextMenu
+// (`primitives/src/menu_item.rs`), graded here for Menubar's own wiring:
+// role/aria contract, pointer (pointerdown, like every Menubar item) and
+// keyboard behaviour, close semantics (closing a menu hands focus back to its
+// trigger, the APG menubar rule), roving focus and typeahead. The shared role
+// contract is also graded across all three hosts by
+// `oracle/tier1-apg/menu-roles.spec.ts`; the label/indicator geometry by
+// `menu-indicator-gap.spec.ts`.
+//
+// The `checkboxes` and `radio_group` variants keep the menu open after a
+// toggle (`close_on_select: false`) -- the APG-optional behaviour for Space
+// ("changes the state without closing the menu", menu-and-menubar-pattern.html,
+// "Keyboard Interaction"). The `rtl` variant's "Pinned"/"Ascending" items use
+// the primitive's default, Radix's `onSelect` default: selecting closes the menu.
+const block = (variant: string) => `${BASE_URL}/component/block/?name=menubar&variant=${variant}&`;
+
+/** The open popup of the menu that contains `inner` (the popup, not its always-rendered `role="menu"` wrapper). */
+const popupHaving = (page: Page, inner: Locator) => page.getByRole("menu").filter({ has: inner }).last();
+
+test.describe("Checkable items", () => {
+  test("checkbox items: menuitemcheckbox with an always-present aria-checked; a click toggles, the menu stays open", async ({ page }) => {
+    await gotoHydrated(page, block("checkboxes"));
+    await page.getByRole("menuitem", { name: "View" }).click();
+    const view = popupHaving(page, page.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" }));
+    await expect(view).toHaveAttribute("data-state", "open");
+
+    await expect(view.getByRole("menuitemcheckbox"), "two checkbox items in View").toHaveCount(2);
+    await expect(view.getByRole("menuitem"), "Reload and Force Reload stay plain menuitems").toHaveCount(2);
+    const bookmarks = view.getByRole("menuitemcheckbox", { name: "Always Show Bookmarks Bar" });
+    const fullUrls = view.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" });
+    await expect(bookmarks).toHaveAttribute("aria-checked", "false");
+    await expect(bookmarks).toHaveAttribute("data-state", "unchecked");
+    await expect(fullUrls).toHaveAttribute("aria-checked", "true");
+    await expect(fullUrls).toHaveAttribute("data-state", "checked");
+    // Plain items carry no aria-checked at all.
+    await expect(view.getByRole("menuitem", { name: "Reload", exact: true })).not.toHaveAttribute("aria-checked", /.*/);
+
+    await bookmarks.click();
+    await expect(bookmarks).toHaveAttribute("aria-checked", "true");
+    await expect(view, "close_on_select: false keeps the menu open").toHaveAttribute("data-state", "open");
+    await fullUrls.click();
+    await expect(fullUrls).toHaveAttribute("aria-checked", "false");
+    await expect(view).toHaveAttribute("data-state", "open");
+  });
+
+  test("checkbox items: arrow keys skip the disabled item, Space and Enter toggle in place, typeahead reaches them", async ({ page }) => {
+    await gotoHydrated(page, block("checkboxes"));
+    const viewTrigger = page.getByRole("menuitem", { name: "View" });
+    await viewTrigger.focus();
+    await page.keyboard.press("ArrowDown");
+    const view = popupHaving(page, page.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" }));
+    await expect(view).toHaveAttribute("data-state", "open");
+    const bookmarks = view.getByRole("menuitemcheckbox", { name: "Always Show Bookmarks Bar" });
+    const fullUrls = view.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" });
+    const reload = view.getByRole("menuitem", { name: "Reload", exact: true });
+
+    await expect(bookmarks, "ArrowDown on the trigger opens and focuses the first item").toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(fullUrls).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(reload, "roving focus runs through checkable and plain items alike").toBeFocused();
+    // Reload(2) -> Force Reload(3, disabled, skipped) -> wraps to Bookmarks(0).
+    await page.keyboard.press("ArrowDown");
+    await expect(bookmarks).toBeFocused();
+
+    // APG (Optional): Space on a menuitemcheckbox "changes the state without
+    // closing the menu" -- what close_on_select: false gives.
+    await page.keyboard.press("Space");
+    await expect(bookmarks).toHaveAttribute("aria-checked", "true");
+    await expect(view).toHaveAttribute("data-state", "open");
+    await expect(bookmarks, "focus stays on the toggled item").toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(bookmarks).toHaveAttribute("aria-checked", "false");
+    await expect(view).toHaveAttribute("data-state", "open");
+
+    // Typeahead: both checkbox labels start with "Always", so repeating "a"
+    // cycles them; a plain item (Reload, via its value) is a target too.
+    await page.keyboard.press("a");
+    await expect(fullUrls, "typeahead 'a' reaches the next checkbox item").toBeFocused();
+    await page.waitForTimeout(1100);
+    await page.keyboard.press("r");
+    await expect(reload).toBeFocused();
+    // The disabled Force Reload is never a candidate ("f" matches nothing else).
+    await page.waitForTimeout(1100);
+    await page.keyboard.press("f");
+    await expect(reload, "typeahead 'f' must not land on the disabled Force Reload").toBeFocused();
+  });
+
+  test("radio groups: role=group named by its label, one checked item per group, a choice moves the check and nothing else", async ({ page }) => {
+    await gotoHydrated(page, block("radio_group"));
+    await page.getByRole("menuitem", { name: "Accounts" }).click();
+    const group = page.getByRole("group", { name: "Switch account" });
+    await expect(group, "the group is named by its heading via aria-labelledby").toBeVisible();
+    await expect(group.getByRole("menuitemradio")).toHaveCount(3);
+    const checked = () => group.locator('[role="menuitemradio"][aria-checked="true"]');
+    await expect(checked()).toHaveCount(1);
+    await expect(group.getByRole("menuitemradio", { name: "Benoit" })).toHaveAttribute("aria-checked", "true");
+
+    await group.getByRole("menuitemradio", { name: "Luis" }).click();
+    await expect(group.getByRole("menuitemradio", { name: "Luis" })).toHaveAttribute("aria-checked", "true");
+    await expect(group.getByRole("menuitemradio", { name: "Benoit" })).toHaveAttribute("aria-checked", "false");
+    await expect(checked(), "still exactly one radio checked after a choice").toHaveCount(1);
+    await expect(
+      popupHaving(page, group),
+      "close_on_select: false keeps the menu open",
+    ).toHaveAttribute("data-state", "open");
+
+    // The second menu's group is separate, and still on its own value.
+    await page.getByRole("menuitem", { name: "Theme" }).hover();
+    const theme = page.getByRole("group", { name: "Theme" });
+    await expect(theme.getByRole("menuitemradio", { name: "System" })).toHaveAttribute("aria-checked", "true");
+    await expect(theme.locator('[role="menuitemradio"][aria-checked="true"]')).toHaveCount(1);
+  });
+
+  test("radio groups: Space and Enter choose in place, typeahead falls back to the value", async ({ page }) => {
+    await gotoHydrated(page, block("radio_group"));
+    await page.getByRole("menuitem", { name: "Accounts" }).focus();
+    await page.keyboard.press("ArrowDown");
+    const group = page.getByRole("group", { name: "Switch account" });
+    const andy = group.getByRole("menuitemradio", { name: "Andy" });
+    const benoit = group.getByRole("menuitemradio", { name: "Benoit" });
+    const luis = group.getByRole("menuitemradio", { name: "Luis" });
+    const menu = popupHaving(page, group);
+
+    await expect(andy).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(andy).toHaveAttribute("aria-checked", "true");
+    await expect(benoit).toHaveAttribute("aria-checked", "false");
+    await expect(menu).toHaveAttribute("data-state", "open");
+
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(luis).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(luis).toHaveAttribute("aria-checked", "true");
+    await expect(andy).toHaveAttribute("aria-checked", "false");
+    await expect(menu).toHaveAttribute("data-state", "open");
+
+    // A radio item has no text_value here: typeahead falls back to its value.
+    await page.keyboard.press("b");
+    await expect(benoit, "typeahead 'b' reaches Benoit via its value").toBeFocused();
+  });
+
+  test("by default (Radix onSelect default) choosing a checkable item closes the menu, and the new state is kept; by keyboard focus returns to its trigger", async ({ page }) => {
+    await gotoHydrated(page, block("rtl"));
+    const options = page.getByRole("menuitem", { name: "Options" });
+    await options.click();
+    const pinned = page.getByRole("menuitemcheckbox", { name: "Pinned" });
+    const optionsMenu = popupHaving(page, pinned);
+    await expect(optionsMenu).toHaveAttribute("data-state", "open");
+    await expect(pinned).toHaveAttribute("aria-checked", "true");
+
+    // Pointer: closes, and the (controlled) state survives the close. (Where
+    // DOM focus lands after a pointer select is the plain MenubarItem's
+    // behaviour too -- selection commits on pointerdown, the click then
+    // focuses an item that is being unmounted -- so it is not asserted here.)
+    await pinned.click();
+    await expect(optionsMenu, "a checkbox item closes the menu by default").toHaveCount(0);
+    await options.click();
+    await expect(pinned, "the (controlled) state survived the close").toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+
+    // Keyboard: Enter toggles, closes, and -- APG menubar rule -- hands focus
+    // back to the menu's own trigger. Create(0) Launch(1) Pinned(2).
+    await options.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(pinned).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(optionsMenu).toHaveCount(0);
+    await expect(options, "closing hands focus back to the menu's own trigger (APG menubar rule)").toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(pinned, "Enter toggled it back on").toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+
+    // Keyboard: Enter on a radio item chooses it and closes the menu.
+    // Remove(0) Duplicate(1) Ascending(2) Descending(3).
+    const modify = page.getByRole("menuitem", { name: "Modify" });
+    await modify.focus();
+    await page.keyboard.press("ArrowDown");
+    const descending = page.getByRole("menuitemradio", { name: "Descending" });
+    const modifyMenu = popupHaving(page, descending);
+    await expect(modifyMenu).toHaveAttribute("data-state", "open");
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await expect(descending).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(modifyMenu).toHaveCount(0);
+    await expect(modify).toBeFocused();
+
+    await modify.click();
+    await expect(descending).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("menuitemradio", { name: "Ascending" })).toHaveAttribute("aria-checked", "false");
+  });
+});
+
 test.describe("Axe automated scan", () => {
   test("loaded (menus closed) has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
@@ -114,6 +315,22 @@ test.describe("Axe automated scan", () => {
   // docs/backlog.md row 25: Menubar's role="menu" popups carry no
   // aria-labelledby/aria-label at all, so an open menu has no accessible
   // name (APG menu-and-menubar pattern requires one).
+  // Checkable items: role="menuitemcheckbox"/"menuitemradio" need aria-checked
+  // and a menu/group context; a radio group needs to be a real `group`.
+  test("View menu (checkbox items) open has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole("menuitem", { name: "View" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" })).toBeVisible();
+    await expectNoAxeViolations(page, "menubar: View menu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test("Accounts menu (radio group) open has no automatically detectable a11y issues", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole("menuitem", { name: "Accounts" }).click();
+    await expect(page.getByRole("menuitemradio", { name: "Benoit" })).toBeVisible();
+    await expectNoAxeViolations(page, "menubar: Accounts menu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
   test("File menu open has no automatically detectable a11y issues", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
     await page.getByRole("menuitem", { name: "File" }).click();

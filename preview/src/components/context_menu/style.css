@@ -28,6 +28,11 @@
    */
   overflow: visible;
   min-width: 220px;
+
+  /* Clamp to the viewport so a long label wraps (items carry `overflow-wrap:
+     anywhere`) instead of widening the menu past a narrow screen -- same
+     rule as ../dropdown_menu/style.css and ../menubar/style.css. */
+  max-width: calc(100vw - var(--dx-space-8));
   padding: var(--dx-space-1);
   border: none;
   border-radius: var(--dx-radius-lg);
@@ -72,7 +77,17 @@
   }
 }
 
+/* Menu-item indicator slot (the construction select/style.css documents in
+ * full; mirrors `../dropdown_menu/style.css`). An item that draws a trailing
+ * indicator -- today the sub-trigger's chevron -- reserves `inset + size + gap`
+ * of inline-end padding (see `.dx-context-menu-sub-trigger`) and the indicator
+ * is absolutely positioned inside that room, so a long label wraps
+ * (`overflow-wrap: anywhere`) before it can meet the icon. The three
+ * `--dx-menu-item-indicator-*` tokens are defined once in the theme and inherited
+ * here (this item's inline padding matches the theme's `inset`, so nothing is
+ * overridden). Guard: playwright/menu-indicator-gap.spec.ts. */
 .dx-context-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   padding: var(--dx-space-2) var(--dx-space-3);
@@ -81,11 +96,23 @@
   cursor: pointer;
   font-size: var(--dx-text-sm);
   outline: none;
+  overflow-wrap: anywhere;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
   transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
   user-select: none;
+}
+
+/* The indicator itself: out of flow, in the slot the item reserved. */
+.dx-context-menu-item-indicator {
+  position: absolute;
+  width: var(--dx-menu-item-indicator-size);
+  height: var(--dx-menu-item-indicator-size);
+  inset-block: 0;
+  inset-inline-end: var(--dx-menu-item-indicator-inset);
+  margin-block: auto;
+  pointer-events: none;
 }
 
 .dx-context-menu-item[data-disabled="true"] {
@@ -103,8 +130,26 @@
    `../dropdown_menu/style.css`'s identical rules; see that file's comments
    for the full rationale. `.dx-context-menu-sub-trigger` layers onto
    `.dx-context-menu-item` (always applied together, see `component.rs`). */
-.dx-context-menu-sub-trigger {
-  justify-content: space-between;
+.dx-context-menu-sub-trigger,
+.dx-context-menu-checkable-item {
+  padding-inline-end: calc(var(--dx-menu-item-indicator-inset) + var(--dx-menu-item-indicator-size) + var(--dx-menu-item-indicator-gap));
+}
+
+/* Checkable items (`ContextMenuCheckboxItem`/`ContextMenuRadioItem`): the
+   same construction as the sub-trigger above, drawing a check -- see
+   `../dropdown_menu/style.css`'s identical rules for the full account
+   (shadcn Nova's `pr-8` + `absolute right-2`; `visibility`, not `display`,
+   so an unchecked item keeps its slot and labels never shift). */
+.dx-context-menu-checkable-item[data-state="unchecked"] > .dx-context-menu-item-indicator {
+  visibility: hidden;
+}
+
+/* A heading for a group of items (`ContextMenuLabel`). */
+.dx-context-menu-label {
+  padding: var(--dx-space-2) var(--dx-space-3);
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-xs);
+  font-weight: 500;
 }
 
 /* `ChevronRight` icon element, appended after the trigger's own content by
@@ -112,8 +157,6 @@
    `component.rs`'s doc for why this is a real (decorative, name-free) SVG
    icon rather than CSS-generated `content:` text. */
 .dx-context-menu-sub-trigger-icon {
-  flex-shrink: 0;
-  margin-inline-start: var(--dx-space-2);
   opacity: 0.7;
 }
 

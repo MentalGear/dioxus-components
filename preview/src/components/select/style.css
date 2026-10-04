@@ -14,15 +14,19 @@
    * fixture's library-select fields) previously shrank to fit whatever
    * text happened to be selected -- as little as 85px for "apple". Since
    * `SelectList`'s own width is tied 1:1 to this trigger's rendered width
-   * (`--dx-anchor-width`, docs/backlog.md row 47), that left barely any
-   * slack for `.dx-select-option`'s `justify-content: space-between` to
-   * distribute between an option's label and its check indicator, making
-   * a *correctly* laid-out row look like a flexbox bug (visually: the
-   * checkmark reads as "hugging" the label instead of sitting at the row's
-   * far edge). A sensible floor here fixes it at the source, for every
-   * Select trigger this stylesheet themes, not just this one demo field.
+   * (`--dx-anchor-width`, docs/backlog.md row 47), that left the options
+   * barely any room, so a short list read as cramped. A sensible floor here
+   * fixes it at the source, for every Select trigger this stylesheet
+   * themes, not just this one demo field. (The check-to-label spacing inside
+   * an option no longer depends on that width at all: it is the reserved
+   * indicator slot below.)
    */
   min-width: 8rem;
+
+  /* Never wider than the box the caller gave the select: a long selected
+   * value truncates (`span[data-placeholder]` below) instead of growing the
+   * trigger past it. */
+  max-width: 100%;
   height: 2rem;
   flex-direction: row;
   align-items: center;
@@ -62,6 +66,19 @@
 
 .dx-select-trigger span[data-placeholder="true"] {
   color: var(--dx-muted-foreground);
+}
+
+/* The selected value is one line that truncates with an ellipsis (shadcn's
+ * `line-clamp-1` on `select-value`): without it a long value either wraps
+ * inside the fixed 2rem trigger or, unbroken, widens the trigger past the
+ * viewport and pushes the chevron with it. The chevron is `flex-shrink: 0`
+ * (above), so the value gives way, never the icon. */
+.dx-select-trigger span[data-placeholder] {
+  overflow: hidden;
+  min-width: 0;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dx-select[data-state="open"] .dx-select-trigger {
@@ -201,21 +218,53 @@
   }
 }
 
+/* Menu-item indicator slot -- ONE construction shared by every menu-like
+ * stylesheet (select, combobox, native_select, dropdown_menu, context_menu,
+ * menubar, command). An item that can draw a check / radio dot / chevron
+ * reserves the indicator's room as inline-end padding -- `inset + size + gap`
+ * -- and the indicator is absolutely positioned inside that reserved room. The
+ * label's box therefore ends where the slot begins: a long label wraps there
+ * (`overflow-wrap: anywhere`) and can never run under, or push out, the icon.
+ * `gap` is the guaranteed clear space between label and indicator; `inset` is
+ * the indicator's distance from the item's edge (it follows the item's own
+ * inline padding); `size` is its box. Logical properties only, so RTL mirrors
+ * for free. The three `--dx-menu-item-indicator-*` tokens are defined ONCE, in
+ * `dx-components-theme.css`; this option pads by `--dx-space-2` where the theme's
+ * `inset` is `--dx-space-3`, so it overrides that one token and inherits the
+ * rest -- shadcn's `pr-8` + `absolute right-2 size-4` (shadcn-ui/ui@295a1f1,
+ * style-nova.css `.cn-select-item`). Guard: playwright/menu-indicator-gap.spec.ts. */
 .dx-select-option {
+  --dx-menu-item-indicator-inset: var(--dx-space-2);
+
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   border-radius: var(--dx-radius-md);
   cursor: pointer;
   font-size: var(--dx-text-sm);
   gap: 0.375rem;
   outline: none;
+  overflow-wrap: anywhere;
   padding-block: var(--dx-space-1);
-  padding-inline: 0.375rem var(--dx-space-2);
+  padding-inline:
+    0.375rem
+    calc(var(--dx-menu-item-indicator-inset) + var(--dx-menu-item-indicator-size) + var(--dx-menu-item-indicator-gap));
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
   user-select: none;
+}
+
+/* The check (`component.rs`'s `SelectItemIndicator` child): out of flow, in
+ * the slot the option reserved above, vertically centred. */
+.dx-select-option-indicator {
+  position: absolute;
+  width: var(--dx-menu-item-indicator-size);
+  height: var(--dx-menu-item-indicator-size);
+  inset-block: 0;
+  inset-inline-end: var(--dx-menu-item-indicator-inset);
+  margin-block: auto;
+  pointer-events: none;
 }
 
 .dx-select-option:hover:not([data-disabled="true"]),

@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
-use dioxus_icons::lucide::ChevronRight;
+use dioxus_icons::lucide::{Check, ChevronRight};
 use dioxus_primitives::context_menu::{
-    self, ContextMenuContentProps, ContextMenuItemProps, ContextMenuProps,
+    self, ContextMenuCheckboxItemProps, ContextMenuContentProps, ContextMenuItemProps,
+    ContextMenuProps, ContextMenuRadioGroupProps, ContextMenuRadioItemProps,
     ContextMenuSubContentProps, ContextMenuSubItemProps, ContextMenuSubProps,
     ContextMenuSubTriggerProps, ContextMenuTriggerProps,
 };
@@ -93,7 +94,10 @@ pub fn ContextMenuSub(props: ContextMenuSubProps) -> Element {
 /// -- see `style.css`. Appends a `ChevronRight` icon after the caller's own
 /// content, same as `dropdown_menu/component.rs`'s identical
 /// `DropdownMenuSubTrigger` wrapper -- see that component's doc for why a
-/// real icon element, not CSS-generated `content:` text, matters here.
+/// real icon element, not CSS-generated `content:` text, matters here. The
+/// icon carries `dx-context-menu-item-indicator`, so it is positioned in the
+/// item's reserved indicator slot (`style.css`) and a long label can never
+/// meet it.
 #[component]
 pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
     let base = attributes!(div { class: "dx-context-menu-item dx-context-menu-sub-trigger" });
@@ -107,7 +111,10 @@ pub fn ContextMenuSubTrigger(props: ContextMenuSubTriggerProps) -> Element {
             text_value: props.text_value,
             attributes: merged,
             {props.children}
-            ChevronRight { class: "dx-context-menu-sub-trigger-icon", size: "16px" }
+            ChevronRight {
+                class: "dx-context-menu-item-indicator dx-context-menu-sub-trigger-icon",
+                size: "16px",
+            }
         }
     }
 }
@@ -143,5 +150,93 @@ pub fn ContextMenuSubItem(props: ContextMenuSubItemProps) -> Element {
             attributes: merged,
             {props.children}
         }
+    }
+}
+
+/// Themed wrapper for [`context_menu::ContextMenuCheckboxItem`] -- shadcn's
+/// `ContextMenuCheckboxItem`. Carries `dx-context-menu-item` (the same
+/// hover/focus/disabled chrome every plain item gets) and
+/// `dx-context-menu-checkable-item` (the reserved indicator slot, see
+/// `style.css`), and appends a `Check` icon after the caller's own content,
+/// same as `dropdown_menu/component.rs`'s identical
+/// `DropdownMenuCheckboxItem` wrapper -- see that component's doc. The icon
+/// carries `dx-context-menu-item-indicator`, so it sits in the item's
+/// reserved inline-end slot and a long label can never meet it; it is drawn
+/// only while the primitive reports `data-state="checked"`.
+#[component]
+pub fn ContextMenuCheckboxItem(props: ContextMenuCheckboxItemProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-item dx-context-menu-checkable-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
+        context_menu::ContextMenuCheckboxItem {
+            index: props.index,
+            checked: props.checked,
+            default_checked: props.default_checked,
+            on_checked_change: props.on_checked_change,
+            disabled: props.disabled,
+            text_value: props.text_value,
+            close_on_select: props.close_on_select,
+            attributes: merged,
+            {props.children}
+            Check { class: "dx-context-menu-item-indicator", size: "16px" }
+        }
+    }
+}
+
+/// Themed wrapper for [`context_menu::ContextMenuRadioGroup`] -- shadcn's
+/// `ContextMenuRadioGroup`. A `role="group"` with no chrome of its own.
+#[component]
+pub fn ContextMenuRadioGroup(props: ContextMenuRadioGroupProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-radio-group" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
+        context_menu::ContextMenuRadioGroup {
+            value: props.value,
+            default_value: props.default_value,
+            on_value_change: props.on_value_change,
+            attributes: merged,
+            {props.children}
+        }
+    }
+}
+
+/// Themed wrapper for [`context_menu::ContextMenuRadioItem`] -- shadcn's
+/// `ContextMenuRadioItem`. Identical chrome and indicator slot to
+/// [`ContextMenuCheckboxItem`]; the `Check` marks the chosen item.
+#[component]
+pub fn ContextMenuRadioItem(props: ContextMenuRadioItemProps) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-item dx-context-menu-checkable-item" });
+    let merged = merge_attributes(vec![base, props.attributes]);
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
+        context_menu::ContextMenuRadioItem {
+            index: props.index,
+            value: props.value,
+            disabled: props.disabled,
+            text_value: props.text_value,
+            close_on_select: props.close_on_select,
+            attributes: merged,
+            {props.children}
+            Check { class: "dx-context-menu-item-indicator", size: "16px" }
+        }
+    }
+}
+
+/// A non-interactive heading for a group of items -- shadcn's
+/// `ContextMenuLabel`. Pure presentation (the primitive has no label
+/// component): give it an `id` and point a [`ContextMenuRadioGroup`]'s
+/// `aria-labelledby` at it so the group is named.
+#[component]
+pub fn ContextMenuLabel(
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    let base = attributes!(div { class: "dx-context-menu-label" });
+    let merged = merge_attributes(vec![base, attributes]);
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/context_menu/style.css") }
+        div { ..merged, {children} }
     }
 }

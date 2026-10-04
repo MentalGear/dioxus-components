@@ -395,17 +395,21 @@ test.describe("Listbox width (docs/backlog.md row 47 -- full-viewport-width regr
  * currently selected -- as little as 85px for "apple". Since `SelectList`
  * itself is width-locked to the trigger's rendered width
  * (`--dx-anchor-width`, row 47's own contract, tested above), that left
- * almost no slack for a selected `.dx-select-option`'s
- * `justify-content: space-between` to distribute between the option's
+ * almost no slack for a selected `.dx-select-option` between the option's
  * label and its check indicator -- a *correctly* laid-out flex row that
  * nonetheless visually read as a bug (the checkmark appearing to hug the
  * label instead of sitting at the row's own far edge). Root-caused by
  * direct DOM/computed-style measurement (a debug Playwright script, not
  * guesswork) before landing the fix; this test is that measurement made
- * permanent. Deliberately targets the `form` fixture's field rather than
- * this file's own component-page demo: that demo's trigger may end up
- * wide for unrelated reasons (its own layout), which would let a
- * regression of the trigger's own CSS `min-width` go unnoticed here.
+ * permanent. (The label-to-check spacing no longer depends on the row's
+ * width at all -- the option reserves the check's slot and the check is
+ * absolutely positioned in it; `menu-indicator-gap.spec.ts` guards that
+ * minimum gap with long labels at a narrow viewport. This test still
+ * guards the check's position at the row's far edge.) Deliberately targets
+ * the `form` fixture's field rather than this file's own component-page
+ * demo: that demo's trigger may end up wide for unrelated reasons (its own
+ * layout), which would let a regression of the trigger's own CSS
+ * `min-width` go unnoticed here.
  */
 test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026-09-14)", () => {
     test("a selected option's checkmark reaches the row's own right edge, not just the label", async ({ page }) => {
@@ -432,12 +436,11 @@ test.describe("Trigger minimum width (docs/backlog.md row 10's sibling fix, 2026
         if (!optionBox || !checkBox) throw new Error("expected option and its check icon to both have a bounding box");
         const debug = `option=${JSON.stringify(optionBox)} check=${JSON.stringify(checkBox)}`;
 
-        // The check icon sits at the row's own far edge (space-between
-        // actually had room to push it there), not merely somewhere to
-        // the right of the label. Threshold is the row's own right
-        // padding (`--dx-space-3`, 12px) plus a couple of px of rounding
-        // slack -- the check is flush against the padding boundary, not
-        // literally touching the row's outer edge.
+        // The check icon sits at the row's own far edge (its slot's
+        // `--dx-menu-item-indicator-inset`, 8px), not merely somewhere to
+        // the right of the label. Threshold is that inset plus a few px
+        // of rounding slack -- the check is inset from the row's outer
+        // edge, not literally touching it.
         expect(optionBox.x + optionBox.width - (checkBox.x + checkBox.width), debug).toBeLessThanOrEqual(14);
         // And there's real, visible daylight between the label's text and
         // the check -- the exact thing a too-narrow row collapses to ~0.

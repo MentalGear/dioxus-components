@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
+import { gotoHydrated } from './hydration';
 
 test('pointer navigation', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -455,6 +456,231 @@ test('keyboard navigation', async ({ page }) => {
   await expect(page.getByText('Selected: Duplicate')).toBeVisible();
 });
 
+// --- Checkable items: ContextMenuCheckboxItem / ContextMenuRadioGroup / ContextMenuRadioItem ---
+//
+// shadcn's ContextMenu has CheckboxItem and RadioGroup + RadioItem; this one
+// had neither. They are one construction shared with DropdownMenu and
+// Menubar (`primitives/src/menu_item.rs`), graded here for ContextMenu's own
+// wiring: role/aria contract, pointer (pointerdown-then-pointerup, like every
+// ContextMenu item) and keyboard behaviour, close semantics, roving focus and
+// typeahead. The shared role contract is also graded across all three hosts
+// by `oracle/tier1-apg/menu-roles.spec.ts`; the label/indicator geometry by
+// `menu-indicator-gap.spec.ts`.
+//
+// The `checkboxes` and `radio_group` variants keep the menu open after a
+// toggle (`close_on_select: false`) -- the APG-optional behaviour for Space
+// ("changes the state without closing the menu", menu-and-menubar-pattern.html,
+// "Keyboard Interaction"). `main`'s "Show Bookmarks"/"Pedro Duarte" items use
+// the primitive's default, Radix's `onSelect` default: selecting closes the menu.
+const block = (variant: string) => `${BASE_URL}/component/block/?name=context_menu&variant=${variant}&`;
+
+test.describe('Checkable items', () => {
+  test('checkbox items: menuitemcheckbox with an always-present aria-checked; a click toggles, a disabled item does not, the menu stays open', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    await page.getByRole('button', { name: 'Right click for checkboxes' }).click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+
+    await expect(page.getByRole('menuitemcheckbox'), 'three checkbox items').toHaveCount(3);
+    await expect(page.getByRole('menuitem'), 'only the "More options" sub-trigger is a plain menuitem').toHaveCount(1);
+    const bookmarks = page.getByRole('menuitemcheckbox', { name: 'Show Bookmarks Bar' });
+    const fullUrls = page.getByRole('menuitemcheckbox', { name: 'Show Full URLs' });
+    const devTools = page.getByRole('menuitemcheckbox', { name: 'Show Developer Tools' });
+
+    await expect(bookmarks).toHaveAttribute('aria-checked', 'true');
+    await expect(bookmarks).toHaveAttribute('data-state', 'checked');
+    await expect(fullUrls).toHaveAttribute('aria-checked', 'false');
+    await expect(fullUrls).toHaveAttribute('data-state', 'unchecked');
+    await expect(devTools).toHaveAttribute('aria-checked', 'true');
+    await expect(devTools).toHaveAttribute('aria-disabled', 'true');
+
+    await fullUrls.click();
+    await expect(fullUrls).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Bookmarks true, full URLs true')).toBeVisible();
+    await expect(menu, 'close_on_select: false keeps the menu open').toHaveAttribute('data-state', 'open');
+
+    await bookmarks.click();
+    await expect(bookmarks).toHaveAttribute('aria-checked', 'false');
+
+    // `force`: Playwright otherwise waits forever for an `aria-disabled`
+    // element to become actionable.
+    await devTools.click({ force: true });
+    await expect(devTools, 'a disabled item cannot be toggled').toHaveAttribute('aria-checked', 'true');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+  });
+
+  test('checkbox items: arrow keys skip the disabled item, Space and Enter toggle in place, typeahead cycles the enabled ones', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    await page.getByRole('button', { name: 'Right click for checkboxes' }).click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    const bookmarks = page.getByRole('menuitemcheckbox', { name: 'Show Bookmarks Bar' });
+    const fullUrls = page.getByRole('menuitemcheckbox', { name: 'Show Full URLs' });
+
+    await page.keyboard.press('ArrowDown');
+    await expect(bookmarks).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(fullUrls).toBeFocused();
+    // Show Full URLs(1) -> Show Developer Tools(2, disabled, skipped) -> More
+    // options(3, a sub-trigger) -> wraps to Bookmarks(0).
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menuitem', { name: 'More options' })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(bookmarks).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(fullUrls).toBeFocused();
+
+    // APG (Optional): Space on a menuitemcheckbox "changes the state without
+    // closing the menu" -- what close_on_select: false gives.
+    await page.keyboard.press('Space');
+    await expect(fullUrls).toHaveAttribute('aria-checked', 'true');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+    await expect(fullUrls, 'focus stays on the toggled item').toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(fullUrls).toHaveAttribute('aria-checked', 'false');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+
+    // Typeahead: every label starts with "S", so repeating "s" cycles the
+    // checkbox items -- skipping the disabled one.
+    await page.keyboard.press('s');
+    await expect(bookmarks).toBeFocused();
+    await page.keyboard.press('s');
+    await expect(fullUrls, "typeahead 's' must skip the disabled Show Developer Tools").toBeFocused();
+  });
+
+  test('a checkbox item inside a submenu registers in the submenu, not the root: keyboard opens it, Space toggles it in place, the root keeps its own roving focus', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    await page.getByRole('button', { name: 'Right click for checkboxes' }).click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    const bookmarks = page.getByRole('menuitemcheckbox', { name: 'Show Bookmarks Bar' });
+    const subTrigger = page.getByRole('menuitem', { name: 'More options' });
+    const wordWrap = page.getByRole('menuitemcheckbox', { name: 'Word Wrap' });
+
+    // Bookmarks(0) -> Full URLs(1) -> Developer Tools(2, disabled, skipped) -> More options(3).
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    await expect(subTrigger).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    // The submenu's first item is `Word Wrap` (its own index 0). Had it
+    // registered in the root collection it would have collided with `Show
+    // Bookmarks Bar` (also index 0) and focus would not have landed on it.
+    await expect(wordWrap).toBeVisible();
+    await expect(wordWrap).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(wordWrap).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('word wrap true')).toBeVisible();
+    await expect(menu.first(), 'close_on_select: false keeps the whole menu open').toHaveAttribute('data-state', 'open');
+    await expect(wordWrap, 'focus stays on the toggled item').toBeFocused();
+
+    // ArrowLeft hands focus back to the sub-trigger; the root's own roving
+    // focus is intact (ArrowDown from the last item wraps to Bookmarks).
+    await page.keyboard.press('ArrowLeft');
+    await expect(subTrigger).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(bookmarks).toBeFocused();
+  });
+
+  test('a checkbox item inside a submenu: a click toggles it, and by default it closes the whole menu tree', async ({ page }) => {
+    await gotoHydrated(page, block('checkboxes'));
+    await page.getByRole('button', { name: 'Right click for checkboxes' }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'More options' }).click();
+    const wordWrap = page.getByRole('menuitemcheckbox', { name: 'Word Wrap' });
+    const minimap = page.getByRole('menuitemcheckbox', { name: 'Minimap' });
+    await expect(wordWrap).toBeVisible();
+
+    await wordWrap.click();
+    await expect(wordWrap).toHaveAttribute('aria-checked', 'true');
+    await expect(minimap, 'the submenu stays open').toBeVisible();
+
+    // `Minimap` uses the primitive's default: choosing it closes the menu --
+    // the entire tree, submenu included, like `ContextMenuSubItem`.
+    await minimap.click();
+    await expect(page.getByRole('menu'), 'the default close takes the whole tree with it').toHaveCount(0);
+    await expect(page.getByText('minimap true')).toBeVisible();
+  });
+
+  test('radio groups: role=group named by its label, one checked item per group, a choice moves only its own group\'s check', async ({ page }) => {
+    await gotoHydrated(page, block('radio_group'));
+    await page.getByRole('button', { name: 'Right click for radio group' }).click({ button: 'right' });
+    await expect(page.getByRole('menu')).toHaveAttribute('data-state', 'open');
+
+    const people = page.getByRole('group', { name: 'People' });
+    const theme = page.getByRole('group', { name: 'Theme' });
+    await expect(people).toBeVisible();
+    await expect(theme).toBeVisible();
+    await expect(people.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(theme.getByRole('menuitemradio')).toHaveCount(3);
+    const checked = (group: typeof people) => group.locator('[role="menuitemradio"][aria-checked="true"]');
+    await expect(checked(people)).toHaveCount(1);
+    await expect(checked(theme)).toHaveCount(1);
+    await expect(people.getByRole('menuitemradio', { name: 'Pedro Duarte' })).toHaveAttribute('aria-checked', 'true');
+    await expect(theme.getByRole('menuitemradio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true');
+
+    await people.getByRole('menuitemradio', { name: 'Colm Tuite' }).click();
+    await expect(people.getByRole('menuitemradio', { name: 'Colm Tuite' })).toHaveAttribute('aria-checked', 'true');
+    await expect(people.getByRole('menuitemradio', { name: 'Pedro Duarte' })).toHaveAttribute('aria-checked', 'false');
+    await expect(checked(people)).toHaveCount(1);
+    await expect(theme.getByRole('menuitemradio', { name: 'Light' }), "the other group is untouched").toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('menu'), 'close_on_select: false keeps the menu open').toHaveAttribute('data-state', 'open');
+  });
+
+  test('radio groups: Space and Enter choose in place across both groups, typeahead falls back to the value', async ({ page }) => {
+    await gotoHydrated(page, block('radio_group'));
+    await page.getByRole('button', { name: 'Right click for radio group' }).click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    const theme = page.getByRole('group', { name: 'Theme' });
+    const dark = theme.getByRole('menuitemradio', { name: 'Dark' });
+    const system = theme.getByRole('menuitemradio', { name: 'System' });
+
+    // Pedro(0) Colm(1) | Light(2) Dark(3) System(4): one roving collection
+    // across both groups.
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+    await expect(dark).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(dark).toHaveAttribute('aria-checked', 'true');
+    await expect(theme.getByRole('menuitemradio', { name: 'Light' })).toHaveAttribute('aria-checked', 'false');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+
+    await page.keyboard.press('ArrowDown');
+    await expect(system).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(system).toHaveAttribute('aria-checked', 'true');
+    await expect(dark).toHaveAttribute('aria-checked', 'false');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+
+    // A radio item has no text_value here: typeahead falls back to its value.
+    await page.keyboard.press('d');
+    await expect(dark, "typeahead 'd' reaches Dark via its value").toBeFocused();
+  });
+
+  test('by default (Radix onSelect default) choosing a checkable item closes the menu and the new state is kept', async ({ page }) => {
+    await gotoHydrated(page, block('main'));
+    const trigger = page.getByRole('button', { name: 'right click here' });
+    await trigger.click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    await expect(menu).toHaveAttribute('data-state', 'open');
+
+    const bookmarks = page.getByRole('menuitemcheckbox', { name: 'Show Bookmarks' });
+    await expect(bookmarks).toHaveAttribute('aria-checked', 'true');
+    await bookmarks.click();
+    await expect(menu, 'a checkbox item closes the menu by default').toHaveCount(0);
+
+    await trigger.click({ button: 'right' });
+    await expect(bookmarks, 'the (controlled) state survived the close').toHaveAttribute('aria-checked', 'false');
+
+    // Keyboard: Enter on a radio item chooses it and closes the menu. End
+    // lands on the last item, "Colm Tuite".
+    await page.keyboard.press('End');
+    const colm = page.getByRole('menuitemradio', { name: 'Colm Tuite' });
+    await expect(colm).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(menu).toHaveCount(0);
+
+    await trigger.click({ button: 'right' });
+    await expect(colm).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('menuitemradio', { name: 'Pedro Duarte' })).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
 test.describe('Axe automated scan', () => {
   test('loaded (menu closed) has no automatically detectable a11y issues', async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
@@ -473,5 +699,21 @@ test.describe('Axe automated scan', () => {
     await page.getByRole('button', { name: 'right click here' }).click({ button: 'right' });
     await expect(page.getByRole('menu')).toBeVisible();
     await expectNoAxeViolations(page, 'context-menu: menu open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  // Checkable items: role="menuitemcheckbox"/"menuitemradio" need aria-checked
+  // and a menu/group context; a radio group needs to be a real `group`.
+  test('menu with checkbox items open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Right click for checkboxes' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitemcheckbox', { name: 'Show Bookmarks Bar' })).toBeVisible();
+    await expectNoAxeViolations(page, 'context-menu: checkboxes open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+
+  test('menu with radio groups open has no automatically detectable a11y issues', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=context_menu&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Right click for radio group' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitemradio', { name: 'Pedro Duarte' })).toBeVisible();
+    await expectNoAxeViolations(page, 'context-menu: radio groups open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });

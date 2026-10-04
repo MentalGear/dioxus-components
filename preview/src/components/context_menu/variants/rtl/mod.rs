@@ -11,9 +11,15 @@ use dioxus_primitives::direction::{Direction, DirectionProvider};
 /// `oracle/tier1-apg/{keyboard-matrix,menu-roles,menu-submenu}.spec.ts`
 /// all query those words by name, and this variant renders alongside
 /// `main` on the same page.
+///
+/// A checkbox item and a radio group ("Pinned"/"Ascending"/"Descending") are
+/// appended after "Erase" (indices 3-5) so the checkable indicator slot is
+/// exercised in RTL too -- see `playwright/menu-indicator-gap.spec.ts`.
 #[component]
 pub fn Demo() -> Element {
     let mut selected = use_signal(|| None);
+    let mut pinned = use_signal(|| true);
+    let mut order = use_signal(|| "ascending".to_string());
 
     rsx! {
         div { dir: "rtl",
@@ -49,6 +55,28 @@ pub fn Demo() -> Element {
                             index: 2usize,
                             on_select: move |v| selected.set(Some(v)),
                             "Erase"
+                        }
+                        ContextMenuCheckboxItem {
+                            index: 3usize,
+                            checked: Some(pinned()),
+                            on_checked_change: move |checked| pinned.set(checked),
+                            text_value: "Pinned",
+                            "Pinned"
+                        }
+                        ContextMenuRadioGroup {
+                            aria_label: "Order",
+                            value: Some(order()),
+                            on_value_change: move |value| order.set(value),
+                            ContextMenuRadioItem {
+                                index: 4usize,
+                                value: "ascending".to_string(),
+                                "Ascending"
+                            }
+                            ContextMenuRadioItem {
+                                index: 5usize,
+                                value: "descending".to_string(),
+                                "Descending"
+                            }
                         }
                     }
                 }
