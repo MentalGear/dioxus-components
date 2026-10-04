@@ -118,7 +118,8 @@ test.describe('Appearance (shadcn/ui v4 translation)', () => {
     // The handle's own direct parent is the outer ResizablePanelGroup div (panels and handles
     // are direct siblings inside it -- see primitives/src/resizable.rs's markup doc comment).
     const container = handle.locator('xpath=..');
-    await expect(container).toHaveCSS('border-radius', '8px');
+    // `--dx-radius-lg` (the demo's radius) is 10px since row 111's shadcn radius scale (was 8px).
+    await expect(container).toHaveCSS('border-radius', '10px');
 
     // shadcn: `max-w-md ... md:min-w-[450px]` -- before this translation the group had no width
     // cap/floor at all and rendered at its own content-hugging width (~269px measured against

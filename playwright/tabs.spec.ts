@@ -47,24 +47,32 @@ test.describe("active tab keeps its color under the pointer (calendar-state lane
       const tab2Button = page.getByRole("tab", { name: "Tab 2" });
       const tab3Button = page.getByRole("tab", { name: "Tab 3" });
 
-      // The plain hover color, from a tab that stays inactive throughout
-      // (Tab 1 is active by default, so it cannot supply an "unselected
-      // hover" baseline).
-      await tab3Button.hover();
-      const plainHoverColor = await tab3Button.evaluate((el) => getComputedStyle(el).color);
+      // Tab colours now transition (Nova tabs, row 111), so every read waits for the
+      // trigger's running animations to finish: a read taken mid-fade is an interpolated
+      // colour, not either end state.
+      const settledColor = (tab: typeof tab2Button) =>
+        tab.evaluate(async (el) => {
+          await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)));
+          return getComputedStyle(el).color;
+        });
 
       // Click Tab 2 -- Playwright's .click() leaves the pointer on it.
       await tab2Button.click();
       await expect(tab2Button).toHaveAttribute("data-state", "active");
       expect(await tab2Button.evaluate((el) => el.matches(":hover"))).toBe(true);
-      const activeAndHoveredColor = await tab2Button.evaluate((el) => getComputedStyle(el).color);
+      const activeAndHoveredColor = await settledColor(tab2Button);
 
-      // Move the pointer off and read the "true" active color.
+      // Move the pointer off and read the "true" active color, plus the resting color of a
+      // tab that stayed inactive throughout (Tab 3).
       await page.locator("body").hover({ position: { x: 0, y: 0 } });
-      const activeAtRestColor = await tab2Button.evaluate((el) => getComputedStyle(el).color);
+      const activeAtRestColor = await settledColor(tab2Button);
+      const inactiveAtRestColor = await settledColor(tab3Button);
 
       expect(activeAndHoveredColor).toBe(activeAtRestColor); // active color survives hover
-      expect(activeAndHoveredColor).not.toBe(plainHoverColor); // not just the plain hover tint
+      // Hover and active both resolve to `foreground` now, so "not the plain hover tint" can
+      // no longer be observed; what must still hold is that the active tab is not rendered
+      // in the inactive (muted) colour.
+      expect(activeAndHoveredColor).not.toBe(inactiveAtRestColor);
     });
   }
 });
