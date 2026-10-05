@@ -256,23 +256,33 @@ test("the oracle is not vacuous: a component stylesheet missing from the page is
   await settle(page);
   await expect.poll(() => missingStylesheets(page), { timeout: 10_000 }).toEqual({});
   const { marks } = FINGERPRINTS[path.join("assets", "language-select.css")];
+  // Delete the RULES of that sheet (a whole class ONLY it mentions; `main.css` also mentions `.dx-language-select-value`),
+  // wherever they are -- not the sheet's `<link>`: on a build with the site's one CSS bundle (scripts/ssg-css-bundle.mjs) the
+  // language-select rules live in the same sheet as every other component's, and removing that sheet would drop them all.
   const removed = await page.evaluate((marks) => {
-    for (const sheet of document.styleSheets) {
-      let text = "";
-      try {
-        text = [...sheet.cssRules].map((r) => r.cssText).join("\n");
-      } catch {
-        continue;
+    const mentions = (selector: string) => marks.some((m) => new RegExp(`\\.${m}(?![\\w-])`).test(selector));
+    let n = 0;
+    const strip = (rules: CSSRuleList, remove: (i: number) => void) => {
+      for (let i = rules.length - 1; i >= 0; i--) {
+        const rule = rules[i];
+        if (rule instanceof CSSStyleRule && mentions(rule.selectorText)) {
+          remove(i);
+          n++;
+        } else if ((rule as CSSGroupingRule).cssRules) {
+          strip((rule as CSSGroupingRule).cssRules, (j) => (rule as CSSGroupingRule).deleteRule(j));
+        }
       }
-      // `main.css` also mentions `.dx-language-select-value`: match the sheet by a whole class ONLY it has.
-      if (marks.some((m) => new RegExp(`\\.${m}(?![\\w-])`).test(text)) && sheet.ownerNode instanceof Element) {
-        sheet.ownerNode.remove();
-        return true;
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        strip(sheet.cssRules, (i) => sheet.deleteRule(i));
+      } catch {
+        // A cross-origin sheet (the Geist font CSS) hides its rules; it has no language-select rule.
       }
     }
-    return false;
+    return n;
   }, marks);
-  expect(removed, "found and removed the language-select stylesheet").toBe(true);
+  expect(removed, "found and deleted the language-select rules").toBeGreaterThan(0);
   const missing = await missingStylesheets(page);
   expect(Object.keys(missing)).toEqual([path.join("assets", "language-select.css")]);
   expect(missing[path.join("assets", "language-select.css")]).toContain("dx-language-select");

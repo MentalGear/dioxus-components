@@ -49,13 +49,30 @@
 //!
 //! `set_title` is delegated as is: a title is not de-duplicated, so a lost one is replaced by the next.
 //!
+//! # Inserting early is not the same as applying early
+//!
+//! Everything above makes the `<link>` exist; it does not make the browser wait for it. A stylesheet
+//! inserted once `<body>` exists is not render-blocking (HTML: render-blocking elements can only be added
+//! while the document "allows adding render-blocking elements"; `blocking=render` on a late link measured as
+//! a no-op), so a route or popover that FIRST renders after the page's first paint is painted with UA defaults
+//! (a white `<input>`, a grey UA button) for one round trip, then restyled with a reflow
+//! (backlog "first-paint style delivery", 2026-10-05: 5-10 late sheets and 150-270 ms unstyled on every
+//! component page entered by client-side navigation; the date picker's calendar sheet on its first open).
+//! The construction for that class is NOT here: `scripts/ssg-css-bundle.mjs` (run by `scripts/build-ssg.sh`)
+//! puts every component stylesheet in each page's render-blocking head as one `<link data-dx-css-bundle
+//! data-covers="file file ..">`, so no route can depend on a sheet that is discovered at render time.
+//! What belongs here is the other half: `create_link` skips a stylesheet whose file is listed in `data-covers`
+//! (decided in the page's JS, so there is nothing to read back from `eval`), instead of fetching a duplicate on
+//! every navigation. With no bundle in the page (`dx serve`, a client-only build) the guard finds nothing and
+//! inserts as before.
+//!
 //! Guards: `scripts/check-eager-head-document.sh` (static: the wrapper exists, never uses
 //! `queue_effect`, and `App` installs it) and `playwright/oracle/tier2-html/stylesheets-present.spec.ts`
 //! (behavioural: every rendered component's stylesheet is applied on fresh loads of every route type).
 
 use std::rc::Rc;
 
-use dioxus::document::{self, Document, Eval};
+use dioxus::document::{self, create_element_in_head, Document, Eval, LinkProps};
 use dioxus::prelude::*;
 
 /// A [`Document`] that inserts head elements synchronously. See the module docs.
@@ -83,9 +100,47 @@ impl Document for EagerHeadDocument {
         self.inner.create_head_component()
     }
 
-    // `create_meta`, `create_script`, `create_style` and `create_link` are deliberately NOT overridden:
-    // the trait defaults insert through `eval` immediately, which is the whole point. Overriding them to
-    // delegate to `inner` would bring back the web document's `queue_effect`.
+    // The trait default for `create_link` (`create_head_element` -> `eval(create_element_in_head(..))`) with one
+    // addition: a stylesheet the page's CSS bundle already carries is not inserted a second time. See the
+    // module docs ("Inserting early is not the same as applying early"). Still synchronous, still `eval`.
+    fn create_link(&self, props: LinkProps) {
+        self.eval(link_js(&props));
+    }
+
+    // `create_meta`, `create_script` and `create_style` are deliberately NOT overridden: the trait defaults
+    // insert through `eval` immediately, which is the whole point. Overriding them to delegate to `inner`
+    // would bring back the web document's `queue_effect`.
+}
+
+/// The `<link>` insertion script for `props`: the trait default's, wrapped in a check that the page's CSS bundle
+/// (`link[data-dx-css-bundle]`, `data-covers` = space-separated file names) does not already carry this file.
+fn link_js(props: &LinkProps) -> String {
+    let insert = create_element_in_head("link", &props.attributes(), None);
+    match covered_file(props) {
+        Some(file) => format!(
+            "if(!(function(){{var l=document.querySelector('link[data-dx-css-bundle]');\
+             return !!l&&(' '+l.getAttribute('data-covers')+' ').indexOf(' '+{file}+' ')>=0}})()){{{insert}}}"
+        ),
+        None => insert,
+    }
+}
+
+/// The quoted JS string literal of the file name of a `rel=stylesheet` `.css` link (`/assets/style-dxh1234.css` becomes
+/// `"style-dxh1234.css"`, quotes included): the bundle lists hashed file names, which are unique, so a base-path
+/// prefix or a query cannot cause a miss.
+fn covered_file(props: &LinkProps) -> Option<String> {
+    if props.rel.as_deref() != Some("stylesheet") {
+        return None;
+    }
+    let href = props.href.as_deref()?;
+    let path = href.split(['?', '#']).next()?;
+    let file = path.rsplit('/').next()?;
+    let plain = file.ends_with(".css")
+        && file
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    // Only `[A-Za-z0-9._-]` got this far, so a double-quoted literal needs no escaping.
+    plain.then(|| format!("\"{file}\""))
 }
 
 /// Install [`EagerHeadDocument`] over the platform's document for this app. Call once, first, in `App`
@@ -152,6 +207,68 @@ mod tests {
         assert_eq!(evals.len(), 1, "exactly one synchronous head insertion");
         assert!(evals[0].contains("createElementInHead"), "{}", evals[0]);
         assert!(evals[0].contains("/assets/popover.css"), "{}", evals[0]);
+    }
+
+    fn link(rel: &str, href: &str) -> LinkProps {
+        LinkProps::builder()
+            .rel(rel.to_string())
+            .href(href.to_string())
+            .build()
+    }
+
+    #[test]
+    fn a_stylesheet_is_checked_against_the_pages_css_bundle_in_the_page() {
+        let platform = Platform::default();
+        let evals = platform.evals.clone();
+        let doc = EagerHeadDocument::new(Rc::new(platform));
+
+        doc.create_link(link(
+            "stylesheet",
+            "/dioxus-components/assets/style-dxh1a2b.css?v=1",
+        ));
+
+        let evals = evals.borrow();
+        assert_eq!(
+            evals.len(),
+            1,
+            "one eval: the decision is made in the page, not read back"
+        );
+        assert!(
+            evals[0].contains("link[data-dx-css-bundle]"),
+            "{}",
+            evals[0]
+        );
+        assert!(
+            evals[0].contains("\"style-dxh1a2b.css\""),
+            "the bare hashed file name: {}",
+            evals[0]
+        );
+        assert!(
+            evals[0].contains("createElementInHead"),
+            "still inserts when not covered: {}",
+            evals[0]
+        );
+    }
+
+    #[test]
+    fn only_css_stylesheets_are_guarded() {
+        let platform = Platform::default();
+        let evals = platform.evals.clone();
+        let doc = EagerHeadDocument::new(Rc::new(platform));
+
+        doc.create_link(link("preconnect", "https://fonts.googleapis.com"));
+        doc.create_link(link(
+            "stylesheet",
+            "https://fonts.googleapis.com/css2?family=Geist",
+        ));
+        doc.create_link(link("icon", "/assets/favicon.css"));
+
+        let evals = evals.borrow();
+        assert_eq!(evals.len(), 3);
+        assert!(
+            evals.iter().all(|js| !js.contains("data-dx-css-bundle")),
+            "{evals:?}"
+        );
     }
 
     #[test]

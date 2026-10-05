@@ -2,7 +2,7 @@
 # The ONE way to run the preview's `dx build --ssg` (backlog row 116; rows 98/100).
 # Used by scripts/deploy-preview.sh and by every verification lane.
 #
-#   CARGO_TARGET_DIR=/abs/isolated/dir scripts/build-ssg.sh [debug|release] [--base-path P]
+#   CARGO_TARGET_DIR=/abs/isolated/dir scripts/build-ssg.sh [debug|release] [--base-path P] [--no-css-bundle]
 #
 # Default profile: debug (the cheap one; deploy-preview.sh passes `release --base-path
 # dioxus-components`). On success prints, as its last two lines,
@@ -31,16 +31,24 @@
 #  5. Output matches the requested base path: with `--base-path P` the root page must reference
 #     `/P/...`; without it NO page may reference `/dioxus-components/...` (same pattern as
 #     scripts/lane-target.sh's contamination grep).
+#  4b. Every page's <head> carries ONE render-blocking bundle of every component stylesheet
+#     (scripts/ssg-css-bundle.mjs, run between guards 4 and 5 so guard 5 checks the final output). The
+#     per-component `document::Link`s only reach the head of the route that SSR-renders them; on a
+#     client-side navigation or a popover's first open they were inserted after first paint and are not
+#     render-blocking, so the new content painted with UA defaults (white inputs, no radius) and then
+#     reflowed. `--no-css-bundle` builds the old shape, for before/after measurements only -- never deploy it.
 set -euo pipefail
 
 profile=debug
 base_path=""
+css_bundle=1
 while [ $# -gt 0 ]; do
   case "$1" in
     debug|release) profile="$1"; shift ;;
+    --no-css-bundle) css_bundle=0; shift ;;
     --base-path) base_path="${2:?--base-path needs a value}"; shift 2 ;;
     --base-path=*) base_path="${1#--base-path=}"; shift ;;
-    *) echo "usage: CARGO_TARGET_DIR=/abs/dir $0 [debug|release] [--base-path P]" >&2; exit 2 ;;
+    *) echo "usage: CARGO_TARGET_DIR=/abs/dir $0 [debug|release] [--base-path P] [--no-css-bundle]" >&2; exit 2 ;;
   esac
 done
 base_path="${base_path#/}"; base_path="${base_path%/}"
@@ -128,6 +136,34 @@ if [ "$stale_html" -gt 0 ]; then
   echo "       (dx 0.7.9 --ssg keeps the previous build's HTML for routes it did not re-render):" >&2
   printf '  - %s\n' "${stale_list[@]:0:20}" >&2
   exit 1
+fi
+
+# --- Guard 4b: one render-blocking stylesheet bundle in every page's <head> ---------------------
+# (before guard 5, so guard 5 judges the output that is actually shipped). The script refuses a tree that
+# is already bundled, so a re-run of this script (which wipes public/ first anyway) cannot stack bundles.
+if [ "$css_bundle" = 1 ]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "error: node is required for scripts/ssg-css-bundle.mjs (guard 4b); pass --no-css-bundle only for a measurement build." >&2
+    exit 1
+  fi
+  manifest="$(dirname "$public_dir")/.manifest.json"
+  if [ ! -f "$manifest" ]; then
+    echo "error: dx asset manifest not found at $manifest (guard 4b maps each page's sheets to their sources with it)." >&2
+    exit 1
+  fi
+  node "$repo_root/scripts/ssg-css-bundle.mjs" "$public_dir" --manifest "$manifest" || {
+    echo "error: scripts/ssg-css-bundle.mjs failed; the output would paint component stylesheets late on client-side navigation." >&2
+    exit 1
+  }
+  # Every page, not a sample: a page without the bundle is a page that can flash.
+  unbundled=$(grep -rL --include=index.html 'data-dx-css-bundle' "$public_dir" | head -n 3 || true)
+  if [ -n "$unbundled" ]; then
+    echo "error: page(s) without the CSS bundle after guard 4b:" >&2
+    printf '  - %s\n' $unbundled >&2
+    exit 1
+  fi
+else
+  echo "warning: --no-css-bundle: this output has the per-route stylesheet shape (flash on client-side navigation); do not deploy it." >&2
 fi
 
 # --- Guard 5: output matches the requested base path -------------------------------------
