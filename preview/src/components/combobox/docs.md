@@ -4,6 +4,14 @@ Filtering preserves the order defined by the rendered `ComboboxOption` elements 
 props. If you want query-dependent ranking, control `query`, sort your item data in user code,
 render the options in that sorted order, and assign indexes from the sorted list.
 
+## Behavior
+
+The input shows the selected option's label. Clicking, focusing or arrowing into it never rewrites
+that text: the caret lands where the user clicked, the popup lists **every** option, and the selected
+one is marked and scrolled into view. Filtering starts with the first edit, and from then on the
+input's own text is the query. Escape, blurring, or picking an option ends the edit and puts the
+selected label back.
+
 ## Component Structure
 
 ```rust

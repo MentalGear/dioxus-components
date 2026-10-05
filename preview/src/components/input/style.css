@@ -49,8 +49,11 @@
   background-color: var(--dx-muted);
 }
 
+/* The keyboard-focus ring every text field draws: `--dx-ring-field`
+ * (`dx-components-theme.css`), the ring-coloured edge plus the `--dx-ring-focus`
+ * halo. `playwright/focus-ring.spec.ts` holds the other fields to this value. */
 .dx-input:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
+  box-shadow: var(--dx-ring-field);
 }
 
 .dx-input[aria-invalid="true"] {

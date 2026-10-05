@@ -30,6 +30,16 @@ pub fn ComboboxList(props: ComboboxListProps) -> Element {
     let listbox = use_listbox_container(props.id, ctx.selectable);
     let render = listbox.render;
 
+    // The editing session ends once the popup has finished closing -- not
+    // when `open` goes false: the closing list keeps its filter (and so its
+    // options) through its exit animation. See `ComboboxContext::edited`.
+    let mut edited = ctx.edited;
+    use_effect(move || {
+        if !render() && *edited.peek() {
+            edited.set(false);
+        }
+    });
+
     rsx! {
         if render() {
             ComboboxListRendered {

@@ -14,6 +14,41 @@ use crate::{
     },
 };
 
+/// Scrolls the option with this id into view inside its listbox -- the minimum
+/// distance, like `scrollIntoView({ block: "nearest" })`, but only ever the
+/// listbox itself (never the page) and measured in layout space: the popup's
+/// open animation scales it, which would skew raw bounding-box deltas.
+///
+/// An active-descendant combobox keeps DOM focus on its input, so nothing
+/// scrolls the highlighted option for us the way real focus would. The popup
+/// may not be laid out yet when a highlight lands (it is shown a frame or two
+/// after `open`), hence the short frame-by-frame retry. An option under the
+/// pointer is left alone: a hover highlight must not scroll the list the
+/// pointer is itself scrolling.
+const SCROLL_OPTION_INTO_VIEW_JS: &str = r#"
+const id = await dioxus.recv();
+const place = () => {
+  const el = document.getElementById(id);
+  const list = el && el.closest('[role="listbox"]');
+  if (!list || list.clientHeight === 0) return false;
+  if (el.matches(':hover')) return true;
+  const lr = list.getBoundingClientRect();
+  const k = list.offsetHeight ? lr.height / list.offsetHeight : 1;
+  const er = el.getBoundingClientRect();
+  const style = getComputedStyle(list);
+  const padTop = parseFloat(style.paddingTop) || 0;
+  const padBottom = parseFloat(style.paddingBottom) || 0;
+  const top = (er.top - lr.top) / k - list.clientTop + list.scrollTop;
+  const bottom = top + er.height / k;
+  if (top - padTop < list.scrollTop) list.scrollTop = Math.max(0, top - padTop);
+  else if (bottom + padBottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom + padBottom - list.clientHeight;
+  return true;
+};
+let tries = 0;
+const step = () => { if (!place() && ++tries < 10) requestAnimationFrame(step); };
+requestAnimationFrame(step);
+"#;
+
 /// Props for [`ComboboxOption`].
 #[derive(Props, Clone, PartialEq)]
 pub struct ComboboxOptionProps<T: Clone + PartialEq + 'static> {
@@ -78,6 +113,15 @@ pub fn ComboboxOption<T: PartialEq + Clone + 'static>(props: ComboboxOptionProps
     );
 
     let render = use_context::<ListboxContext>().render;
+
+    // Keep the active option in view: on open (the selected option is
+    // highlighted) and as arrow keys move the highlight.
+    use_effect(move || {
+        if render() && (option.focused)() {
+            let eval = document::eval(SCROLL_OPTION_INTO_VIEW_JS);
+            let _ = eval.send(option.id.cloned());
+        }
+    });
 
     // All owned: role/aria-selected/aria-disabled define this option's
     // widget semantics, the `data-*` pair mirrors its own state.

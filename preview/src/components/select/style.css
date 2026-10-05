@@ -56,7 +56,7 @@
 }
 
 .dx-select-trigger:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
+  box-shadow: var(--dx-ring-field);
 }
 
 .dx-select-trigger svg {
@@ -194,27 +194,38 @@
   pointer-events: none;
 }
 
+/* `scale`/`translate`, not `transform`: an animated `transform` REPLACES the anchor's
+ * own centring transform (`translateX(-50%)`, `top_layer.rs`'s engine stylesheet) for as
+ * long as the animation runs, which played the popover/date picker/colour picker panels
+ * off their anchor (144px, 133px). This list carries no `data-side`, so no centring
+ * applies to it today; the individual properties compose with `transform` and keep it
+ * safe if one ever does. (`select/style.css` and `combobox/style.css` both define these,
+ * identically: keyframe names are global, so keep the two copies in step.) */
 @keyframes dx-picker-in {
   from {
     opacity: 0;
-    transform: scale(0.95) translateY(-2px);
+    scale: 0.95;
+    translate: 0 -2px;
   }
 
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    scale: 1;
+    translate: 0 0;
   }
 }
 
 @keyframes dx-picker-out {
   from {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    scale: 1;
+    translate: 0 0;
   }
 
   to {
     opacity: 0;
-    transform: scale(0.95) translateY(-2px);
+    scale: 0.95;
+    translate: 0 -2px;
   }
 }
 

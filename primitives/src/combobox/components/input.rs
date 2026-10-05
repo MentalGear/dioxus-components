@@ -36,7 +36,6 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
     use_effect(move || ctx.input_id.set(id()));
 
     let open = ctx.selectable.open;
-    let query = ctx.query;
     let set_query = ctx.set_query;
 
     let active_descendant = use_memo(move || {
@@ -46,18 +45,16 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
         ctx.focused_option_id()
     });
 
-    let display_value = use_memo(move || {
-        if open() {
-            query.cloned()
-        } else {
-            ctx.selectable.selected_text().unwrap_or_default()
-        }
-    });
+    // The selected label unless the user is editing it -- see
+    // `ComboboxContext::input_text`. Opening the popup (clicking or focusing
+    // the input, arrow keys, a controlled `open`) never changes this text:
+    // the browser keeps placing the caret where the user clicked.
+    let display_value = use_memo(move || ctx.input_text());
 
     let onkeydown = move |event: KeyboardEvent| match event.key() {
         Key::ArrowDown => {
             if !open() {
-                ctx.open_with_empty_query_and_focus_first();
+                ctx.open_at_selected_or_first();
             } else {
                 ctx.focus_next_visible();
             }
@@ -66,7 +63,7 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
         }
         Key::ArrowUp => {
             if !open() {
-                ctx.open_with_empty_query_and_focus_last();
+                ctx.open_at_selected_or_last();
             } else {
                 ctx.focus_prev_visible();
             }
@@ -151,27 +148,16 @@ pub fn ComboboxInput(props: ComboboxInputProps) -> Element {
 
             onclick: move |_| {
                 if !open() {
-                    set_query.call(String::new());
-                    ctx.set_open(true);
+                    ctx.open_at_selected();
                 }
             },
             oninput: move |event| {
-                let was_open = open();
-                let value = event.value();
-                let next_query = if was_open {
-                    value
-                } else {
-                    ctx.selectable
-                        .selected_text()
-                        .and_then(|selected| {
-                            value
-                                .strip_prefix(&selected)
-                                .map(ToString::to_string)
-                        })
-                        .unwrap_or(value)
-                };
-                set_query.call(next_query);
-                if was_open {
+                // The input's own text is the query from the first edit on:
+                // typing is an in-place edit of whatever the input holds
+                // (a selected label included), exactly what the user sees.
+                set_query.call(event.value());
+                ctx.edited.set(true);
+                if open() {
                     ctx.selectable.collection.clear_focus();
                 } else {
                     ctx.set_open(true);
