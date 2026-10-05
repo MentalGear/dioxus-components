@@ -12,6 +12,7 @@ pub fn Collapsible(props: CollapsibleProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/collapsible/style.css") }
         collapsible::Collapsible {
             keep_mounted: props.keep_mounted,
+            hidden_until_found: props.hidden_until_found,
             default_open: props.default_open,
             disabled: props.disabled,
             open: props.open,

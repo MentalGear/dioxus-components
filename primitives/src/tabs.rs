@@ -1,6 +1,7 @@
 //! Defines the [`Tabs`] component and its sub-components.
 
 use crate::{
+    collapsible::{hidden_attribute, use_beforematch, PanelHidden},
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
     direction::{use_direction, Direction, HorizontalNav},
     merge_attributes, use_controlled, use_id_or, use_unique_id,
@@ -14,6 +15,9 @@ struct TabsContext {
     value: ReadSignal<String>,
     set_value: Callback<String>,
     disabled: ReadSignal<bool>,
+
+    // Whether inactive panels stay mounted as `hidden="until-found"`
+    hidden_until_found: ReadSignal<bool>,
 
     // Focus state
     focus: CollectionState,
@@ -50,6 +54,30 @@ pub struct TabsProps {
     /// Whether the tabs are horizontal.
     #[props(default)]
     pub horizontal: ReadSignal<bool>,
+
+    /// Keep every inactive [`TabContent`] mounted and mark it `hidden="until-found"`, so the
+    /// browser's find-in-page (Ctrl+F) and `#fragment` navigation can reach text inside inactive
+    /// tabs. When they do, the browser reveals the panel and its tab becomes the active one
+    /// (`on_value_change` is called with that tab's value).
+    ///
+    /// Defaults to false, which unmounts inactive panels (they render as an empty `hidden`
+    /// element), so it costs nothing until opted in. Opting in mounts, and on a server-rendered
+    /// page hydrates, the content of every tab: effects, timers and charts in inactive tabs all
+    /// run. The content of inactive tabs is also in the server-rendered HTML.
+    ///
+    /// A stylesheet must not set `display` on an inactive panel: an author `display: none` defeats
+    /// the browser rule that makes `until-found` content searchable.
+    ///
+    /// Browser support: Chrome 102+, Safari 26.2+ (does not scroll to the match) and Firefox 139+
+    /// (148+ for a correct scroll target). Engines that do not know `until-found` treat it as plain
+    /// `hidden`: inactive tabs stay unsearchable, as without the prop. Like `hidden`, inactive panels
+    /// are not in the accessibility tree.
+    ///
+    /// Revealing is not blocked by `disabled`. The browser un-hides the panel itself, so a
+    /// controlled `value` that ignores `on_value_change` leaves the panel revealed while another
+    /// tab reports active: a controlled parent should honor it.
+    #[props(default)]
+    pub hidden_until_found: ReadSignal<bool>,
 
     /// The text direction for `ArrowLeft`/`ArrowRight` roving focus.
     /// Defaults to the nearest [`crate::direction::DirectionProvider`], or
@@ -129,6 +157,7 @@ pub fn Tabs(props: TabsProps) -> Element {
         value: value.into(),
         set_value,
         disabled: props.disabled,
+        hidden_until_found: props.hidden_until_found,
 
         focus,
 
@@ -400,7 +429,8 @@ pub struct TabContentProps {
 
 /// # TabContent
 ///
-/// The content of a tab panel. This component will only be rendered when its corresponding [`TabTrigger`] is active.
+/// The content of a tab panel. This component will only be rendered when its corresponding [`TabTrigger`] is active,
+/// unless [`TabsProps::hidden_until_found`] keeps it mounted as `hidden="until-found"`.
 ///
 /// This should be used inside a [`Tabs`] component.
 ///
@@ -443,14 +473,27 @@ pub struct TabContentProps {
 ///
 /// ## Styling
 ///
-/// The [`TabTrigger`] component defines the following data attributes you can use to control styling:
-/// - `data-state`: Indicates the state of the tab trigger. Values are `active` or `inactive`.
+/// The [`TabContent`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Indicates the state of the tab panel. Values are `active` or `inactive`.
+///
+/// An inactive panel carries the `hidden` attribute (`hidden="until-found"` with
+/// [`TabsProps::hidden_until_found`]). A stylesheet that sets `display` on this element overrides the
+/// browser's own `hidden` rule and must handle `[hidden]` itself.
 #[component]
 pub fn TabContent(props: TabContentProps) -> Element {
     let mut ctx: TabsContext = use_context();
+    let panel_value = props.value.clone();
     let selected = use_memo(move || (ctx.value)() == props.value);
     let uuid = use_unique_id();
     let id = use_id_or(uuid, props.id);
+    let until_found = ctx.hidden_until_found;
+
+    // The browser un-hides the panel itself; activate its tab to match.
+    use_beforematch(id, until_found, move || {
+        if !*selected.peek() {
+            ctx.set_value.call(panel_value.clone());
+        }
+    });
 
     use_effect(move || {
         let mut tab_ids = ctx.tab_content_ids.write();
@@ -461,12 +504,17 @@ pub fn TabContent(props: TabContentProps) -> Element {
         tab_ids[index] = id();
     });
 
-    let owned = attributes!(div {
+    let hidden = match (selected(), until_found()) {
+        (true, _) => PanelHidden::Shown,
+        (false, true) => PanelHidden::UntilFound,
+        (false, false) => PanelHidden::Hidden,
+    };
+    let mut owned = attributes!(div {
         role: "tabpanel",
         tabindex: "0",
         "data-state": if selected() { "active" } else { "inactive" },
-        hidden: !selected(),
     });
+    owned.push(hidden_attribute(hidden));
     let merged = merge_attributes(vec![props.attributes.clone(), owned]);
 
     rsx! {
@@ -475,9 +523,90 @@ pub fn TabContent(props: TabContentProps) -> Element {
             class: props.class,
             ..merged,
 
-            if selected() {
+            if selected() || until_found() {
                 {props.children}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::find_elements;
+
+    fn render(app: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(app);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
+    /// `(data-state, HIDDEN)` of every tab panel, in document order.
+    fn panels(html: &str) -> Vec<(String, Option<String>)> {
+        find_elements(html, |a| {
+            a.get("role").map(String::as_str) == Some("tabpanel")
+        })
+        .into_iter()
+        .map(|el| {
+            (
+                el.attrs["data-state"].clone(),
+                el.attrs.get("HIDDEN").cloned(),
+            )
+        })
+        .collect()
+    }
+
+    #[component]
+    fn Plain() -> Element {
+        rsx! {
+            Tabs { default_value: "a".to_string(),
+                TabContent { index: 0usize, value: "a".to_string(), "alpha text" }
+                TabContent { index: 1usize, value: "b".to_string(), "beta text" }
+            }
+        }
+    }
+
+    #[component]
+    fn UntilFound() -> Element {
+        rsx! {
+            Tabs { default_value: "a".to_string(), hidden_until_found: true,
+                TabContent { index: 0usize, value: "a".to_string(), "alpha text" }
+                TabContent { index: 1usize, value: "b".to_string(), "beta text" }
+            }
+        }
+    }
+
+    #[test]
+    fn inactive_panel_is_empty_and_plain_hidden_by_default() {
+        let html = render(Plain);
+        assert!(
+            html.contains("alpha text") && !html.contains("beta text"),
+            "{html}"
+        );
+        assert_eq!(
+            panels(&html),
+            vec![
+                ("active".to_string(), None),
+                ("inactive".to_string(), Some(String::new())),
+            ],
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn hidden_until_found_mounts_inactive_panels_as_until_found() {
+        let html = render(UntilFound);
+        assert!(
+            html.contains("alpha text") && html.contains("beta text"),
+            "{html}"
+        );
+        assert_eq!(
+            panels(&html),
+            vec![
+                ("active".to_string(), None),
+                ("inactive".to_string(), Some("until-found".to_string())),
+            ],
+            "{html}"
+        );
     }
 }

@@ -111,16 +111,22 @@ pub fn BreadcrumbSeparator(
     }
 }
 
-/// A collapsed run of crumbs, shown as `...`. Carries an `sr-only` label so
-/// the collapse is still announced even though the glyph itself is hidden.
+/// A collapsed run of crumbs, shown as `...`. A `<span>`, as in shadcn: place
+/// it inside a [`BreadcrumbItem`] (`BreadcrumbItem { BreadcrumbEllipsis {} }`).
+/// It used to render an `<li>`, so the usual placement nested an `<li>` in the
+/// item's `<li>`, which is invalid HTML.
+///
+/// A purely visual marker: `role="presentation"` + `aria-hidden="true"` per the
+/// shadcn shape, so the `sr-only` "More" it carries is hidden from assistive
+/// technology with the glyph.
 #[component]
 pub fn BreadcrumbEllipsis(#[props(extends = GlobalAttributes)] attributes: Vec<Attribute>) -> Element {
-    let base = attributes!(li { class: "dx-breadcrumb-ellipsis" });
-    let owned = attributes!(li { role: "presentation", "aria-hidden": "true" });
+    let base = attributes!(span { class: "dx-breadcrumb-ellipsis" });
+    let owned = attributes!(span { role: "presentation", "aria-hidden": "true" });
     let merged = merge_attributes(vec![base, attributes, owned]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/breadcrumb/style.css") }
-        li {
+        span {
             ..merged,
             Ellipsis {}
             span { class: "dx-breadcrumb-sr-only", "More" }

@@ -29,6 +29,32 @@
     background: var(--dx-muted);
 }
 
+/* The `ghost` variant is shadcn's `line` variant (`registry/bases/base/ui/tabs.tsx`:
+   `cn-tabs-list-variant-line gap-1 bg-transparent`; the active trigger has no fill,
+   shadow or border and carries a 2px `foreground` bar, `after:bottom-[-5px] after:h-0.5`,
+   that fades in). It used to be styled by omission only -- every `default` rule is
+   keyed on `[data-variant="default"]` -- so the active tab differed from the rest by
+   a 40% shade of text colour alone. */
+[data-variant="ghost"] .dx-tabs-list {
+    background: transparent;
+    gap: var(--dx-space-1);
+}
+
+[data-variant="ghost"] .dx-tabs-trigger::after {
+    position: absolute;
+    bottom: -5px;
+    height: 2px;
+    background: var(--dx-foreground);
+    content: "";
+    inset-inline: 0;
+    opacity: 0;
+    transition: opacity var(--dx-motion-duration-base) var(--dx-motion-ease-standard);
+}
+
+[data-variant="ghost"] .dx-tabs-trigger[data-state="active"]::after {
+    opacity: 1;
+}
+
 .dx-tabs-trigger {
     position: relative;
     display: inline-flex;
@@ -115,6 +141,24 @@
     background: var(--dx-card);
 }
 
-.dx-tabs-content[data-state="inactive"] {
+/* An inactive panel is `hidden`, which the browser already renders as
+   `display: none`. This stays for markup that sets `data-state` without
+   `hidden`, but must skip `hidden="until-found"` (the `hidden_until_found`
+   opt-in): an author `display: none` defeats the browser rule that keeps that
+   content searchable by find-in-page and reachable by `#fragment`. */
+.dx-tabs-content[data-state="inactive"]:not([hidden="until-found"]) {
     display: none;
+}
+
+/* `hidden="until-found"` skips a panel's contents but not its own box, so the
+   padding and border of the themed card would still show as an empty card per
+   inactive tab, and each would add a flex gap. Take it out of flow at zero
+   size. The browser removes the attribute itself when it reveals a match, and
+   the rules above apply again. */
+[data-variant] .dx-tabs-content[hidden="until-found"] {
+    position: absolute;
+    padding: 0;
+    border: none;
+    block-size: 0;
+    inline-size: 0;
 }

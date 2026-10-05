@@ -32,6 +32,11 @@ pub struct TabsProps {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
 
+    /// Keep inactive panels mounted as `hidden="until-found"` so find-in-page and `#fragment`
+    /// navigation can reach and open them. See `dioxus_primitives::tabs::TabsProps`.
+    #[props(default)]
+    pub hidden_until_found: ReadSignal<bool>,
+
     /// The variant of the tabs component.
     #[props(default)]
     pub variant: TabsVariant,
@@ -50,7 +55,8 @@ pub enum TabsVariant {
     /// The default variant.
     #[default]
     Default,
-    /// The ghost variant.
+    /// No pill: a transparent list, and the active tab carries a 2px underline
+    /// (shadcn's `line` variant).
     Ghost,
 }
 
@@ -81,6 +87,7 @@ pub fn Tabs(props: TabsProps) -> Element {
             disabled: props.disabled,
             horizontal: props.horizontal,
             roving_loop: props.roving_loop,
+            hidden_until_found: props.hidden_until_found,
             attributes: merged,
             {props.children}
         }

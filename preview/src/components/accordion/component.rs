@@ -18,6 +18,7 @@ pub fn Accordion(props: AccordionProps) -> Element {
             disabled: props.disabled,
             collapsible: props.collapsible,
             horizontal: props.horizontal,
+            hidden_until_found: props.hidden_until_found,
             attributes: merged,
             {props.children}
         }
