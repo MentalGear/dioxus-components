@@ -1,6 +1,27 @@
 .dx-drag-and-drop-list {
   --dx-item-gap: 6px;
 
+  /*
+   * Ghost: the item being dragged, left in the list as a placeholder while its
+   * slot is chosen. 0.9 keeps it readable -- measured on a white page, primary
+   * text stays at 14.6:1 and muted text at 4:1, where the previous 0.5 left
+   * them at 3.5:1 and 2:1 -- while the dashed border and the see-through background
+   * still mark it as lifted. (Muted text needs 0.96 or more to reach 4.5:1;
+   * that is the price of any translucency, so raise it for a stricter theme.)
+   * Settable per list with the primitive's `ghost_opacity` prop (written inline
+   * on this element) or from CSS.
+   */
+  --dx-dnd-ghost-opacity: 0.9;
+
+  /*
+   * Drop gap: how far every item after the open drop slot moves, so the room
+   * between the slot's two neighbours grows by exactly this much. Settable per
+   * list with the `drop_gap` prop (inline on this element) or from CSS. The
+   * items move with a transform: the list's layout box does not grow, so leave
+   * this much room below the list.
+   */
+  --dx-dnd-drop-gap: 25px;
+
   width: 100%;
 }
 
@@ -15,6 +36,13 @@
 
 .dx-drag-and-drop-list-item {
   --gap-shift: 0px;
+
+  /* Set to the drop gap on every item after the open drop slot. */
+  --drop-shift: 0px;
+
+  /* Nudge that centres the drop line in the room the drop gap opens. */
+  --line-shift: 0px;
+  --line-scale: 0.7;
   --tilt: 0deg;
 
   position: relative;
@@ -30,7 +58,7 @@
   outline: none;
   padding-block: var(--dx-space-3);
   padding-inline: 10px 14px;
-  transform: translateY(var(--gap-shift)) rotateX(var(--tilt));
+  transform: translateY(calc(var(--gap-shift) + var(--drop-shift))) rotateX(var(--tilt));
   transform-style: preserve-3d;
   transition:
     border-color var(--dx-motion-duration-base) var(--dx-motion-ease),
@@ -74,7 +102,7 @@
   background-color: transparent;
   box-shadow: none;
   cursor: grabbing;
-  opacity: 0.5;
+  opacity: var(--dx-dnd-ghost-opacity);
   transition-duration: 80ms;
 }
 
@@ -83,7 +111,6 @@
   border-color: var(--dx-ring-color);
   box-shadow: 0 0 0 3px
     var(--light, rgb(43 127 255 / 18%)) var(--dark, rgb(43 127 255 / 30%));
-  opacity: 0.75;
 }
 
 .dx-drag-and-drop-list-item-icon {
@@ -149,6 +176,12 @@
   display: none;
 }
 
+/*
+ * The drop line: two hidden pseudo-elements per item, one on each side. Each
+ * cancels its item's own transform (tilt, nudge, drop shift) so the line stays
+ * put while the item moves, and rides the item's own transform transition
+ * (same duration and curve) so the two stay in step.
+ */
 .dx-drag-and-drop-list-item::before,
 .dx-drag-and-drop-list-item::after {
   position: absolute;
@@ -161,11 +194,11 @@
   pointer-events: none;
   transform:
     rotateX(calc(-1 * var(--tilt)))
-    translateY(calc(-1 * var(--gap-shift)))
-    scaleX(0.7);
+    translateY(calc(var(--line-shift) - var(--gap-shift) - var(--drop-shift)))
+    scaleX(var(--line-scale));
   transition:
     opacity 140ms ease-out,
-    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 .dx-drag-and-drop-list-item::before {
@@ -180,23 +213,53 @@
 
 .dx-drag-and-drop-list-drop-indicator[data-position="before"] + .dx-drag-and-drop-list-item::before,
 .dx-drag-and-drop-list-item:has(+ .dx-drag-and-drop-list-drop-indicator[data-position="after"])::after {
+  --line-scale: 1;
+
   opacity: 0.9;
-  transform:
-    rotateX(calc(-1 * var(--tilt)))
-    translateY(calc(-1 * var(--gap-shift)))
-    scaleX(1);
+}
+
+/*
+ * Drop gap. The drop indicator is only rendered while a slot is open, so
+ * "after an indicator" means "after the open slot": every such item moves down
+ * by the drop gap, which opens exactly that much more room between the slot's
+ * two neighbours. The neighbours also tilt away from the slot (3D, around the
+ * edge that faces it).
+ */
+.dx-drag-and-drop-list-drop-indicator ~ .dx-drag-and-drop-list-item {
+  --drop-shift: var(--dx-dnd-drop-gap);
 }
 
 .dx-drag-and-drop-list-item:has(+ .dx-drag-and-drop-list-drop-indicator) {
-  --gap-shift: -1px;
   --tilt: -3deg;
 
   transform-origin: center bottom;
 }
 
 .dx-drag-and-drop-list-drop-indicator + .dx-drag-and-drop-list-item {
-  --gap-shift: 1px;
   --tilt: 3deg;
 
   transform-origin: center top;
+}
+
+/*
+ * The line sits at the edge of the item it hangs from, which is the edge of
+ * the room, not its middle: move it half the drop gap into the room. Only when
+ * an item follows the slot -- a slot after the last item opens no room.
+ */
+.dx-drag-and-drop-list-drop-indicator[data-position="before"] + .dx-drag-and-drop-list-item,
+.dx-drag-and-drop-list-item:has(+ .dx-drag-and-drop-list-drop-indicator[data-position="after"] ~ .dx-drag-and-drop-list-item) {
+  --line-shift: calc(var(--dx-dnd-drop-gap) / 2);
+}
+
+/*
+ * Reduced motion: the room still opens, instantly. `!important` because the
+ * item's state rules (`:active`, the grabbed item) set their own transition
+ * durations at the same specificity and would otherwise win.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .dx-drag-and-drop-list-item,
+  .dx-drag-and-drop-list-item::before,
+  .dx-drag-and-drop-list-item::after {
+    transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
 }
