@@ -1,0 +1,1 @@
+.dx-label{color:var(--dx-label-color,var(--dx-foreground));font-size:var(--dx-label-font-size,var(--dx-text-sm));font-weight:var(--dx-label-font-weight,500);align-items:center;gap:var(--dx-label-gap,var(--dx-space-2));line-height:var(--dx-label-line-height,1);display:flex}
