@@ -3,6 +3,10 @@
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
 
+use crate::menu_item::{
+    self, CheckableCommon, CheckableState, MenuCheckboxItemProps, MenuRadioGroupProps,
+    MenuRadioItemProps,
+};
 use crate::merge_attributes;
 use crate::{
     collection::{
@@ -1168,6 +1172,223 @@ pub fn MenubarItem(props: MenubarItemProps) -> Element {
             // now owns this job, DOM-truth-based rather than signal-based.
             ..attributes,
             {props.children}
+        }
+    }
+}
+
+/// The props for the [`MenubarCheckboxItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuCheckboxItemProps`].
+pub type MenubarCheckboxItemProps = MenuCheckboxItemProps;
+
+/// The props for the [`MenubarRadioGroup`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioGroupProps`].
+pub type MenubarRadioGroupProps = MenuRadioGroupProps;
+
+/// The props for the [`MenubarRadioItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioItemProps`].
+pub type MenubarRadioItemProps = MenuRadioItemProps;
+
+/// # MenubarCheckboxItem
+///
+/// An item within a [`MenubarContent`] that can be checked and unchecked
+/// independently of its siblings -- shadcn's `MenubarCheckboxItem`. Renders
+/// `role="menuitemcheckbox"` with an always-present `aria-checked` (see
+/// `crate::menu_semantics`).
+///
+/// Controlled with `checked` + `on_checked_change`, or uncontrolled with
+/// `default_checked`. Pressing it with the pointer, or pressing Enter or
+/// Space while it has focus, toggles it. Like Radix's `onSelect` default,
+/// that **closes the menu**; set `close_on_select: false` to keep the menu
+/// open so several items can be toggled in one visit (the optional APG
+/// behaviour for Space: "changes the state without closing the menu").
+/// Disabled items cannot be toggled and are skipped by arrow keys and
+/// typeahead. A checkbox item has no `value`, so give it a `text_value` to
+/// make it a typeahead target.
+///
+/// This must be used inside a [`MenubarContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::menubar::{
+///     Menubar, MenubarCheckboxItem, MenubarContent, MenubarMenu, MenubarTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut auto_save = use_signal(|| true);
+///     rsx! {
+///         Menubar {
+///             MenubarMenu { index: 0usize,
+///                 MenubarTrigger { "File" }
+///                 MenubarContent {
+///                     MenubarCheckboxItem {
+///                         index: 0usize,
+///                         checked: Some(auto_save()),
+///                         on_checked_change: move |checked| auto_save.set(checked),
+///                         close_on_select: false,
+///                         text_value: "Auto Save",
+///                         "Auto Save"
+///                     }
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Styling
+///
+/// The [`MenubarCheckboxItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates if the item is disabled. Values are `true` or `false`.
+#[component]
+pub fn MenubarCheckboxItem(props: MenubarCheckboxItemProps) -> Element {
+    let state = menu_item::use_checkbox_state(
+        props.checked,
+        props.default_checked,
+        props.on_checked_change,
+    );
+    menubar_checkable_item(state, props.into())
+}
+
+/// # MenubarRadioGroup
+///
+/// A set of mutually exclusive [`MenubarRadioItem`]s -- shadcn's
+/// `MenubarRadioGroup`. Renders `role="group"`; give it an accessible name
+/// with `aria-label` or `aria-labelledby`. Controlled with `value` +
+/// `on_value_change`, or uncontrolled with `default_value`.
+///
+/// This must be used inside a [`MenubarContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::menubar::{
+///     Menubar, MenubarContent, MenubarMenu, MenubarRadioGroup, MenubarRadioItem,
+///     MenubarTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut profile = use_signal(|| "benoit".to_string());
+///     rsx! {
+///         Menubar {
+///             MenubarMenu { index: 0usize,
+///                 MenubarTrigger { "Profiles" }
+///                 MenubarContent {
+///                     MenubarRadioGroup {
+///                         aria_label: "Profile",
+///                         value: Some(profile()),
+///                         on_value_change: move |value| profile.set(value),
+///                         MenubarRadioItem {
+///                             index: 0usize,
+///                             value: "andy".to_string(),
+///                             "Andy"
+///                         }
+///                         MenubarRadioItem {
+///                             index: 1usize,
+///                             value: "benoit".to_string(),
+///                             "Benoit"
+///                         }
+///                     }
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+#[component]
+pub fn MenubarRadioGroup(props: MenubarRadioGroupProps) -> Element {
+    menu_item::render_radio_group(props)
+}
+
+/// # MenubarRadioItem
+///
+/// One choice in a [`MenubarRadioGroup`] -- shadcn's `MenubarRadioItem`.
+/// Renders `role="menuitemradio"` with an always-present `aria-checked`; it
+/// is checked while the group's value equals its own `value`, and choosing
+/// it (pointer, Enter or Space) sets the group's value and, like Radix's
+/// `onSelect` default, **closes the menu** unless `close_on_select` is
+/// `false`. Falls back to `value` as its typeahead label. Disabled items
+/// cannot be chosen and are skipped by arrow keys and typeahead.
+///
+/// This must be used inside a [`MenubarRadioGroup`] component.
+///
+/// ## Styling
+///
+/// The [`MenubarRadioItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates if the item is disabled. Values are `true` or `false`.
+#[component]
+pub fn MenubarRadioItem(props: MenubarRadioItemProps) -> Element {
+    let state = menu_item::use_radio_state(props.value);
+    menubar_checkable_item(state, props.into())
+}
+
+/// The body shared by [`MenubarCheckboxItem`] and [`MenubarRadioItem`]:
+/// everything that is the same for both roles lives in `crate::menu_item`;
+/// this is the host-specific half -- the item registers in its own
+/// `MenubarMenu`'s roving-focus collection, commits on pointerdown like
+/// [`MenubarItem`], and "close" is closing this menu and handing focus back
+/// to its trigger (APG menubar close-focus rule). Called from a component
+/// body; it calls hooks.
+fn menubar_checkable_item(state: CheckableState, common: CheckableCommon) -> Element {
+    let mut ctx: MenubarContext = use_context();
+    let menu_ctx: MenubarMenuContext = use_context();
+
+    let CheckableCommon {
+        index,
+        disabled: item_disabled,
+        text_value,
+        close_on_select,
+        attributes,
+        children,
+    } = common;
+    let disabled = move || (ctx.disabled)() || item_disabled();
+    let item = use_item(
+        collection_item(menu_ctx.focus, index)
+            .disabled(disabled)
+            .text_value(move || state.text_value(text_value)),
+    );
+    let focused = move || item.focused() && (menu_ctx.is_open)();
+    let onmounted = item.onmounted();
+
+    let mut select = move || {
+        if disabled() {
+            return;
+        }
+        state.activate();
+        if close_on_select() {
+            ctx.set_open_menu.call(None);
+            // See `MenubarItem`'s identical close: `ctx.focus` never left
+            // this trigger's index while item-level keyboard focus roamed
+            // the (separate) submenu collection, so clear first to force a
+            // real transition.
+            ctx.focus.clear_focus();
+            ctx.focus.set_focus(Some(menu_ctx.index.cloned()));
+        }
+    };
+
+    let attributes = merge_attributes(vec![
+        attributes,
+        state.owned_attributes(disabled(), if focused() { "0" } else { "-1" }),
+    ]);
+
+    rsx! {
+        div {
+            onpointerdown: move |_| select(),
+
+            onkeydown: move |event: Event<KeyboardData>| {
+                if menu_item::is_activation_key(&event.key()) {
+                    select();
+                    event.prevent_default();
+                    event.stop_propagation();
+                }
+            },
+
+            onmounted,
+
+            ..attributes,
+            {children}
         }
     }
 }

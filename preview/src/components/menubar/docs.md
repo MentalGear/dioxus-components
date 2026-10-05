@@ -30,6 +30,47 @@ Menubar {
 }
 ```
 
+## Checkbox and radio items
+
+`MenubarCheckboxItem` and `MenubarRadioGroup` + `MenubarRadioItem` are shadcn's
+`MenubarCheckboxItem`/`MenubarRadioGroup`/`MenubarRadioItem`. They render
+`role="menuitemcheckbox"` / `role="menuitemradio"` with an always-present
+`aria-checked`; radio items sit in a `role="group"` (name it with
+`aria-label` or `aria-labelledby`). They work in a `MenubarContent`.
+
+```rust
+MenubarContent {
+    MenubarCheckboxItem {
+        // Items are ordered by `index`, like plain items.
+        index: 0,
+        // Controlled: `checked` + `on_checked_change`. Uncontrolled:
+        // `default_checked` -- but note the content unmounts when the menu
+        // closes, so an uncontrolled item starts over on every open.
+        checked: Some(show_status_bar()),
+        on_checked_change: move |checked| show_status_bar.set(checked),
+        // Selecting closes the menu by default (Radix's `onSelect` default).
+        // `false` keeps it open so several items can be toggled in one visit.
+        close_on_select: false,
+        // A checkbox item has no `value`: set `text_value` to make it a
+        // typeahead target.
+        text_value: "Status Bar",
+        "Status Bar"
+    }
+    MenubarRadioGroup {
+        aria_label: "Panel position",
+        value: Some(position()),
+        on_value_change: move |value| position.set(value),
+        // A radio item's `value` is also its typeahead label.
+        MenubarRadioItem { index: 1, value: "top".to_string(), "Top" }
+        MenubarRadioItem { index: 2, value: "bottom".to_string(), "Bottom" }
+    }
+}
+```
+
+Click, `Enter` and `Space` all select. A disabled item cannot be selected and
+is skipped by arrow keys and typeahead. Unlike the dropdown and context menus, shadcn's menubar draws the check at the inline **start** -- same `--dx-menu-item-indicator-*` slot construction, on the other side. A plain item can reserve the same slot with `"data-inset": "true"` (shadcn's `inset`) so a menu that mixes plain and checkable items keeps its labels on one edge. See the `checkboxes` and
+`radio_group` variants.
+
 ## Direction / RTL
 
 `Menubar` accepts a `dir: Option<Direction>` prop. Its top-level trigger row is always horizontal, so `ArrowLeft`/`ArrowRight` between menus always swaps under RTL. See the `rtl` variant.

@@ -1,0 +1,17 @@
+{
+  "name": "attachment",
+  "description": "A file or image attachment card: media, name and metadata, upload states, sizes, actions and a scrolling group.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    }
+  ],
+  "componentDependencies": ["button"],
+  "globalAssets": [
+    "../../../assets/dx-components-theme.css",
+    "../../../assets/dx-effects.css"
+  ]
+}

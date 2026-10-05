@@ -1,21 +1,34 @@
 /* Nova dialog (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
  * `.cn-dialog-*`): a `bg-black/10` overlay with `backdrop-blur-xs`, a
  * `popover`-coloured panel with a 1px `foreground/10` ring and no drop shadow,
- * `rounded-xl`, p-4 / gap-4 / text-sm, `sm:max-w-sm`, 100ms transitions. */
+ * `rounded-xl`, p-4 / gap-4 / text-sm, `sm:max-w-sm`. Nova fades the overlay and
+ * panel over 100ms; here both take `--dx-overlay-duration` (200ms), shared with
+ * every other modal overlay, because 100ms read as no transition at all. */
 
-/* Dialog Backdrop */
+/* Dialog Backdrop -- the wrapper `div` `DialogRoot` renders around the content.
+ * On the web arm (`<dialog>` + `showModal()`) it paints nothing: the scrim is the
+ * dialog's own `::backdrop` (the shared block below) and this element only holds
+ * the `<dialog>` and its animation times `use_animated_open`'s unmount hold. On
+ * the non-web arm and for `is_modal: false` the content is a plain `div` with no
+ * top layer and no `::backdrop`, so there this element IS the scrim, from the
+ * same tokens. */
 .dx-dialog-backdrop {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  backdrop-filter: blur(4px);
-  background: rgb(0 0 0 / 10%);
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
+.dx-dialog-backdrop:has(> dialog) {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-dialog-backdrop[data-state="closed"] {
-  animation: dx-dialog-backdrop-animate-out var(--dx-motion-duration-fast) var(--dx-motion-ease-in) forwards;
+  animation: dx-dialog-backdrop-animate-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
 }
 
@@ -30,7 +43,7 @@
 }
 
 .dx-dialog-backdrop[data-state="open"] {
-  animation: dx-dialog-backdrop-animate-in var(--dx-motion-duration-fast) var(--dx-motion-ease-out) forwards;
+  animation: dx-dialog-backdrop-animate-in var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
 }
 
 @keyframes dx-dialog-backdrop-animate-in {
@@ -40,6 +53,85 @@
 
   100% {
     opacity: 1;
+  }
+}
+
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
+ * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts.
+ *
+ * The dialog's own top-layer `::backdrop` is the only thing that paints the
+ * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
+ * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
+ * timings) and, alone on Popover and Sheet, snapped in and out with no
+ * transition at all. It fades in via `@starting-style` and out via
+ * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
+ * from the top layer synchronously and the `::backdrop` goes with it, so
+ * without that keep-alive no exit transition could ever play. In and out are
+ * one `transition`, so they cannot differ in length. Engines without
+ * `overlay` transitions keep the old snap-out; nothing else changes.
+ *
+ * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
+ * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
+.dx-dialog::backdrop {
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
+}
+
+.dx-dialog[open]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
+}
+
+@starting-style {
+  .dx-dialog[open]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
+/* The panel fades and zooms with the same tokens (Nova's `fade-in-0 zoom-in-95`
+ * / `fade-out-0 zoom-out-95`), and the `overlay` entry is what keeps the closing
+ * dialog -- and with it the `::backdrop` fade above -- in the top layer for the
+ * exit. `dialog.` is deliberate: the non-modal arm is a plain `div` that is never
+ * `[open]` and must stay visible. A mounted-but-not-yet-shown dialog is `opacity: 0`
+ * too, so it no longer flashes in place for the frames before `showModal()`. */
+dialog.dx-dialog {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  transition:
+    opacity var(--dx-overlay-duration) var(--dx-overlay-ease),
+    transform var(--dx-overlay-duration) var(--dx-overlay-ease),
+    overlay var(--dx-overlay-duration) allow-discrete;
+}
+
+dialog.dx-dialog[open] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1); /* rtl-physical: the viewport-centering below */
+}
+
+@starting-style {
+  dialog.dx-dialog[open] {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.dx-dialog,
+  .dx-dialog::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-dialog-backdrop {
+    animation-duration: var(--dx-motion-duration-reduced);
   }
 }
 

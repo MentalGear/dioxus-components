@@ -1,3 +1,9 @@
+/* Menu-item indicator slot (the construction select/style.css documents in
+ * full): the select reserves `inset + size + gap` of inline-end padding and
+ * the chevron is absolutely positioned inside that room, so the selected
+ * text is clipped before it reaches the icon. The three tokens are the
+ * theme's, inherited unchanged (this control pads by `--dx-space-3`, the
+ * theme's `inset`). Guard: playwright/menu-indicator-gap.spec.ts. */
 .dx-native-select-wrapper {
   position: relative;
   display: inline-flex;
@@ -17,7 +23,9 @@
   font-family: inherit;
   font-size: var(--dx-text-sm);
   padding-block: var(--dx-space-2);
-  padding-inline: var(--dx-space-3) var(--dx-space-8);
+  padding-inline:
+    var(--dx-space-3)
+    calc(var(--dx-menu-item-indicator-inset) + var(--dx-menu-item-indicator-size) + var(--dx-menu-item-indicator-gap));
   transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
@@ -41,10 +49,10 @@
 .dx-native-select-icon {
   position: absolute;
   top: 50%;
-  width: 1rem;
-  height: 1rem;
+  width: var(--dx-menu-item-indicator-size);
+  height: var(--dx-menu-item-indicator-size);
   color: var(--dx-muted-foreground);
-  inset-inline-end: var(--dx-space-3);
+  inset-inline-end: var(--dx-menu-item-indicator-inset);
   pointer-events: none;
   transform: translateY(-50%);
 }

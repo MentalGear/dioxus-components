@@ -2,46 +2,119 @@ import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { sampleCloseFade, assertFadesOutThenUnmounts } from "./assert-fade-out";
 import { BASE_URL } from "./base-url";
+import { assertSharedBackdrop, captureBackdrop, resolveOverlayMs } from "./assert-backdrop-fade";
 
-test("test", async ({ page }) => {
+test("opens a form of labelled fields, traps focus, Escape closes", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=popover&`);
   const popoverButton = page.getByRole("button", { name: "Show Popover" });
   await expect(popoverButton).toBeVisible();
   await popoverButton.click();
-  // pressing the first input should be focused
-  const confirm = page.getByRole("button", { name: "Confirm" });
-  const cancel = page.getByRole("button", { name: "Cancel" });
-  await expect(confirm).toBeFocused();
-  // pressing tab again should focus the cancel button
-  await page.keyboard.press("Tab");
-  await expect(cancel).toBeFocused();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  // showModal() focuses the first field. shadcn's own demo content: four
+  // Label + Input rows under a "Dimensions" header.
+  const width = dialog.getByRole("textbox", { name: "Width", exact: true });
+  await expect(width).toBeFocused();
+  // Tab walks the other three fields in order.
+  for (const name of ["Max. width", "Height", "Max. height"]) {
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("textbox", { name, exact: true })).toBeFocused();
+  }
   // Native-dialog engine migration (two-engine overlay architecture
-  // completion): the modal `Popover` is now a real `<dialog>` +
-  // `showModal()` on the web arm, so this cycle goes through Chromium's own
-  // focus trap rather than the vendored `FocusTrap` -- same documented shape
-  // as `dialog.spec.ts`'s identical comment (docs/phase4-spike-findings.md
+  // completion): the modal `Popover` is a real `<dialog>` + `showModal()` on
+  // the web arm, so this cycle goes through Chromium's own focus trap rather
+  // than the vendored `FocusTrap` -- same documented shape as
+  // `dialog.spec.ts`'s identical comment (docs/phase4-spike-findings.md
   // experiment 4a): Chromium's native trap parks focus on `<body>` for
-  // exactly one Tab stop after the last focusable element before wrapping
-  // to the first (invisible to the user, does not let focus escape the
-  // dialog) -- a harness correction for the new trap's documented shape,
-  // not a behavior change under test.
+  // exactly one Tab stop after the last focusable element before wrapping to
+  // the first (invisible to the user, does not let focus escape the dialog)
+  // -- a harness correction for the new trap's documented shape, not a
+  // behavior change under test.
   await page.keyboard.press("Tab");
   await expect
     .poll(() => page.evaluate(() => document.activeElement === document.body))
     .toBe(true);
   await page.keyboard.press("Tab");
-  await expect(confirm).toBeFocused();
-  // pressing enter should close the popover
-  await page.keyboard.press("Enter");
-  // the item should show deleted under component-preview-frame
-  await expect(page.locator("#component-preview-frame")).toContainText(
-    "Item deleted!",
-  );
+  await expect(width).toBeFocused();
 
-  // Open the popover again
-  await popoverButton.click();
-  // pressing escape should close the popover
+  // Escape closes it and gives focus back to the trigger.
   await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(popoverButton).toBeFocused();
+
+  // And it reopens: the signal is not stranded by the native close.
+  await popoverButton.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});
+
+test("the trigger announces a dialog popup and mirrors the open state in aria-expanded", async ({ page }) => {
+  // Radix/shadcn Popover trigger semantics: `aria-haspopup="dialog"` plus `aria-expanded`. Found missing
+  // 2026-10-04 (the themed `[aria-expanded="true"]` trigger rule had nothing to match). Located by
+  // attribute and text, not role: while the modal one is open its trigger is inert, so `getByRole`
+  // would no longer find it to read the attribute back.
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
+  const dialog = page.getByRole("dialog");
+  // The modal variant (showModal()) and the non-modal one (popover="auto"); Escape closes both.
+  for (const text of ["Show Popover", "Open popover"]) {
+    const trigger = page.locator('button[aria-haspopup="dialog"]', { hasText: text });
+    await expect(trigger).toHaveCount(1);
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  }
+});
+
+test("the content is labelled form fields in a dialog, not a menu", async ({ page }) => {
+  // The previous demo was a "Delete Item?" heading over two full-width outline
+  // buttons: a confirm/cancel stack that read as a menu. A popover holds
+  // arbitrary content; this one holds shadcn's "Dimensions" form, and nothing in
+  // it has a menu role because nothing in it is a menu.
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
+  const trigger = page.getByRole("button", { name: "Show Popover" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+
+  await expect(dialog.getByRole("heading", { name: "Dimensions" })).toBeVisible();
+  await expect(dialog.getByText("Set the dimensions for the layer.")).toBeVisible();
+  await expect(dialog.getByRole("menu")).toHaveCount(0);
+  await expect(dialog.getByRole("menuitem")).toHaveCount(0);
+  await expect(dialog.getByRole("button")).toHaveCount(0);
+  await expect(dialog.getByRole("textbox")).toHaveCount(4);
+  for (const [name, value] of [
+    ["Width", "100%"],
+    ["Max. width", "300px"],
+    ["Height", "25px"],
+    ["Max. height", "none"],
+  ]) {
+    // Found by its <label>, so each field is genuinely associated with one.
+    await expect(dialog.getByRole("textbox", { name, exact: true })).toHaveValue(value);
+  }
+});
+
+test("the trigger is Nova's default outline button", async ({ page }) => {
+  // It used to be a card-coloured 18px-padded box of its own, unlike the
+  // `Button { data-style: "outline" }` every other overlay demo opens from.
+  await page.goto(`${BASE_URL}/component/?name=popover&`);
+  const trigger = page.getByRole("button", { name: "Show Popover" });
+  await expect(trigger).toBeVisible();
+  const box = await trigger.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return {
+      height: el.getBoundingClientRect().height,
+      border: cs.borderTopWidth,
+      radius: cs.borderTopLeftRadius,
+      weight: cs.fontWeight,
+      size: cs.fontSize,
+    };
+  });
+  expect(box).toEqual({ height: 32, border: "1px", radius: "10px", weight: "500", size: "14px" });
 });
 
 test("popover dismisses when clicking outside", async ({ page }) => {
@@ -58,7 +131,7 @@ test("popover dismisses when clicking outside", async ({ page }) => {
 test("popover stays open when clicking non-focusable content inside it", async ({ page }) => {
   // Regression: `use_outside_dismiss` served pointerdown and focusin with one
   // shared handler. Clicking a non-focusable region inside the popover (e.g.
-  // this demo's "Delete Item?" heading) blurs the currently-focused control,
+  // this demo's "Dimensions" heading) blurs the currently-focused control,
   // and the browser moves focus to the nearest focusable *ancestor* -- which
   // is outside the popover's root while still containing it. The shared
   // handler read that as focus leaving and closed the popover the user just
@@ -69,7 +142,7 @@ test("popover stays open when clicking non-focusable content inside it", async (
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
-  await dialog.getByText("Delete Item?").click();
+  await dialog.getByRole("heading", { name: "Dimensions" }).click();
 
   // The popover must still be open -- clicking its own non-focusable content
   // is not an outside dismiss.
@@ -189,7 +262,7 @@ test.describe("Axe automated scan", () => {
 // never sets `is_modal`, so it defaults to `true`
 // (`primitives/src/popover.rs`) and renders as a real `<dialog>` +
 // `showModal()` -- a completely different code path
-// (`use_dialog_open_driver`/`use_dialog_close_sync`, no `popover`
+// (`use_popover_modal_driver`/`use_dialog_close_sync`, no `popover`
 // attribute at all) that neither row 19 nor row 7 touches.
 //
 // This is *not* the `top_layer` oracle fixture's own `#stack-popover-*`
@@ -256,5 +329,54 @@ test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)"
     );
 
     assertFadesOutThenUnmounts(capture);
+  });
+});
+
+// The scrim. The modal Popover is a `<dialog>` + `showModal()` with no wrapper of
+// its own, so before this its whole scrim was the UA's default `::backdrop`
+// (`rgba(0 0 0 / 10%)`, no transition): it appeared in one frame and vanished in
+// one frame. It now paints the same scrim as Dialog/AlertDialog/Sheet/Drawer and
+// fades it in and out for the same length (`assert-backdrop-fade.ts` owns the
+// claim; the other four specs run the identical assertion).
+test.describe("Scrim", () => {
+  test("modal popover paints the shared scrim and fades it in and out", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=popover&`);
+    const trigger = page.getByRole("button", { name: "Show Popover", exact: true });
+    await expect(trigger).toBeVisible();
+    const capture = await captureBackdrop(
+      page,
+      () => trigger.click(),
+      () => page.keyboard.press("Escape"),
+    );
+    assertSharedBackdrop(capture, await resolveOverlayMs(page), "popover (modal)");
+  });
+
+  test("modal popover content fades out too, for as long as the scrim", async ({ page }) => {
+    // The panel's own exit. Escape closes the native dialog at once, and the
+    // content has to keep fading (not snap off) while its scrim fades behind it.
+    await page.goto(`${BASE_URL}/component/?name=popover&`);
+    const trigger = page.getByRole("button", { name: "Show Popover", exact: true });
+    const content = page.getByRole("dialog");
+    await trigger.click();
+    await expect(content).toBeVisible();
+    const contentId = await content.getAttribute("id");
+    if (!contentId) throw new Error("modal popover content has no id to sample");
+    const capture = await sampleCloseFade(page, contentId, () => page.keyboard.press("Escape"));
+    assertFadesOutThenUnmounts(capture);
+  });
+
+  test("non-modal popover paints no scrim at all (shadcn's popover has no overlay)", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=popover&variant=non_modal&`);
+    const trigger = page.getByRole("button", { name: "Open popover", exact: true });
+    await expect(trigger).toBeVisible();
+    await trigger.evaluate((el) => (el as HTMLElement).click());
+    const content = page.getByRole("dialog");
+    await expect(content).toBeVisible();
+    const backdrop = await content.evaluate((el) => {
+      const cs = getComputedStyle(el, "::backdrop");
+      return { background: cs.backgroundColor, filter: cs.backdropFilter };
+    });
+    expect(backdrop.background).toMatch(/^(rgba\(0, 0, 0, 0\)|transparent)$/);
+    expect(backdrop.filter).toBe("none");
   });
 });

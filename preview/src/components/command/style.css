@@ -24,23 +24,35 @@
   white-space: nowrap;
 }
 
-/* Backdrop -- mirrors ../dialog/style.css's `.dx-dialog-backdrop` shape
- * (fixed, full-viewport, dimmed, fade in/out with the animated-open hold),
- * under its own `dx-command-dialog-*` namespace (docs/backlog.md row 32)
- * since sharing `.dx-dialog-backdrop` itself would require linking
- * `dialog/style.css` too -- see `component.rs`'s doc for why the primitive
- * carries this class as its own literal default. */
+/* Backdrop -- the wrapper `div` `DialogRoot` renders around the content, under
+ * this component's own `dx-command-dialog-*` namespace (docs/backlog.md row 32:
+ * sharing `.dx-dialog-backdrop` would require linking `dialog/style.css` too --
+ * see `component.rs`'s doc for why the primitive carries this class as its own
+ * literal default). Same construction as `../dialog/style.css`: on the web arm
+ * (`<dialog>` + `showModal()`) it paints nothing -- the scrim is the dialog's own
+ * `::backdrop` (the shared block below) and this element only holds the
+ * `<dialog>` and its animation times `use_animated_open`'s unmount hold. On the
+ * non-web arm and for `is_modal: false` the content is a plain `div` with no top
+ * layer and no `::backdrop`, so there this element IS the scrim, from the same
+ * tokens. (It used to paint its own 30% wrapper over the UA's default 10%
+ * `::backdrop` -- a second, stacked scrim -- with no blur and a 150ms fade.) */
 .dx-command-dialog-backdrop {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  background: rgb(0 0 0 / 30%);
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
+.dx-command-dialog-backdrop:has(> dialog) {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-command-dialog-backdrop[data-state="closed"] {
-  animation: dx-command-dialog-backdrop-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-command-dialog-backdrop-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
 }
 
@@ -55,7 +67,7 @@
 }
 
 .dx-command-dialog-backdrop[data-state="open"] {
-  animation: dx-command-dialog-backdrop-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+  animation: dx-command-dialog-backdrop-in var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
 }
 
 @keyframes dx-command-dialog-backdrop-in {
@@ -65,6 +77,76 @@
 
   100% {
     opacity: 1;
+  }
+}
+
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares --
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and this one carry this block
+ * verbatim (renamed); the modal popover's is the same rule keyed on
+ * `data-state`. `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts. See `../dialog/style.css` for the full account:
+ * the dialog's own top-layer `::backdrop` is the only scrim painter, it fades in
+ * via `@starting-style` and out via `overlay ... allow-discrete` on the dialog
+ * itself, and in and out are one `transition` so they cannot differ in length.
+ *
+ * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
+ * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
+.dx-command-dialog::backdrop {
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
+}
+
+.dx-command-dialog[open]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
+}
+
+@starting-style {
+  .dx-command-dialog[open]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
+/* The panel fades and zooms with the same tokens (Nova's `fade-in-0 zoom-in-95`
+ * / `fade-out-0 zoom-out-95`, exactly `dialog`'s), and the `overlay` entry is
+ * what keeps the closing dialog -- and with it the `::backdrop` fade above -- in
+ * the top layer for the exit. `dialog.` is deliberate: the non-web arm is a plain
+ * `div` that is never `[open]` and must stay visible. */
+dialog.dx-command-dialog {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  transition:
+    opacity var(--dx-overlay-duration) var(--dx-overlay-ease),
+    transform var(--dx-overlay-duration) var(--dx-overlay-ease),
+    overlay var(--dx-overlay-duration) allow-discrete;
+}
+
+dialog.dx-command-dialog[open] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) scale(1); /* rtl-physical: the viewport-centering below */
+}
+
+@starting-style {
+  dialog.dx-command-dialog[open] {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95); /* rtl-physical: the viewport-centering below */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.dx-command-dialog,
+  .dx-command-dialog::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-command-dialog-backdrop {
+    animation-duration: var(--dx-motion-duration-reduced);
   }
 }
 
@@ -160,6 +242,15 @@
   font-size: var(--dx-text-xs);
 }
 
+/* Menu-item indicator slot, in-flow variant (the construction
+ * select/style.css documents in full). A command's trailing indicator is its
+ * shortcut -- variable-width text, so it cannot sit in a fixed absolute slot
+ * the way a check or chevron does. The same guarantee comes from the theme's
+ * shared `--dx-menu-item-indicator-gap` token instead: the shortcut keeps its natural width
+ * (`flex-shrink: 0`, below), the row's `gap` is the minimum clear space, and
+ * `overflow-wrap: anywhere` lets a long label wrap in the room that is left
+ * rather than push the shortcut out of the row. Guard:
+ * playwright/menu-indicator-gap.spec.ts. */
 .dx-command-item {
   display: flex;
   align-items: center;
@@ -167,8 +258,9 @@
   border-radius: var(--dx-radius-md);
   cursor: default;
   font-size: var(--dx-text-sm);
-  gap: var(--dx-space-2);
+  gap: var(--dx-menu-item-indicator-gap);
   outline: none;
+  overflow-wrap: anywhere;
 
   /* touch-action: manipulation -- see .dx-command-input's identical comment above. */
   touch-action: manipulation;
@@ -193,5 +285,6 @@
  * references a class outside this stylesheet's own `dx-command-...`
  * namespace (docs/backlog.md row 32 / scripts/check-dx-class-prefix.sh). */
 .dx-command-item [data-command-item-shortcut] {
+  flex-shrink: 0;
   margin-inline-start: auto;
 }

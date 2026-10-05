@@ -114,7 +114,17 @@
   }
 }
 
+/* Menu-item indicator slot (the construction select/style.css documents in
+ * full). An item that draws a trailing indicator -- today the sub-trigger's
+ * chevron; a future check or radio dot is the same thing -- reserves
+ * `inset + size + gap` of inline-end padding (see `.dx-dropdown-menu-sub-trigger`)
+ * and the indicator is absolutely positioned inside that room, so a long
+ * label wraps (`overflow-wrap: anywhere`) before it can meet the icon. The three
+ * `--dx-menu-item-indicator-*` tokens are defined once in the theme and inherited
+ * here (this item's inline padding matches the theme's `inset`, so nothing is
+ * overridden). Guard: playwright/menu-indicator-gap.spec.ts. */
 .dx-dropdown-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   padding: var(--dx-space-2) var(--dx-space-3);
@@ -124,10 +134,22 @@
   font-size: var(--dx-text-sm);
   gap: var(--dx-space-2);
   outline: none;
+  overflow-wrap: anywhere;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
   user-select: none;
+}
+
+/* The indicator itself: out of flow, in the slot the item reserved. */
+.dx-dropdown-menu-item-indicator {
+  position: absolute;
+  width: var(--dx-menu-item-indicator-size);
+  height: var(--dx-menu-item-indicator-size);
+  inset-block: 0;
+  inset-inline-end: var(--dx-menu-item-indicator-inset);
+  margin-block: auto;
+  pointer-events: none;
 }
 
 .dx-dropdown-menu-item[data-disabled="true"] {
@@ -143,12 +165,36 @@
 
 /* Nested submenu (docs/component-backlog.md row 68). `.dx-dropdown-menu-sub-trigger`
    is layered on top of `.dx-dropdown-menu-item` (see `component.rs` --
-   both classes are always applied together), so it only needs to add
-   room for the trailing chevron icon and the "submenu is open" highlight;
+   both classes are always applied together), so it only needs to reserve
+   the trailing chevron's slot and add the "submenu is open" highlight;
    every other item property (padding, hover/focus, disabled) is already
    inherited. */
-.dx-dropdown-menu-sub-trigger {
-  justify-content: space-between;
+.dx-dropdown-menu-sub-trigger,
+.dx-dropdown-menu-checkable-item {
+  padding-inline-end: calc(var(--dx-menu-item-indicator-inset) + var(--dx-menu-item-indicator-size) + var(--dx-menu-item-indicator-gap));
+}
+
+/* Checkable items (`DropdownMenuCheckboxItem`/`DropdownMenuRadioItem`) are
+   the same construction as the sub-trigger above, drawing a check instead
+   of a chevron -- shadcn Nova's `pr-8` + `absolute right-2` on
+   `.cn-dropdown-menu-checkbox-item` (shadcn-ui/ui@295a1f1, style-nova.css).
+   Both classes are always applied together with `.dx-dropdown-menu-item`
+   (see `component.rs`). The check is drawn only while the item is checked;
+   `visibility`, not `display`, so an unchecked item keeps its box -- the slot
+   is reserved either way and labels never shift when an item is toggled.
+   A plain item has no reserved slot, so a menu that mixes plain and
+   checkable items keeps every label on the same inline-start edge. */
+.dx-dropdown-menu-checkable-item[data-state="unchecked"] > .dx-dropdown-menu-item-indicator {
+  visibility: hidden;
+}
+
+/* A heading for a group of items (`DropdownMenuLabel`). Aligned with the
+   items' own inline padding, so it reads as part of the same column. */
+.dx-dropdown-menu-label {
+  padding: var(--dx-space-2) var(--dx-space-3);
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-xs);
+  font-weight: 500;
 }
 
 /* The `ChevronRight` icon `component.rs` appends after the trigger's own
@@ -159,8 +205,6 @@
    see `component.rs`'s doc on this class for why that distinction
    mattered here). */
 .dx-dropdown-menu-sub-trigger-icon {
-  flex-shrink: 0;
-  margin-inline-start: var(--dx-space-2);
   opacity: 0.7;
 }
 

@@ -54,9 +54,12 @@ ResizableHandle {
 }
 ```
 
-The grip is purely decorative (`pointer-events: none`) -- the handle `div` itself carries the
-drag/keyboard behavior -- and rotates automatically with the handle in a vertical-direction
-group. Omit it for a plain 1px divider line with no visible grip.
+The grip is part of the handle, not an overlay on it: a pointer pressed anywhere on it bubbles to
+the handle `div` that carries the drag/keyboard behavior, and it shows the handle's `col-resize` /
+`row-resize` cursor. The handle also has an invisible hit area centered on its 1px line (12px
+across, 24px for a coarse pointer such as a finger), so the line and the grip are both easy to
+grab. The grip rotates automatically with the handle in a vertical-direction group. Omit it for a
+plain 1px divider line with no visible grip.
 
 ## Collapsible panels
 

@@ -128,7 +128,12 @@ type Row = {
   label: string;
 };
 
-function isAcceptable(touchAction: string): boolean {
+function isAcceptable(touchAction: string, role = ""): boolean {
+  // One principled exception to "never none": a window-splitter drag handle (`role="separator"`,
+  // the resizable handle). A touch that starts on it is a drag, and under `manipulation` Chromium
+  // starts a page pan after the touch slop and cancels the pointer, killing the drag. See the
+  // matching rule in `preview/assets/main.css` (and `scroll-main-thread.spec.ts`, which drives it).
+  if (role === "separator" && touchAction === "none") return true;
   // `manipulation` is the primary construction; `pan-x pan-y` (either
   // token order) is the spec-equivalent explicit spelling of the same
   // permission set (see this file's header doc) -- both suppress
@@ -161,7 +166,7 @@ async function scan(page: Page): Promise<Row[]> {
 }
 
 function assertAllManipulation(rows: Row[], route: string) {
-  const offenders = rows.filter((r) => !isAcceptable(r.touchAction));
+  const offenders = rows.filter((r) => !isAcceptable(r.touchAction, r.role));
   const noneOffenders = offenders.filter((r) => r.touchAction === "none");
   expect(
     offenders,

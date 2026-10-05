@@ -29,8 +29,19 @@ pub fn Drawer(props: DrawerRootProps) -> Element {
 
 #[component]
 pub fn DrawerContent(props: DrawerContentProps) -> Element {
+    // Merges `class` the same way `../popover/component.rs`'s `PopoverContent`
+    // and `../toggle/component.rs`'s `Toggle` do: a caller's own class extends
+    // this theme's `"dx-drawer"`, it does not replace it (this wrapper used to
+    // pass `class: None` and drop `props.class` on the floor). It travels as the
+    // primitive's typed `class` prop, so it is ONE literal on the dialog element
+    // and never rides beside the `..attributes` spread
+    // (`scripts/check-attr-spread-collision.sh`).
+    let content_class = if let Some(class) = props.class {
+        format!("{} {}", "dx-drawer", class)
+    } else {
+        "dx-drawer".to_string()
+    };
     let content_base = attributes!(div {
-        class: "dx-drawer",
         "data-slot": "drawer-content",
     });
     let content_attributes = merge_attributes(vec![content_base, props.attributes]);
@@ -39,7 +50,7 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
         drawer::DrawerContent {
             id: props.id,
-            class: None,
+            class: content_class,
             attributes: content_attributes,
             {props.children}
         }
@@ -98,7 +109,8 @@ pub fn DrawerTitle(props: DialogTitleProps) -> Element {
 
 #[component]
 pub fn DrawerDescription(props: DialogDescriptionProps) -> Element {
-    let base = attributes!(div { class: "dx-drawer-description", "data-slot": "drawer-description" });
+    let base =
+        attributes!(div { class: "dx-drawer-description", "data-slot": "drawer-description" });
     let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/drawer/style.css") }
@@ -122,5 +134,62 @@ pub fn DrawerClose(props: DrawerCloseProps) -> Element {
 
     rsx! {
         drawer::DrawerClose { attributes: merged, r#as: props.r#as, {props.children} }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[component]
+    fn DrawerWithCallerClass() -> Element {
+        rsx! {
+            Drawer {
+                default_open: true,
+                DrawerContent { class: "caller-class".to_string(), "body" }
+            }
+        }
+    }
+
+    #[component]
+    fn DrawerWithoutCallerClass() -> Element {
+        rsx! {
+            Drawer {
+                default_open: true,
+                DrawerContent { "body" }
+            }
+        }
+    }
+
+    /// Renders `app` and lets the primitive's open effect (`use_animated_open`) run, which is
+    /// what puts the drawer's content in the DOM: it is absent from the first pass.
+    fn render_open(app: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(app);
+        dom.rebuild_in_place();
+        // First pass: the effect flips `show_in_dom`. Second: the content renders.
+        dom.process_events();
+        dom.render_immediate_to_vec();
+        dioxus_ssr::render(&dom)
+    }
+
+    /// The `class` forwarding regression: the themed wrapper passed `class: None`
+    /// to the primitive, so a caller's own class never reached the element.
+    #[test]
+    fn caller_class_and_theme_class_both_render_on_the_drawer_content() {
+        let html = render_open(DrawerWithCallerClass);
+
+        assert!(
+            html.contains(r#"class="dx-drawer caller-class""#),
+            "a caller's class must extend, not replace, the theme's `dx-drawer`: {html}"
+        );
+    }
+
+    #[test]
+    fn theme_class_alone_renders_when_caller_sets_no_class() {
+        let html = render_open(DrawerWithoutCallerClass);
+
+        assert!(html.contains(r#"class="dx-drawer""#), "{html}");
+        // The primitive's own `dx-dialog` fallback must not leak in beside it.
+        assert!(!html.contains("dx-dialog"), "{html}");
     }
 }

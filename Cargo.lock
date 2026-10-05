@@ -2472,6 +2472,7 @@ dependencies = [
  "palette",
  "serde",
  "time",
+ "tokio",
  "tracing",
 ]
 

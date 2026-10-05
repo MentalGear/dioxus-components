@@ -240,12 +240,12 @@ const SURFACES: Surface[] = [
       await expect(page.locator('.dx-popover-content[data-state="open"]')).toBeVisible();
     },
     wrapper: (page) => page.locator('.dx-popover-content[data-state="open"]'),
-    // The demo's "Delete Item?" heading -- this file's own second instance
-    // fix gives it the `.dx-popover-content-title` class so it actually
-    // picks up that class's declared color (a separate, non-inherited
-    // fix); still asserted against the shared ink token here since that's
-    // also `.dx-popover-content-title`'s own declared value.
-    text: (page) => page.getByText("Delete Item?"),
+    // The demo's "Dimensions" heading (`PopoverTitle`, `.dx-popover-title`). The demo used to be a
+    // "Delete Item?" confirm stack; the popover lane (round 2, 2026-10-04) replaced it with shadcn's
+    // Dimensions form. The heading still has to pick up its class's declared color (a separate,
+    // non-inherited fix); still asserted against the shared ink token here since that's also
+    // `.dx-popover-title`'s own declared value.
+    text: (page) => page.locator(".dx-popover-content .dx-popover-title"),
   },
   {
     name: "hover_card",

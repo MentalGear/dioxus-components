@@ -25,6 +25,12 @@
    color, as opposed to `--secondary-color-3/4`'s much higher-contrast foreground-ish gray this
    rule used before (the likely source of the reported "looks different"). */
 .dx-resizable-handle {
+  /* The handle's pointer hit area, measured ACROSS the bar (the 1px line sits in its middle).
+     12px matches the grip's own width, so line + grip are one contiguous drag target; fingers
+     get twice that below. react-resizable-panels' own `hitAreaMargins` default is the same
+     idea (5px a side for a fine pointer, 15px for a coarse one). */
+  --dx-resizable-hit-size: var(--dx-space-3);
+
   position: relative;
   display: flex;
   flex: 0 0 auto;
@@ -49,11 +55,22 @@
   cursor: row-resize;
 }
 
+@media (pointer: coarse) {
+  .dx-resizable-handle {
+    --dx-resizable-hit-size: var(--dx-space-6);
+  }
+}
+
 /* shadcn: the handle's own `after:` hit-area -- a comfortably wide invisible pointer target
-   behind the 1px visible bar (`after:absolute after:inset-y-0 after:left-1/2 after:w-1
-   after:-translate-x-1/2`). */
+   centered on the 1px visible bar (`after:absolute after:inset-y-0 after:left-1/2 after:w-1
+   after:-translate-x-1/2`), widened from shadcn's 4px so the whole visible handle (line AND
+   grip) is grabbable, not just the hairline. It is a pseudo-element OF the handle, so a
+   pointerdown on it targets the handle div that owns the drag listener. `z-index` keeps it above
+   a neighbouring panel's own positioned content (otherwise the later sibling paints over half
+   of it and eats the drag). */
 .dx-resizable-handle::after {
   position: absolute;
+  z-index: var(--dx-z-local-sm);
   top: 0;
   bottom: 0;
 
@@ -63,7 +80,7 @@
      direction concept -- see dialog/style.css's identical left:50%+
      translate centering note. */
   left: 50%;
-  width: var(--dx-space-1);
+  width: var(--dx-resizable-hit-size);
   content: "";
   transform: translateX(-50%); /* rtl-physical: see comment above */
 }
@@ -72,7 +89,7 @@
    after:w-full after:-translate-y-1/2` -- the hit area rotates onto the other axis. */
 .dx-resizable-handle[data-orientation="vertical"]::after {
   width: 100%;
-  height: var(--dx-space-1);
+  height: var(--dx-resizable-hit-size);
   inset: 50% 0 auto;
   transform: translateY(-50%);
 }
@@ -112,9 +129,12 @@
   background: var(--dx-border);
   color: var(--dx-muted-foreground);
 
-  /* Purely decorative -- the handle div itself (not the grip) carries the interactive
-     role/handlers, so a pointer landing on the grip must fall through to it. */
-  pointer-events: none;
+  /* NOT `pointer-events: none`: the grip is a child of the handle div that carries the
+     role/handlers, so a pointerdown on it must BUBBLE to that div (as in shadcn, where the grip
+     is a plain child too). `none` does not "fall through to the parent" -- it makes the grip
+     invisible to hit-testing, so the point lands on whatever is geometrically behind it (the
+     neighbouring panel) and the 12px grip dragged only across the few px its handle's strip
+     happened to cover. The cursor is inherited from the handle (col-/row-resize). */
   transform: translate(-50%, -50%); /* rtl-physical: see comment above */
 }
 

@@ -62,6 +62,47 @@ ContextMenuContent {
 }
 ```
 
+## Checkbox and radio items
+
+`ContextMenuCheckboxItem` and `ContextMenuRadioGroup` + `ContextMenuRadioItem` are shadcn's
+`ContextMenuCheckboxItem`/`ContextMenuRadioGroup`/`ContextMenuRadioItem`. They render
+`role="menuitemcheckbox"` / `role="menuitemradio"` with an always-present
+`aria-checked`; radio items sit in a `role="group"` (name it with
+`aria-label` or `aria-labelledby`). They work in a `ContextMenuContent` and in a `ContextMenuSubContent`.
+
+```rust
+ContextMenuContent {
+    ContextMenuCheckboxItem {
+        // Items are ordered by `index`, like plain items.
+        index: 0,
+        // Controlled: `checked` + `on_checked_change`. Uncontrolled:
+        // `default_checked` -- but note the content unmounts when the menu
+        // closes, so an uncontrolled item starts over on every open.
+        checked: Some(show_status_bar()),
+        on_checked_change: move |checked| show_status_bar.set(checked),
+        // Selecting closes the menu by default (Radix's `onSelect` default).
+        // `false` keeps it open so several items can be toggled in one visit.
+        close_on_select: false,
+        // A checkbox item has no `value`: set `text_value` to make it a
+        // typeahead target.
+        text_value: "Status Bar",
+        "Status Bar"
+    }
+    ContextMenuRadioGroup {
+        aria_label: "Panel position",
+        value: Some(position()),
+        on_value_change: move |value| position.set(value),
+        // A radio item's `value` is also its typeahead label.
+        ContextMenuRadioItem { index: 1, value: "top".to_string(), "Top" }
+        ContextMenuRadioItem { index: 2, value: "bottom".to_string(), "Bottom" }
+    }
+}
+```
+
+Click, `Enter` and `Space` all select. A disabled item cannot be selected and
+is skipped by arrow keys and typeahead. The check is drawn at the inline end, in a slot the item reserves (the same `--dx-menu-item-indicator-*` construction as the sub-trigger chevron), so a long label never meets it and an unchecked item does not shift its label. See the `checkboxes` and
+`radio_group` variants.
+
 ## Direction / RTL
 
 `ContextMenu` accepts a `dir: Option<Direction>` prop, inherited by every `ContextMenuSub`. Same open/close-key and side flip as `DropdownMenu`'s -- see that component's note. See the `rtl` variant.

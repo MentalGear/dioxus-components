@@ -1,43 +1,34 @@
-/* Sheet Root -- shadcn/ui v4's `SheetOverlay` (`fixed inset-0 z-50
- * bg-black/50`, fading in/out with `data-[state]`). This is also the
- * non-web (Blitz) arm's own overlay element, since that arm's `.dx-sheet`
- * is a plain `div` with no native backdrop -- see the `:has(> dialog)` rule
- * and the `.dx-sheet::backdrop` block below for why the web arm's tint
- * moves off of this element once a real `<dialog>` exists. */
+/* Sheet Root -- the wrapper `div` around the panel. On the web arm
+ * (`<dialog>` + `showModal()`, a direct child of this element --
+ * primitives/src/dialog.rs's `DialogContentModal`) it paints nothing: the scrim
+ * is the dialog's own `::backdrop` (the shared block below) and this element
+ * only holds the `<dialog>` and its animation times `use_animated_open`'s
+ * unmount hold. Every other combination (`is_modal: false`, or the non-web/Blitz
+ * build) renders `.dx-sheet` as a plain `div` with no top layer and no
+ * `::backdrop`, so there this element IS the scrim, from the same tokens --
+ * shadcn's `SheetOverlay` (`fixed inset-0 z-50`, fading with `data-[state]`). */
 .dx-sheet-root {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  background: rgb(0 0 0 / 50%);
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
-/* Web arm only: `.dx-sheet` is a real `<dialog>` (a direct child of this
- * element -- primitives/src/dialog.rs's `DialogContentModal`, `feature =
- * "web"`), shown via `showModal()`. That promotes it into the browser's top
- * layer with its own native `::backdrop` pseudo-element, which now carries
- * the `bg-black/50` treatment (below) -- so this element's own manual tint
- * is suppressed here, purely to avoid stacking two semi-transparent black
- * layers into a visibly darker ~75% tint. Confirmed live before this fix:
- * Chromium's own UA default for an unstyled `dialog::backdrop` is already
- * `rgba(0 0 0 / 10%)`, so the un-suppressed pairing was already rendering
- * ~55% instead of the intended 50% on this arm. Every other combination
- * (`is_modal: false` on any target, or the non-web/Blitz build regardless
- * of `is_modal`) renders `.dx-sheet` as a plain `div` -- no `::backdrop`
- * pseudo-element is ever generated for those, so this selector simply never
- * matches and this element keeps its own tint, unchanged. */
 .dx-sheet-root:has(> dialog) {
+  backdrop-filter: none;
   background: transparent;
 }
 
 .dx-sheet-root[data-state="closed"] {
-  animation: dx-sheet-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-sheet-root-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
 }
 
 .dx-sheet-root[data-state="open"] {
-  animation: dx-sheet-root-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+  animation: dx-sheet-root-in var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
 }
 
 @keyframes dx-sheet-root-in {
@@ -60,30 +51,54 @@
   }
 }
 
-/* The web arm's real `::backdrop` (see the `:has(> dialog)` comment above) --
- * same `bg-black/50` treatment and the same fade keyframes as
- * `.dx-sheet-root`, just applied to the pseudo-element that actually paints
- * on this arm. Reuses `dx-sheet-root-in`/`-out` rather than duplicating them:
- * the animation is identical, only the element differs. The `[data-state]`
- * attribute lives on `.dx-sheet-root` (a sibling ancestor of the `<dialog>`
- * in the light DOM, not the backdrop itself), so it's read via the same
- * descendant-selector pattern the slide animations below already use. */
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
+ * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts.
+ *
+ * The dialog's own top-layer `::backdrop` is the only thing that paints the
+ * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
+ * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
+ * timings) and, alone on Popover and Sheet, snapped in and out with no
+ * transition at all. It fades in via `@starting-style` and out via
+ * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
+ * from the top layer synchronously and the `::backdrop` goes with it, so
+ * without that keep-alive no exit transition could ever play. In and out are
+ * one `transition`, so they cannot differ in length. Engines without
+ * `overlay` transitions keep the old snap-out; nothing else changes.
+ *
+ * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
+ * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
 .dx-sheet::backdrop {
-  background: rgb(0 0 0 / 50%);
-  opacity: 0;
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-.dx-sheet-root[data-state="open"] .dx-sheet::backdrop {
-  animation: dx-sheet-root-in var(--dx-motion-duration-base) var(--dx-motion-ease-out) forwards;
+.dx-sheet[open]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
 }
 
-/* KNOWN GAP, same mechanism and same construction as the slide-out comment
- * further down: closing calls `dialog.close()` immediately, which tears
- * down the native backdrop synchronously -- this close-fade is defined for
- * symmetry and so it starts working for free if that gap is ever closed at
- * the primitives level, but it does not currently get a chance to play. */
-.dx-sheet-root[data-state="closed"] .dx-sheet::backdrop {
-  animation: dx-sheet-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+@starting-style {
+  .dx-sheet[open]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-sheet,
+  .dx-sheet::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-sheet-root {
+    animation-duration: var(--dx-motion-duration-reduced);
+  }
 }
 
 /* Chromium's UA stylesheet ships `dialog:modal { position: fixed; inset: 0;
@@ -130,6 +145,12 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   gap: var(--dx-space-4);
   inset: 0;
+
+  /* The `overlay` entry is what keeps a closing sheet -- and with it the
+   * `::backdrop` fade above -- in the top layer while the slide-out below plays,
+   * so it is as long as that slide-out (`--dx-motion-duration-slower`), not the
+   * scrim's own (shorter) token. */
+  transition: overlay var(--dx-motion-duration-slower) allow-discrete;
   will-change: transform;
 }
 
@@ -214,25 +235,14 @@
   animation: dx-slide-in-bottom 500ms ease-in-out forwards;
 }
 
-/* KNOWN GAP (docs/plan.md Phase 4.2; same treatment as docs/backlog.md row
- * 19's Popover close-fade): on the web arm, `.dx-sheet` is now the modal
- * Dialog's real `<dialog>` element. Closing calls `dialog.close()`
- * immediately (`crate::use_dialog_open_driver`), which the UA's own
- * `dialog:not([open]) { display: none }` rule applies synchronously --
- * before `use_animated_open`'s ~150-250ms unmount-hold delay (based on the
- * *root* wrapper's own fade animation, a sibling in the DOM, unaffected)
- * has elapsed. The four slide-out animations below are defined on `.dx-sheet`
- * itself, so they no longer get to play on close: the panel now disappears
- * instantly instead of sliding out. The overlay/backdrop close-fade is the
- * same story on this arm (see the `::backdrop` block above) -- only
- * `.dx-sheet-root`'s OWN fade (invisible here now that its background is
- * transparent behind a real `<dialog>`, but still the entire visible
- * overlay on the non-web/Blitz arm) is a sibling in the DOM and unaffected,
- * still playing in full there. Purely cosmetic; not fixed in this slice for
- * the same reason row 19 wasn't -- it would need `use_animated_open`-style
- * coordination with the browser's own close event, out of scope here.
- * Native (Blitz) arm unaffected (plain `div`, no `<dialog>`). No oracle rule
- * currently checks animation duration. */
+/* Exit slide. On the web arm `.dx-sheet` is the modal Dialog's real `<dialog>`
+ * and `close()` runs the moment `open` goes false, but the slide-out below still
+ * plays: this stylesheet's own `display: flex` beats the UA's
+ * `dialog:not([open]) { display: none }`, so the closed dialog stays rendered
+ * until `use_animated_open` unmounts it (measured, not assumed). What `close()`
+ * does take away immediately is the top layer -- and the `::backdrop` with it --
+ * which the `overlay` entry on `.dx-sheet` above now holds for the slide's
+ * length. The old "known gap" here (backdrop snapping off) is closed by that. */
 .dx-sheet-root[data-state="closed"] .dx-sheet[data-side="right"] {
   animation: dx-slide-out-right var(--dx-motion-duration-slower) ease-in-out forwards;
 }

@@ -46,14 +46,35 @@
 //!   a coincidental lookalike -- confirmed by reading both components in
 //!   full during the stage-1 pass that added `navbar.rs` to this module's
 //!   consumers, rather than assumed from the matching literal alone.
-//! - `menuitemcheckbox` / `menuitemradio` -- APG permits these as item roles
-//!   in a menu (`content/patterns/menubar/menu-and-menubar-pattern.html`,
-//!   "WAI-ARIA Roles, States, and Properties": item roles are "menuitem",
-//!   "menuitemcheckbox", or "menuitemradio"), but none of `DropdownMenu`,
-//!   `ContextMenu`, `Menubar`, or `Navbar` has a checkable-item variant in
-//!   this crate today (verified: no `CheckboxItem`/`RadioItem`/`checked`
-//!   prop on any of their item types) -- there is nothing to route through
-//!   this module for those roles yet.
+//! - `navbar`'s items. `Navbar` is a *navigation* menu: its items are links
+//!   (`NavbarItem`), never checkable, so [`MENU_ITEM_CHECKBOX_ROLE`] /
+//!   [`MENU_ITEM_RADIO_ROLE`] are not offered to it.
+//!
+//! # Checkable items
+//!
+//! APG permits `menuitemcheckbox` / `menuitemradio` as item roles in a menu
+//! (`content/patterns/menubar/menu-and-menubar-pattern.html`, "WAI-ARIA
+//! Roles, States, and Properties": "The items contained in a menu ... have
+//! any of the following roles: menuitem, menuitemcheckbox, menuitemradio",
+//! and "When a menuitemcheckbox or menuitemradio is checked, aria-checked is
+//! set to true"; same pinned commit as below). WAI-ARIA 1.2 makes
+//! `aria-checked` *required* on both roles, and says "If a menu or menubar
+//! contains more than one group of menuitemradio elements, or if the menu
+//! contains one group and other, unrelated menu items, authors SHOULD
+//! contain each set of related menuitemradio elements in an element using
+//! the group role" (<https://www.w3.org/TR/wai-aria-1.2/#menuitemradio>).
+//!
+//! `DropdownMenu`, `ContextMenu` and `Menubar` each have a `*CheckboxItem`
+//! and a `*RadioGroup`/`*RadioItem` (shadcn's `CheckboxItem`/`RadioGroup`/
+//! `RadioItem`), all built once in [`crate::menu_item`] and routed through
+//! [`MENU_ITEM_CHECKBOX_ROLE`], [`MENU_ITEM_RADIO_ROLE`] and
+//! [`MENU_GROUP_ROLE`] below, so "a menu item is checkable" has exactly one
+//! definition: `role` is owned by the primitive (never by the caller),
+//! `aria-checked` is always present (`"true"`/`"false"`, never absent), and
+//! a plain `*Item` stays `role="menuitem"` with no `aria-checked` at all.
+//! `oracle/tier1-apg/menu-roles.spec.ts` grades both halves: the checkable
+//! roles are legal exactly where a checkable item is rendered, and nowhere
+//! else.
 
 /// The `role` for a menu pattern's popup content container.
 ///
@@ -69,10 +90,35 @@ pub(crate) const MENU_ROLE: &str = "menu";
 /// The `role` for an activatable item inside a [`MENU_ROLE`] container.
 ///
 /// Same APG section: "The items contained in a menu ... have any of the
-/// following roles: `menuitem`, `menuitemcheckbox`, `menuitemradio`." This
-/// module only has `menuitem` to offer (see the module doc's "Scope"
-/// section for why the other two are out of scope here).
+/// following roles: `menuitem`, `menuitemcheckbox`, `menuitemradio`." This is
+/// the plain action item; the other two are [`MENU_ITEM_CHECKBOX_ROLE`] and
+/// [`MENU_ITEM_RADIO_ROLE`].
 pub(crate) const MENU_ITEM_ROLE: &str = "menuitem";
+
+/// The `role` for a checkable item inside a [`MENU_ROLE`] container that
+/// toggles on/off independently of its siblings.
+///
+/// WAI-ARIA 1.2 makes `aria-checked` a required state on this role
+/// (`true`, `false` or `mixed`) -- this crate always emits `true`/`false`,
+/// never omits it. A plain action item must NEVER carry this role: an
+/// assistive technology announces "checkbox, not checked" for it, which is a
+/// lie when activating the item runs a command.
+pub(crate) const MENU_ITEM_CHECKBOX_ROLE: &str = "menuitemcheckbox";
+
+/// The `role` for a checkable item inside a [`MENU_ROLE`] container that is
+/// one of a mutually exclusive set (exactly one `aria-checked="true"` per
+/// [`MENU_GROUP_ROLE`] group).
+pub(crate) const MENU_ITEM_RADIO_ROLE: &str = "menuitemradio";
+
+/// The `role` for the element that groups a set of [`MENU_ITEM_RADIO_ROLE`]
+/// items, so assistive technology reads them as one mutually exclusive set.
+///
+/// WAI-ARIA 1.2, `menuitemradio`: menu item radios "are owned by an element
+/// with role menu or menubar, or by a role group which itself is owned by an
+/// element with role menu or menubar", and a group SHOULD wrap each set of
+/// related radios when the menu holds more than one set or other unrelated
+/// items (<https://www.w3.org/TR/wai-aria-1.2/#menuitemradio>).
+pub(crate) const MENU_GROUP_ROLE: &str = "group";
 
 /// The `aria-haspopup` token for a trigger that opens a [`MENU_ROLE`] popup.
 ///

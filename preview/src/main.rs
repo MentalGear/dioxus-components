@@ -45,6 +45,9 @@ mod chart_tooltip_parity;
 mod charts_gallery;
 mod components;
 mod dashboard;
+// Client builds only: the server keeps `ServerDocument` for the SSR `<head>` (see the module's docs).
+#[cfg(not(feature = "server"))]
+mod eager_head;
 mod installed_source;
 #[cfg(test)]
 mod polar_parity;
@@ -191,6 +194,14 @@ fn server_static_routes() -> Vec<String> {
 
 #[component]
 pub fn App() -> Element {
+    // Insert every `document::Link`/`Stylesheet`/`Meta` into `<head>` as it renders, not from an effect
+    // that a same-turn teardown drops while Dioxus's de-duplication still counts the link as present
+    // (the legacy `/component/?name=X` shell lost the header's `LanguageSelect`/`Popover` CSS that way).
+    // First, so it is in place before any component can render a link. Client builds only: the server's
+    // `ServerDocument` must keep collecting the SSR head. See `eager_head`.
+    #[cfg(not(feature = "server"))]
+    eager_head::use_eager_head_document();
+
     use_init_i18n(|| {
         I18nConfig::new(langid!("en-US"))
             .with_locale((langid!("en-US"), include_str!("i18n/en-US.ftl")))
@@ -419,15 +430,20 @@ impl Route {
 /// the redirect transition) rather than erroring, a hydration-adjacent
 /// silent-CSS-loss defect of the exact same *class* `oracle/tier2-html/
 /// global-stylesheet.spec.ts` already exists to catch for the `@import`
-/// case. Root cause: `document::Link`'s own head-tag bookkeeping does not
-/// re-insert a href it believes is already present, and unmounting the
-/// FIRST `GlobalHead` instance (when the "from" route's tree is torn down)
-/// does not clear that bookkeeping, so the SECOND instance's identical
-/// `document::Link`s silently no-op. Fixed by construction, not by patching
-/// each call site: `GlobalHead` now mounts exactly once, here, and simply
-/// never unmounts for the lifetime of the app, so there is no unmount+
-/// remount pair for the bug to trigger on, regardless of which route
-/// transitions to which. Subsumes all three prior call sites
+/// case. Root cause (corrected 2026-10-04, see `eager_head`'s module docs):
+/// `document::Link` records its href in a de-duplication set while it
+/// RENDERS but only appends the `<link>` from an effect queued on its own
+/// scope, and a removed scope's queued effects are dropped -- so the FIRST
+/// `GlobalHead` instance, torn down by the redirect in the turn it first
+/// rendered, never inserted anything, and the SECOND instance's identical
+/// `document::Link`s were skipped as duplicates of links that were never
+/// there. (Unmounting does not remove head elements, so the sheets could
+/// only have been absent because they were never inserted.) This layout's
+/// once-only mount fixes that instance for these four sheets; the class --
+/// every other component's link on any torn-down subtree -- is fixed by
+/// `eager_head`, installed in `App`. `GlobalHead` now mounts exactly once,
+/// here, and simply never unmounts for the lifetime of the app.
+/// Subsumes all three prior call sites
 /// (`NavigationLayout`, `ComponentBlockDemo`/`ComponentBlockDemoPath`,
 /// `EmailClientDashboard`); does not need a matching fix for
 /// `NavigationLayout`'s own `hero.css` link, which stays where it is --
@@ -579,6 +595,7 @@ fn Navbar() -> Element {
                             height: "22",
                         }
                     }
+                    theme::ThemePicker {}
                     theme::DarkModeToggle {}
                     LanguageSelect {}
                 }
@@ -1330,6 +1347,12 @@ fn DocsLayout(
                             }
                         }
                     }
+                    // The theme picker's phone entry: a "Theme" button pinned under the
+                    // scrolling nav that opens the picker as a bottom `Drawer`. Always
+                    // rendered; `main.css` shows it only at the header's phone breakpoint
+                    // (the header's own popover trigger is hidden there) -- see
+                    // `theme::ThemePicker`'s doc for why that is CSS and not a Rust check.
+                    theme::ThemePickerSidebarFooter {}
                 }
                 SidebarInset { {children} }
             }
@@ -1956,6 +1979,11 @@ fn GlobalHead() -> Element {
         }
         document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
         document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }
+        // Optional effects (`dx-scroll-fade`, `dx-shimmer`) the chat kit (attachment, marker) uses.
+        document::Link { rel: "stylesheet", href: asset!("/assets/dx-effects.css") }
+        // Docs-only: shadcn's theme customizer as `[data-theme-*]` blocks. Never part of the
+        // installable theme (`component.json` ships only the file above); see the file's header.
+        document::Link { rel: "stylesheet", href: asset!("/assets/theme-presets.css") }
     }
 }
 
@@ -2253,9 +2281,12 @@ fn WidgetMasonry(heading_id: String) -> Element {
             }
             div { class: "dx-widget-masonry",
                 for entry in BLOCKS {
-                    MasonryCard {
-                        component: move |()| (entry.component)(),
-                        popout: entry.popout,
+                    MasonryCard { popout: entry.popout,
+                        // A real component, never `(entry.component)()`: see `MasonryCard`.
+                        {
+                            let Block = entry.component;
+                            rsx! { Block {} }
+                        }
                     }
                 }
             }
@@ -2263,30 +2294,34 @@ fn WidgetMasonry(heading_id: String) -> Element {
     }
 }
 
-/// `component` takes `Callback<(), Element>` rather than a bare
-/// `fn() -> Element`: dioxus's `#[component]` macro derives `PartialEq` for
-/// this function's generated props struct by comparing every field with
-/// `==`, and a raw function-pointer field triggers rustc's
-/// `unpredictable_function_pointer_comparisons` lint from *inside* that
-/// macro-generated `impl PartialEq` -- a separate item the macro emits
-/// itself, so an `#[allow]` on this function (tried first; still present in
-/// history) cannot reach it. `Callback`'s own `PartialEq` compares a
-/// `GenerationalBox` pointer + `ScopeId` instead of a function pointer, so
-/// routing the prop through it (the crate's own idiom for this, used by
-/// every other dynamic-render/event prop in this codebase, e.g.
-/// `on_change: Callback<bool, ()>`) sidesteps the lint by construction
-/// instead of suppressing it.
+/// Wraps one showcase block. The block arrives as `children`, built by
+/// `WidgetMasonry` as a component element (`Block {}`), so every block owns a
+/// scope and its hooks live in it.
+///
+/// It must NOT be passed as a `Callback<(), Element>` that this component then
+/// invokes (`component.call(())` around `(entry.component)()`, which is what
+/// this used to do): `Callback::call` runs its closure with the scope it was
+/// CREATED in on top of the stack (dioxus-core `events.rs`, `with_scope_on_stack`),
+/// i.e. `WidgetMasonry`'s, not this card's. A block that calls hooks directly
+/// (`BlockPlayer`, `BlockColorPalette`, `BlockCommand`, `BlockComposer`) then
+/// pushed them onto `WidgetMasonry`'s hook list, whose `hook_index` is only
+/// reset when `WidgetMasonry` itself re-renders (never). Every later re-render of
+/// the card therefore ran those hooks at an index past the end of the list and
+/// allocated a FRESH set (new signal at its initial value, new memo, new
+/// effect) while the old ones lived on, unreachable and never dropped. For
+/// `BlockPlayer` that was a new, never-cleared 100 ms `setInterval` per
+/// re-render (one a second, since each fresh player re-renders when its label
+/// ticks), and the readout never got past 1:24 because every fresh signal
+/// restarted at 84 s (dev-docs/research/scroll-jank-2026-10-04.md, Cause 1).
 #[component]
-fn MasonryCard(component: Callback<(), Element>, #[props(default)] popout: bool) -> Element {
+fn MasonryCard(#[props(default)] popout: bool, children: Element) -> Element {
     let class = if popout {
         "dx-widget-card dx-widget-card-popout"
     } else {
         "dx-widget-card"
     };
     rsx! {
-        div { class,
-            {component.call(())}
-        }
+        div { class, {children} }
     }
 }
 
@@ -2437,35 +2472,21 @@ fn BlockPlayer() -> Element {
     let current_time = use_memo(move || format_track_time(progress_seconds().unwrap_or(0.0)));
     let duration_time = format_track_time(TRACK_DURATION_SECONDS);
 
-    use_effect(move || {
-        let mut timer = document::eval(
-            "setInterval(() => {
-                dioxus.send(performance.now());
-            }, 100);",
-        );
-
-        spawn(async move {
-            let mut last_tick_ms: Option<f64> = None;
-
-            while let Ok(now_ms) = timer.recv::<f64>().await {
-                let elapsed_seconds = last_tick_ms
-                    .map(|last_ms| ((now_ms - last_ms) / 1000.0).clamp(0.0, 0.25))
-                    .unwrap_or(0.0);
-                last_tick_ms = Some(now_ms);
-
-                if !playing() {
-                    continue;
-                }
-
-                let current = progress_seconds().unwrap_or(0.0);
-                let next = if current >= TRACK_DURATION_SECONDS {
-                    0.0
-                } else {
-                    (current + elapsed_seconds).min(TRACK_DURATION_SECONDS)
-                };
-                progress_seconds.set(Some(next));
-            }
-        });
+    // One tick per second: the slider has `step: 1.0` and the label shows whole seconds, so a
+    // faster clock only adds main-thread frames (every tick moves the thumb inside the masonry's
+    // multi-column container, which re-lays it out). The timer is owned by this component and
+    // dies with it (`use_interval`); the tick reads through `.peek()` and writes with `.set()`.
+    dioxus_primitives::interval::use_interval(std::time::Duration::from_secs(1), move || {
+        if !*playing.peek() {
+            return;
+        }
+        let current = progress_seconds.peek().unwrap_or(0.0);
+        let next = if current >= TRACK_DURATION_SECONDS {
+            0.0
+        } else {
+            (current + 1.0).min(TRACK_DURATION_SECONDS)
+        };
+        progress_seconds.set(Some(next));
     });
 
     rsx! {

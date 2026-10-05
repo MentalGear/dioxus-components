@@ -1,0 +1,505 @@
+/* Two small, optional, progressive-enhancement effects the chat kit uses
+ * (`attachment`, `marker`): `dx-scroll-fade` and `dx-shimmer`. Plain CSS, no
+ * JavaScript, no scroll listeners. Nothing here is required for a component to
+ * work -- a browser without scroll-driven animations gets a static edge fade, and
+ * one without relative colour syntax gets plain text -- and nothing else in the
+ * theme depends on this file.
+ *
+ * Link it once at your app root next to `dx-components-theme.css` (it reads that
+ * file's `--dx-space-*` tokens, with fallbacks, and its `--light`/`--dark` mode
+ * toggles for the dark-mode shimmer highlight). `attachment` and `marker` list it
+ * in their `component.json` `globalAssets`, so `dx components add` copies it
+ * alongside the theme.
+ *
+ * Ported from shadcn/ui's `scroll-fade` and `shimmer` utilities
+ * (shadcn-ui/ui@295a1f1, `packages/shadcn/src/tailwind.css`, MIT licence,
+ * Copyright (c) 2023 shadcn). Tailwind's `@utility` families (`scroll-fade-24`,
+ * `shimmer-color-blue-500/60`, ...) have no plain-CSS equivalent, so the numeric
+ * and colour modifiers become custom properties (set them inline or on a class
+ * of your own); everything is renamed into this library's `dx-` namespace so it
+ * cannot collide with a host app.
+ *
+ * ---------------------------------------------------------------------------
+ * scroll-fade -- a scroll-aware edge mask on a scroll container.
+ *
+ *   .dx-scroll-fade / .dx-scroll-fade-y   both block edges of an `overflow-y` box
+ *   .dx-scroll-fade-x                     both inline edges of an `overflow-x`
+ *                                         box; follows the reading direction
+ *   .dx-scroll-fade-t / -b                one physical block edge
+ *   .dx-scroll-fade-l / -r                one physical inline edge
+ *   .dx-scroll-fade-s / -e                one logical inline edge (mirrors in RTL)
+ *   .dx-scroll-fade-none                  turn it off (works in any class order)
+ *
+ *   --dx-scroll-fade-size                 depth of every fade (default: 12% of the
+ *                                         box, capped at --dx-space-10 = 40px)
+ *   --dx-scroll-fade-{t,b,s,e}-size       depth of one edge (overrides the above)
+ *   --dx-scroll-fade-reveal               scroll distance over which a fade eases
+ *                                         in or out (default 96px)
+ *
+ * The fade dissolves the content with `mask-image`, so it adapts to any
+ * background. At rest the start edge is crisp and the end edge fades to hint at
+ * more content; scrolling fades the start edge in and, at the end, the end edge
+ * sharpens. No overflow, no fade. Put the border/background on a wrapper and the
+ * class on the inner scroller, so the mask dissolves the content and not the
+ * card. A visible scrollbar fades with the content; pair it with
+ * `scrollbar-width: none` to hide it.
+ * ---------------------------------------------------------------------------
+ */
+
+@property --dx-scroll-fade-t {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dx-scroll-fade-b {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dx-scroll-fade-s {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dx-scroll-fade-e {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dx-scroll-fade-mask {
+  syntax: "*";
+  inherits: false;
+}
+
+@keyframes dx-scroll-fade-reveal-t {
+  from {
+    --dx-scroll-fade-t: 0px;
+  }
+
+  to {
+    --dx-scroll-fade-t: var(
+      --_dx-scroll-fade-size-t,
+      var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+    );
+  }
+}
+
+@keyframes dx-scroll-fade-reveal-b {
+  from {
+    --dx-scroll-fade-b: var(
+      --_dx-scroll-fade-size-b,
+      var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+    );
+  }
+
+  to {
+    --dx-scroll-fade-b: 0px;
+  }
+}
+
+@keyframes dx-scroll-fade-reveal-s {
+  from {
+    --dx-scroll-fade-s: 0px;
+  }
+
+  to {
+    --dx-scroll-fade-s: var(
+      --_dx-scroll-fade-size-s,
+      var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+    );
+  }
+}
+
+@keyframes dx-scroll-fade-reveal-e {
+  from {
+    --dx-scroll-fade-e: var(
+      --_dx-scroll-fade-size-e,
+      var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+    );
+  }
+
+  to {
+    --dx-scroll-fade-e: 0px;
+  }
+}
+
+/* Resolved depth per edge: the edge-specific property, else the shared one, else
+ * the default. Declared on every utility so each one is self-contained. */
+.dx-scroll-fade,
+.dx-scroll-fade-y,
+.dx-scroll-fade-t,
+.dx-scroll-fade-b {
+  --_dx-scroll-fade-size-t: var(
+    --dx-scroll-fade-t-size,
+    var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+  );
+  --_dx-scroll-fade-size-b: var(
+    --dx-scroll-fade-b-size,
+    var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+  );
+}
+
+.dx-scroll-fade-x,
+.dx-scroll-fade-l,
+.dx-scroll-fade-r,
+.dx-scroll-fade-s,
+.dx-scroll-fade-e {
+  --_dx-scroll-fade-size-s: var(
+    --dx-scroll-fade-s-size,
+    var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+  );
+  --_dx-scroll-fade-size-e: var(
+    --dx-scroll-fade-e-size,
+    var(--dx-scroll-fade-size, min(12%, var(--dx-space-10, 2.5rem)))
+  );
+}
+
+/* Both edges of one axis: the mask reads `--dx-scroll-fade-block`/`-inline`, so
+ * `.dx-scroll-fade-none` (which sets `--dx-scroll-fade-mask`) can override it. */
+.dx-scroll-fade,
+.dx-scroll-fade-y {
+  --dx-scroll-fade-block: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--dx-scroll-fade-t, 0px),
+    #000 calc(100% - var(--dx-scroll-fade-b, 0px)),
+    transparent 100%
+  );
+
+  mask-image: var(--dx-scroll-fade-mask, var(--dx-scroll-fade-block));
+  -webkit-mask-image: var(--dx-scroll-fade-mask, var(--dx-scroll-fade-block));
+}
+
+.dx-scroll-fade-x {
+  --dx-scroll-fade-inline: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--dx-scroll-fade-s, 0px),
+    #000 calc(100% - var(--dx-scroll-fade-e, 0px)),
+    transparent 100%
+  );
+
+  mask-image: var(--dx-scroll-fade-mask, var(--dx-scroll-fade-inline));
+  -webkit-mask-image: var(--dx-scroll-fade-mask, var(--dx-scroll-fade-inline));
+}
+
+.dx-scroll-fade-x:where([dir="rtl"], [dir="rtl"] *) {
+  --dx-scroll-fade-inline: linear-gradient(
+    to left,
+    transparent 0,
+    #000 var(--dx-scroll-fade-s, 0px),
+    #000 calc(100% - var(--dx-scroll-fade-e, 0px)),
+    transparent 100%
+  );
+}
+
+/* One edge: the utility sets the mask itself. */
+.dx-scroll-fade-t {
+  --dx-scroll-fade-mask: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--dx-scroll-fade-t, 0px),
+    #000 100%
+  );
+}
+
+.dx-scroll-fade-b {
+  --dx-scroll-fade-mask: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - var(--dx-scroll-fade-b, 0px)),
+    transparent 100%
+  );
+}
+
+.dx-scroll-fade-l {
+  --dx-scroll-fade-mask: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--dx-scroll-fade-s, 0px),
+    #000 100%
+  );
+}
+
+.dx-scroll-fade-r {
+  --dx-scroll-fade-mask: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - var(--dx-scroll-fade-e, 0px)),
+    transparent 100%
+  );
+}
+
+.dx-scroll-fade-s {
+  --dx-scroll-fade-mask: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--dx-scroll-fade-s, 0px),
+    #000 100%
+  );
+}
+
+.dx-scroll-fade-e {
+  --dx-scroll-fade-mask: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - var(--dx-scroll-fade-e, 0px)),
+    transparent 100%
+  );
+}
+
+.dx-scroll-fade-s:where([dir="rtl"], [dir="rtl"] *) {
+  --dx-scroll-fade-mask: linear-gradient(
+    to left,
+    transparent 0,
+    #000 var(--dx-scroll-fade-s, 0px),
+    #000 100%
+  );
+}
+
+.dx-scroll-fade-e:where([dir="rtl"], [dir="rtl"] *) {
+  --dx-scroll-fade-mask: linear-gradient(
+    to left,
+    #000 0,
+    #000 calc(100% - var(--dx-scroll-fade-e, 0px)),
+    transparent 100%
+  );
+}
+
+.dx-scroll-fade-t,
+.dx-scroll-fade-b,
+.dx-scroll-fade-l,
+.dx-scroll-fade-r,
+.dx-scroll-fade-s,
+.dx-scroll-fade-e {
+  mask-image: var(--dx-scroll-fade-mask);
+  -webkit-mask-image: var(--dx-scroll-fade-mask);
+}
+
+/* The mask is the intersection of the two edge gradients. */
+.dx-scroll-fade,
+.dx-scroll-fade-y,
+.dx-scroll-fade-x,
+.dx-scroll-fade-t,
+.dx-scroll-fade-b,
+.dx-scroll-fade-l,
+.dx-scroll-fade-r,
+.dx-scroll-fade-s,
+.dx-scroll-fade-e {
+  mask-composite: intersect;
+  mask-repeat: no-repeat;
+  -webkit-mask-composite: source-in;
+  -webkit-mask-repeat: no-repeat;
+}
+
+/* Scroll-aware: each fade is driven by the scroller's own scroll position. */
+@supports (animation-timeline: scroll()) {
+  .dx-scroll-fade,
+  .dx-scroll-fade-y {
+    animation:
+      dx-scroll-fade-reveal-t 1ms ease-in-out,
+      dx-scroll-fade-reveal-b 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range:
+      0 var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem)),
+      calc(100% - var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem))) 100%;
+    animation-timeline: scroll(self y), scroll(self y);
+  }
+
+  .dx-scroll-fade-x {
+    animation:
+      dx-scroll-fade-reveal-s 1ms ease-in-out,
+      dx-scroll-fade-reveal-e 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range:
+      0 var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem)),
+      calc(100% - var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem))) 100%;
+    animation-timeline: scroll(self inline), scroll(self inline);
+  }
+
+  .dx-scroll-fade-t {
+    animation: dx-scroll-fade-reveal-t 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: 0 var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem));
+    animation-timeline: scroll(self y);
+  }
+
+  .dx-scroll-fade-b {
+    animation: dx-scroll-fade-reveal-b 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: calc(100% - var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem))) 100%;
+    animation-timeline: scroll(self y);
+  }
+
+  .dx-scroll-fade-l {
+    animation: dx-scroll-fade-reveal-s 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: 0 var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem));
+    animation-timeline: scroll(self x);
+  }
+
+  .dx-scroll-fade-r {
+    animation: dx-scroll-fade-reveal-e 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: calc(100% - var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem))) 100%;
+    animation-timeline: scroll(self x);
+  }
+
+  .dx-scroll-fade-s {
+    animation: dx-scroll-fade-reveal-s 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: 0 var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem));
+    animation-timeline: scroll(self inline);
+  }
+
+  .dx-scroll-fade-e {
+    animation: dx-scroll-fade-reveal-e 1ms ease-in-out;
+    animation-fill-mode: both;
+    animation-range: calc(100% - var(--dx-scroll-fade-reveal, var(--dx-space-24, 6rem))) 100%;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+/* No scroll-driven animations: a static fade on the selected edge(s). */
+@supports not (animation-timeline: scroll()) {
+  .dx-scroll-fade,
+  .dx-scroll-fade-y,
+  .dx-scroll-fade-t,
+  .dx-scroll-fade-b {
+    --dx-scroll-fade-t: var(--_dx-scroll-fade-size-t);
+    --dx-scroll-fade-b: var(--_dx-scroll-fade-size-b);
+  }
+
+  .dx-scroll-fade-x,
+  .dx-scroll-fade-l,
+  .dx-scroll-fade-r,
+  .dx-scroll-fade-s,
+  .dx-scroll-fade-e {
+    --dx-scroll-fade-s: var(--_dx-scroll-fade-size-s);
+    --dx-scroll-fade-e: var(--_dx-scroll-fade-size-e);
+  }
+}
+
+/* Declared last so it wins over the edge utilities at equal specificity. */
+.dx-scroll-fade-none {
+  --dx-scroll-fade-mask: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * shimmer -- a sweeping highlight across text (streaming / in-progress status).
+ *
+ *   .dx-shimmer            the effect: `background-clip: text` + a looping sweep
+ *   .dx-shimmer-once       play a single sweep instead of looping
+ *   .dx-shimmer-reverse    sweep the other way (RTL already follows the reading
+ *                          direction)
+ *   .dx-shimmer-none       render the text normally (the stateful off switch)
+ *
+ *   --dx-shimmer-color     highlight colour (default: derived from `currentColor`,
+ *                          brighter in dark mode)
+ *   --dx-shimmer-duration  one sweep (default 2s)
+ *   --dx-shimmer-spread    width of the highlight band (default 3ch + 40px)
+ *   --dx-shimmer-angle     tilt of the band (default 20deg)
+ *
+ * Built on `currentColor`, so it adapts to the element. Relative colour syntax and
+ * `color-mix()` are in every current browser; where they are missing the text can
+ * render transparent, so gate it with `@supports (color: oklch(from white l c h))`
+ * if you target older ones. `prefers-reduced-motion` turns the effect off.
+ * ---------------------------------------------------------------------------
+ */
+
+@property --dx-shimmer-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 20deg;
+}
+
+@property --dx-shimmer-image {
+  syntax: "*";
+  inherits: false;
+}
+
+@property --dx-shimmer-text-fill {
+  syntax: "*";
+  inherits: false;
+}
+
+@keyframes dx-shimmer-sweep {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+.dx-shimmer {
+  --_dx-shimmer-spread: var(--dx-shimmer-spread, calc(3ch + 40px));
+  --_dx-shimmer-base: currentcolor;
+  --_dx-shimmer-highlight: var(
+    --dx-shimmer-color,
+    var(--light, oklch(from currentcolor l c h / calc(alpha * 0.2)))
+      var(
+        --dark,
+        oklch(from currentcolor max(0.8, calc(l + 0.4)) c h / calc(alpha + 0.4))
+      )
+  );
+
+  background-image: var(
+    --dx-shimmer-image,
+    linear-gradient(
+      calc(90deg + var(--dx-shimmer-angle)),
+      var(--_dx-shimmer-base) calc(50% - var(--_dx-shimmer-spread)),
+      color-mix(
+          in oklch,
+          var(--_dx-shimmer-highlight),
+          var(--_dx-shimmer-base) 50%
+        )
+        calc(50% - var(--_dx-shimmer-spread) * 0.5),
+      var(--_dx-shimmer-highlight) 50%,
+      color-mix(
+          in oklch,
+          var(--_dx-shimmer-highlight),
+          var(--_dx-shimmer-base) 50%
+        )
+        calc(50% + var(--_dx-shimmer-spread) * 0.5),
+      var(--_dx-shimmer-base) calc(50% + var(--_dx-shimmer-spread))
+    )
+  );
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-size: calc(200% + var(--_dx-shimmer-spread) * 2) 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: var(--dx-shimmer-text-fill, transparent);
+  animation: dx-shimmer-sweep var(--dx-shimmer-duration, 2s) linear infinite;
+}
+
+.dx-shimmer:where([dir="rtl"], [dir="rtl"] *) {
+  animation-direction: reverse;
+}
+
+.dx-shimmer-once {
+  animation-iteration-count: 1;
+}
+
+.dx-shimmer-reverse {
+  animation-direction: reverse;
+}
+
+.dx-shimmer-none {
+  --dx-shimmer-image: none;
+  --dx-shimmer-text-fill: currentcolor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-shimmer {
+    background-image: none;
+    -webkit-text-fill-color: currentcolor;
+    animation: none;
+  }
+}

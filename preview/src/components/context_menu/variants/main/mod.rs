@@ -10,9 +10,25 @@ use dioxus::prelude::*;
 // added on at index 4 rather than interleaved (unlike `dropdown_menu`'s
 // demo, no context_menu spec depends on which item Home/End treat as
 // first/last, so there is no ordering constraint left to satisfy there).
+//
+// shadcn's own context-menu demo ends with two checkbox items and a radio
+// group ("People"), so they are appended the same way, at indices 5-8 --
+// after everything the specs above pin. They use the primitive's default
+// close behaviour (selecting closes the menu, Radix's `onSelect` default), so
+// this is the demo that shows it; the `checkboxes` and `radio_group` variants
+// show `close_on_select: false`. They are controlled, which a default-closing
+// demo has to be: an uncontrolled item's state lives in the item, and the
+// content unmounts when the menu closes. Their labels start
+// with S/P/C, never D/E, so the typeahead rows in
+// `oracle/tier1-apg/keyboard-matrix.spec.ts` ("d" cycling Duplicate/Delete,
+// "e" landing on Edit) are unaffected; and a checkable item's role is not
+// `menuitem`, so `menu-roles.spec.ts`'s "5 items" count is too.
 #[component]
 pub fn Demo() -> Element {
     let mut selected_item = use_signal(|| None);
+    let mut show_bookmarks = use_signal(|| true);
+    let mut show_full_urls = use_signal(|| false);
+    let mut person = use_signal(|| "pedro".to_string());
 
     rsx! {
         ContextMenu {
@@ -73,6 +89,35 @@ pub fn Demo() -> Element {
                             },
                             "Archive"
                         }
+                    }
+                }
+                ContextMenuCheckboxItem {
+                    index: 5usize,
+                    checked: Some(show_bookmarks()),
+                    on_checked_change: move |checked| show_bookmarks.set(checked),
+                    text_value: "Show Bookmarks",
+                    "Show Bookmarks"
+                }
+                ContextMenuCheckboxItem {
+                    index: 6usize,
+                    checked: Some(show_full_urls()),
+                    on_checked_change: move |checked| show_full_urls.set(checked),
+                    text_value: "Show Full URLs",
+                    "Show Full URLs"
+                }
+                ContextMenuRadioGroup {
+                    aria_label: "People",
+                    value: Some(person()),
+                    on_value_change: move |value| person.set(value),
+                    ContextMenuRadioItem {
+                        index: 7usize,
+                        value: "pedro".to_string(),
+                        "Pedro Duarte"
+                    }
+                    ContextMenuRadioItem {
+                        index: 8usize,
+                        value: "colm".to_string(),
+                        "Colm Tuite"
                     }
                 }
             }

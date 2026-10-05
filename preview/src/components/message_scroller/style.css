@@ -1,0 +1,154 @@
+/* Nova message scroller (shadcn-ui/ui@295a1f1 registry/bases/base/ui/message-scroller.tsx
+ * + registry/styles/style-nova.css `.cn-message-scroller-content`): a frame that
+ * fills its parent, a bounded `overflow-y` viewport with a bottom edge fade, a
+ * `gap-6` transcript column, `content-visibility: auto` rows, and a jump button
+ * that slides and fades out when there is nowhere to scroll.
+ *
+ * The scroll behaviour itself is in the primitive's controller; this file only
+ * paints. It reads three controller-written attributes: `data-pending-scroll`
+ * (the viewport is hidden until the opening position is applied, so a
+ * server-rendered transcript never flashes its oldest rows),
+ * `data-autoscrolling` and the button's `data-active`. */
+.dx-message-scroller {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.dx-message-scroller-viewport {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  contain: content;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+/* Hide the scrollbar thumb while a programmatic scroll to the end animates. */
+.dx-message-scroller-viewport[data-autoscrolling] {
+  scrollbar-color: transparent transparent;
+}
+
+/* The flash guard. The attribute is server-rendered for `end` / `last-anchor`
+ * and removed by the controller once the position is applied. If the controller
+ * never runs (no JavaScript, a failed load) the animation reveals the
+ * transcript anyway after a few seconds rather than leaving it hidden. */
+.dx-message-scroller-viewport[data-pending-scroll] {
+  animation: dx-message-scroller-reveal 0s linear 4s forwards;
+  visibility: hidden;
+}
+
+@keyframes dx-message-scroller-reveal {
+  to {
+    visibility: visible;
+  }
+}
+
+.dx-message-scroller-content {
+  display: flex;
+  height: max-content;
+  min-height: 100%;
+  flex-direction: column;
+  gap: var(--dx-space-6);
+}
+
+/* The tail spacer the controller sizes so an anchored turn can reach the top. */
+.dx-message-scroller-content > [data-message-scroller-spacer] {
+  flex: none;
+}
+
+.dx-message-scroller-item {
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+/* `Virtualization::ContentVisibility` (the default, `data-virtualize` on the
+ * content): the browser skips layout and paint for off-screen rows while they
+ * stay in the DOM, so the accessibility tree and selection still reach every
+ * message (and find-in-page does where the engine searches skipped content:
+ * Chromium, Firefox 125+, Safari 26+; not Safari 18-25). `contain-intrinsic-size: auto` makes it remember a
+ * row's last rendered height. The rows the controller marks `data-keep-rendered`
+ * (the live edge, the row with focus, the rows holding the selection) are never
+ * skipped. Override `--dx-message-scroller-row-estimate` to tune the first-render
+ * height guess. */
+.dx-message-scroller-content[data-virtualize="content-visibility"] > .dx-message-scroller-item:not([data-keep-rendered]) {
+  contain-intrinsic-size: auto var(--dx-message-scroller-row-estimate, 10rem);
+  content-visibility: auto;
+}
+
+/* The jump button. Centred with logical insets (no translateX, so it needs no
+ * RTL flip); `data-active` is written by the controller. The attribute selector
+ * outranks `.dx-button`'s own `transition: all`. */
+.dx-message-scroller-button[data-message-scroller-button] {
+  position: absolute;
+  border-color: var(--dx-border);
+  background-color: var(--dx-background);
+  color: var(--dx-foreground);
+  inset-inline: 0;
+  margin-inline: auto;
+  opacity: 1;
+  scale: 1;
+  transition-duration: var(--dx-motion-duration-slow);
+  transition-property: translate, scale, opacity;
+  transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  translate: 0 0;
+}
+
+.dx-message-scroller-button[data-message-scroller-button]:hover {
+  background-color: var(--dx-muted);
+  color: var(--dx-foreground);
+}
+
+.dx-message-scroller-button[data-direction="end"] {
+  inset-block-end: var(--dx-space-4);
+}
+
+.dx-message-scroller-button[data-direction="start"] {
+  inset-block-start: var(--dx-space-4);
+}
+
+.dx-message-scroller-button[data-direction="start"] svg {
+  rotate: 180deg;
+}
+
+.dx-message-scroller-button[data-active="false"] {
+  opacity: 0;
+  pointer-events: none;
+  scale: 0.95;
+  transition-duration: 0.4s;
+  transition-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+.dx-message-scroller-button[data-direction="end"][data-active="false"] {
+  translate: 0 100%;
+}
+
+.dx-message-scroller-button[data-direction="start"][data-active="false"] {
+  translate: 0 -100%;
+}
+
+.dx-message-scroller-sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-message-scroller-button[data-message-scroller-button],
+  .dx-message-scroller-button[data-active="false"] {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+}

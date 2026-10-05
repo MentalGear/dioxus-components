@@ -349,6 +349,7 @@ pub fn SelectOption<T: Clone + PartialEq + 'static>(props: SelectOptionProps<T>)
             {props.children}
             select::SelectItemIndicator {
                 Check {
+                    class: "dx-select-option-indicator",
                     size: "1rem",
                     stroke: "var(--dx-muted-foreground)",
                 }

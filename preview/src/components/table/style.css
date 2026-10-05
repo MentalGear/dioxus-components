@@ -46,6 +46,19 @@
   white-space: nowrap;
 }
 
+/* A checkbox is block-level (checkbox/style.css), and the primitive follows it
+ * with a hidden mirror <input> (`position: absolute`, no offsets): it sits at
+ * its static position, i.e. BELOW the 1rem box -- 13px that overflowed the
+ * last row's cell and gave the table container a 4px vertical scroll range.
+ * `overflow: hidden` on a cell does not clip an absolutely positioned
+ * descendant whose containing block is an ancestor, so make the cell that
+ * hosts a checkbox the containing block: the mirror is then clipped by the
+ * cell like the rest of its content and can never leak into the container. */
+.dx-table-head:has([role="checkbox"]),
+.dx-table-cell:has([role="checkbox"]) {
+  position: relative;
+}
+
 .dx-table-head:has([role="checkbox"]) {
   padding-inline-end: 0;
 }

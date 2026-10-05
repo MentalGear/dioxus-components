@@ -1,20 +1,31 @@
-/* Drawer Root (backdrop) -- mirrors .dx-sheet-root (preview/src/components/sheet/style.css). */
+/* Drawer Root -- the wrapper `div` around the panel. On the web arm
+ * (`<dialog>` + `showModal()`) it paints nothing: the scrim is the dialog's own
+ * `::backdrop` (the shared block below, the same rule `.dx-sheet` uses) and this
+ * element only holds the `<dialog>` and its animation times `use_animated_open`'s
+ * unmount hold. Without a `<dialog>` (non-web arm, `is_modal: false`) this element
+ * IS the scrim, from the same tokens. */
 .dx-drawer-root {
   position: fixed;
   z-index: var(--dx-z-overlay);
-  background: rgb(0 0 0 / 50%);
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
   inset: 0;
   opacity: 0;
   will-change: opacity;
 }
 
+.dx-drawer-root:has(> dialog) {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-drawer-root[data-state="closed"] {
-  animation: dx-drawer-root-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
+  animation: dx-drawer-root-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
 }
 
 .dx-drawer-root[data-state="open"] {
-  animation: dx-drawer-root-in var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
+  animation: dx-drawer-root-in var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
 }
 
 @keyframes dx-drawer-root-in {
@@ -34,6 +45,56 @@
 
   to {
     opacity: 0;
+  }
+}
+
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
+ * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts.
+ *
+ * The dialog's own top-layer `::backdrop` is the only thing that paints the
+ * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
+ * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
+ * timings) and, alone on Popover and Sheet, snapped in and out with no
+ * transition at all. It fades in via `@starting-style` and out via
+ * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
+ * from the top layer synchronously and the `::backdrop` goes with it, so
+ * without that keep-alive no exit transition could ever play. In and out are
+ * one `transition`, so they cannot differ in length. Engines without
+ * `overlay` transitions keep the old snap-out; nothing else changes.
+ *
+ * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
+ * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
+.dx-drawer::backdrop {
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
+}
+
+.dx-drawer[open]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
+}
+
+@starting-style {
+  .dx-drawer[open]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-drawer,
+  .dx-drawer::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-drawer-root {
+    animation-duration: var(--dx-motion-duration-reduced);
   }
 }
 
@@ -115,8 +176,12 @@
 
   /* The live drag offset (see this file's own top comment); no transition
    * while an active drag is in progress (below) so it tracks the pointer
-   * 1:1 with zero lag. */
-  transition: translate var(--dx-motion-duration-base) var(--dx-motion-ease);
+   * 1:1 with zero lag. The `overlay` entry keeps a closing drawer in the top
+   * layer -- and its `::backdrop` fade with it -- for the scrim's length, which
+   * is at least the slide-out's (`--dx-motion-duration-base`) below. */
+  transition:
+    translate var(--dx-motion-duration-base) var(--dx-motion-ease),
+    overlay var(--dx-overlay-duration) allow-discrete;
   will-change: transform, translate;
 }
 

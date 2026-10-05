@@ -1,5 +1,6 @@
 use super::super::component::{
-    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent,
+    DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
+    DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent,
     DropdownMenuSubItem, DropdownMenuSubTrigger, DropdownMenuTrigger,
 };
 use dioxus::prelude::*;
@@ -26,9 +27,17 @@ use dioxus_primitives::direction::{Direction, DirectionProvider};
 /// this fixture was registered. Distinct words side-step it without
 /// touching any of those spec files, which this lane's brief puts out of
 /// scope.
+///
+/// A checkbox item and a radio group ("Pinned"/"Ascending"/"Descending") are
+/// appended after "Erase" (indices 3-5) so the checkable indicator slot is
+/// exercised in RTL too -- see `playwright/menu-indicator-gap.spec.ts`.
+/// Appended, not interleaved: `oracle/tier3-radix/rtl.spec.ts` reaches
+/// "Extra tools" by index and nothing there depends on which item is last.
 #[component]
 pub fn Demo() -> Element {
     let mut selected = use_signal(|| None);
+    let mut pinned = use_signal(|| true);
+    let mut order = use_signal(|| "ascending".to_string());
 
     rsx! {
         div { dir: "rtl",
@@ -64,6 +73,28 @@ pub fn Demo() -> Element {
                             index: 2usize,
                             on_select: move |v| selected.set(Some(v)),
                             "Erase"
+                        }
+                        DropdownMenuCheckboxItem {
+                            index: 3usize,
+                            checked: Some(pinned()),
+                            on_checked_change: move |checked| pinned.set(checked),
+                            text_value: "Pinned",
+                            "Pinned"
+                        }
+                        DropdownMenuRadioGroup {
+                            aria_label: "Order",
+                            value: Some(order()),
+                            on_value_change: move |value| order.set(value),
+                            DropdownMenuRadioItem {
+                                index: 4usize,
+                                value: "ascending".to_string(),
+                                "Ascending"
+                            }
+                            DropdownMenuRadioItem {
+                                index: 5usize,
+                                value: "descending".to_string(),
+                                "Descending"
+                            }
                         }
                     }
                 }

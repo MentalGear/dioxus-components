@@ -12,6 +12,21 @@ fn site_href(path: &str) -> String {
     format!("{}{path}", prefix.trim_end_matches('/'))
 }
 
+/// One entry of a panel's link list -- shadcn's demo `ListItem`: a title
+/// (`text-sm leading-none font-medium`) over a muted description clamped to
+/// two lines. Every list link in this demo goes through it, so a link can
+/// never render as bare text next to titled siblings (the bug that made
+/// "Button"/"Input" larger and lighter than "Introduction").
+#[component]
+fn ListItem(href: String, index: usize, title: String, description: String) -> Element {
+    rsx! {
+        NavigationMenuLink { href, content_index: index,
+            div { class: "dx-navigation-menu-link-title", "{title}" }
+            div { class: "dx-navigation-menu-link-description", "{description}" }
+        }
+    }
+}
+
 #[component]
 pub fn Demo() -> Element {
     rsx! {
@@ -48,16 +63,23 @@ pub fn Demo() -> Element {
                                         "Beautifully designed, accessible primitives for Dioxus."
                                     }
                                 }
-                                div { class: "dx-navigation-menu-grid",
-                                    style: "grid-template-columns: 1fr;",
-                                    NavigationMenuLink { href: site_href("/docs"), content_index: 1usize,
-                                        div { class: "dx-navigation-menu-link-title", "Introduction" }
-                                        div { class: "dx-navigation-menu-link-description",
-                                            "Re-usable primitives you can copy into your own project."
-                                        }
-                                    }
-                                    NavigationMenuLink { href: site_href("/component/button/"), content_index: 2usize, "Button" }
-                                    NavigationMenuLink { href: site_href("/component/input/"), content_index: 3usize, "Input" }
+                                ListItem {
+                                    href: site_href("/docs"),
+                                    index: 1usize,
+                                    title: "Introduction",
+                                    description: "Re-usable primitives you can copy into your own project.",
+                                }
+                                ListItem {
+                                    href: site_href("/component/button/"),
+                                    index: 2usize,
+                                    title: "Button",
+                                    description: "Displays a button or a component that looks like a button.",
+                                }
+                                ListItem {
+                                    href: site_href("/component/input/"),
+                                    index: 3usize,
+                                    title: "Input",
+                                    description: "Displays a form input field or a component that looks like an input field.",
                                 }
                             }
                         }
@@ -66,41 +88,41 @@ pub fn Demo() -> Element {
                         NavigationMenuTrigger { "Components" }
                         NavigationMenuContent {
                             div { class: "dx-navigation-menu-grid",
-                                NavigationMenuLink { href: site_href("/component/accordion/"), content_index: 0usize,
-                                    div { class: "dx-navigation-menu-link-title", "Accordion" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "A vertically stacked set of collapsible panels."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/accordion/"),
+                                    index: 0usize,
+                                    title: "Accordion",
+                                    description: "A vertically stacked set of collapsible panels.",
                                 }
-                                NavigationMenuLink { href: site_href("/component/dialog/"), content_index: 1usize,
-                                    div { class: "dx-navigation-menu-link-title", "Dialog" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "A modal window layered above the page."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/dialog/"),
+                                    index: 1usize,
+                                    title: "Dialog",
+                                    description: "A modal window layered above the page.",
                                 }
-                                NavigationMenuLink { href: site_href("/component/tooltip/"), content_index: 2usize,
-                                    div { class: "dx-navigation-menu-link-title", "Tooltip" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "A short message shown on hover or focus."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/tooltip/"),
+                                    index: 2usize,
+                                    title: "Tooltip",
+                                    description: "A short message shown on hover or focus.",
                                 }
-                                NavigationMenuLink { href: site_href("/component/tabs/"), content_index: 3usize,
-                                    div { class: "dx-navigation-menu-link-title", "Tabs" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "Switch between panels of related content."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/tabs/"),
+                                    index: 3usize,
+                                    title: "Tabs",
+                                    description: "Switch between panels of related content.",
                                 }
-                                NavigationMenuLink { href: site_href("/component/select/"), content_index: 4usize,
-                                    div { class: "dx-navigation-menu-link-title", "Select" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "Pick one value from a list of options."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/select/"),
+                                    index: 4usize,
+                                    title: "Select",
+                                    description: "Pick one value from a list of options.",
                                 }
-                                NavigationMenuLink { href: site_href("/component/progress/"), content_index: 5usize,
-                                    div { class: "dx-navigation-menu-link-title", "Progress" }
-                                    div { class: "dx-navigation-menu-link-description",
-                                        "Displays the completion progress of a task."
-                                    }
+                                ListItem {
+                                    href: site_href("/component/progress/"),
+                                    index: 5usize,
+                                    title: "Progress",
+                                    description: "Displays the completion progress of a task.",
                                 }
                             }
                         }

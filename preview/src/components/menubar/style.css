@@ -125,16 +125,43 @@
   }
 }
 
+/* Menu-item indicator slot (the construction select/style.css documents in
+ * full; mirrors `../dropdown_menu/style.css`). An item that draws a check
+ * reserves `inset + size + gap` of inline padding and the indicator is
+ * absolutely positioned inside that room, so a long label wraps
+ * (`overflow-wrap: anywhere`) before it can meet the icon. The three
+ * `--dx-menu-item-indicator-*` tokens are defined once in the theme and inherited
+ * here (nothing is overridden). Unlike the dropdown
+ * and context menus, shadcn's menubar draws the check at the inline START
+ * (Nova's `.cn-menubar-checkbox-item`: `pl-7`, indicator `left-1.5`), so
+ * the slot below is `padding-inline-start`/`inset-inline-start`. A plain
+ * item has no slot; `data-inset="true"` reserves one without drawing
+ * anything (shadcn's `inset`), so a menu that mixes plain and checkable
+ * items can keep its labels on one edge. Guard:
+ * playwright/menu-indicator-gap.spec.ts. */
 .dx-menubar-item {
+  position: relative;
   display: block;
   padding: var(--dx-space-2) var(--dx-space-3);
   border-radius: calc(var(--dx-radius-lg) - var(--dx-radius-sm));
   color: var(--dx-foreground);
   cursor: pointer;
   font-size: var(--dx-text-sm);
+  overflow-wrap: anywhere;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
+}
+
+/* The indicator itself: out of flow, in the slot the item reserved. */
+.dx-menubar-item-indicator {
+  position: absolute;
+  width: var(--dx-menu-item-indicator-size);
+  height: var(--dx-menu-item-indicator-size);
+  inset-block: 0;
+  inset-inline-start: var(--dx-menu-item-indicator-inset);
+  margin-block: auto;
+  pointer-events: none;
 }
 
 .dx-menubar-item[data-disabled="true"] {
@@ -148,4 +175,27 @@
   background: var(--dx-accent);
   color: var(--dx-accent-foreground);
   outline: none;
+}
+
+/* The reserved slot: checkable items always, plain items on request
+   (`data-inset`). Declared after `.dx-menubar-item`'s own `padding` so it
+   wins at equal specificity. */
+.dx-menubar-checkable-item,
+.dx-menubar-item[data-inset="true"] {
+  padding-inline-start: calc(var(--dx-menu-item-indicator-inset) + var(--dx-menu-item-indicator-size) + var(--dx-menu-item-indicator-gap));
+}
+
+/* The check is drawn only while the item is checked; `visibility`, not
+   `display`, so an unchecked item keeps its box -- the slot is reserved
+   either way and labels never shift when an item is toggled. */
+.dx-menubar-checkable-item[data-state="unchecked"] > .dx-menubar-item-indicator {
+  visibility: hidden;
+}
+
+/* A heading for a group of items (`MenubarLabel`). */
+.dx-menubar-label {
+  padding: var(--dx-space-2) var(--dx-space-3);
+  color: var(--dx-muted-foreground);
+  font-size: var(--dx-text-xs);
+  font-weight: 500;
 }

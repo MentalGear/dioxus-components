@@ -16,8 +16,18 @@ use dioxus_primitives::direction::{Direction, DirectionProvider};
 /// `ArrowLeft`/`ArrowRight` roving focus between "Options"/"Modify" always
 /// resolves this ambient RTL direction (no `horizontal` prop exists on
 /// `Menubar` to set).
+///
+/// A checkbox item ("Pinned") ends the "Options" menu and a radio group
+/// ("Ascending"/"Descending") ends the "Modify" menu, so the checkable
+/// indicator slot -- which the menubar draws at the inline START, the right
+/// edge here -- is exercised in RTL too; see
+/// `playwright/menu-indicator-gap.spec.ts`. No menu is added: the menubar's
+/// two-trigger shape is what `rtl.spec.ts`'s arrow-key rows grade.
 #[component]
 pub fn Demo() -> Element {
+    let mut pinned = use_signal(|| true);
+    let mut order = use_signal(|| "ascending".to_string());
+
     rsx! {
         div { dir: "rtl",
             DirectionProvider { direction: Direction::Rtl,
@@ -37,6 +47,13 @@ pub fn Demo() -> Element {
                                 on_select: move |_| {},
                                 "Launch"
                             }
+                            MenubarCheckboxItem {
+                                index: 2usize,
+                                checked: Some(pinned()),
+                                on_checked_change: move |checked| pinned.set(checked),
+                                text_value: "Pinned",
+                                "Pinned"
+                            }
                         }
                     }
                     MenubarMenu { index: 1usize,
@@ -53,6 +70,21 @@ pub fn Demo() -> Element {
                                 value: "duplicate".to_string(),
                                 on_select: move |_| {},
                                 "Duplicate"
+                            }
+                            MenubarRadioGroup {
+                                aria_label: "Order",
+                                value: Some(order()),
+                                on_value_change: move |value| order.set(value),
+                                MenubarRadioItem {
+                                    index: 2usize,
+                                    value: "ascending".to_string(),
+                                    "Ascending"
+                                }
+                                MenubarRadioItem {
+                                    index: 3usize,
+                                    value: "descending".to_string(),
+                                    "Descending"
+                                }
                             }
                         }
                     }

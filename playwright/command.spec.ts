@@ -37,6 +37,7 @@ import { test, expect } from "./fixtures";
 import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { assertSharedBackdrop, captureBackdrop, resolveOverlayMs } from "./assert-backdrop-fade";
 
 const URL = `${BASE_URL}/component/?name=command&`;
 const HOME_URL = `${BASE_URL}/`;
@@ -224,6 +225,45 @@ test("Escape closes CommandDialog", async ({ page }) => {
     await open(page);
     await page.keyboard.press("Escape");
     await expect(dialog(page)).toHaveCount(0);
+});
+
+// The scrim every modal overlay shares (assert-backdrop-fade.ts has the full claim;
+// popover/dialog/alert-dialog/sheet/drawer run the identical assertion): the dialog's own
+// `::backdrop` is the only painter, black/10 with a 4px blur, and it fades in and out for
+// the same length. Before this CommandDialog was the sixth, un-unified painter: its own 30%
+// wrapper sat on top of the UA's default 10% `::backdrop` (40% stacked, no blur) and faded
+// over 150ms while every other overlay took 200ms.
+test.describe("Scrim", () => {
+    test("CommandDialog paints the shared scrim and fades it in and out", async ({ page }) => {
+        await page.goto(URL, { timeout: 20 * 60 * 1000 });
+        await page.waitForLoadState("networkidle");
+        const trigger = openButton(page);
+        await expect(trigger).toBeVisible();
+        const capture = await captureBackdrop(
+            page,
+            () => trigger.click(),
+            () => page.keyboard.press("Escape"),
+        );
+        assertSharedBackdrop(capture, await resolveOverlayMs(page), "command");
+    });
+
+    test("CommandDialog's panel fades and zooms with the same token as its scrim", async ({ page }) => {
+        await open(page);
+        const panel = await page.locator("dialog.dx-command-dialog").evaluate((el) => {
+            const cs = getComputedStyle(el);
+            const root = getComputedStyle(document.documentElement);
+            return {
+                durations: cs.transitionDuration.split(",").map((d) => d.trim()),
+                properties: cs.transitionProperty.split(",").map((p) => p.trim()),
+                overlayToken: root.getPropertyValue("--dx-overlay-duration").trim(),
+            };
+        });
+        const ms = await resolveOverlayMs(page);
+        // opacity, transform and the `overlay` keep-alive all run for the shared duration.
+        expect(panel.properties).toEqual(["opacity", "transform", "overlay"]);
+        for (const d of panel.durations) expect(parseFloat(d) * (d.endsWith("ms") ? 1 : 1000)).toBe(ms);
+        expect(panel.overlayToken, "the theme defines the token the panel reads").not.toBe("");
+    });
 });
 
 test.describe("Axe automated scan", () => {

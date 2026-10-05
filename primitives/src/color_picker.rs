@@ -433,12 +433,12 @@ pub fn AreaThumb(props: AreaThumbProps) -> Element {
                 // Store the mounted data for focus management
                 button_ref.set(Some(evt.data()));
             },
+            // Don't focus the button. The dragging state will handle focus. No `ontouchstart`
+            // twin: it would be a non-passive root listener on `#main` that makes every
+            // touch/wheel on the page wait for the main thread; the area container's
+            // `touch-action: none` (color_picker/style.css) already stops the page panning
+            // during a drag (scripts/check-blocking-scroll-listeners.sh).
             onmousedown: move |evt| {
-                // Don't focus the button. The dragging state will handle focus
-                evt.prevent_default();
-            },
-            ontouchstart: move |evt| {
-                // Don't focus the button. The dragging state will handle focus
                 evt.prevent_default();
             },
             // First arrow press from the wrapper applies the step and hands

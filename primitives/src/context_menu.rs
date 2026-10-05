@@ -13,7 +13,12 @@ use crate::{
         CollectionPlacement, CollectionState,
     },
     direction::{use_direction, Direction},
-    fold_style_attributes, has_own_accessible_name, merge_attributes,
+    fold_style_attributes, has_own_accessible_name,
+    menu_item::{
+        self, CheckableCommon, CheckableState, MenuCheckboxItemProps, MenuRadioGroupProps,
+        MenuRadioItemProps,
+    },
+    merge_attributes,
     selectable::{pointer_select_cancel, pointer_select_commit, pointer_select_start},
     use_animated_open, use_controlled, use_effect_with_cleanup, use_id_or, use_outside_dismiss,
     use_unique_id,
@@ -1162,6 +1167,244 @@ pub fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
             ..attributes,
 
             {props.children}
+        }
+    }
+}
+
+/// The props for the [`ContextMenuCheckboxItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuCheckboxItemProps`].
+pub type ContextMenuCheckboxItemProps = MenuCheckboxItemProps;
+
+/// The props for the [`ContextMenuRadioGroup`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioGroupProps`].
+pub type ContextMenuRadioGroupProps = MenuRadioGroupProps;
+
+/// The props for the [`ContextMenuRadioItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioItemProps`].
+pub type ContextMenuRadioItemProps = MenuRadioItemProps;
+
+/// # ContextMenuCheckboxItem
+///
+/// An item within a [`ContextMenuContent`] (or a [`ContextMenuSubContent`])
+/// that can be checked and unchecked independently of its siblings --
+/// shadcn's `ContextMenuCheckboxItem`. Renders `role="menuitemcheckbox"` with
+/// an always-present `aria-checked` (see `crate::menu_semantics`).
+///
+/// Controlled with `checked` + `on_checked_change`, or uncontrolled with
+/// `default_checked`. Pressing it with the pointer, or pressing Enter or
+/// Space while it has focus, toggles it. Like Radix's `onSelect` default,
+/// that **closes the menu**; set `close_on_select: false` to keep the menu
+/// open so several items can be toggled in one visit (the optional APG
+/// behaviour for Space: "changes the state without closing the menu").
+/// Disabled items cannot be toggled and are skipped by arrow keys and
+/// typeahead. A checkbox item has no `value`, so give it a `text_value` to
+/// make it a typeahead target.
+///
+/// This must be used inside a [`ContextMenuContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::context_menu::{
+///     ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut show_bookmarks = use_signal(|| true);
+///     rsx! {
+///         ContextMenu {
+///             ContextMenuTrigger { "right click here" }
+///             ContextMenuContent {
+///                 ContextMenuCheckboxItem {
+///                     index: 0usize,
+///                     checked: Some(show_bookmarks()),
+///                     on_checked_change: move |checked| show_bookmarks.set(checked),
+///                     close_on_select: false,
+///                     text_value: "Show Bookmarks",
+///                     "Show Bookmarks"
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Styling
+///
+/// The [`ContextMenuCheckboxItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates if the item is disabled. Possible values are `true` or `false`.
+#[component]
+pub fn ContextMenuCheckboxItem(props: ContextMenuCheckboxItemProps) -> Element {
+    let state = menu_item::use_checkbox_state(
+        props.checked,
+        props.default_checked,
+        props.on_checked_change,
+    );
+    context_checkable_item(state, props.into())
+}
+
+/// # ContextMenuRadioGroup
+///
+/// A set of mutually exclusive [`ContextMenuRadioItem`]s -- shadcn's
+/// `ContextMenuRadioGroup`. Renders `role="group"`; give it an accessible
+/// name with `aria-label` or `aria-labelledby`. Controlled with `value` +
+/// `on_value_change`, or uncontrolled with `default_value`.
+///
+/// This must be used inside a [`ContextMenuContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::context_menu::{
+///     ContextMenu, ContextMenuContent, ContextMenuRadioGroup, ContextMenuRadioItem,
+///     ContextMenuTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut person = use_signal(|| "pedro".to_string());
+///     rsx! {
+///         ContextMenu {
+///             ContextMenuTrigger { "right click here" }
+///             ContextMenuContent {
+///                 ContextMenuRadioGroup {
+///                     aria_label: "People",
+///                     value: Some(person()),
+///                     on_value_change: move |value| person.set(value),
+///                     ContextMenuRadioItem {
+///                         index: 0usize,
+///                         value: "pedro".to_string(),
+///                         "Pedro Duarte"
+///                     }
+///                     ContextMenuRadioItem {
+///                         index: 1usize,
+///                         value: "colm".to_string(),
+///                         "Colm Tuite"
+///                     }
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+#[component]
+pub fn ContextMenuRadioGroup(props: ContextMenuRadioGroupProps) -> Element {
+    menu_item::render_radio_group(props)
+}
+
+/// # ContextMenuRadioItem
+///
+/// One choice in a [`ContextMenuRadioGroup`] -- shadcn's
+/// `ContextMenuRadioItem`. Renders `role="menuitemradio"` with an
+/// always-present `aria-checked`; it is checked while the group's value
+/// equals its own `value`, and choosing it (pointer, Enter or Space) sets
+/// the group's value and, like Radix's `onSelect` default, **closes the
+/// menu** unless `close_on_select` is `false`. Falls back to `value` as its
+/// typeahead label. Disabled items cannot be chosen and are skipped by arrow
+/// keys and typeahead.
+///
+/// This must be used inside a [`ContextMenuRadioGroup`] component.
+///
+/// ## Styling
+///
+/// The [`ContextMenuRadioItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates if the item is disabled. Possible values are `true` or `false`.
+#[component]
+pub fn ContextMenuRadioItem(props: ContextMenuRadioItemProps) -> Element {
+    let state = menu_item::use_radio_state(props.value);
+    context_checkable_item(state, props.into())
+}
+
+/// The body shared by [`ContextMenuCheckboxItem`] and
+/// [`ContextMenuRadioItem`]: everything that is the same for both roles
+/// lives in `crate::menu_item`; this is the host-specific half -- which
+/// roving-focus collection the item registers in, how a pointer press/key
+/// commits (the same pointerdown-then-pointerup shape as
+/// [`ContextMenuItem`], so a long-press-then-lift that opened the menu never
+/// toggles the item under the finger), and what "close" means for a
+/// `ContextMenu`. Called from a component body; it calls hooks.
+fn context_checkable_item(state: CheckableState, common: CheckableCommon) -> Element {
+    let mut ctx: ContextMenuCtx = use_context();
+    // Inside a `ContextMenuSubContent` the item belongs to that submenu's
+    // own roving-focus collection, never the root's -- see
+    // `dropdown_checkable_item` for why `try_use_context` resolves it.
+    let sub: Option<crate::menu_sub::SubMenuState> = try_use_context();
+    let focus = sub.map_or(ctx.focus, |sub| sub.focus);
+
+    let CheckableCommon {
+        index,
+        disabled: item_disabled,
+        text_value,
+        close_on_select,
+        attributes,
+        children,
+    } = common;
+    let disabled = move || (ctx.disabled)() || item_disabled();
+    let item = use_item(
+        collection_item(focus, index)
+            .disabled(disabled)
+            .text_value(move || state.text_value(text_value)),
+    );
+    let focused = move || item.focused();
+    let onmounted = item.onmounted();
+
+    let down_pos: Signal<Option<(f64, f64)>> = use_signal(|| None);
+    let mut select = move || {
+        if disabled() {
+            return;
+        }
+        state.activate();
+        if close_on_select() {
+            // Same belt-and-suspenders as `ContextMenuItem`/
+            // `ContextMenuSubItem`: clear every collection this item could
+            // be the focused member of before closing.
+            if let Some(mut sub) = sub {
+                sub.focus.clear_focus();
+            }
+            ctx.focus.clear_focus();
+            ctx.set_open.call(false);
+        }
+    };
+
+    let attributes = merge_attributes(vec![
+        attributes,
+        state.owned_attributes(disabled(), if focused() { "0" } else { "-1" }),
+    ]);
+
+    rsx! {
+        div {
+            onpointerdown: move |event| {
+                pointer_select_start(&event, disabled(), down_pos);
+            },
+            onpointerup: move |event| {
+                if pointer_select_commit(&event, disabled(), down_pos) {
+                    select();
+                    event.prevent_default();
+                    event.stop_propagation();
+                }
+            },
+            onpointercancel: move |_| {
+                pointer_select_cancel(down_pos);
+            },
+            onkeydown: move |event: Event<KeyboardData>| {
+                if menu_item::is_activation_key(&event.key()) {
+                    select();
+                    event.prevent_default();
+                    event.stop_propagation();
+                }
+            },
+            onblur: move |_| {
+                if focused() {
+                    match sub {
+                        Some(mut sub) => sub.focus.clear_focus(),
+                        None => ctx.focus.clear_focus(),
+                    }
+                }
+            },
+            onmounted,
+            ..attributes,
+            {children}
         }
     }
 }

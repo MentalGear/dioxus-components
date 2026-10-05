@@ -836,12 +836,14 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                 // Store the mounted data for focus management
                 button_ref.set(Some(evt.data()));
             },
+            // Don't focus the button. The dragging state will handle focus. A tap's compat
+            // `mousedown` (the event whose default action focuses) is covered here; there is
+            // deliberately NO `ontouchstart` twin: Dioxus registers it on `#main` as a
+            // non-passive root listener, which makes every touch (and wheel) on the whole page
+            // wait for the main thread before it can scroll. Drags are pointer-driven and the
+            // thumb's `touch-action: none` (slider/style.css) keeps the page from panning, so
+            // the listener bought nothing but latency (scripts/check-blocking-scroll-listeners.sh).
             onmousedown: move |evt| {
-                // Don't focus the button. The dragging state will handle focus
-                evt.prevent_default();
-            },
-            ontouchstart: move |evt| {
-                // Don't focus the button. The dragging state will handle focus
                 evt.prevent_default();
             },
             onkeydown: move |evt| async move {

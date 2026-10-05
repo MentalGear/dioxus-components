@@ -132,7 +132,7 @@ pub fn ComboboxOption<T: Clone + PartialEq + 'static>(props: ComboboxOptionProps
             {props.children}
             combobox::ComboboxItemIndicator {
                 Check {
-                    class: "dx-combobox-check-icon",
+                    class: "dx-combobox-option-indicator",
                     size: "16px",
                 }
             }

@@ -1,3 +1,9 @@
+/* Nova popover (shadcn-ui/ui@295a1f1 registry/styles/style-nova.css,
+ * `.cn-popover-content`): `popover` fill and ink, a 1px `foreground/10` ring,
+ * `rounded-lg`, p-2.5 / gap-2.5, text-sm, `shadow-md`, `w-72`, start-aligned,
+ * fading in and out. The ring is a real border, not a box-shadow, so it can sit
+ * beside `--dx-shadow-md` (which is `none` in dark mode and cannot share a
+ * `box-shadow` list). */
 .dx-popover {
   position: relative;
   display: inline-block;
@@ -8,65 +14,49 @@
   z-index: var(--dx-z-overlay);
   display: flex;
   overflow: visible;
-  min-width: 200px;
+  width: 18rem;
   max-width: calc(100% - 2rem);
   flex-direction: column;
-  padding: var(--dx-space-1);
+  padding: 0.625rem;
 
   /*
    * `border` and `overflow` reset the UA popover stylesheet's
    * `[popover] { border: solid; overflow: auto; ... }` (WHATWG HTML's
-   * popover section) -- the *non-modal* arm of this content (Phase 4.4,
-   * docs/plan.md) carries the `popover` attribute; the modal arm (a plain
-   * `div`, Phase 4.2) never does and is unaffected either way. See the
-   * fully worked-out note on `.dx-tooltip-content` in
-   * `../tooltip/style.css` for why an unset property here is not simply
-   * "whatever this rule would otherwise imply" once `popover` is present.
-   * `inset`/`margin` are *not* reset unconditionally here, unlike that
-   * tooltip/hover-card note: this rule's own `margin-top: .5rem` and
-   * `transform: translate(-50%, -50%)` are this component's *modal*
-   * centering trick (`docs/plan.md` Phase 3.2, predating Phase 4.4), so
-   * zeroing `inset`/`margin` unconditionally would break that arm. The
-   * non-modal arm's own `inset`/`margin` reset lives in the `[popover]`
-   * rule just below instead, which -- being gated on that attribute --
-   * only ever touches the non-modal arm.
+   * popover section) -- the *non-modal* arm of this content carries the
+   * `popover` attribute; the modal arm (a `<dialog>` opened with `showModal()`)
+   * never does and is unaffected either way. `inset`/`margin` are *not* reset
+   * unconditionally here: this rule's own `margin-top` and `transform:
+   * translate(-50%, -50%)` are the legacy DOM-relative centring the `data-side`
+   * rules below build on, so zeroing them would break that path. The
+   * non-modal arm's own `inset`/`margin` reset lives in the single,
+   * engine-injected anchor-positioning stylesheet shared by every
+   * `dx-anchor-*` overlay (`primitives/src/top_layer.rs`'s
+   * `ensure_anchor_positioning_styles`).
    */
-  border: none;
+  border: 1px solid var(--dx-ring-subtle-color);
   border-radius: var(--dx-radius-lg);
   margin-top: var(--dx-space-2);
   background: var(--dx-popover);
-  box-shadow: inset 0 0 0 1px var(--dx-input);
-  text-align: center;
+  box-shadow: var(--dx-shadow-md);
+  color: var(--dx-popover-foreground);
+  font-size: var(--dx-text-sm);
+  gap: 0.625rem;
+  text-align: start;
 
-  /* rtl-physical: this content's own *modal* centering trick (this rule's
-     comment block above explains why `inset`/`margin` aren't reset here)
-     -- paired with the implicit `left: 50%; top: 50%` of its centered
-     positioning context, same family as dialog/alert_dialog's identical
-     note. */
+  /* rtl-physical: legacy modal centring trick, paired with the implicit
+     `left: 50%; top: 50%` of its centred positioning context -- same family as
+     dialog/alert_dialog's identical note. */
   transform: translate(-50%, -50%);
   transform-origin: top;
   will-change: transform, opacity;
 }
 
-/*
- * Non-modal arm only (see the base rule's comment above for why this can't
- * live there unconditionally): the UA popover stylesheet's `inset: 0`/
- * `margin: auto` reset for this arm -- needed for the *non-anchor-
- * positioning* fallback path too, not just the anchor-positioned one --
- * now lives in the single, engine-injected stylesheet shared by every
- * `dx-anchor-*`-marked overlay in the app (this content's non-modal arm
- * carries `dx-anchor-popover` unconditionally; see `popover.rs`'s
- * `PopoverNonModalContent`). See `primitives/src/top_layer.rs`'s
- * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1) for the
- * full rationale.
- */
-
 .dx-popover-content[data-state="open"] {
-  animation: dx-popover-fade-in var(--dx-motion-duration-slow) ease-in-out;
+  animation: dx-popover-fade-in var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
 .dx-popover-content[data-state="closed"] {
-  animation: dx-popover-fade-out var(--dx-motion-duration-slow) ease-in-out forwards;
+  animation: dx-popover-fade-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
 }
 
@@ -90,27 +80,48 @@
   }
 }
 
-/*
- * dev-docs/backlog.md row 7: this content already had a symmetric
- * close-fade (the two rules above -- no `display: none` to begin with),
- * but no `prefers-reduced-motion` override, so a user who asked their OS
- * to reduce motion still got the full-duration fade either direction. Row
- * 31a's shared reduced-motion layer (dx-components-theme.css) only covers
- * interactive roots, not animated content (see that file's own comment,
- * and row 31/27's `Spinner` note) -- same reasoning as
- * `../tooltip/style.css`'s and `../hover_card/style.css`'s identical
- * blocks, matching the per-component convention `input_otp`/`spinner`
- * already carry. Previously dormant either way: `primitives/src/
- * top_layer.rs`'s `use_popover_sync` used to call `hidePopover()` the
- * instant `open` went false, hiding this content via the UA's `display:
- * none` rule before either animation ever got a chance to play; row 19
- * (`use_popover_shown_while_mounted`) is what makes this fade -- and so
- * this override -- observable at all.
- */
+/* Modal-overlay scrim: the same `::backdrop` rule `dialog`, `alert_dialog`,
+ * `sheet`, `drawer` and `command` carry (same tokens, same paint, same fade in and out),
+ * keyed on this dialog's own `data-state` instead of `[open]`. That is the one
+ * difference, and it is deliberate: the others lean on `overlay ... allow-discrete`
+ * to keep a *closed* dialog in the top layer while their scrim fades, but a
+ * closed popover is no longer `:modal`, and its anchored position
+ * (`top_layer.rs`'s engine stylesheet) is keyed on `:modal` -- it jumped off the
+ * bottom of the viewport mid-fade. So `popover.rs` keeps the dialog modal until
+ * its exit animations settle (`use_popover_modal_driver`) and this scrim fades
+ * out while `[open]` is still set, which also works in every engine.
+ *
+ * Only the modal arm is touched: the non-modal arm (`[popover]`) paints no scrim
+ * at all, as shadcn's popover has no overlay. See `dialog/style.css` for the
+ * shared block's full rationale. */
+.dx-popover-content:not([popover])::backdrop {
+  backdrop-filter: none;
+  background: transparent;
+  transition:
+    backdrop-filter var(--dx-overlay-duration) var(--dx-overlay-ease),
+    background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
+}
+
+.dx-popover-content:not([popover])[data-state="open"]::backdrop {
+  backdrop-filter: blur(var(--dx-overlay-blur));
+  background: var(--dx-overlay-scrim);
+}
+
+@starting-style {
+  .dx-popover-content:not([popover])[data-state="open"]::backdrop {
+    backdrop-filter: none;
+    background: transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dx-popover-content[data-state="open"],
   .dx-popover-content[data-state="closed"] {
     animation-duration: var(--dx-motion-duration-reduced);
+  }
+
+  .dx-popover-content:not([popover])::backdrop {
+    transition-duration: var(--dx-motion-duration-reduced);
   }
 }
 
@@ -213,133 +224,82 @@
   transform: none;
 }
 
-.dx-popover-content-title {
-  margin: 0;
-  color: var(--dx-foreground);
-  font-size: var(--dx-text-xl);
-  font-weight: 700;
+/* Header, title and description: Nova's `cn-popover-header` (flex column,
+ * gap-0.5, text-sm), `cn-popover-title` (font-medium) and
+ * `cn-popover-description` (muted). `.dx-popover-content-title`/`-description`
+ * are the previous names, kept so a copied-out page that still uses them
+ * renders the same. */
+.dx-popover-header {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--dx-text-sm);
+  gap: 0.125rem;
 }
 
+.dx-popover-title,
+.dx-popover-content-title {
+  margin: 0;
+  color: var(--dx-popover-foreground);
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.dx-popover-description,
 .dx-popover-content-description {
   margin: 0;
   color: var(--dx-muted-foreground);
-  font-size: var(--dx-text-base);
+  font-size: var(--dx-text-sm);
 }
 
-.dx-popover-content-actions {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: var(--dx-space-3);
-}
-
-@media (width >= 40rem) {
-  .dx-popover-content-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-  }
-
-  .dx-popover-content {
-    max-width: 32rem;
-    text-align: start;
-  }
-}
-
-.dx-popover-content-cancel {
-  padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--dx-border);
-  border-radius: var(--dx-radius-lg);
-  background-color: var(--dx-card);
-  color: var(--dx-foreground);
-  cursor: pointer;
-  font-size: var(--dx-text-base);
-  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
-}
-
-.dx-popover-content-cancel:hover {
-  background-color: var(--dx-accent);
-}
-
-/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
-   but the RULE stays here rather than in the shared interaction layer.
-   `#[css_module]` hashes this class in both the DOM and this stylesheet
-   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
-   an unhashed selector in the global theme sheet can never match the rendered
-   element -- confirmed against the built artifact, where the wasm carries the
-   hashed name. Once row 32 drops css_module hashing, this can collapse into
-   the shared layer for real. */
-.dx-popover-content-cancel:focus-visible {
-  box-shadow: var(--dx-ring);
-}
-
-.dx-popover-content-action {
-  padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--dx-destructive);
-  border-radius: var(--dx-radius-lg);
-  background-color: var(--dx-destructive);
-  color: var(--dx-destructive-foreground);
-  cursor: pointer;
-  font-size: var(--dx-text-base);
-  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
-}
-
-.dx-popover-content-action:hover {
-  background-color: color-mix(in oklab, var(--dx-destructive) 90%, transparent);
-}
-
-/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
-   but the RULE stays here rather than in the shared interaction layer.
-   `#[css_module]` hashes this class in both the DOM and this stylesheet
-   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
-   an unhashed selector in the global theme sheet can never match the rendered
-   element -- confirmed against the built artifact, where the wasm carries the
-   hashed name. Once row 32 drops css_module hashing, this can collapse into
-   the shared layer for real. */
-.dx-popover-content-action:focus-visible {
-  box-shadow: var(--dx-ring);
-}
-
+/* Trigger: Nova's default outline button -- the same values as
+ * `.dx-button[data-style="outline"]` (`../button/style.css`), kept in step by
+ * hand until `PopoverTrigger` can render a real `Button` the way shadcn's
+ * `render={<Button variant="outline" />}` does. The 2rem height comes from
+ * padding + line-height + border, not a fixed `height`, so a caller's own
+ * `padding: 0` (the docs header's icon-only theme trigger) collapses it
+ * instead of fighting a fixed box. */
 .dx-popover-trigger {
-  padding: var(--dx-space-2) 18px;
-  border: 1px solid var(--dx-border);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3125rem 0.625rem;
+  border: 1px solid transparent;
+  border-color: var(--light, var(--dx-border)) var(--dark, var(--dx-input));
   border-radius: var(--dx-radius-lg);
-  background-color: var(--dx-card);
+  background-clip: padding-box;
+  background-color: var(--light, var(--dx-background))
+    var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
   color: var(--dx-foreground);
-  cursor: pointer;
-  font-size: var(--dx-text-base);
+  cursor: default;
+  font-family: inherit;
+  font-size: var(--dx-text-sm);
+  font-weight: 500;
+  gap: 0.375rem;
+  line-height: 1.25rem;
+  outline: none;
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
-  transition: background-color var(--dx-motion-duration-slow) var(--dx-motion-ease);
+  transition-duration: var(--dx-motion-duration-base);
+  transition-property: all;
+  transition-timing-function: var(--dx-motion-ease-standard);
+  white-space: nowrap;
 }
 
-.dx-popover-trigger:hover {
-  background-color: var(--dx-accent);
+.dx-popover-trigger:hover,
+.dx-popover-trigger[aria-expanded="true"] {
+  background-color: var(--light, var(--dx-muted))
+    var(--dark, color-mix(in oklab, var(--dx-input) 50%, transparent));
 }
 
-/* :focus-visible ring: the shared --dx-ring token (docs/backlog.md row 31a),
-   but the RULE stays here rather than in the shared interaction layer.
-   `#[css_module]` hashes this class in both the DOM and this stylesheet
-   (`.dx-x` -> `.dx-x-<hash>`, docs/issues/css-module-supports-scoping.md), so
-   an unhashed selector in the global theme sheet can never match the rendered
-   element -- confirmed against the built artifact, where the wasm carries the
-   hashed name. Once row 32 drops css_module hashing, this can collapse into
-   the shared layer for real. */
 .dx-popover-trigger:focus-visible {
-  box-shadow: var(--dx-ring);
+  border-color: var(--dx-ring-color);
+  box-shadow: var(--dx-ring-focus);
 }
 
-/*
- * Phase 4.4 (docs/plan.md): the web arm's *non-modal* content is a
- * `<dialog popover="auto">` (top-layer promotion for clipping escape and
- * light dismiss). Note the top-layer CSS is scoped to `[popover]`
- * specifically (present only on the non-modal arm), not `[role="dialog"]`,
- * so the modal arm (a plain div, Phase 4.2's job, unaffected by this slice)
- * keeps its existing DOM-relative positioning untouched.
- *
- * The `@supports (anchor-name: --a)` block that used to live here (keyed on
- * the `.dx-anchor-popover` marker class) now lives in the single,
- * engine-injected stylesheet shared by every `dx-anchor-*`-marked overlay in
- * the app -- see `primitives/src/top_layer.rs`'s
- * `ensure_anchor_positioning_styles` doc (docs/backlog.md item 1) and
- * `../tooltip/style.css`'s identical comment for the full rationale.
- */
+.dx-popover-trigger:disabled {
+  opacity: var(--dx-opacity-disabled);
+  pointer-events: none;
+}

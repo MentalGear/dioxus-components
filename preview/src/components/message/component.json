@@ -1,0 +1,7 @@
+{
+  "name": "message",
+  "description": "One conversation row: avatar, alignment, header and footer around a message bubble, plus a group wrapper.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
+}

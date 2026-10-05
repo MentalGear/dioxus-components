@@ -69,15 +69,34 @@
  *                      since a fourth hand-written role set was exactly what
  *                      this file exists to catch)
  *
- * Contract asserted per component: popup is role="menu"; every item is
- * role="menuitem" (this crate has no menuitemcheckbox/menuitemradio item
- * variant on any of these three components today -- verified: no
- * CheckboxItem/RadioItem type or `checked` prop on any of their item
- * props); no item carries aria-selected (a menu's items are activated, not
- * selected -- aria-selected belongs to the listbox/grid/tree/tablist
- * pattern family, not this one); a single-trigger component's trigger has
- * aria-haspopup="menu" or "true" with aria-expanded reflecting open state;
- * the open popup's aria-labelledby resolves to that trigger's id.
+ * Contract asserted per component: popup is role="menu"; every plain item is
+ * role="menuitem"; no item carries aria-selected (a menu's items are
+ * activated, not selected -- aria-selected belongs to the listbox/grid/tree/
+ * tablist pattern family, not this one); a single-trigger component's
+ * trigger has aria-haspopup="menu" or "true" with aria-expanded reflecting
+ * open state; the open popup's aria-labelledby resolves to that trigger's id.
+ *
+ * CHECKABLE ITEMS: DropdownMenu, ContextMenu and Menubar each have a
+ * `*CheckboxItem` and a `*RadioGroup`/`*RadioItem` (shadcn's), all built once
+ * in `primitives/src/menu_item.rs` and routed through
+ * `primitives/src/menu_semantics.rs`. APG permits `menuitemcheckbox` /
+ * `menuitemradio` item roles ("The items contained in a menu ... have any of
+ * the following roles: menuitem, menuitemcheckbox, menuitemradio" and "When a
+ * menuitemcheckbox or menuitemradio is checked, aria-checked is set to true",
+ * menu-and-menubar-pattern.html, same pinned commit); WAI-ARIA 1.2 makes
+ * `aria-checked` a required state on both roles and says "If a menu or
+ * menubar contains more than one group of menuitemradio elements, or if the
+ * menu contains one group and other, unrelated menu items, authors SHOULD
+ * contain each set of related menuitemradio elements in an element using the
+ * group role" (https://www.w3.org/TR/wai-aria-1.2/#menuitemradio). The
+ * "Checkable items" describe blocks below grade the legal half -- the
+ * checkable roles appear exactly where a checkable item is rendered, always
+ * carry `aria-checked="true"|"false"`, and radios sit in a `group` with
+ * exactly one checked -- and the illegal half: a menu with no checkable items
+ * (DropdownMenu's `main`, Menubar's File menu, every Navbar nav dropdown)
+ * contains no checkable role, no `group`, and no `aria-checked` anywhere, and
+ * no menu ever contains the standalone `checkbox`/`radio`/`option`/`listbox`
+ * roles (a menu's checkable items are `menuitemcheckbox`/`menuitemradio`).
  *
  * SCOPE NOTE, found verifying this file (contradicts nothing in the
  * contract above, but narrows what is asserted where): `ContextMenu`'s and
@@ -104,7 +123,7 @@
  */
 
 import { test, expect } from "../../fixtures";
-import { type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BASE_URL } from "../../base-url";
@@ -118,6 +137,63 @@ const BASE = `${BASE_URL}/component/?name=`;
 // `page.goto` -- there is no hydration signal to wait for there.)
 const goto = (page: Page, name: string) =>
   gotoHydrated(page, `${BASE}${name}&`, { timeout: 20 * 60 * 1000 });
+
+/** Every distinct `role` attribute on a descendant of `popup`, sorted. */
+const rolesInside = (popup: Locator): Promise<string[]> =>
+  popup.evaluate((el) =>
+    Array.from(new Set(Array.from(el.querySelectorAll("[role]")).map((n) => n.getAttribute("role") ?? ""))).sort(),
+  );
+
+/** Roles that may never appear inside any menu popup of this pattern class. */
+const STANDALONE_WIDGET_ROLES = ["checkbox", "radio", "option", "listbox"];
+
+/**
+ * The checkable-role contract for one open popup: the roles inside it are
+ * exactly `roles` (so a checkable role can only be there when `roles` says
+ * so, and a plain demo's popup can never grow one), every checkable item has
+ * `aria-checked` of exactly "true" or "false", a plain item has none, nothing
+ * carries `aria-selected`, and each radio group has exactly one checked radio
+ * and holds every radio of its set.
+ */
+async function expectCheckableContract(popup: Locator, roles: string[], what: string) {
+  expect(await rolesInside(popup), `${what}: roles inside the popup`).toEqual([...roles].sort());
+  for (const forbidden of STANDALONE_WIDGET_ROLES) {
+    await expect(popup.locator(`[role="${forbidden}"]`), `${what}: no standalone role="${forbidden}"`).toHaveCount(0);
+  }
+  const checkable = popup.locator('[role="menuitemcheckbox"], [role="menuitemradio"]');
+  for (const item of await checkable.all()) {
+    const label = (await item.textContent())?.trim();
+    await expect(item, `${what}: "${label}" has aria-checked true|false, never absent`).toHaveAttribute(
+      "aria-checked",
+      /^(true|false)$/,
+    );
+  }
+  for (const plain of await popup.locator('[role="menuitem"]').all()) {
+    const label = (await plain.textContent())?.trim();
+    await expect(plain, `${what}: plain item "${label}" carries no aria-checked`).not.toHaveAttribute(
+      "aria-checked",
+      /.*/,
+    );
+  }
+  await expect(popup.locator("[aria-selected]"), `${what}: nothing carries aria-selected`).toHaveCount(0);
+  for (const group of await popup.locator('[role="group"]').all()) {
+    const radios = group.locator('[role="menuitemradio"]');
+    expect(await radios.count(), `${what}: a radio group holds at least two radios`).toBeGreaterThanOrEqual(2);
+    expect(
+      await group.locator('[role="menuitemradio"][aria-checked="true"]').count(),
+      `${what}: exactly one radio is checked per group`,
+    ).toBe(1);
+    expect(
+      await group.locator("[role]:not([role='menuitemradio'])").count(),
+      `${what}: a radio group holds only radios`,
+    ).toBe(0);
+  }
+  // Every radio lives in a group: none sits directly under the menu.
+  expect(
+    await popup.locator('[role="menuitemradio"]').count(),
+    `${what}: every menuitemradio is inside a role="group"`,
+  ).toBe(await popup.locator('[role="group"] [role="menuitemradio"]').count());
+}
 
 const menuButtonActionsUrl = pathToFileURL(
   path.resolve(
@@ -375,5 +451,134 @@ test.describe("APG Menu and Menubar pattern — Navbar nav dropdowns", () => {
         "nav dropdown items are activated, not selected",
       ).toBeNull();
     }
+  });
+});
+
+test.describe("APG Menu Button pattern — DropdownMenu: checkable items", () => {
+  test.beforeEach(async ({ page }) => {
+    await goto(page, "dropdown_menu");
+  });
+
+  test("a menu of checkbox items: menuitemcheckbox (plus the sub-trigger's menuitem), aria-checked true|false on each", async ({ page }) => {
+    await page.getByRole("button", { name: "Checkboxes" }).click();
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    // The "More options" sub-trigger is the one plain menuitem.
+    await expectCheckableContract(popup, ["menuitem", "menuitemcheckbox"], "DropdownMenu checkboxes");
+    await expect(popup.getByRole("menuitemcheckbox")).toHaveCount(3);
+  });
+
+  test("a menu of radio items: one role=group of menuitemradio with exactly one checked", async ({ page }) => {
+    await page.getByRole("button", { name: "Radio Group" }).click();
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["group", "menuitemradio"], "DropdownMenu radio group");
+    await expect(popup.getByRole("menuitemradio")).toHaveCount(3);
+  });
+
+  test("ILLEGAL ELSEWHERE: the plain demo's menu has no checkable role, no group, no aria-checked", async ({ page }) => {
+    await page.getByRole("button", { name: "Open Menu" }).click();
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["menuitem"], "DropdownMenu main");
+  });
+});
+
+test.describe("APG Menu pattern (context-menu invocation) — ContextMenu: checkable items", () => {
+  test.beforeEach(async ({ page }) => {
+    await goto(page, "context_menu");
+  });
+
+  test("a menu of checkbox items: menuitemcheckbox (plus the sub-trigger's menuitem), aria-checked true|false on each", async ({ page }) => {
+    await page.getByRole("button", { name: "Right click for checkboxes" }).click({ button: "right" });
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    // The "More options" sub-trigger is the one plain menuitem.
+    await expectCheckableContract(popup, ["menuitem", "menuitemcheckbox"], "ContextMenu checkboxes");
+    await expect(popup.getByRole("menuitemcheckbox")).toHaveCount(3);
+  });
+
+  test("a menu of radio items: two role=group sets of menuitemradio, exactly one checked in each", async ({ page }) => {
+    await page.getByRole("button", { name: "Right click for radio group" }).click({ button: "right" });
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["group", "menuitemradio"], "ContextMenu radio groups");
+    await expect(popup.getByRole("group")).toHaveCount(2);
+  });
+
+  test("a menu that mixes plain, checkbox and radio items has each role exactly where it was rendered", async ({ page }) => {
+    await page.getByRole("button", { name: "right click here" }).click({ button: "right" });
+    const popup = page.getByRole("menu");
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(
+      popup,
+      ["group", "menuitem", "menuitemcheckbox", "menuitemradio"],
+      "ContextMenu main",
+    );
+    // 4 plain items + the sub-trigger, 2 checkbox items, 2 radio items.
+    await expect(popup.getByRole("menuitem")).toHaveCount(5);
+    await expect(popup.getByRole("menuitemcheckbox")).toHaveCount(2);
+    await expect(popup.getByRole("menuitemradio")).toHaveCount(2);
+  });
+});
+
+test.describe("APG Menu and Menubar pattern — Menubar: checkable items", () => {
+  test.beforeEach(async ({ page }) => {
+    await goto(page, "menubar");
+  });
+
+  test("a menu mixing plain and checkbox items: menuitem + menuitemcheckbox only", async ({ page }) => {
+    await page.getByRole("menuitem", { name: "View" }).click();
+    const popup = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitemcheckbox", { name: "Always Show Full URLs" }) })
+      .last();
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["menuitem", "menuitemcheckbox"], "Menubar View");
+    await expect(popup.getByRole("menuitemcheckbox")).toHaveCount(2);
+    await expect(popup.getByRole("menuitem")).toHaveCount(2);
+  });
+
+  test("a menu of radio items: one role=group of menuitemradio with exactly one checked", async ({ page }) => {
+    await page.getByRole("menuitem", { name: "Accounts" }).click();
+    const popup = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitemradio", { name: "Benoit" }) })
+      .last();
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["group", "menuitemradio"], "Menubar Accounts");
+    await expect(popup.getByRole("menuitemradio")).toHaveCount(3);
+  });
+
+  test("ILLEGAL ELSEWHERE: the plain File menu has no checkable role, no group, no aria-checked", async ({ page }) => {
+    await page.getByRole("menuitem", { name: "File" }).click();
+    const popup = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "New" }) })
+      .last();
+    await expect(popup).toHaveAttribute("data-state", "open");
+    await expectCheckableContract(popup, ["menuitem"], "Menubar File");
+  });
+});
+
+test.describe("APG Menu and Menubar pattern — Navbar nav dropdowns: no checkable items", () => {
+  test("ILLEGAL ELSEWHERE: a nav dropdown has no checkable role, no group, no aria-checked", async ({ page }) => {
+    await goto(page, "navbar");
+    const inputsNav = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "Inputs" }) })
+      .first();
+    await inputsNav.hover();
+    await expect(inputsNav).toHaveAttribute("data-state", "open");
+    const navMenu = page
+      .getByRole("menu")
+      .filter({ has: page.getByRole("menuitem", { name: "Calendar" }) })
+      .last();
+    await expect(navMenu).toHaveAttribute("data-state", "open");
+    const roles = await rolesInside(navMenu);
+    for (const forbidden of ["menuitemcheckbox", "menuitemradio", "group", ...STANDALONE_WIDGET_ROLES]) {
+      expect(roles, `Navbar items are links, never checkable: found role="${forbidden}"`).not.toContain(forbidden);
+    }
+    await expect(navMenu.locator("[aria-checked]")).toHaveCount(0);
   });
 });

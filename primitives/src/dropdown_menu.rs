@@ -15,8 +15,13 @@ use crate::{
         CollectionPlacement, CollectionState,
     },
     direction::{use_direction, Direction},
-    has_own_accessible_name, merge_attributes, use_animated_open, use_controlled, use_id_or,
-    use_outside_dismiss, use_unique_id,
+    has_own_accessible_name,
+    menu_item::{
+        self, CheckableCommon, CheckableState, MenuCheckboxItemProps, MenuRadioGroupProps,
+        MenuRadioItemProps,
+    },
+    merge_attributes, use_animated_open, use_controlled, use_id_or, use_outside_dismiss,
+    use_unique_id,
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
@@ -1082,6 +1087,238 @@ pub fn DropdownMenuItem<T: Clone + PartialEq + 'static>(
 
             ..attributes,
             {props.children}
+        }
+    }
+}
+
+/// The props for the [`DropdownMenuCheckboxItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuCheckboxItemProps`].
+pub type DropdownMenuCheckboxItemProps = MenuCheckboxItemProps;
+
+/// The props for the [`DropdownMenuRadioGroup`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioGroupProps`].
+pub type DropdownMenuRadioGroupProps = MenuRadioGroupProps;
+
+/// The props for the [`DropdownMenuRadioItem`] component. Shared by every
+/// menu-family host -- see [`crate::menu_item::MenuRadioItemProps`].
+pub type DropdownMenuRadioItemProps = MenuRadioItemProps;
+
+/// # DropdownMenuCheckboxItem
+///
+/// An item within a [`DropdownMenuContent`] (or a [`DropdownMenuSubContent`])
+/// that can be checked and unchecked independently of its siblings --
+/// shadcn's `DropdownMenuCheckboxItem`. Renders `role="menuitemcheckbox"`
+/// with an always-present `aria-checked` (see `crate::menu_semantics`).
+///
+/// Controlled with `checked` + `on_checked_change`, or uncontrolled with
+/// `default_checked`. Clicking it, or pressing Enter or Space while it has
+/// focus, toggles it. Like Radix's `onSelect` default, that **closes the
+/// menu**; set `close_on_select: false` to keep the menu open so several
+/// items can be toggled in one visit (the optional APG behaviour for Space:
+/// "changes the state without closing the menu"). Disabled items cannot be
+/// toggled and are skipped by arrow keys and typeahead. A checkbox item has
+/// no `value`, so give it a `text_value` to make it a typeahead target.
+///
+/// This must be used inside a [`DropdownMenuContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::dropdown_menu::{
+///     DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut show_status_bar = use_signal(|| true);
+///     rsx! {
+///         DropdownMenu {
+///             DropdownMenuTrigger { "View" }
+///             DropdownMenuContent {
+///                 DropdownMenuCheckboxItem {
+///                     index: 0usize,
+///                     checked: Some(show_status_bar()),
+///                     on_checked_change: move |checked| show_status_bar.set(checked),
+///                     close_on_select: false,
+///                     text_value: "Status Bar",
+///                     "Status Bar"
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Styling
+///
+/// The [`DropdownMenuCheckboxItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates whether the item is disabled. Values are `true` or `false`.
+#[component]
+pub fn DropdownMenuCheckboxItem(props: DropdownMenuCheckboxItemProps) -> Element {
+    let state = menu_item::use_checkbox_state(
+        props.checked,
+        props.default_checked,
+        props.on_checked_change,
+    );
+    dropdown_checkable_item(state, props.into())
+}
+
+/// # DropdownMenuRadioGroup
+///
+/// A set of mutually exclusive [`DropdownMenuRadioItem`]s -- shadcn's
+/// `DropdownMenuRadioGroup`. Renders `role="group"`; give it an accessible
+/// name with `aria-label` or `aria-labelledby`. Controlled with `value` +
+/// `on_value_change`, or uncontrolled with `default_value`.
+///
+/// This must be used inside a [`DropdownMenuContent`] component.
+///
+/// ## Example
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::dropdown_menu::{
+///     DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+///     DropdownMenuTrigger,
+/// };
+/// #[component]
+/// fn Demo() -> Element {
+///     let mut position = use_signal(|| "bottom".to_string());
+///     rsx! {
+///         DropdownMenu {
+///             DropdownMenuTrigger { "Panel" }
+///             DropdownMenuContent {
+///                 DropdownMenuRadioGroup {
+///                     aria_label: "Panel position",
+///                     value: Some(position()),
+///                     on_value_change: move |value| position.set(value),
+///                     DropdownMenuRadioItem {
+///                         index: 0usize,
+///                         value: "top".to_string(),
+///                         "Top"
+///                     }
+///                     DropdownMenuRadioItem {
+///                         index: 1usize,
+///                         value: "bottom".to_string(),
+///                         "Bottom"
+///                     }
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+#[component]
+pub fn DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) -> Element {
+    menu_item::render_radio_group(props)
+}
+
+/// # DropdownMenuRadioItem
+///
+/// One choice in a [`DropdownMenuRadioGroup`] -- shadcn's
+/// `DropdownMenuRadioItem`. Renders `role="menuitemradio"` with an
+/// always-present `aria-checked`; it is checked while the group's value
+/// equals its own `value`, and choosing it (click, Enter or Space) sets the
+/// group's value and, like Radix's `onSelect` default, **closes the menu**
+/// unless `close_on_select` is `false`. Falls back to `value` as its
+/// typeahead label. Disabled items cannot be chosen and are skipped by arrow
+/// keys and typeahead.
+///
+/// This must be used inside a [`DropdownMenuRadioGroup`] component.
+///
+/// ## Styling
+///
+/// The [`DropdownMenuRadioItem`] component defines the following data attributes you can use to control styling:
+/// - `data-state`: Whether the item is checked. Values are `checked` or `unchecked`.
+/// - `data-disabled`: Indicates whether the item is disabled. Values are `true` or `false`.
+#[component]
+pub fn DropdownMenuRadioItem(props: DropdownMenuRadioItemProps) -> Element {
+    let state = menu_item::use_radio_state(props.value);
+    dropdown_checkable_item(state, props.into())
+}
+
+/// The body shared by [`DropdownMenuCheckboxItem`] and
+/// [`DropdownMenuRadioItem`]: everything that is the same for both roles
+/// lives in `crate::menu_item`; this is the host-specific half -- which
+/// roving-focus collection the item registers in, how a click/key commits,
+/// and what "close" means for a `DropdownMenu`. Called from a component
+/// body; it calls hooks.
+fn dropdown_checkable_item(state: CheckableState, common: CheckableCommon) -> Element {
+    let mut ctx: DropdownMenuContext = use_context();
+    // Inside a `DropdownMenuSubContent` the item belongs to that submenu's
+    // own roving-focus collection, never the root's -- the same split
+    // `DropdownMenuSubItem` makes. `DropdownMenuSub` provides its
+    // `SubMenuState` to everything below it, and nothing outside a submenu
+    // ever sees one, so this resolves the right collection from where the
+    // item is rendered, with no second component for the submenu case.
+    let sub: Option<crate::menu_sub::SubMenuState> = try_use_context();
+    let focus = sub.map_or(ctx.focus, |sub| sub.focus);
+
+    let CheckableCommon {
+        index,
+        disabled: item_disabled,
+        text_value,
+        close_on_select,
+        attributes,
+        children,
+    } = common;
+    let disabled = move || (ctx.disabled)() || item_disabled();
+    let item = use_item(
+        collection_item(focus, index)
+            .disabled(disabled)
+            .text_value(move || state.text_value(text_value)),
+    );
+    let focused = move || item.focused();
+    let onmounted = item.onmounted();
+
+    let select = move || {
+        if disabled() {
+            return;
+        }
+        state.activate();
+        if close_on_select() {
+            ctx.set_open.call(false);
+        }
+    };
+
+    // Owned by this component, so they win over a caller's own attributes
+    // (`docs/backlog.md` row 93's duplicate-attribute hazard).
+    let attributes = merge_attributes(vec![
+        attributes,
+        state.owned_attributes(disabled(), if focused() { "0" } else { "-1" }),
+    ]);
+
+    rsx! {
+        div {
+            onclick: move |e: Event<MouseData>| {
+                e.stop_propagation();
+                select();
+            },
+
+            onkeydown: move |event: Event<KeyboardData>| {
+                if menu_item::is_activation_key(&event.key()) {
+                    select();
+                    event.prevent_default();
+                    event.stop_propagation();
+                }
+            },
+
+            onmounted,
+
+            onblur: move |_| {
+                if focused() {
+                    match sub {
+                        // See `DropdownMenuSubItem`'s identical guard: clear
+                        // only this submenu's own collection.
+                        Some(mut sub) => sub.focus.clear_focus(),
+                        None => {
+                            ctx.interacted_outside.set(true);
+                            ctx.focus.clear_focus();
+                        }
+                    }
+                }
+            },
+
+            ..attributes,
+            {children}
         }
     }
 }

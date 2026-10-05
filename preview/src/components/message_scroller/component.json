@@ -1,0 +1,21 @@
+{
+  "name": "message_scroller",
+  "description": "A chat transcript scroller: follows a streaming reply at the live edge, anchors new turns, opens saved threads without a flash, keeps your place when history loads, and offers a jump-to-latest button.",
+  "authors": ["Claude"],
+  "exclude": ["variants", "docs.md", "component.json"],
+  "cargoDependencies": [
+    {
+      "name": "dioxus-primitives",
+      "git": "https://github.com/DioxusLabs/components"
+    },
+    {
+      "name": "dioxus-icons",
+      "version": "0.1.0"
+    }
+  ],
+  "componentDependencies": ["button"],
+  "globalAssets": [
+    "../../../assets/dx-components-theme.css",
+    "../../../assets/dx-effects.css"
+  ]
+}

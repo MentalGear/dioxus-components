@@ -92,7 +92,8 @@ pub fn category_of(name: &str) -> ComponentCategory {
         }
         "accordion" | "collapsible" => ComponentCategory::Disclosure,
         "avatar" | "card" | "separator" | "aspect_ratio" | "item" | "drag_and_drop_list"
-        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable" => {
+        | "virtual_list" | "scroll_area" | "tag_group" | "table" | "data_table" | "resizable"
+        | "message" | "bubble" | "marker" | "attachment" | "message_scroller" => {
             ComponentCategory::DataDisplay
         }
         "chart" | "area_chart" | "bar_chart" | "line_chart" | "pie_chart" | "radar_chart"
@@ -233,10 +234,12 @@ examples!(
     alert_dialog,
     area_chart[linear, step, stacked, stacked_expand, gradient, legend, axes, icons, interactive],
     aspect_ratio,
+    attachment[states, sizes, image, group, trigger],
     avatar,
     badge,
     bar_chart[horizontal, multiple, stacked, stacked_legend, negative, mixed, label, label_custom, active, interactive],
     breadcrumb,
+    bubble[alignment, group, reactions, link_button],
     button[size, icon],
     button_group,
     calendar[simple, internationalized, range, multi_month, unavailable_dates, rtl],
@@ -249,13 +252,13 @@ examples!(
     color_picker,
     combobox[controlled, disabled, dynamic],
     command,
-    context_menu[rtl],
+    context_menu[checkboxes, radio_group, rtl],
     data_table,
     date_picker[internationalized, range, multi_month, unavailable_dates],
     dialog,
     drag_and_drop_list[removable],
     drawer,
-    dropdown_menu[rtl],
+    dropdown_menu[checkboxes, radio_group, rtl],
     empty,
     field,
     form,
@@ -267,7 +270,10 @@ examples!(
     kbd,
     label,
     line_chart[linear, step, multiple, dots, dots_colors, dots_custom, label, label_custom, interactive],
-    menubar[rtl],
+    marker[variants, status, link_button],
+    menubar[checkboxes, radio_group, rtl],
+    message[avatar, group, header_footer, actions, attachment],
+    message_scroller[last_anchor, load_history, long],
     native_select,
     navigation_menu,
     navbar[rtl],

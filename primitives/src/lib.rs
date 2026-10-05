@@ -36,12 +36,15 @@ pub mod drawer;
 pub mod dropdown_menu;
 pub mod hover_card;
 pub mod input_otp;
+pub mod interval;
 pub mod label;
 mod listbox;
+pub mod menu_item;
 mod menu_root;
 mod menu_semantics;
 mod menu_sub;
 pub mod menubar;
+pub mod message_scroller;
 mod move_interaction;
 #[cfg(feature = "router")]
 pub mod navbar;
