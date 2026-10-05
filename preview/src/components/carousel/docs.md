@@ -38,6 +38,7 @@ Each example is shown live under Variants below.
 - **Indicators.** A row of tab-style dots, one per slide.
 - **Autoplay.** Auto-rotation with a start/stop button.
 - **Rewind.** `loop` with `loop_mode: Rewind` jumps from the last slide back to the first.
+- **Hidden arrows.** `nav_disabled_opacity: 0.0` fades the arrow at the first or last slide out completely.
 - **Virtual loop.** A seamless endless loop over a data set, with virtualisation.
 - **Virtual loop (RTL).** The same loop in a right-to-left layout.
 - **Virtual many.** 200 slides with only a handful in the DOM at any time.
@@ -50,6 +51,7 @@ Each example is shown live under Variants below.
 - `align`: `CarouselAlign::Start` (default), `Center` or `End`. It sets where a slide rests against the track, and only shows when there is leftover space, for example with `--dx-carousel-peek`.
 - `r#loop`: whether Previous, Next and the arrow keys wrap around at the ends. Default `false`.
 - `loop_mode`: how a loop wraps. `LoopMode::Seamless` (default) or `LoopMode::Rewind`. See Looping below.
+- `nav_disabled_opacity`: `Option<f32>`, the opacity of the Previous or Next arrow while it is disabled, clamped to `0.0..=1.0`. Unset keeps the theme's `0.5`. See Disabled arrows below.
 - `default_value`: the initially selected slide (0-based) when uncontrolled.
 - `value`: the selected slide when you control it yourself.
 - `on_value_change`: called with the new index whenever the selected slide changes (see Events).
@@ -77,6 +79,40 @@ shadcn has no `gap` prop. It spaces slides with utility classes: `-ml-N` on `Car
 - Everything else (plain `CarouselItem`s, or `CarouselVirtualContent` that is not windowed) has no seamless option. With `LoopMode::Seamless` (the default) `loop` does nothing there and the buttons stay disabled at the ends. Choose `LoopMode::Rewind` to opt in to wrapping: Next on the last slide jumps straight back to the first, and Previous on the first jumps to the last.
 
 Dragging or scrolling past an end never wraps; only the buttons and the arrow keys do. A looping carousel, `Rewind` or seamless, also has no edge stretch (see Dragging and scrolling).
+
+### Disabled arrows
+
+Without `loop`, Previous is disabled on the first slide and Next on the last. The theme dims a disabled arrow to half opacity, as shadcn does. `nav_disabled_opacity` on `Carousel` changes that for both arrows at once:
+
+```rust
+// Fade the arrow out completely at either end.
+Carousel { aria_label: "Featured photos", nav_disabled_opacity: 0.0,
+    CarouselPrevious { ChevronLeft {} }
+    CarouselNext { ChevronRight {} }
+    CarouselContent { /* CarouselItems */ }
+}
+
+// Or just dim it further.
+Carousel { aria_label: "Featured photos", nav_disabled_opacity: 0.2, /* ... */ }
+```
+
+The value is clamped to `0.0..=1.0`, and a non-finite one is ignored. The arrow fades with the same duration and easing as the rest of the theme (`--dx-motion-duration-slow`), in both directions, and `prefers-reduced-motion: reduce` makes the change instant.
+
+At `0.0` the arrow also becomes `visibility: hidden` once the fade has finished, so an invisible button is not announced by a screen reader and cannot be hit. It stays in the layout, so the other arrow and the slides never move, and it comes back the moment you page away from the end. All of this holds for vertical and right-to-left carousels as well. A carousel that loops never disables its arrows, so this does nothing there.
+
+The prop only sets two CSS custom properties on the carousel's root element, which you can also set from a stylesheet, on `.dx-carousel`, on a class of your own, or on any ancestor:
+
+- `--dx-carousel-nav-disabled-opacity`: the disabled arrow's opacity. Default `var(--dx-opacity-disabled)`, which is `0.5`.
+- `--dx-carousel-nav-disabled-visibility`: `visible` (default) or `hidden`. The prop sets it to `hidden` exactly when the opacity is `0`. CSS cannot turn a number into a keyword, so a stylesheet that wants the hidden arrow sets both:
+
+```css
+.hero-carousel {
+    --dx-carousel-nav-disabled-opacity: 0;
+    --dx-carousel-nav-disabled-visibility: hidden;
+}
+```
+
+With only the opacity variable at `0` the arrow is invisible but a screen reader still finds it, disabled. A `style` you pass to `Carousel` wins over the prop.
 
 ### Autoplay
 
@@ -172,7 +208,8 @@ Style the active dot from the `data-active` attribute in your stylesheet, not wi
 ## Accessibility
 
 - The root is a labelled region with `aria-roledescription="carousel"`; each slide has `aria-roledescription="slide"` and is named "n of m" by default. With `CarouselIndicators`, slides become tab panels.
-- Previous and Next are real buttons and become genuinely `disabled` at the ends when the carousel does not loop.
+- Previous and Next are real buttons and become genuinely `disabled` at the ends when the carousel does not loop. Hiding them with `nav_disabled_opacity: 0.0` changes how they look and removes them from the accessibility tree once faded; the `disabled` attribute is still what carries the state.
+- If the arrow that has focus becomes disabled, because that press paged to the end, focus moves to the track (the `CarouselContent`), where the arrow keys keep working. Chromium otherwise drops focus to the top of the page, and a browser that leaves it on the disabled button leaves it somewhere keys no longer reach; a hidden arrow cannot hold focus at all. It moves to the track rather than to the other arrow because the other arrow can itself be disabled. Only focus that was actually on the arrow moves: a mouse click that did not focus it leaves focus where it was.
 - With focus inside the carousel, `ArrowLeft` and `ArrowRight` go to the previous and next slide (swapped in RTL). A vertical carousel uses `ArrowUp` and `ArrowDown` instead.
 - With `CarouselIndicators`, the dots follow the tabs pattern: arrow keys, Home and End move focus and select immediately.
 - With `CarouselAutoplay`, the track's `aria-live` is `off` while rotating and `polite` once stopped. Put `CarouselRotationControl` first so it is the first focusable element.

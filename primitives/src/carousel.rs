@@ -351,6 +351,36 @@ fn content_gap_var(gap: Option<&str>) -> String {
     }
 }
 
+/// The `nav_disabled_opacity` prop ([`CarouselProps::nav_disabled_opacity`])
+/// as the inline declarations it renders on the root: the opacity itself as
+/// `--dx-carousel-nav-disabled-opacity:<n>;`, plus -- only when the value is
+/// `0` -- `--dx-carousel-nav-disabled-visibility:hidden;`. `None` and
+/// non-finite values (`NaN`, infinities) render nothing, leaving whatever the
+/// stylesheet says in force; anything else is clamped into `0..=1`.
+///
+/// **Why a second variable.** An arrow faded to nothing should not stay
+/// reachable by assistive technology (an `opacity: 0` control is still in the
+/// accessibility tree and still hit-testable), and CSS has no way to turn "the
+/// opacity variable is `0`" into `visibility: hidden` (a style query on a
+/// custom property is not available in every engine, and a numeric custom
+/// property cannot be mapped to a keyword). So the prop states the keyword
+/// itself, in a variable of its own that the stylesheet reads with a `visible`
+/// fallback. A stylesheet-only caller sets the same two variables by hand.
+fn nav_disabled_vars(opacity: Option<f32>) -> String {
+    match opacity.filter(|value| value.is_finite()) {
+        Some(value) => {
+            let value = value.clamp(0.0, 1.0);
+            if value == 0.0 {
+                "--dx-carousel-nav-disabled-opacity:0;--dx-carousel-nav-disabled-visibility:hidden;"
+                    .to_string()
+            } else {
+                format!("--dx-carousel-nav-disabled-opacity:{value};")
+            }
+        }
+        None => String::new(),
+    }
+}
+
 /// `overscroll-behavior` on the scroll axis, from whether BOTH physical ends
 /// of the currently rendered slides are true ends of the data (the same rule
 /// the rubber-bands follow, `carousel_true_end_js!`): `""` (the platform's
@@ -2752,6 +2782,75 @@ impl CarouselContext {
         (self.loop_enabled)()
             && ((self.loop_mode)() == LoopMode::Rewind || (self.virtualized_loop_active)())
     }
+
+    /// Whether [`CarouselPrevious`] is genuinely `disabled` right now. The
+    /// one definition: the button's `disabled` attribute, its focus
+    /// hand-off ([`use_nav_focus_hand_off`]) and its blur guard all read it,
+    /// so they cannot disagree.
+    fn prev_disabled(&self) -> bool {
+        !self.loop_wraps() && !can_scroll_prev((self.selected)())
+    }
+
+    /// The [`CarouselNext`] mirror of [`Self::prev_disabled`].
+    fn next_disabled(&self) -> bool {
+        !self.loop_wraps() && !can_scroll_next((self.selected)(), (self.count)())
+    }
+}
+
+/// Keeps keyboard focus from being stranded when a focused
+/// [`CarouselPrevious`]/[`CarouselNext`] becomes `disabled` -- returns the
+/// `(onfocusin, onfocusout)` handlers the button must wire.
+///
+/// **The bug it closes.** Pressing `Enter`/`Space` on Next to reach the last
+/// slide disables Next *while it holds focus*. Chromium then runs its focus
+/// fixup and drops focus to `<body>` (measured: Chromium 141, the
+/// `main` demo, the 4th `Enter`), so the next `Tab` starts from the top of the
+/// page; a browser that skips the fixup leaves focus on the now-dead button,
+/// where no key reaches it (not measured here). Either way a keyboard user
+/// loses their place (WCAG 2.4.3). It is the same class as the slide that
+/// becomes `inert` while focused (`Carousel`'s own focus-safety effect), and
+/// the same fix applies: hand focus to the carousel's own scroller
+/// ([`CarouselContent`], always focusable and never disabled or hidden),
+/// where `ArrowLeft`/`ArrowRight` keep paging, instead of the other arrow
+/// (which can itself be disabled, or absent, on a one-slide carousel). This
+/// is also what keeps the arrow safe to hide (`nav_disabled_opacity: 0.0`
+/// renders it `visibility: hidden`, which would otherwise strand focus the
+/// same way).
+///
+/// **Why a flag and not `document.activeElement`.** By the time the effect
+/// runs the browser may already have moved focus, so the button's own
+/// `focusin`/`focusout` keep a Rust-side flag, and `focusout` ignores a blur
+/// that arrives while the button is already disabled (that blur is the
+/// browser's fixup, not the user leaving). A mouse click that never focused
+/// the button (Safari, Firefox on macOS) leaves the flag `false`, so nothing
+/// moves.
+fn use_nav_focus_hand_off(
+    ctx: CarouselContext,
+    is_disabled: fn(&CarouselContext) -> bool,
+) -> (Callback<Event<FocusData>>, Callback<Event<FocusData>>) {
+    let mut focused = use_signal(|| false);
+    use_effect(move || {
+        let disabled = is_disabled(&ctx);
+        if !disabled || !*focused.peek() {
+            return;
+        }
+        focused.set(false);
+        let target = ctx.content_id.peek().clone();
+        if target.is_empty() {
+            return;
+        }
+        document::eval(&format!(
+            "var root = document.getElementById('{target}'); \
+             if (root) {{ root.focus({{ preventScroll: true }}); }}"
+        ));
+    });
+    let onfocusin = use_callback(move |_: Event<FocusData>| focused.set(true));
+    let onfocusout = use_callback(move |_: Event<FocusData>| {
+        if !is_disabled(&ctx) {
+            focused.set(false);
+        }
+    });
+    (onfocusin, onfocusout)
 }
 
 /// Autoplay/rotation-control state, grouped out of [`CarouselContext`]
@@ -2890,6 +2989,24 @@ pub struct CarouselProps {
     /// See [`crate::direction::use_direction`].
     pub dir: Option<Direction>,
 
+    /// The opacity of a disabled [`CarouselPrevious`]/[`CarouselNext`] -- the
+    /// arrow at the first/last slide of a carousel that does not loop. One
+    /// setting for both arrows. `None` (the default) renders nothing and the
+    /// stylesheet decides; the shipped theme dims them to its disabled
+    /// opacity (0.5, shadcn's `disabled:opacity-50`). A value is clamped
+    /// into `0.0..=1.0` (a non-finite one counts as unset) and written as
+    /// `--dx-carousel-nav-disabled-opacity:<n>;` on the root, so it reaches
+    /// both arrows by inheritance and a stylesheet can set the same variable
+    /// without the prop. `0.0` also writes
+    /// `--dx-carousel-nav-disabled-visibility:hidden;`: the theme fades the
+    /// arrow out and then removes it from the accessibility tree and the hit
+    /// test, without moving anything (see this component's "Styling" doc).
+    ///
+    /// The primitive does no styling itself -- an unthemed carousel ignores
+    /// both variables.
+    #[props(default)]
+    pub nav_disabled_opacity: Option<f32>,
+
     /// Additional attributes to apply to the carousel's root element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -2968,6 +3085,21 @@ pub struct CarouselProps {
 /// - `data-orientation`: `horizontal` or `vertical`, matching
 ///   [`CarouselProps::orientation`].
 /// - `data-direction`: the resolved text direction, `ltr` or `rtl`.
+///
+/// It also publishes two optional custom properties for a theme to read on
+/// the disabled [`CarouselPrevious`]/[`CarouselNext`], both set by
+/// [`CarouselProps::nav_disabled_opacity`] (or by a stylesheet directly):
+/// - `--dx-carousel-nav-disabled-opacity`: the disabled arrow's opacity,
+///   `0..=1`.
+/// - `--dx-carousel-nav-disabled-visibility`: `hidden` when that opacity is
+///   `0`, so an invisible arrow also leaves the accessibility tree.
+///
+/// ## Focus on the arrows
+///
+/// When the focused Previous/Next becomes `disabled` (it just paged to the
+/// end), focus moves to the [`CarouselContent`] scroller rather than being
+/// left on a dead button or dropped to `<body>`; `Enter`/`Space` on an arrow
+/// never otherwise moves focus.
 #[component]
 pub fn Carousel(props: CarouselProps) -> Element {
     let (raw_selected, set_raw_selected) =
@@ -3303,13 +3435,28 @@ pub fn Carousel(props: CarouselProps) -> Element {
     // (owned-wins) -- preserves today's production (SSR+hydrate) behavior
     // exactly, since the browser's own parser already resolves a duplicate
     // to the first (library) value.
+    //
+    // `style` is built the way `CarouselContent`'s is: the prop's variables
+    // first, then whatever `style` the caller passed (so a caller-set
+    // `--dx-carousel-nav-disabled-opacity` still wins, being later in the same
+    // attribute), folded into ONE `style` attribute -- and none at all when
+    // both are empty, so a carousel that uses neither renders exactly the
+    // markup it did before this prop existed.
+    let (caller_style, rest_attrs) = fold_style_attributes(props.attributes);
+    let style = format!(
+        "{}{}",
+        nav_disabled_vars(props.nav_disabled_opacity),
+        caller_style.unwrap_or_default()
+    );
+    let style = (!style.is_empty()).then_some(style);
     let attributes = merge_attributes(vec![
-        props.attributes,
+        rest_attrs,
         attributes!(div {
             role: "region",
             aria_roledescription: "carousel",
             "data-orientation": orientation().as_str(),
             "data-direction": direction.as_str(),
+            style: style,
         }),
     ]);
 
@@ -4812,8 +4959,8 @@ pub struct CarouselPreviousProps {
 #[component]
 pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
-    let selected = (ctx.selected)();
-    let disabled = !ctx.loop_wraps() && !can_scroll_prev(selected);
+    let disabled = ctx.prev_disabled();
+    let (onfocusin, onfocusout) = use_nav_focus_hand_off(ctx, CarouselContext::prev_disabled);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Previous slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -4847,6 +4994,8 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
                 ctx.set_selected.call(step_prev((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
+            onfocusin,
+            onfocusout,
             ..attributes,
 
             {props.children}
@@ -4865,9 +5014,8 @@ pub fn CarouselPrevious(props: CarouselPreviousProps) -> Element {
 #[component]
 pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
     let ctx: CarouselContext = use_context();
-    let selected = (ctx.selected)();
-    let count = (ctx.count)();
-    let disabled = !ctx.loop_wraps() && !can_scroll_next(selected, count);
+    let disabled = ctx.next_disabled();
+    let (onfocusin, onfocusout) = use_nav_focus_hand_off(ctx, CarouselContext::next_disabled);
     let default_label = (!has_own_accessible_name(&props.attributes)).then_some("Next slide");
     let content_id = (ctx.content_id)();
     let aria_controls = (!content_id.is_empty()).then_some(content_id);
@@ -4893,6 +5041,8 @@ pub fn CarouselNext(props: CarouselPreviousProps) -> Element {
                 ctx.set_selected.call(step_next((ctx.selected)(), (ctx.count)(), wraps_now));
                 ctx.autoplay.note_interaction();
             },
+            onfocusin,
+            onfocusout,
             ..attributes,
 
             {props.children}
@@ -6554,6 +6704,131 @@ mod ssr_tests {
         let tag_start = html[..prop_at].rfind('<').unwrap();
         let tag = &html[tag_start..html[tag_start..].find('>').unwrap() + tag_start];
         assert_eq!(tag.matches(" style=").count(), 1, "{tag}");
+    }
+
+    // -- `nav_disabled_opacity` ------------------------------------------
+
+    #[test]
+    fn nav_disabled_vars_pass_a_value_through_and_clamp_it() {
+        assert_eq!(
+            nav_disabled_vars(Some(0.25)),
+            "--dx-carousel-nav-disabled-opacity:0.25;"
+        );
+        assert_eq!(
+            nav_disabled_vars(Some(1.0)),
+            "--dx-carousel-nav-disabled-opacity:1;"
+        );
+        assert_eq!(
+            nav_disabled_vars(Some(7.0)),
+            "--dx-carousel-nav-disabled-opacity:1;"
+        );
+        // Below the range clamps to 0, which is the "hidden" case.
+        assert_eq!(nav_disabled_vars(Some(-3.0)), nav_disabled_vars(Some(0.0)));
+    }
+
+    #[test]
+    fn nav_disabled_vars_hide_the_arrow_only_at_exactly_zero() {
+        assert_eq!(
+            nav_disabled_vars(Some(0.0)),
+            "--dx-carousel-nav-disabled-opacity:0;--dx-carousel-nav-disabled-visibility:hidden;"
+        );
+        // A tiny but visible opacity is still a visible, focusable-looking
+        // arrow: hiding it would be a lie.
+        assert!(!nav_disabled_vars(Some(0.01)).contains("visibility"));
+    }
+
+    #[test]
+    fn nav_disabled_vars_ignore_none_and_non_finite() {
+        assert_eq!(nav_disabled_vars(None), "");
+        assert_eq!(nav_disabled_vars(Some(f32::NAN)), "");
+        assert_eq!(nav_disabled_vars(Some(f32::INFINITY)), "");
+        assert_eq!(nav_disabled_vars(Some(f32::NEG_INFINITY)), "");
+    }
+
+    #[component]
+    fn NavOpacityCarousel(opacity: Option<f32>, caller_style: bool) -> Element {
+        let style = caller_style.then_some("--dx-carousel-nav-disabled-opacity:0.9;");
+        rsx! {
+            Carousel {
+                aria_label: "Featured photos",
+                nav_disabled_opacity: opacity,
+                style,
+                CarouselPrevious { "Prev" }
+                CarouselNext { "Next" }
+                CarouselContent {
+                    CarouselItem { index: 0usize, "One" }
+                    CarouselItem { index: 1usize, "Two" }
+                }
+            }
+        }
+    }
+
+    /// The opening tag of the root `<div role="region"`.
+    fn root_tag(html: &str) -> &str {
+        let at = html.find("role=\"region\"").unwrap();
+        let tag_start = html[..at].rfind('<').unwrap();
+        &html[tag_start..html[tag_start..].find('>').unwrap() + tag_start]
+    }
+
+    #[test]
+    fn nav_disabled_opacity_sets_the_variable_on_the_root_only() {
+        let html = render_props(
+            NavOpacityCarousel,
+            NavOpacityCarouselProps {
+                opacity: Some(0.0),
+                caller_style: false,
+            },
+        );
+        let root = root_tag(&html);
+        assert!(
+            root.contains("--dx-carousel-nav-disabled-opacity:0;"),
+            "{root}"
+        );
+        assert!(
+            root.contains("--dx-carousel-nav-disabled-visibility:hidden;"),
+            "{root}"
+        );
+        // Inherited by both arrows: neither button carries its own copy.
+        assert_eq!(
+            html.matches("--dx-carousel-nav-disabled-opacity").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn nav_disabled_opacity_none_adds_no_style_to_the_root() {
+        // Markup is unchanged for every carousel that does not use the prop:
+        // no `style` attribute at all, and none of the variables anywhere.
+        let html = render_props(
+            NavOpacityCarousel,
+            NavOpacityCarouselProps {
+                opacity: None,
+                caller_style: false,
+            },
+        );
+        assert!(!root_tag(&html).contains("style="), "{}", root_tag(&html));
+        assert!(!html.contains("--dx-carousel-nav-disabled"));
+    }
+
+    #[test]
+    fn caller_style_still_overrides_the_nav_disabled_opacity_prop() {
+        let html = render_props(
+            NavOpacityCarousel,
+            NavOpacityCarouselProps {
+                opacity: Some(0.3),
+                caller_style: true,
+            },
+        );
+        let root = root_tag(&html);
+        let prop_at = root
+            .find("--dx-carousel-nav-disabled-opacity:0.3;")
+            .unwrap();
+        let caller_at = root
+            .find("--dx-carousel-nav-disabled-opacity:0.9;")
+            .unwrap();
+        assert!(prop_at < caller_at, "{root}");
+        // One merged `style` attribute, never two.
+        assert_eq!(root.matches(" style=").count(), 1, "{root}");
     }
 
     #[test]
