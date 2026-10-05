@@ -1,5 +1,6 @@
 use super::super::component::*;
 use crate::components::button::{Button, ButtonVariant};
+use crate::components::form::DemoForm;
 use crate::components::input::Input;
 use crate::components::label::Label;
 use dioxus::prelude::*;
@@ -16,7 +17,7 @@ pub fn Demo() -> Element {
                 }
             }
             CardContent {
-                form { id: "login-form",
+                DemoForm { id: "login-form",
                     div { style: "display: flex; flex-direction: column; gap: 1.5rem;",
                         div { style: "display: grid; gap: 0.5rem;",
                             Label { html_for: "email", "Email" }

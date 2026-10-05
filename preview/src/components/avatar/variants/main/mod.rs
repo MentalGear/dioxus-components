@@ -9,6 +9,13 @@ use dioxus::prelude::*;
 // Keep this request pending so the example uses the real avatar loading state.
 const LOADING_AVATAR_SRC: &str = "https://httpbin.org/delay/3600";
 
+// Bundled illustrations (`preview/assets/avatars`, CC0 -- see its README for
+// the credit). Local, so the demo loads the same offline and on Pages, and the
+// people are invented, so no real person's photo is hot-linked.
+const AVERY_LIN: Asset = asset!("/assets/avatars/avery-lin.svg");
+const CASEY_PARK: Asset = asset!("/assets/avatars/casey-park.svg");
+const PRIYA_NAIR: Asset = asset!("/assets/avatars/priya-nair.svg");
+
 #[component]
 pub fn Demo() -> Element {
     let mut avatar_state = use_signal(|| "No state yet".to_string());
@@ -24,13 +31,13 @@ pub fn Demo() -> Element {
                 p { class: "dx-avatar-label", "Basic Usage" }
                 ImageAvatar {
                     size: AvatarImageSize::Small,
-                    src: "https://avatars.githubusercontent.com/u/66571940?s=96&v=4",
-                    alt: "User avatar",
+                    src: AVERY_LIN.to_string(),
+                    alt: "Avery Lin",
                     on_state_change: move |state| {
                         avatar_state.set(format!("Avatar 1: {state:?}"));
                     },
                     aria_label: "Basic avatar",
-                    "EA"
+                    "AL"
                 }
             }
             div { class: "dx-avatar-item",
@@ -38,13 +45,13 @@ pub fn Demo() -> Element {
                 ImageAvatar {
                     size: AvatarImageSize::Small,
                     shape: AvatarShape::Rounded,
-                    src: "https://avatars.githubusercontent.com/u/66571940?s=96&v=4",
-                    alt: "User avatar",
+                    src: CASEY_PARK.to_string(),
+                    alt: "Casey Park",
                     on_state_change: move |state| {
                         avatar_state.set(format!("Avatar 2: {state:?}"));
                     },
-                    aria_label: "Basic avatar",
-                    "EA"
+                    aria_label: "Rounded avatar",
+                    "CP"
                 }
             }
             div { class: "dx-avatar-item",
@@ -63,25 +70,25 @@ pub fn Demo() -> Element {
                 ImageAvatar {
                     size: AvatarImageSize::Medium,
                     src: "https://invalid-url.example/image.jpg",
-                    alt: "Invalid image",
+                    alt: "Jordan Reyes",
                     on_state_change: move |state| {
                         avatar_state.set(format!("Avatar 3: {state:?}"));
                     },
                     aria_label: "Error avatar",
-                    "JK"
+                    "JR"
                 }
             }
             div { class: "dx-avatar-item",
                 p { class: "dx-avatar-label", "Large Size" }
                 ImageAvatar {
                     size: AvatarImageSize::Large,
-                    src: asset!("/assets/dioxus-logo.png", ImageAssetOptions::new().with_avif()).to_string(),
-                    alt: "Large avatar",
+                    src: PRIYA_NAIR.to_string(),
+                    alt: "Priya Nair",
                     on_state_change: move |state| {
                         avatar_state.set(format!("Avatar 4: {state:?}"));
                     },
                     aria_label: "Large avatar",
-                    "DX"
+                    "PN"
                 }
             }
         }

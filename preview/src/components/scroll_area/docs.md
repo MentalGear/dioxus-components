@@ -6,7 +6,7 @@ The ScrollArea component is used to create a scrollable container for its childr
 // The ScrollArea component wraps all scrollable content.
 ScrollArea {
     // The direction in which the scroll area can scroll. Can be one of Horizontal, Vertical, or Both.
-    scroll_direction: ScrollDirection::Vertical,
+    direction: ScrollDirection::Vertical,
     // The content of the scrollable area
     {children}
 }

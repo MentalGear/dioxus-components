@@ -27,7 +27,7 @@ use crate::components::{
 };
 use crate::{
     components, installed_source, variant_title, ComponentVariantDemoData, HighlightedCode, Navbar,
-    PreviewCode, Route,
+    PreviewCode, Route, MAIN_ID,
 };
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
@@ -281,7 +281,7 @@ pub fn ChartsKind(kind: String, dark_mode: Option<bool>) -> Element {
         None => rsx! {
             document::Title { "Chart type not found \u{2013} {SITE_NAME}" }
             Navbar {}
-            main { class: "dx-charts-not-found",
+            main { id: MAIN_ID, tabindex: "-1", class: "dx-charts-not-found",
                 h1 { "Chart type not found" }
                 p { "There is no chart gallery called \"{kind}\"." }
                 Link { to: Route::charts(ChartKind::Area), "Browse the area charts" }
@@ -356,7 +356,7 @@ fn ChartsPage(kind: ChartKind) -> Element {
     rsx! {
         document::Title { "{kind.tab_label()} \u{2013} {SITE_NAME}" }
         Navbar {}
-        main { class: "dx-charts-page",
+        main { id: MAIN_ID, tabindex: "-1", class: "dx-charts-page",
             ChartsHero {}
             div { id: "charts", class: "dx-charts-browse",
                 ChartsTabs { active: kind }

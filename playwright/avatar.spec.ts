@@ -4,10 +4,14 @@ import { BASE_URL } from "./base-url";
 
 test("test", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=avatar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
-  let image = page.getByRole("img", { name: "User avatar" }).first();
-  await expect(image).toHaveAttribute("src", "https://avatars.githubusercontent.com/u/66571940?s=96&v=4");
+  // The demo avatars are bundled geometric SVGs (preview/assets/avatars), not
+  // hot-linked photos: the src is the hashed local asset and it must actually load.
+  const image = page.getByRole("img", { name: "Avery Lin" }).first();
+  await expect(image).toHaveAttribute("src", /\/avery-lin[^/]*\.svg$/);
+  await expect(page.getByLabel("Basic avatar")).toHaveAttribute("data-state", "loaded");
 
-  await expect(page.getByLabel("Error avatar").getByText("JK")).toBeVisible();
+  // A broken image falls back to the initials.
+  await expect(page.getByLabel("Error avatar").getByText("JR")).toBeVisible();
 });
 
 test.describe("Axe automated scan", () => {

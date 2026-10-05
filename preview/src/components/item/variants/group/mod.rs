@@ -4,21 +4,26 @@ use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use dioxus_icons::lucide::Plus;
 
-const PEOPLE: &[(&str, &str, &str)] = &[
+// Bundled illustrations (`preview/assets/avatars`, CC0 -- see its README) for
+// invented people: the demo is local, offline-safe, and shows no real person.
+const PEOPLE: &[(&str, &str, &str, Asset)] = &[
     (
-        "jkelleyrtp",
-        "jkelleyrtp@dioxuslabs.com",
-        "https://github.com/jkelleyrtp.png",
+        "Sarah Chen",
+        "sarah.chen@example.com",
+        "SC",
+        asset!("/assets/avatars/sarah-chen.svg"),
     ),
     (
-        "ealmloff",
-        "ealmloff@dioxuslabs.com",
-        "https://github.com/ealmloff.png",
+        "Marcus Wright",
+        "marcus.wright@example.com",
+        "MW",
+        asset!("/assets/avatars/marcus-wright.svg"),
     ),
     (
-        "DioxusLabs",
-        "team@dioxuslabs.com",
-        "https://github.com/DioxusLabs.png",
+        "Lena Park",
+        "lena.park@example.com",
+        "LP",
+        asset!("/assets/avatars/lena-park.svg"),
     ),
 ];
 
@@ -32,24 +37,24 @@ pub fn Demo() -> Element {
             max_width: "28rem",
 
             ItemGroup {
-                for (i , (username , email , avatar)) in PEOPLE.iter().enumerate() {
+                for (i , (name , email , initials , avatar)) in PEOPLE.iter().enumerate() {
                     Item {
                         ItemMedia {
                             ImageAvatar {
                                 size: AvatarImageSize::Small,
                                 src: "{avatar}",
-                                alt: "{username}",
-                                "{&username[..1].to_uppercase()}"
+                                alt: "{name}",
+                                "{initials}"
                             }
                         }
                         ItemContent {
-                            ItemTitle { "{username}" }
+                            ItemTitle { "{name}" }
                             ItemDescription { "{email}" }
                         }
                         ItemActions {
                             Button {
                                 variant: ButtonVariant::Ghost,
-                                aria_label: "Add {username}",
+                                aria_label: "Add {name}",
                                 PlusIcon {}
                             }
                         }

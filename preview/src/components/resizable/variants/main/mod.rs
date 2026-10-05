@@ -45,7 +45,10 @@ fn DemoGroup(direction: ResizableDirection, height: &'static str, children: Elem
             direction,
             height,
             max_width: "28rem",
-            min_width: "450px",
+            // shadcn's `md:min-w-[450px]`, capped by the VIEWPORT so it cannot overflow a phone. Not `100%`: the
+            // group sits in a shrink-wrapped flex item, so a percentage resolves against its own intrinsic width and
+            // `min(450px, 100%)` collapsed the demo to ~325px at every width (measured 1280/1024/600: 325px, was 450).
+            min_width: "min(450px, 100vw - 4rem)",
             border: "1px solid var(--dx-input)",
             border_radius: "var(--dx-radius-lg)",
             overflow: "hidden",

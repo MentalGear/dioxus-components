@@ -6,33 +6,58 @@ pub use icons::*;
 pub use messages::*;
 pub use state::*;
 
+// `asset!` expands to `manganis::..`, which the prelude glob brings into scope.
+use dioxus::prelude::*;
+
+/// One of the bundled illustrations in `assets/avatars` (CC0, see its README):
+/// invented people, so the demo shows no real person and needs no network.
 #[derive(Clone, Copy, PartialEq)]
 pub struct AvatarProfile {
     pub name: &'static str,
     pub initials: &'static str,
-    pub src: &'static str,
+    pub src: Asset,
 }
 
 pub const AVATAR_PROFILE_OPTIONS: &[AvatarProfile] = &[
     AvatarProfile {
-        name: "ealmloff",
-        initials: "EA",
-        src: "https://github.com/ealmloff.png",
+        name: "Avery Lin",
+        initials: "AL",
+        src: asset!("/assets/avatars/avery-lin.svg"),
     },
     AvatarProfile {
-        name: "nicoburns",
-        initials: "NB",
-        src: "https://github.com/nicoburns.png",
+        name: "Casey Park",
+        initials: "CP",
+        src: asset!("/assets/avatars/casey-park.svg"),
     },
     AvatarProfile {
-        name: "jkelleyrtp",
-        initials: "JK",
-        src: "https://github.com/jkelleyrtp.png",
+        name: "Robin Hayes",
+        initials: "RH",
+        src: asset!("/assets/avatars/robin-hayes.svg"),
     },
     AvatarProfile {
-        name: "DioxusLabs",
-        initials: "DX",
-        src: "https://github.com/DioxusLabs.png",
+        name: "Sarah Chen",
+        initials: "SC",
+        src: asset!("/assets/avatars/sarah-chen.svg"),
+    },
+    AvatarProfile {
+        name: "Marcus Wright",
+        initials: "MW",
+        src: asset!("/assets/avatars/marcus-wright.svg"),
+    },
+    AvatarProfile {
+        name: "Lena Park",
+        initials: "LP",
+        src: asset!("/assets/avatars/lena-park.svg"),
+    },
+    AvatarProfile {
+        name: "Jordan Reyes",
+        initials: "JR",
+        src: asset!("/assets/avatars/jordan-reyes.svg"),
+    },
+    AvatarProfile {
+        name: "Priya Nair",
+        initials: "PN",
+        src: asset!("/assets/avatars/priya-nair.svg"),
     },
 ];
 

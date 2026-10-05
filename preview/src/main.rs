@@ -202,12 +202,23 @@ pub fn App() -> Element {
     #[cfg(not(feature = "server"))]
     eager_head::use_eager_head_document();
 
-    use_init_i18n(|| {
+    let locale = use_init_i18n(|| {
         I18nConfig::new(langid!("en-US"))
             .with_locale((langid!("en-US"), include_str!("i18n/en-US.ftl")))
             .with_locale((langid!("fr-FR"), include_str!("i18n/fr-FR.ftl")))
             .with_locale((langid!("es-ES"), include_str!("i18n/es-ES.ftl")))
             .with_locale((langid!("de-DE"), include_str!("i18n/de-DE.ftl")))
+    });
+
+    // `<html lang>` follows the ACTIVE locale, not whichever control last changed it (WCAG 3.1.1: a
+    // German page read with an English voice). The static document says `lang="en"` and the app
+    // starts on `en-US`, so SSR is right as it is; this effect re-reads `I18n::language()` (a signal)
+    // and so also runs on every later `set_language`, from the header's `LanguageSelect` or any
+    // future control. `<html>` is never vdom-owned, so writing it cannot desync hydration. The tag is
+    // a `LanguageIdentifier` (letters and `-` only), so `{:?}` yields a valid JS string literal.
+    use_effect(move || {
+        let tag = locale.language().to_string();
+        document::eval(&format!("document.documentElement.lang = {tag:?}"));
     });
 
     // Hydration-ready signal, by construction (dev-docs/backlog.md: SSG
@@ -506,6 +517,12 @@ fn NavigationLayout() -> Element {
 /// defensive-read pattern as `HomeSidebarControls` above) is what makes
 /// omitting the trigger there safe rather than a panic, since neither page
 /// has a `SidebarProvider` ancestor.
+/// The `id` of every page's `<main>`: the target of the "Skip to content" link `Navbar` renders. A page
+/// that renders a `<main>` passes `id: MAIN_ID, tabindex: "-1"` (the `tabindex` lets the fragment
+/// navigation move focus into it, not only scroll), so the link has the same target everywhere;
+/// `playwright/all-routes.spec.ts` checks it on every route.
+pub(crate) const MAIN_ID: &str = "main-content";
+
 #[component]
 fn Navbar() -> Element {
     let in_iframe = Route::in_iframe().unwrap_or_default();
@@ -541,6 +558,11 @@ fn Navbar() -> Element {
     }
 
     rsx! {
+        // WCAG 2.4.1: the first focusable element on the page. Without it a keyboard user tabs through
+        // the whole docs sidebar (88 stops on `/component/button/`) before reaching the content. It is
+        // visually hidden until focused (`main.css`, `.dx-skip-link`). The block-demo iframe branch
+        // above omits it: that page is one demo, embedded, with no nav to skip.
+        a { class: "dx-skip-link", href: "#{MAIN_ID}", "Skip to content" }
         nav { class: "dx-preview-navbar", aria_label: "Primary",
             div { class: "dx-navbar-inner",
                 div { class: "dx-navbar-primary",
@@ -875,6 +897,14 @@ enum Language {
 }
 
 impl Language {
+    /// The entry for the active locale, so a `LanguageSelect` that remounts on a route change (the
+    /// whole docs layout does) shows the language the page is really in, not always English.
+    fn from_id(id: &LanguageIdentifier) -> Self {
+        Language::iter()
+            .find(|language| language.id() == *id)
+            .unwrap_or(Language::English)
+    }
+
     const fn id(&self) -> LanguageIdentifier {
         match self {
             Language::English => langid!("en-US"),
@@ -909,7 +939,7 @@ impl Language {
 
 #[component]
 fn LanguageSelect() -> Element {
-    let mut current_lang = use_signal(|| Language::English);
+    let mut current_lang = use_signal(|| Language::from_id(&i18n().language()));
 
     rsx! {
         document::Stylesheet { href: asset!("/assets/language-select.css") }
@@ -1338,6 +1368,7 @@ fn DocsLayout(
                                                         to: Route::component(component.name),
                                                         attributes,
                                                         {component.name.replace("_", " ")}
+                                                        ExtraBadge { name: component.name }
                                                     }
                                                 },
                                             }
@@ -1354,7 +1385,7 @@ fn DocsLayout(
                     // `theme::ThemePicker`'s doc for why that is CSS and not a Rust check.
                     theme::ThemePickerSidebarFooter {}
                 }
-                SidebarInset { {children} }
+                SidebarInset { id: MAIN_ID, tabindex: "-1", {children} }
             }
         }
     }
@@ -1392,7 +1423,7 @@ fn Demos(dark_mode: Option<bool>) -> Element {
         // check (see its doc comment) means the trigger just doesn't
         // render here, rather than panicking on a missing `SidebarCtx`.
         Navbar {}
-        main { class: "dx-home-page", role: "main",
+        main { id: MAIN_ID, tabindex: "-1", class: "dx-home-page", role: "main",
             section { class: "dx-home-section",
                 header { class: "dx-section-header",
                     span { class: "dx-section-eyebrow", "Demos" }
@@ -1451,7 +1482,11 @@ fn ComponentDemo(iframe: Option<bool>, dark_mode: Option<bool>, name: String) ->
 
     rsx! {
         Navbar {}
-        main { class: "dx-component-demo-redirect", role: "main",
+        main {
+            id: MAIN_ID,
+            tabindex: "-1",
+            class: "dx-component-demo-redirect",
+            role: "main",
             p { "Loading component…" }
         }
     }
@@ -1478,7 +1513,7 @@ fn ComponentDemoPath(iframe: Option<bool>, dark_mode: Option<bool>, name: String
         // comment) rather than being left off this page altogether.
         return rsx! {
             Navbar {}
-            main { class: "dx-component-demo-not-found",
+            main { id: MAIN_ID, tabindex: "-1", class: "dx-component-demo-not-found",
                 h3 { "Component not found" }
                 p { "The requested component does not exist." }
             }
@@ -1568,7 +1603,12 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
                 header { class: "dx-component-page-header",
                     p { class: "dx-docs-eyebrow", "Component" }
                     div { class: "dx-component-page-title-row",
-                        h1 { "{name}" }
+                        // The badge is a sibling of the `h1`, not inside it, so the
+                        // heading's accessible name stays the component's name.
+                        div { class: "dx-component-page-title",
+                            h1 { "{name}" }
+                            ExtraBadge { name: raw_name }
+                        }
                         ComponentInstallCommand { name: raw_name }
                     }
                     p { "{description}" }
@@ -1642,6 +1682,29 @@ fn ComponentInstallCommand(name: &'static str) -> Element {
         div { class: "dx-component-inline-command",
             code { "{command}" }
             CopyCommandButton { command: command.clone() }
+        }
+    }
+}
+
+/// The "Extra" badge: shown next to the name of a component that is not in
+/// shadcn/ui's catalog (`components::is_extra`, backed by `components::
+/// CATALOG`, the one list). Renders nothing for a shadcn component or one
+/// nobody has classified yet. The text is real ("Extra", so it is read out and
+/// survives copy/paste); `title` carries the explanation as a tooltip. It
+/// stays out of the heading elements (the page `h1`, the card `h3`) so those
+/// keep the component's name as their accessible name, and sits inside the
+/// sidebar link, where it extends the link's name to "<name> Extra".
+#[component]
+fn ExtraBadge(name: &'static str) -> Element {
+    if !components::is_extra(name) {
+        return rsx! {};
+    }
+    rsx! {
+        Badge {
+            variant: BadgeVariant::Outline,
+            class: "dx-extra-badge",
+            title: components::EXTRA_BADGE_TITLE,
+            "Extra"
         }
     }
 }
@@ -1874,6 +1937,8 @@ fn BlockComponentVariantHighlight(
                     // reachable instead of being cut off.
                     overflow_x: "auto",
                     iframe {
+                        // axe `frame-title`: every block demo is built here, so one title names them all.
+                        title: "{component_name} {variant_title(name)} demo",
                         src: "{iframe_src}",
                         width: "100%",
                         // Block demos embed here at whatever width this
@@ -1967,15 +2032,45 @@ fn BlockComponentVariantHighlight(
 /// whole of `main.css` was inert -- found by execution 2026-09-02, see the
 /// comment at the top of `assets/main.css` and
 /// `playwright/oracle/tier2-html/global-stylesheet.spec.ts`. Separate links
-/// let `main.css` apply immediately and the fonts swap in when they arrive.
+/// let `main.css` apply immediately.
+///
+/// **No font-swap layout shift (measured 2026-10-05, css +100 ms / files +200 ms
+/// after the page, hard load, CLS summed over the load):** with the usual
+/// `display=swap` the page paints in the fallback face and re-wraps when Geist
+/// arrives -- 0.117 on /component/form/, 0.048 on /carousel/ (0.0001 on a short page).
+/// Two things, together: the two LATIN woff2 files (Geist and Geist Mono; every
+/// weight of Mono shares one file) are `preload`ed from the head, so they are
+/// ready by the first paint (Geist is in use at first contentful paint, CLS 0.0000
+/// on all three pages); and the stylesheet asks for `display=optional`, so if a
+/// face is ever NOT ready in time (a cold, slow connection, or Google bumping the
+/// versioned file URL below so the preload 404s) the page keeps the fallback for
+/// that view instead of swapping late (preload 404 + `swap` measured 0.117 again,
+/// 404 + `optional` 0.0000). The preload URLs are copied from the
+/// `css2?family=Geist...` response (`latin` blocks); if they go stale the cost is a
+/// fallback face on a cold visit, never a shift. `crossorigin` is required on a
+/// font preload or the browser fetches the file twice.
 #[component]
 fn GlobalHead() -> Element {
     rsx! {
+        document::Link {
+            rel: "preload",
+            r#as: "font",
+            r#type: "font/woff2",
+            crossorigin: "anonymous",
+            href: "https://fonts.gstatic.com/s/geist/v5/gyByhwUxId8gMEwcGFU.woff2",
+        }
+        document::Link {
+            rel: "preload",
+            r#as: "font",
+            r#type: "font/woff2",
+            crossorigin: "anonymous",
+            href: "https://fonts.gstatic.com/s/geistmono/v6/or3nQ6H-1_WfwkMZI_qYFrcdmg.woff2",
+        }
         document::Link { rel: "preconnect", href: "https://fonts.googleapis.com" }
         document::Link { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "anonymous" }
         document::Link {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@400;500;700&display=swap",
+            href: "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@400;500;700&display=optional",
         }
         document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
         document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }
@@ -2354,13 +2449,29 @@ fn BlockSignIn() -> Element {
     }
 }
 
+/// The bundled demo avatar (abstract geometric SVGs generated by `scripts/gen-demo-avatars.mjs`; see
+/// `preview/assets/avatars/README.md`) for an invented person, by full name or initials. Unknown names
+/// get no image, so `ImageAvatar` shows their initials.
+fn demo_avatar(who: &str) -> String {
+    match who {
+        "Avery Lin" | "AL" => asset!("/assets/avatars/avery-lin.svg"),
+        "Casey Park" | "CP" => asset!("/assets/avatars/casey-park.svg"),
+        "Robin Hayes" | "RH" => asset!("/assets/avatars/robin-hayes.svg"),
+        "Sarah Chen" | "SC" => asset!("/assets/avatars/sarah-chen.svg"),
+        "Marcus Wright" | "MW" => asset!("/assets/avatars/marcus-wright.svg"),
+        "Lena Park" | "LP" => asset!("/assets/avatars/lena-park.svg"),
+        _ => return String::new(),
+    }
+    .to_string()
+}
+
 #[component]
 fn BlockProfile() -> Element {
     rsx! {
         div { style: "display: flex; align-items: center; gap: 0.75rem;",
             ImageAvatar {
                 size: AvatarImageSize::Medium,
-                src: "https://avatar.vercel.sh/avery-lin",
+                src: demo_avatar("Avery Lin"),
                 alt: "Avery Lin",
                 aria_label: "Avatar",
                 "AL"
@@ -2402,14 +2513,14 @@ fn BlockStats() -> Element {
                 }
                 Badge {
                     variant: BadgeVariant::Secondary,
-                    // axe `color-contrast` (docs/backlog.md row 39, filed
-                    // 2026-09-03): the previous text color, rgb(21, 128,
-                    // 61), measured 4.17:1 against this badge's rendered
-                    // background (#d4f1df, the flattened
-                    // rgba(34,197,94,0.18) over the page) -- below WCAG's
-                    // 4.5:1. rgb(19, 115, 55) is the same green, ~10%
-                    // darker, and clears 4.5:1 (measured 4.94:1).
-                    style: "background-color: rgba(34, 197, 94, 0.18); color: rgb(19, 115, 55);",
+                    // axe `color-contrast`, in BOTH themes (docs/backlog.md row 39, then the
+                    // 2026-10-05 sweep): the first fix was a literal green pair measured on the light page
+                    // only, and it was 2.3:1 in dark (#137337 on #173321). Tokens fix both: the
+                    // `--dx-success-subtle` ground is pale in light and deep in dark; the ink is the
+                    // success colour itself in dark (pale mint, high contrast) and, in light, that colour
+                    // with its OKLCH lightness clamped to 0.45 (the `--dx-primary-ink` idea; #10b981
+                    // unclamped is 2.5:1 on the pale ground).
+                    style: "background-color: var(--dx-success-subtle); color: var(--light, oklch(from var(--dx-success) min(l, 0.45) c h)) var(--dark, var(--dx-success));",
                     "+12.4%"
                 }
             }
@@ -2491,12 +2602,11 @@ fn BlockPlayer() -> Element {
 
     rsx! {
         div { style: "display: flex; gap: 0.85rem; align-items: center;",
-            img {
-                src: "https://avatar.vercel.sh/midnight-city",
-                alt: "Midnight City album art",
-                width: "64",
-                height: "64",
-                style: "width: 64px; height: 64px; border-radius: 0.45rem; object-fit: cover; flex-shrink: 0; box-shadow: 0 6px 18px -8px rgba(0,0,0,0.35);",
+            // A CSS gradient "cover", so the demo needs no network (and no remote image).
+            div {
+                role: "img",
+                aria_label: "Midnight City album art",
+                style: "width: 64px; height: 64px; border-radius: 0.45rem; flex-shrink: 0; background: linear-gradient(135deg, #1e1b4b 0%, #6d28d9 55%, #f472b6 100%); box-shadow: 0 6px 18px -8px rgba(0,0,0,0.35);",
             }
             div { style: "flex: 1; min-width: 0;",
                 p { style: "margin: 0; font-weight: 600; color: var(--dx-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
@@ -2693,7 +2803,7 @@ fn BlockTabs() -> Element {
                         div { style: "display: flex; align-items: center; gap: 0.7rem;",
                             ImageAvatar {
                                 size: AvatarImageSize::Small,
-                                src: "https://avatar.vercel.sh/{member.0}",
+                                src: demo_avatar(member.0),
                                 alt: "{member.0}",
                                 aria_label: "{member.0}",
                                 "{member.3}"
@@ -2817,7 +2927,7 @@ fn BlockInbox() -> Element {
                     ItemMedia { variant: ItemMediaVariant::Icon,
                         ImageAvatar {
                             size: AvatarImageSize::Small,
-                            src: "https://avatar.vercel.sh/{sender}",
+                            src: demo_avatar(sender),
                             alt: "{sender}",
                             aria_label: "{sender}",
                             "{sender.chars().next().unwrap_or('?')}"
@@ -2861,7 +2971,7 @@ fn BlockTasks() -> Element {
                     }
                     ImageAvatar {
                         size: AvatarImageSize::Small,
-                        src: "https://avatar.vercel.sh/{t.3}",
+                        src: demo_avatar(t.3),
                         alt: "{t.3}",
                         aria_label: "Assignee {t.3}",
                         "{t.3}"
@@ -2892,7 +3002,7 @@ fn BlockComposer() -> Element {
         div { style: "display: flex; align-items: center; gap: 0.65rem; margin-bottom: 1rem;",
             ImageAvatar {
                 size: AvatarImageSize::Small,
-                src: "https://avatar.vercel.sh/avery-lin",
+                src: demo_avatar("Avery Lin"),
                 alt: "Avery Lin",
                 aria_label: "Avery Lin",
                 "AL"
@@ -3008,13 +3118,16 @@ fn ComponentGalleryPreview(component: ComponentDemoData) -> Element {
     rsx! {
         article { class: "dx-component-card",
             div { class: "dx-component-card-meta",
-                h3 { class: "dx-component-card-title",
-                    Link {
-                        to: Route::component(name),
-                        class: "dx-component-card-title-link",
-                        "{display_name}"
-                        ArrowUpRight { size: "18", stroke_width: "1.6" }
+                div { class: "dx-component-card-title-row",
+                    h3 { class: "dx-component-card-title",
+                        Link {
+                            to: Route::component(name),
+                            class: "dx-component-card-title-link",
+                            "{display_name}"
+                            ArrowUpRight { size: "18", stroke_width: "1.6" }
+                        }
                     }
+                    ExtraBadge { name }
                 }
                 p { class: "dx-component-card-description", "{description}" }
                 div { class: "dx-component-card-actions",

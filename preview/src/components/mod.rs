@@ -102,6 +102,175 @@ pub fn category_of(name: &str) -> ComponentCategory {
     }
 }
 
+/// Where a component comes from, relative to the shadcn/ui catalog this
+/// library tracks (`dev-docs/component-backlog.md`'s scope rule).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Origin {
+    /// A page of shadcn/ui's catalog.
+    Shadcn,
+    /// A dioxus-components addition that shadcn/ui does not have. Rendered
+    /// with an "Extra" badge (`ExtraBadge`, `main.rs`).
+    Extra,
+}
+
+/// Shown as the `title` of every "Extra" badge.
+pub const EXTRA_BADGE_TITLE: &str = "Not part of shadcn/ui \u{2014} a dioxus-components addition";
+
+/// THE classification: one row per `preview/src/components/<dir>`, naming
+/// whether it is a shadcn/ui catalog page or one of our extras. Everything
+/// that needs to know (the "Extra" badge on the component page, the sidebar
+/// entry and the homepage card) reads it through [`origin_of`] / [`is_extra`].
+///
+/// Why both kinds are listed, not just the extras: a list of extras alone
+/// would make "unclassified" indistinguishable from "shadcn", so a new
+/// component would silently skip the badge. With every directory tagged
+/// either way, a new one is absent from this list until someone decides, and
+/// `scripts/check-component-catalog.sh` (run by `scripts/run-gates.sh`) and
+/// the `catalog_classifies_every_demo` test below both fail on it. Until it
+/// is decided [`is_extra`] is `false`, so the UI never claims "not part of
+/// shadcn/ui" for something nobody has classified.
+///
+/// The catalog is `shadcn-ui/ui@295a1f1`, base flavour (64 pages), as audited
+/// in `dev-docs/research/shadcn-catalog-2026-10-04.md`, whose section 2
+/// is the name-by-name comparison. Directory names are the shadcn page name
+/// with `-` as `_`. `scripts/check-component-catalog.sh` reads the
+/// `("name", Origin::...)` rows of this block, so keep one tuple per row.
+pub const CATALOG: &[(&str, Origin)] = &[
+    // shadcn/ui base catalog pages (one per component).
+    ("accordion", Origin::Shadcn),
+    ("alert", Origin::Shadcn),
+    ("alert_dialog", Origin::Shadcn),
+    ("aspect_ratio", Origin::Shadcn),
+    ("attachment", Origin::Shadcn),
+    ("avatar", Origin::Shadcn),
+    ("badge", Origin::Shadcn),
+    ("breadcrumb", Origin::Shadcn),
+    ("bubble", Origin::Shadcn),
+    ("button", Origin::Shadcn),
+    ("button_group", Origin::Shadcn),
+    ("calendar", Origin::Shadcn),
+    ("card", Origin::Shadcn),
+    ("carousel", Origin::Shadcn),
+    ("chart", Origin::Shadcn),
+    ("checkbox", Origin::Shadcn),
+    ("collapsible", Origin::Shadcn),
+    ("combobox", Origin::Shadcn),
+    ("command", Origin::Shadcn),
+    ("context_menu", Origin::Shadcn),
+    ("data_table", Origin::Shadcn),
+    ("date_picker", Origin::Shadcn),
+    ("dialog", Origin::Shadcn),
+    ("drawer", Origin::Shadcn),
+    ("dropdown_menu", Origin::Shadcn),
+    ("empty", Origin::Shadcn),
+    ("field", Origin::Shadcn),
+    ("hover_card", Origin::Shadcn),
+    ("input", Origin::Shadcn),
+    ("input_group", Origin::Shadcn),
+    ("input_otp", Origin::Shadcn),
+    ("item", Origin::Shadcn),
+    ("kbd", Origin::Shadcn),
+    ("label", Origin::Shadcn),
+    ("marker", Origin::Shadcn),
+    ("menubar", Origin::Shadcn),
+    ("message", Origin::Shadcn),
+    ("message_scroller", Origin::Shadcn),
+    ("native_select", Origin::Shadcn),
+    ("navigation_menu", Origin::Shadcn),
+    ("pagination", Origin::Shadcn),
+    ("popover", Origin::Shadcn),
+    ("progress", Origin::Shadcn),
+    ("radio_group", Origin::Shadcn),
+    ("resizable", Origin::Shadcn),
+    ("scroll_area", Origin::Shadcn),
+    ("select", Origin::Shadcn),
+    ("separator", Origin::Shadcn),
+    ("sheet", Origin::Shadcn),
+    ("sidebar", Origin::Shadcn),
+    ("skeleton", Origin::Shadcn),
+    ("slider", Origin::Shadcn),
+    ("spinner", Origin::Shadcn),
+    ("switch", Origin::Shadcn),
+    ("table", Origin::Shadcn),
+    ("tabs", Origin::Shadcn),
+    ("textarea", Origin::Shadcn),
+    ("toast", Origin::Shadcn),
+    ("toggle", Origin::Shadcn),
+    ("toggle_group", Origin::Shadcn),
+    ("tooltip", Origin::Shadcn),
+    // The chart gallery pages: shadcn's own `chart` page carries these per-type sections
+    // (`/charts/area`, `/charts/bar`, ...), so they are not additions.
+    ("area_chart", Origin::Shadcn),
+    ("bar_chart", Origin::Shadcn),
+    ("chart_tooltip", Origin::Shadcn),
+    ("line_chart", Origin::Shadcn),
+    ("pie_chart", Origin::Shadcn),
+    ("radar_chart", Origin::Shadcn),
+    ("radial_chart", Origin::Shadcn),
+    // NOT in shadcn/ui's catalog: these get the "Extra" badge.
+    ("color_picker", Origin::Extra), // upstream component, no shadcn counterpart
+    ("drag_and_drop_list", Origin::Extra), // upstream component, no shadcn counterpart
+    ("form", Origin::Extra), // conformance fixture (shadcn removed `Form`; `Field` replaced it)
+    ("navbar", Origin::Extra), // menubar-pattern nav; shadcn's `navigation-menu` is the separate `navigation_menu`
+    ("tag_group", Origin::Extra), // upstream component, no shadcn counterpart
+    ("toolbar", Origin::Extra), // upstream component, no shadcn counterpart
+    ("top_layer", Origin::Extra), // conformance fixture, not a component
+    ("virtual_list", Origin::Extra), // upstream component, no shadcn counterpart
+];
+
+/// The [`Origin`] of a component directory name, or `None` while it is
+/// unclassified (no row in [`CATALOG`]).
+pub fn origin_of(name: &str) -> Option<Origin> {
+    CATALOG
+        .iter()
+        .find(|(catalog_name, _)| *catalog_name == name)
+        .map(|(_, origin)| *origin)
+}
+
+/// Whether `name` is an extra (not a shadcn/ui catalog page): the one
+/// predicate behind every "Extra" badge.
+pub fn is_extra(name: &str) -> bool {
+    origin_of(name) == Some(Origin::Extra)
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    /// `CATALOG` and `DEMOS` name exactly the same components, once each: a
+    /// new demo with no row (unclassified), a row for a demo that is gone, and
+    /// a duplicated row all fail here, so the badge cannot drift from the
+    /// demo list. (`scripts/check-component-catalog.sh` checks the same from
+    /// the directories, without compiling.)
+    #[test]
+    fn catalog_classifies_every_demo() {
+        let mut seen = std::collections::BTreeSet::new();
+        for (name, _) in CATALOG {
+            assert!(seen.insert(*name), "`{name}` has two rows in CATALOG");
+            assert!(
+                DEMOS.iter().any(|demo| demo.name == *name),
+                "CATALOG row `{name}` has no demo in `examples!`"
+            );
+        }
+        for demo in DEMOS {
+            assert!(
+                origin_of(demo.name).is_some(),
+                "`{}` is not classified: add a `(\"{0}\", Origin::Shadcn | Origin::Extra)` row to CATALOG",
+                demo.name
+            );
+        }
+    }
+
+    #[test]
+    fn extra_badge_is_for_extras_only() {
+        assert!(is_extra("navbar"));
+        assert!(!is_extra("button"));
+        assert!(!is_extra("chart_tooltip"));
+        // Unclassified is not "extra": never claim what nobody decided.
+        assert!(!is_extra("no_such_component"));
+    }
+}
+
 /// The `DEMOS` entries of one sidebar group, in sidebar order: `DEMOS` order
 /// (alphabetical), except that a group's overview page leads it. Only
 /// `chart` is one today; it would otherwise sort between `bar chart` and
@@ -229,9 +398,9 @@ macro_rules! examples {
 }
 
 examples!(
-    accordion,
+    accordion[until_found],
     alert,
-    alert_dialog,
+    alert_dialog[overlay],
     area_chart[linear, step, stacked, stacked_expand, gradient, legend, axes, icons, interactive],
     aspect_ratio,
     attachment[states, sizes, image, group, trigger],
@@ -244,21 +413,21 @@ examples!(
     button_group,
     calendar[simple, internationalized, range, multi_month, unavailable_dates, rtl],
     card,
-    carousel[sizes, spacing, peek, align, vertical, rtl, api, indicators, autoplay, rewind, virtual_loop, virtual_loop_rtl, virtual_many],
+    carousel[sizes, spacing, peek, align, vertical, rtl, api, indicators, autoplay, rewind, hidden_arrows, virtual_loop, virtual_loop_rtl, virtual_many],
     chart[bar, line, stacked],
     chart_tooltip[indicator_line, indicator_none, label_none, label_custom, label_formatter, formatter, icons, advanced],
     checkbox,
-    collapsible,
+    collapsible[until_found],
     color_picker,
     combobox[controlled, disabled, dynamic],
-    command,
-    context_menu[checkboxes, radio_group, rtl],
+    command[overlay],
+    context_menu[checkboxes, radio_group, rtl, click_only_submenu],
     data_table,
-    date_picker[internationalized, range, multi_month, unavailable_dates],
-    dialog,
-    drag_and_drop_list[removable],
-    drawer,
-    dropdown_menu[checkboxes, radio_group, rtl],
+    date_picker[internationalized, range, multi_month, unavailable_dates, keep_open],
+    dialog[overlay],
+    drag_and_drop_list[removable, tuning],
+    drawer[overlay],
+    dropdown_menu[checkboxes, radio_group, rtl, click_only_submenu],
     empty,
     field,
     form,
@@ -271,15 +440,15 @@ examples!(
     label,
     line_chart[linear, step, multiple, dots, dots_colors, dots_custom, label, label_custom, interactive],
     marker[variants, status, link_button],
-    menubar[checkboxes, radio_group, rtl],
+    menubar[checkboxes, radio_group, rtl, click_only],
     message[avatar, group, header_footer, actions, attachment],
     message_scroller[last_anchor, load_history, long],
     native_select,
-    navigation_menu,
-    navbar[rtl],
+    navigation_menu[click_only],
+    navbar[rtl, click_only],
     pagination,
     pie_chart[separator_none, label, label_list, label_custom, legend, donut, donut_active, donut_text, stacked, interactive],
-    popover[non_modal],
+    popover[non_modal, overlay],
     progress,
     radar_chart[dots, lines_only, multiple, grid_circle, grid_circle_fill, grid_circle_no_lines, grid_custom, grid_fill, grid_none, icons, label_custom, legend, radius],
     radial_chart[label, grid, text, shape, stacked],
@@ -288,14 +457,14 @@ examples!(
     scroll_area[rtl],
     select[multi, rtl],
     separator,
-    sheet,
+    sheet[overlay],
     sidebar(block)[floating, inset],
     skeleton,
     slider[dynamic_range, range, rtl],
     spinner,
     switch,
     table,
-    tabs[rtl],
+    tabs[rtl, until_found],
     tag_group[multi, states],
     textarea[outline, fade, ghost],
     toast,
@@ -304,5 +473,5 @@ examples!(
     toolbar[rtl],
     tooltip,
     top_layer,
-    virtual_list[random_heights],
+    virtual_list[random_heights, content_visibility, windowed],
 );

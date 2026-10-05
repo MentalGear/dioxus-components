@@ -90,10 +90,15 @@
     justify-content: center;
     background: var(--dx-background);
     color: var(--dx-foreground);
-    font-size: var(--dx-text-2xl);
+
+    /* Follow the size class on the root (`dx-avatar-sm|md|lg` set the font
+       size): a fixed 2xl overflowed and clipped two-letter initials in the
+       2rem avatar, which is what every sender without a picture shows. */
+    font-size: inherit;
 }
 
-.dx-avatar[data-state="error"] .dx-avatar-fallback {
+.dx-avatar[data-state="error"] .dx-avatar-fallback,
+.dx-avatar[data-state="empty"] .dx-avatar-fallback {
     background: var(--dx-muted);
     color: var(--dx-foreground);
 }

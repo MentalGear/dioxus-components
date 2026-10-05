@@ -7,6 +7,9 @@ pub struct Sender {
     pub name: &'static str,
     pub addr: &'static str,
     pub initials: &'static str,
+    /// A human (a colleague, or "You"): shown with an illustrated avatar.
+    /// Services and newsletters are not, and show their initials instead.
+    pub person: bool,
 }
 
 const fn sender(name: &'static str, addr: &'static str, initials: &'static str) -> Sender {
@@ -14,31 +17,39 @@ const fn sender(name: &'static str, addr: &'static str, initials: &'static str) 
         name,
         addr,
         initials,
+        person: false,
+    }
+}
+
+const fn person(name: &'static str, addr: &'static str, initials: &'static str) -> Sender {
+    Sender {
+        person: true,
+        ..sender(name, addr, initials)
     }
 }
 
 pub const LINEAR: Sender = sender("Linear", "notifications@linear.app", "LN");
 pub const GITHUB: Sender = sender("GitHub", "noreply@github.com", "GH");
-pub const MAYA: Sender = sender("Maya Chen", "maya@figma-internal.com", "MC");
+pub const MAYA: Sender = person("Maya Chen", "maya@figma-internal.com", "MC");
 pub const STRIPE: Sender = sender("Stripe", "receipts@stripe.com", "ST");
 pub const CALENDAR: Sender = sender("Calendar", "calendar@workspace.app", "CA");
-pub const YOU: Sender = sender("You", "you@yourcompany.com", "Y");
+pub const YOU: Sender = person("You", "you@yourcompany.com", "Y");
 pub const VERCEL: Sender = sender("Vercel", "deploys@vercel.com", "VC");
-pub const MARTA: Sender = sender("Marta Liu", "marta.l@yourcompany.com", "ML");
+pub const MARTA: Sender = person("Marta Liu", "marta.l@yourcompany.com", "ML");
 pub const ONEPASSWORD: Sender = sender("1Password", "security@1password.com", "1P");
 pub const AWS_BILLING: Sender = sender("AWS Billing", "no-reply@aws.amazon.com", "AW");
 pub const NOTION: Sender = sender("Notion", "team@notion.so", "NO");
 pub const SENTRY: Sender = sender("Sentry", "alerts@sentry.io", "SE");
-pub const CAROLINE: Sender = sender("Caroline Wu", "caroline@yourcompany.com", "CW");
+pub const CAROLINE: Sender = person("Caroline Wu", "caroline@yourcompany.com", "CW");
 pub const DATADOG: Sender = sender("Datadog", "alerts@datadog.com", "DD");
 pub const SLACK: Sender = sender("Slack", "feedback@slack.com", "SL");
 pub const FIGMA: Sender = sender("Figma", "no-reply@figma.com", "FG");
-pub const PEDRO: Sender = sender("Pedro Carvalho", "pedro@yourcompany.com", "PC");
+pub const PEDRO: Sender = person("Pedro Carvalho", "pedro@yourcompany.com", "PC");
 pub const LINKEDIN: Sender = sender("LinkedIn", "messages-noreply@linkedin.com", "LI");
 pub const SUBSTACK: Sender = sender("Substack", "no-reply@substack.com", "SU");
-pub const ELI: Sender = sender("Eli Rosen", "eli.r@yourcompany.com", "ER");
+pub const ELI: Sender = person("Eli Rosen", "eli.r@yourcompany.com", "ER");
 pub const AWS_COST: Sender = sender("AWS Cost Explorer", "no-reply@aws.amazon.com", "AW");
-pub const SAMIR: Sender = sender("Samir Kapoor", "samir@yourcompany.com", "SK");
+pub const SAMIR: Sender = person("Samir Kapoor", "samir@yourcompany.com", "SK");
 pub const APPLE: Sender = sender("Apple", "no-reply@email.apple.com", "AP");
 pub const HEX: Sender = sender("Hex", "no-reply@hex.tech", "HX");
 pub const CRUNCHBASE: Sender = sender("Crunchbase Daily", "newsletter@crunchbase.com", "CB");

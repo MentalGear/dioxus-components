@@ -58,6 +58,13 @@ impl ItemMediaVariant {
     }
 }
 
+/// Provided by [`ItemGroup`] so an [`Item`] knows it is a list's child. `ItemGroup` is `role="list"`,
+/// which ARIA requires to own `listitem`s (axe `aria-required-children`), and an `Item` outside a group
+/// must NOT claim `listitem` (an orphan one is the mirror failure, `aria-required-parent`). Context
+/// makes both hold by construction: the role follows the structure, nobody has to remember it.
+#[derive(Clone, Copy)]
+struct InItemGroup;
+
 #[component]
 pub fn ItemGroup(
     #[props(extends=GlobalAttributes)]
@@ -65,6 +72,7 @@ pub fn ItemGroup(
     attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    use_context_provider(|| InItemGroup);
     let base = attributes!(div {
         class: "dx-item-group",
         role: "list",
@@ -108,18 +116,30 @@ pub fn Item(
     r#as: Option<Callback<Vec<Attribute>, Element>>,
     children: Element,
 ) -> Element {
-    let base = attributes!(div {
+    let in_group = try_use_context::<InItemGroup>().is_some();
+    let mut base = attributes!(div {
         class: "dx-item",
         "data-slot": "item",
         "data-variant": variant.class(),
         "data-size": size.class(),
     });
+    // Inside an `ItemGroup` (`role="list"`) the item is a `listitem`; a caller's own `role` still wins.
+    // With `as` the item is usually a link, and `role="listitem"` on an `<a>` would erase its link role,
+    // so the list item is a transparent wrapper instead (`display: contents`: no box, the item stays the
+    // group's flex child).
+    if in_group && r#as.is_none() {
+        base.extend(attributes!(div { role: "listitem" }));
+    }
     let merged = merge_attributes(vec![base, attributes]);
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/item/style.css") }
         if let Some(dynamic) = r#as {
-            {dynamic.call(merged)}
+            if in_group {
+                div { role: "listitem", display: "contents", {dynamic.call(merged)} }
+            } else {
+                {dynamic.call(merged)}
+            }
         } else {
             div {
                 onclick: move |event| {

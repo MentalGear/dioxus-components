@@ -828,7 +828,7 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   // REPLACEMENT SUBJECT: the `avatar` component's own gallery card, always
   // mounted on `/` (avatar was never excluded). Its "Error State" example
   // (`preview/src/components/avatar/variants/main/mod.rs`) renders
-  // `ImageAvatar { alt: "Invalid image", aria_label: "Error avatar", ... }`.
+  // `ImageAvatar { alt: "Jordan Reyes", aria_label: "Error avatar", ... }`.
   // `ImageAvatar` (`preview/src/components/avatar/component.rs`) computes
   // its OWN default accessible name from `alt` (`aria_label: "{alt}"` --
   // the row-34 axe fix, `role-img-alt`) and merges it with the caller's
@@ -839,7 +839,7 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   // themed-wrapper default, not a primitive's own): if that merge order
   // were ever reversed (`merge_attributes(vec![props.attributes, base])`
   // instead of `vec![base, props.attributes]`), the alt-derived default
-  // ("Invalid image") would win over the caller's real, more specific
+  // ("Jordan Reyes") would win over the caller's real, more specific
   // override ("Error avatar") in the served markup -- a real accessible-
   // name regression this rule catches directly, on the one page every
   // visitor and every gallery-wide oracle already loads.
@@ -847,7 +847,7 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
   // Correlating the two: `ImageAvatarProps`/`AvatarImage` put `alt` on the
   // inner `<img>`, not on the outer `role="img"` `<span>` this test cares
   // about, so the span is found by proximity to its own descendant `<img
-  // alt="Invalid image">` (`start` index, both from `extractStartTags`)
+  // alt="Jordan Reyes">` (`start` index, both from `extractStartTags`)
   // rather than by a marker on the span's own tag -- the alt text and the
   // aria-label override text are deliberately DIFFERENT strings (unlike
   // e.g. the "Large avatar" example, whose `alt` and `aria_label` happen to
@@ -861,12 +861,18 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     const html = await response.text();
 
     const tags = extractStartTags(html);
+    // The example is found by its deliberately dead `src` (it is the only avatar that is meant to fail to load) plus
+    // its alt text. The alt used to be "Invalid image"; the demo now names an invented person ("Jordan Reyes", with
+    // no real photo hot-linked), so the alt is still the alt-derived default that must LOSE to the override.
     const markerImg = tags.find(
-      (t) => t.name === "img" && t.effectiveValues.get("alt") === "Invalid image",
+      (t) =>
+        t.name === "img" &&
+        t.effectiveValues.get("alt") === "Jordan Reyes" &&
+        (t.effectiveValues.get("src") ?? "").includes("invalid-url.example"),
     );
     expect(
       markerImg,
-      `expected the avatar demo's "Error State" example -- an <img alt="Invalid image"> -- ` +
+      `expected the avatar demo's "Error State" example -- an <img alt="Jordan Reyes"> with an invalid-url.example src -- ` +
         `in served HTML; the avatar component's main-variant demo may have changed ` +
         `(preview/src/components/avatar/variants/main/mod.rs)`,
     ).toBeDefined();
@@ -882,7 +888,7 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     const avatarSpan = roleImgSpans.at(-1);
     expect(
       avatarSpan,
-      `expected a preceding <span role="img"> ancestor for the "Invalid image" <img> in served HTML`,
+      `expected a preceding <span role="img"> ancestor for the "Jordan Reyes" <img> in served HTML`,
     ).toBeDefined();
 
     const effective = avatarSpan!.effectiveValues.get("aria-label");
@@ -890,7 +896,7 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
       effective,
       `the avatar demo's "Error State" example's EFFECTIVE served aria-label should be the ` +
         `caller's override ("Error avatar", from preview/src/components/avatar/variants/main/` +
-        `mod.rs), not ImageAvatar's own alt-derived default ("Invalid image") -- raw tag: ` +
+        `mod.rs), not ImageAvatar's own alt-derived default ("Jordan Reyes") -- raw tag: ` +
         `${avatarSpan!.raw}`,
     ).toBe("Error avatar");
   });

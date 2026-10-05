@@ -22,6 +22,30 @@ them, the test is wrong, not the component.
   submit that clears every required control renders its own entry list into
   `#required-result`.
 
+## `DemoForm`: every preview form, and why
+
+Every `<form>` in the preview app -- this fixture's two, the card's login form, the dashboard's compose
+modal -- is a `DemoForm` (`crate::components::form::DemoForm`), never a bare `form { .. }`. A bare form with
+no `onsubmit` is a real HTML form: clicking its submit button, or pressing Enter in one of its fields,
+navigates to the form's action URL with the entries as a query string, which reloads the page
+(`/component/card/` becomes `/component/card/?`). Dioxus does not prevent that on its own, and on the
+prerendered pages a submit before the wasm bundle has hydrated cannot be stopped by any Rust handler.
+
+`DemoForm` renders `method="dialog"` (a dialog-method form outside a `<dialog>` never navigates, per the
+HTML Standard's form submission algorithm, so it holds before hydration, with scripting off and under any
+CSP) and an `onsubmit` that calls `prevent_default()`. Its props extend the global attributes only, so a
+caller cannot pass `action` or `method` and undo it. Constraint validation and the `submit` event behave as
+for any form. By default it shows a polite "Submitted. This is a demo, so nothing was sent." line under the
+fields after a submit, so the demo still visibly submits; pass `show_status: false` when the page reports the
+result itself, and `onsubmit:` to react to the submit.
+
+`scripts/check-demo-forms.sh` fails the gate run on any other `form {` in `preview/src`, and
+`playwright/oracle/tier2-html/demo-forms-no-navigation.spec.ts` clicks every submit control and presses Enter
+in every form on every route, hydrated and before hydration, asserting nothing navigates. The one exemption is
+the native `<dialog>` reference in the top-layer fixture, where submitting is meant to close the dialog.
+The library has no form primitive; if one is added, native submission or a server function should be an opt-in
+prop there, never the preview's default.
+
 ## Component Structure
 
 ```rust

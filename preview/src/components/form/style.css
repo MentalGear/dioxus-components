@@ -89,3 +89,19 @@
     box-shadow: 0 0 0 2px var(--dx-destructive);
     outline: none;
 }
+
+/*
+ * `DemoForm`'s submit confirmation (component.rs). The `<output>` is a live region that is always in the
+ * DOM (a region that is injected together with its text is announced unreliably) and empty until the first
+ * submit: an empty block adds no height, and the margin only appears with the text, so a demo's layout is
+ * unchanged until someone submits.
+ */
+.dx-form-demo-status {
+    display: block;
+    color: var(--dx-muted-foreground);
+    font-size: var(--dx-text-sm);
+}
+
+.dx-form-demo-status:not(:empty) {
+    margin-block-start: var(--dx-space-3);
+}
