@@ -73,6 +73,13 @@
 //!   controller-owned `data-keep-rendered` attribute, which the stylesheet
 //!   excludes from skipping.
 //!
+//!   Skipping every row separately costs the browser main-thread time
+//!   proportional to the row count on every scroll frame (20 ms per frame for
+//!   2,000 rows in the long demo), so a long transcript should render its rows
+//!   through [`MessageScrollerRows`], which groups them in chunks of 20 and
+//!   skips each chunk as a unit (3.7 ms per frame, measured under load). Rows written directly as
+//!   children of the content still work and keep the per-row behaviour.
+//!
 //! Mounting only a window of rows (so unmounted rows would be unreachable by
 //! native find-in-page, screen-reader history and cross-message selection)
 //! is a possible future option, deliberately not part of this API.
@@ -108,6 +115,7 @@
 //! components' `attributes`. The jump control is a real `<button>`; when it
 //! turns inert focus moves to the viewport rather than to `<body>`.
 
+use crate::r#virtual::{cv_chunks, ChunkSkip};
 #[cfg(feature = "web")]
 use crate::use_effect_with_cleanup;
 use crate::{merge_attributes, use_unique_id};
@@ -701,6 +709,97 @@ pub fn MessageScrollerItem(props: MessageScrollerItemProps) -> Element {
     rsx! {
         div { ..merged, {props.children} }
     }
+}
+
+/// The props for the [`MessageScrollerRows`] component.
+#[derive(Props, Clone, PartialEq)]
+pub struct MessageScrollerRowsProps {
+    /// How many rows there are.
+    pub count: ReadSignal<usize>,
+
+    /// The absolute position of row 0 (default 0). Rows are grouped by absolute
+    /// position, so when older rows are prepended, lower `start` by the number
+    /// prepended: every existing row then stays in its chunk and keeps its DOM
+    /// node. (Appending needs no change.)
+    #[props(default = ReadSignal::new(Signal::new(0)))]
+    pub start: ReadSignal<isize>,
+
+    /// Renders row `index` (an index into `0..count`): a [`MessageScrollerItem`].
+    pub render_row: Callback<usize, Element>,
+
+    /// Additional attributes to apply to each chunk element.
+    #[props(extends = GlobalAttributes)]
+    pub attributes: Vec<Attribute>,
+}
+
+/// # MessageScrollerRows
+///
+/// Renders a long transcript's rows in chunks of 20 consecutive rows, one
+/// `div[data-message-scroller-chunk]` per chunk, so that
+/// [`Virtualization::ContentVisibility`] skips (and un-skips) a chunk as a
+/// unit instead of every row separately. One skippable element per row costs
+/// the browser main-thread time proportional to the row count on every scroll
+/// frame; per chunk it is one twentieth of that. Use it in place of a `for`
+/// loop of [`MessageScrollerItem`]s inside [`MessageScrollerContent`]; the
+/// controller treats the chunks as transparent, so following the stream,
+/// anchoring, prepend preservation and jumps behave as with plain rows.
+///
+/// A chunk is the unit that stays rendered when it holds the live edge, focus
+/// or an end of the selection.
+///
+/// ## Styling
+///
+/// Each chunk carries `--dx-chunk-rows`, its row count, for the stylesheet's
+/// height guess, and the styled layer lays its rows out as a column with the
+/// content's gap.
+///
+/// ## Example
+///
+/// ```rust
+/// use dioxus::prelude::*;
+/// use dioxus_primitives::message_scroller::{
+///     MessageScroller, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider,
+///     MessageScrollerRows, MessageScrollerViewport,
+/// };
+///
+/// #[component]
+/// fn Transcript(messages: Vec<String>) -> Element {
+///     let count = messages.len();
+///     rsx! {
+///         MessageScrollerProvider {
+///             MessageScroller {
+///                 MessageScrollerViewport {
+///                     MessageScrollerContent {
+///                         MessageScrollerRows {
+///                             count,
+///                             render_row: move |i: usize| rsx! {
+///                                 MessageScrollerItem { key: "{i}", message_id: "m{i}",
+///                                     p { "message {i}" }
+///                                 }
+///                             },
+///                         }
+///                     }
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+#[component]
+pub fn MessageScrollerRows(props: MessageScrollerRowsProps) -> Element {
+    let base = attributes!(div {
+        "data-message-scroller-chunk": "",
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+    let render_row = props.render_row;
+
+    cv_chunks(
+        (props.count)(),
+        (props.start)(),
+        ChunkSkip::Stylesheet,
+        &merged,
+        move |index| render_row.call(index),
+    )
 }
 
 /// The props for the [`MessageScrollerButton`] component.

@@ -64,13 +64,30 @@ MessageScrollerProvider { virtualize: Virtualization::ContentVisibility, /* ... 
 ```
 
 - `Virtualization::None`: every row is fully rendered all the time. Use it for short threads, or when a row's content cannot tolerate being skipped.
-- `Virtualization::ContentVisibility` (the default): rows stay in the DOM and the browser skips layout and paint for the ones that are off-screen (`content-visibility: auto`, with `contain-intrinsic-size: auto` so it remembers each row's last rendered height). Because the rows are real DOM, **the accessibility tree and text selection keep reaching every message**, including the ones scrolled far out of view, and so does the browser's find-in-page where the engine supports it (see below). The scroller never skips three groups of rows: the rows at the live edge (so the end geometry is exact while a reply streams), the row that holds focus, and the rows that hold the ends of the current selection. It marks them with `data-keep-rendered`, which the stylesheet excludes from skipping. Tune the first-render height guess with the `--dx-message-scroller-row-estimate` custom property (default `10rem`).
+- `Virtualization::ContentVisibility` (the default): rows stay in the DOM and the browser skips layout and paint for the ones that are off-screen (`content-visibility: auto`, with `contain-intrinsic-size: auto` so it remembers each row's last rendered height). Because the rows are real DOM, **the accessibility tree and text selection keep reaching every message**, including the ones scrolled far out of view, and so does the browser's find-in-page where the engine supports it (see below). The scroller never skips three groups of rows: the rows at the live edge (so the end geometry is exact while a reply streams), the row that holds focus, and the rows that hold the ends of the current selection. It marks them with `data-keep-rendered`, which the stylesheet excludes from skipping. Tune the first-render height guess with the `--dx-message-scroller-row-estimate` custom property (default `10rem`; a chunk's guess is its rows' guesses plus the gaps between them).
+
+**Long threads: render the rows through `MessageScrollerRows`.** The browser does per-frame work for every element it may skip, so skipping each row separately costs main-thread time proportional to the row count on every scroll frame: 20.3 ms per frame for the 2,000-row example below (release build, headless Chromium, 4-core VM), against a 16.7 ms frame budget. `MessageScrollerRows` groups the rows in chunks of 20 and the browser skips each chunk as one element, which brought the same scroll to 3.7 ms per frame (measured on a heavily loaded machine, which includes the scroller's own controller work; the spec asserts under 8 ms on a release build). Use it in place of a `for` loop of `MessageScrollerItem`s; the scroller treats the chunks as transparent, so following the stream, anchoring, prepend preservation and jumping to a message work as before, and the chunk holding the live edge, focus or an end of the selection is the one that stays rendered:
+
+```rust
+MessageScrollerContent {
+    MessageScrollerRows {
+        count: messages.len(),
+        render_row: move |i: usize| rsx! {
+            MessageScrollerItem { key: "{messages[i].id}", message_id: "{messages[i].id}",
+                /* the row */
+            }
+        },
+    }
+}
+```
+
+Chunks are grouped by absolute position, so when you prepend older messages, lower `start` by the number prepended (`MessageScrollerRows { start: -(prepended as isize), .. }`, accumulating) and every existing row stays in its chunk and keeps its DOM node. Rows written directly as children of the content still work and keep the per-row behaviour: fine for a few hundred rows.
 
 **Find-in-page support.** Skipped content stays findable in Chromium and in Firefox 125 and later, and in Safari from Safari 26. In Safari 18 through 25 the browser's find-in-page does **not** find text inside a skipped (off-screen) row (WebKit bug 283846): there the text is still in the DOM, the accessibility tree and any selection, but Cmd+F will not match it until the row has been scrolled into view. If your users depend on find-in-page across a long thread on those versions, use `Virtualization::None`, or give them a search of your own built on `scroll_to_message`.
 
 Mounting only a window of rows is a possible future option, but it is not part of this API and not planned for now: unmounted rows are not in the DOM, so native find-in-page, screen-reader history and a selection that spans messages could not reach them, and an app would have to provide its own search. `ContentVisibility` keeps the DOM, the accessibility tree and selection whole (and find-in-page where supported, as above), and is the right size for hundreds to low thousands of turns.
 
-The `long` example below keeps 2,000 rows in the DOM: only the rows in view are laid out, and following a reply still lands exactly at the end. In browsers that support it, find-in-page still locates text in a row far off-screen.
+The `long` example below keeps 2,000 rows in the DOM, rendered through `MessageScrollerRows`: only the chunks in view are laid out, and following a reply still lands exactly at the end. In browsers that support it, find-in-page still locates text in a row far off-screen.
 
 ## Commands
 

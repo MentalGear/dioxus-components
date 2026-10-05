@@ -1,6 +1,6 @@
 {
   "name": "virtual_list",
-  "description": "A virtualized list component for large datasets.",
+  "description": "A list for large datasets: every row in the DOM with off-screen rows skipped by the browser, or only a window of rows mounted.",
   "authors": ["brian", "Evan Almloff"],
   "exclude": ["variants", "docs.md", "component.json"],
   "cargoDependencies": [

@@ -41,6 +41,17 @@
 // live edge (so streaming growth and the end geometry are always exact), the
 // row holding focus and the rows holding the selection's ends.
 //
+// A row is either a direct child of the content, or one of the rows of a
+// "chunk": a `[data-message-scroller-chunk]` wrapper (`MessageScrollerRows`)
+// that the stylesheet skips as a unit, because one skippable element per row
+// costs the main thread time proportional to the row count on every scroll
+// frame (see `primitives/src/virtual/cv_chunks.rs`). The unit that is kept
+// rendered, and the unit whose size the browser remembers, is therefore the
+// chunk. A row inside a skipped chunk has no box of its own, and reading its
+// geometry makes the browser lay the whole chunk out, so geometry is only read
+// from rows that must be read (the last row, the rows around the viewport, a
+// jump target), never swept over every row.
+//
 // Hot-path discipline: everything that runs at scroll or token frequency
 // lives here. Rust receives one message when the published
 // `{ start, end }` scrollability CHANGES, never per scroll event or token.
@@ -56,6 +67,7 @@ const JUMP_SETTLE_MS = 1000;
 const USER_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
 const KEYS_TOWARD_END = new Set(["ArrowDown", "End", "PageDown", " "]);
 const LIVE_EDGE_ROWS = 8;
+const CHUNK = "data-message-scroller-chunk";
 const EDITABLE = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 
 // Provider props. `init` is always the first message Rust sends.
@@ -120,26 +132,35 @@ const px = (value) => {
 
 // --------------------------------------------------------- virtualization
 
-// The direct child of the content that holds `node`, if any.
+// The direct child of the content that holds `node`, if any: the row, or the
+// chunk holding the row. This is the element `content-visibility` skips.
 function rowOf(node) {
   let el = node && node.nodeType === 1 ? node : node && node.parentElement;
   while (el && el.parentElement !== content) el = el.parentElement;
   return el && el !== spacer ? el : null;
 }
 
+// The skip units (rows, or chunks) holding the last `rows` rows.
+function tailUnits(rows) {
+  const units = [];
+  let n = 0;
+  for (let i = content.children.length - 1; i >= 0 && n < rows; i--) {
+    const child = content.children[i];
+    if (child === spacer || !(child instanceof HTMLElement)) continue;
+    units.push(child);
+    n += child.hasAttribute(CHUNK) ? child.childElementCount : 1;
+  }
+  return units;
+}
+
 // Rows that must never be skipped by `content-visibility`: the live edge, the
-// row with focus, and the rows holding the ends of the selection.
+// row with focus, and the rows holding the ends of the selection (each as the
+// skip unit that holds it).
 function syncKeepRendered() {
   if (!bound) return;
   const want = new Set();
   if (cfg.virtualize === "content-visibility") {
-    const children = content.children;
-    for (let i = children.length - 1, n = 0; i >= 0 && n < LIVE_EDGE_ROWS; i--) {
-      const child = children[i];
-      if (child === spacer || !(child instanceof HTMLElement)) continue;
-      want.add(child);
-      n++;
-    }
+    for (const unit of tailUnits(LIVE_EDGE_ROWS)) want.add(unit);
     const active = document.activeElement;
     if (active && content.contains(active)) {
       const row = rowOf(active);
@@ -170,8 +191,30 @@ function scheduleKeepSync() {
 
 // ---------------------------------------------------------------- geometry
 
+// Every row, in order, whether it is a direct child of the content or one of
+// the rows of a chunk. Reads no geometry.
 function items() {
-  return Array.from(content.children).filter((c) => c !== spacer && c instanceof HTMLElement);
+  const out = [];
+  for (const child of content.children) {
+    if (child === spacer || !(child instanceof HTMLElement)) continue;
+    if (child.hasAttribute(CHUNK)) {
+      for (const row of child.children) if (row instanceof HTMLElement) out.push(row);
+    } else {
+      out.push(child);
+    }
+  }
+  return out;
+}
+
+// The last row, without walking the others.
+function lastItem() {
+  for (let i = content.children.length - 1; i >= 0; i--) {
+    const child = content.children[i];
+    if (child === spacer || !(child instanceof HTMLElement)) continue;
+    if (!child.hasAttribute(CHUNK)) return child;
+    if (child.lastElementChild instanceof HTMLElement) return child.lastElementChild;
+  }
+  return null;
 }
 
 function blockPadding(el) {
@@ -194,9 +237,10 @@ function contentBottom() {
   const top = viewport.getBoundingClientRect().top;
   const scrollTop = viewport.scrollTop;
   let bottom = pad.start + pad.end;
-  for (const item of items()) {
-    bottom = Math.max(bottom, item.getBoundingClientRect().bottom - top + scrollTop + pad.end);
-  }
+  // Rows flow in order, so the last one is the lowest; asking every row for its
+  // box would lay out every skipped chunk.
+  const last = lastItem();
+  if (last) bottom = Math.max(bottom, last.getBoundingClientRect().bottom - top + scrollTop + pad.end);
   return bottom;
 }
 
@@ -277,10 +321,22 @@ function takeFreshAnchor(list) {
 
 function firstVisibleItem() {
   const box = viewport.getBoundingClientRect();
-  for (const item of items()) {
-    if (!item.dataset.messageId) continue;
-    const r = item.getBoundingClientRect();
-    if (r.bottom > box.top && r.top < box.bottom) return item;
+  const inView = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.bottom > box.top && r.top < box.bottom;
+  };
+  for (const child of content.children) {
+    if (child === spacer || !(child instanceof HTMLElement)) continue;
+    // A chunk's own box is always laid out; only look inside one that is in view
+    // (and so rendered).
+    if (!inView(child)) continue;
+    if (child.hasAttribute(CHUNK)) {
+      for (const row of child.children) {
+        if (row instanceof HTMLElement && row.dataset.messageId && inView(row)) return row;
+      }
+    } else if (child.dataset.messageId) {
+      return child;
+    }
   }
   return null;
 }
@@ -596,6 +652,7 @@ function restorePrependedAnchor() {
 
 function handleContentChange() {
   if (!bound) return;
+  observeChunks();
   // Before any geometry is read: the live-edge rows must be rendered at their
   // real size, not at the skipped estimate.
   syncKeepRendered();
@@ -725,6 +782,17 @@ const resizeObserver = new ResizeObserver(() => {
 });
 const mutationObserver = new MutationObserver(() => handleContentChange());
 
+// Rows are added to and removed from the chunks, not only from the content.
+const observedChunks = new WeakSet();
+function observeChunks() {
+  for (const child of content.children) {
+    if (child instanceof HTMLElement && child.hasAttribute(CHUNK) && !observedChunks.has(child)) {
+      observedChunks.add(child);
+      mutationObserver.observe(child, { childList: true });
+    }
+  }
+}
+
 function bind() {
   if (bound || !root) return bound;
   const vp = root.querySelector("[data-message-scroller-viewport]");
@@ -745,6 +813,7 @@ function bind() {
   resizeObserver.observe(viewport);
   resizeObserver.observe(content);
   mutationObserver.observe(content, { childList: true });
+  observeChunks();
   bound = true;
   return true;
 }

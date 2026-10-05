@@ -1,20 +1,25 @@
-//! Virtual list implementation using Dioxus Store for fine-grained reactivity.
+//! The engines behind windowed lists.
 //!
-//! This module provides the core algorithms needed for efficient list virtualization:
-//!
-//! - Computing item positions from measured or estimated sizes
-//! - Calculating the visible range using binary search
-//! - Handling scroll position corrections when items resize
+//! - [`window`]: the pure "which indices are in the window, with overscan" math, shared by
+//!   `VirtualList` (`wrap: false`) and the looping carousel (`wrap: true`).
+//! - [`cv_chunks`]: how rows are grouped for `content-visibility` skipping, shared by
+//!   `VirtualList`'s content-visibility mode and `MessageScroller`.
+//! - [`size_index`]: item positions from measured or estimated sizes, as a Fenwick tree
+//!   (`O(log N)` measure and lookup).
+//! - [`virtualizer`]: `VirtualList`'s windowed engine, plain Rust with no Dioxus types: the
+//!   mounted range (quantised so a scroll re-renders only when it must), the frozen scroll
+//!   canvas, and the scroll corrections for rows that resize above the viewport.
 
+mod cv_chunks;
+mod size_index;
 pub(crate) mod types;
 mod utils;
 mod virtualizer;
 mod window;
 
-pub(crate) use virtualizer::{
-    compute_measurements, get_total_size, get_virtual_items, resize_item, set_scroll_offset,
-    set_viewport_size, VirtualizerState, VirtualizerStateStoreExt,
-};
+pub(crate) use cv_chunks::{cv_chunks, ChunkSkip, CHUNK_ROWS};
+pub(crate) use size_index::{SizeEstimates, DEFAULT_SIZE};
+pub(crate) use virtualizer::Engine;
 // Not yet consumed within this lane: `default_range_extractor` reaches the module
 // directly (`super::window::window`). Re-exported here per the shared-window-math API
 // contract so the planned looping `CarouselVirtual` (a separate, concurrent lane) can

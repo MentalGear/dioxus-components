@@ -13,15 +13,17 @@
  *   work stays bounded, and find-in-page, the accessibility tree and the live
  *   edge still behave as if every row were rendered.
  *
- * No assertion here is a millisecond threshold, so none is timing-sensitive on a
- * debug build (CLAUDE.md: timing specs only on release). The bounds below are
- * pixel distances and row counts. Pixel bounds absorb one frame of lag between
- * a row growing and the controller's rAF-coalesced follow.
+ * No assertion here is a millisecond threshold, except the one marked release-only
+ * ("scrolling a 2,000-row transcript costs the main thread little per frame"), which is
+ * skipped unless the build under test is a known release build (CLAUDE.md: timing specs
+ * only on release; `PW_BUILD_PROFILE=release` or `SSG_SITE_DIR` names it). The bounds
+ * everywhere else are pixel distances and row counts. Pixel bounds absorb one frame of
+ * lag between a row growing and the controller's rAF-coalesced follow.
  */
 import { test, expect } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
-import { BASE_URL } from "./base-url";
+import { BASE_URL, buildProfile } from "./base-url";
 import { gotoHydrated } from "./hydration";
 
 const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
@@ -338,13 +340,12 @@ test.describe("loading earlier messages", () => {
 test.describe("virtualization: content-visibility", () => {
   const ROWS = 2000;
 
-  /** Rows whose contents are actually rendered (not skipped). */
+  /** Rows that are actually rendered, i.e. not inside a chunk (or row) that `content-visibility` skips. */
   const renderedRows = (vp: Locator) =>
     vp.evaluate(
       (el) =>
-        Array.from(el.querySelectorAll("[data-message-id]")).filter((row) =>
-          // The row itself is always "visible"; its skipped *contents* are not.
-          (row.firstElementChild as HTMLElement).checkVisibility({ contentVisibilityAuto: true }),
+        Array.from(el.querySelectorAll<HTMLElement>("[data-message-id]")).filter((row) =>
+          row.checkVisibility({ contentVisibilityAuto: true }),
         ).length,
     );
 
@@ -352,11 +353,19 @@ test.describe("virtualization: content-visibility", () => {
     const vp = await open(page, "long");
     await expect.poll(() => dist(vp)).toBeLessThanOrEqual(1);
     expect(await vp.locator("[data-message-id]").count()).toBe(ROWS);
-    // Only the rows in view plus the controller's live-edge rows are rendered.
-    // A generous cap: the point is "bounded", not an exact figure.
-    expect(await renderedRows(vp)).toBeLessThan(60);
-    // The live edge is held out of skipping by the controller.
-    await expect(vp.locator("[data-keep-rendered]")).toHaveCount(8);
+    // Rows are skipped in chunks of 20 (one skippable element per row costs the browser
+    // main-thread time on every scroll frame in proportion to the row count): 2,000 rows are 100
+    // chunks.
+    await expect(vp.locator("[data-message-scroller-chunk]")).toHaveCount(ROWS / 20);
+    // Only the rows in view plus the live-edge chunk are rendered. A generous cap: the point is
+    // "bounded", not an exact figure.
+    expect(await renderedRows(vp)).toBeLessThan(80);
+    // The live edge (the last 8 rows) is held out of skipping by the controller: the one
+    // chunk that holds them.
+    await expect(vp.locator("[data-keep-rendered]")).toHaveCount(1);
+    await expect(
+      vp.locator(`[data-message-scroller-chunk][data-keep-rendered] [data-message-id="m${ROWS - 1}"]`),
+    ).toHaveCount(1);
     await expect(vp.locator("[data-message-scroller-content]")).toHaveAttribute(
       "data-virtualize",
       "content-visibility",
@@ -423,7 +432,45 @@ test.describe("virtualization: content-visibility", () => {
       row.tabIndex = -1;
       row.focus();
     });
-    await expect(vp.locator('[data-message-id="m1000"]')).toHaveAttribute("data-keep-rendered", "");
+    // The unit that is kept is the chunk holding the row.
+    await expect(
+      vp.locator('[data-message-scroller-chunk]:has([data-message-id="m1000"])'),
+    ).toHaveAttribute("data-keep-rendered", "");
+  });
+
+  test("scrolling a 2,000-row transcript costs the main thread little per frame (release only)", async ({ page }) => {
+    // A timing threshold: meaningful only on a release build (debug builds measure 5-10x slower).
+    test.skip(
+      buildProfile() !== "release",
+      "per-frame main-thread time is only measured on a release build (PW_BUILD_PROFILE=release)",
+    );
+    const vp = await open(page, "long");
+    await expect.poll(() => dist(vp)).toBeLessThanOrEqual(1);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Performance.enable");
+    const taskSeconds = async () => {
+      const { metrics } = await cdp.send("Performance.getMetrics");
+      return metrics.find((m) => m.name === "TaskDuration")!.value;
+    };
+    await page.waitForTimeout(500);
+    const before = await taskSeconds();
+    // From the live edge up through 10,000px of transcript, one 40px step per frame.
+    const frames = await vp.evaluate(async (el) => {
+      const start = el.scrollTop;
+      let frames = 0;
+      for (let y = 40; y <= 10_000; y += 40) {
+        el.scrollTop = start - y;
+        frames++;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return frames;
+    });
+    const msPerFrame = ((await taskSeconds()) - before) * 1000 / frames;
+    console.log(`message_scroller long: ${msPerFrame.toFixed(1)} ms of main-thread time per scroll frame`);
+    // One skippable element per row costs ~20 ms per frame at 2,000 rows (measured, release,
+    // headless Chromium on a 4-core VM); one per chunk of 20 rows ~1-2 ms. 8 ms is far from both.
+    expect(msPerFrame).toBeLessThan(8);
   });
 });
 

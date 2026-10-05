@@ -40,8 +40,8 @@ fn Controls(count: Signal<u32>) -> Element {
 }
 
 /// Two thousand rows, all in the DOM. Only the rows in view are laid out and
-/// painted (`content-visibility: auto`), and the last rows stay rendered so
-/// following a reply is exact; native find-in-page still reaches every row.
+/// painted (`content-visibility: auto`, skipped 20 rows at a time), and the last rows
+/// stay rendered so following a reply is exact; native find-in-page still reaches every row.
 #[component]
 pub fn Demo() -> Element {
     let count = use_signal(|| ROWS);
@@ -53,12 +53,18 @@ pub fn Demo() -> Element {
                     MessageScroller {
                         MessageScrollerViewport { "aria-label": "Long conversation",
                             MessageScrollerContent { style: "padding: var(--dx-space-4); gap: var(--dx-space-2);",
-                                for i in 0..count() {
-                                    MessageScrollerItem { key: "{i}", message_id: "m{i}",
-                                        div { style: "padding: var(--dx-space-2) var(--dx-space-3); border: 1px solid var(--dx-border); border-radius: var(--dx-radius-lg); font-size: var(--dx-text-sm);",
-                                            "{text(i)}"
+                                // Rows in chunks of 20, skipped by the browser as a unit: one
+                                // skippable element per row would cost main-thread time on every
+                                // scroll frame in proportion to the 2,000 rows.
+                                MessageScrollerRows {
+                                    count: count() as usize,
+                                    render_row: move |i: usize| rsx! {
+                                        MessageScrollerItem { key: "{i}", message_id: "m{i}",
+                                            div { style: "padding: var(--dx-space-2) var(--dx-space-3); border: 1px solid var(--dx-border); border-radius: var(--dx-radius-lg); font-size: var(--dx-text-sm);",
+                                                "{text(i as u32)}"
+                                            }
                                         }
-                                    }
+                                    },
                                 }
                             }
                         }
