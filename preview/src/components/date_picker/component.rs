@@ -13,6 +13,7 @@ use dioxus_primitives::{
     popover::{PopoverContentProps, PopoverTriggerProps},
     ContentAlign,
 };
+use std::time::Duration;
 use time::{Date, Month};
 
 use super::super::calendar::*;
@@ -100,6 +101,16 @@ pub struct DatePickerProps {
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
 
+    /// Whether picking a date closes the popover. Defaults to `true`; `false` keeps it open
+    /// after a selection (Escape, an outside click and the trigger still close it).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub close_on_select: ReadSignal<bool>,
+
+    /// How long the popover stays open after a selection before it closes, so the selected day
+    /// is seen first. Defaults to 300 ms; `Duration::ZERO` closes immediately.
+    #[props(default = ReadSignal::new(Signal::new(date_picker::DEFAULT_CLOSE_DELAY)))]
+    pub close_delay: ReadSignal<Duration>,
+
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(false)))]
     pub roving_loop: ReadSignal<bool>,
@@ -159,6 +170,16 @@ pub struct DateRangePickerProps {
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
 
+    /// Whether completing a range (picking its end date) closes the popover. Defaults to `true`;
+    /// `false` keeps it open (Escape, an outside click and the trigger still close it).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub close_on_select: ReadSignal<bool>,
+
+    /// How long the popover stays open after the range is complete before it closes, so the
+    /// selected range is seen first. Defaults to 300 ms; `Duration::ZERO` closes immediately.
+    #[props(default = ReadSignal::new(Signal::new(date_picker::DEFAULT_CLOSE_DELAY)))]
+    pub close_delay: ReadSignal<Duration>,
+
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(false)))]
     pub roving_loop: ReadSignal<bool>,
@@ -179,6 +200,13 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/date_picker/style.css") }
+        // Eager, at the picker root: the calendar sits inside the popover, which mounts its content
+        // on first open, so the `Link` that `CalendarRoot`/`RangeCalendarRoot` carries would only
+        // be inserted then -- a late, non-render-blocking `<link>`, and the calendar paints unstyled
+        // for a frame or two on the first open. (The docs site's SSG CSS bundle already carries it;
+        // a `dx components add date_picker` project has no bundle.) `document::Link` dedupes on
+        // `(href, rel)`, so the later one from the calendar itself is a no-op.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         div {
             date_picker::DatePicker {
                 on_value_change: props.on_value_change,
@@ -189,6 +217,8 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
                 max_date: props.max_date,
                 disabled_ranges: props.disabled_ranges,
                 roving_loop: props.roving_loop,
+                close_on_select: props.close_on_select,
+                close_delay: props.close_delay,
                 attributes: merged,
                 date_picker::DatePickerPopover {
                     // Item 3 fix (2026-09-01, live-site report): matches
@@ -228,6 +258,13 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/date_picker/style.css") }
+        // Eager, at the picker root: the calendar sits inside the popover, which mounts its content
+        // on first open, so the `Link` that `CalendarRoot`/`RangeCalendarRoot` carries would only
+        // be inserted then -- a late, non-render-blocking `<link>`, and the calendar paints unstyled
+        // for a frame or two on the first open. (The docs site's SSG CSS bundle already carries it;
+        // a `dx components add date_picker` project has no bundle.) `document::Link` dedupes on
+        // `(href, rel)`, so the later one from the calendar itself is a no-op.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/calendar/style.css") }
         div {
             date_picker::DateRangePicker {
                 on_range_change: props.on_range_change,
@@ -238,6 +275,8 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
                 max_date: props.max_date,
                 disabled_ranges: props.disabled_ranges,
                 roving_loop: props.roving_loop,
+                close_on_select: props.close_on_select,
+                close_delay: props.close_delay,
                 attributes: merged,
                 date_picker::DatePickerPopover {
                     // See the comment on `DatePicker`'s own
@@ -352,7 +391,9 @@ pub(crate) fn DateRangePickerInput(props: DatePickerInputProps) -> Element {
 
 #[component]
 pub(crate) fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Element {
-    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let base = attributes!(span {
+        class: "dx-date-picker-segment"
+    });
     let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         date_picker::DatePickerYearSegment { attributes: merged }
@@ -361,7 +402,9 @@ pub(crate) fn DatePickerYearSegment(props: DatePickerYearSegmentProps) -> Elemen
 
 #[component]
 pub(crate) fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Element {
-    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let base = attributes!(span {
+        class: "dx-date-picker-segment"
+    });
     let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         date_picker::DatePickerMonthSegment { attributes: merged }
@@ -370,7 +413,9 @@ pub(crate) fn DatePickerMonthSegment(props: DatePickerMonthSegmentProps) -> Elem
 
 #[component]
 pub(crate) fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element {
-    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let base = attributes!(span {
+        class: "dx-date-picker-segment"
+    });
     let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         date_picker::DatePickerDaySegment { attributes: merged }
@@ -379,7 +424,9 @@ pub(crate) fn DatePickerDaySegment(props: DatePickerDaySegmentProps) -> Element 
 
 #[component]
 pub(crate) fn DatePickerSeparator(props: DatePickerSeparatorProps) -> Element {
-    let base = attributes!(span { class: "dx-date-picker-segment" });
+    let base = attributes!(span {
+        class: "dx-date-picker-segment"
+    });
     let merged = merge_attributes(vec![base, props.attributes]);
     rsx! {
         date_picker::DatePickerSeparator { symbol: props.symbol, attributes: merged }
@@ -487,5 +534,4 @@ mod tests {
         assert!(html.contains("11"));
         assert!(html.contains("Show Calendar"));
     }
-
 }

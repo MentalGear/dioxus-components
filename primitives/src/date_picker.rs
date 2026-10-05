@@ -5,15 +5,16 @@ use crate::{
         weekday_abbreviation, AvailableRanges, CalendarProps, DateRange, RangeCalendarProps,
     },
     collection::{collection_item, use_collection_provider, use_item, CollectionState},
-    dioxus_core::Properties,
+    dioxus_core::{current_scope_id, Properties, Runtime, Task},
     popover::*,
     use_unique_id, LocalDateExt as _,
 };
 
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
+use dioxus_sdk_time::sleep;
 use num_integer::Integer;
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr, time::Duration};
 use time::{macros::date, Date, Month, OffsetDateTime, Weekday};
 
 use crate::merge_attributes;
@@ -30,6 +31,149 @@ struct BaseDatePickerContext {
     focus: CollectionState,
     enabled_date_range: DateRange,
     available_ranges: Memo<AvailableRanges>,
+
+    // What happens to the popover once a selection is complete -- see
+    // `BaseDatePickerContext::selection_complete`.
+    close_on_select: ReadSignal<bool>,
+    close_delay: ReadSignal<Duration>,
+    dwell: CloseDwell,
+}
+
+/// How long a picker stays open after a selection is complete, by default.
+///
+/// The popover closes on selection, so without a pause the only evidence that the click worked
+/// is the popover vanishing. The pause lets the selected cell's own paint land first (the day's
+/// fill transition is 100-200 ms, `--dx-motion-duration-fast`..`-slow`) and be registered, and
+/// only then does the normal exit animation (150-200 ms) run. 300 ms is the shortest value that
+/// reliably clears both: a visual change needs roughly 100-150 ms to be noticed at all, and the
+/// day's own transition has to finish inside it; anything past ~400 ms starts to read as lag
+/// instead of confirmation (the popover looks stuck). Pass `Duration::ZERO` for the old
+/// behaviour of closing immediately.
+pub const DEFAULT_CLOSE_DELAY: Duration = Duration::from_millis(300);
+
+/// Hand keyboard focus back to the trigger that opened the popover, if focus is still inside it.
+///
+/// Closing the popover from state (`open = false`) unmounts its content once the exit animation is
+/// done, and a focused element that is removed drops focus on `<body>` -- a keyboard user who just
+/// picked a date with Enter lands at the top of the page. (The browser's own light dismiss -- Escape,
+/// an outside click -- restores it natively; a close that comes from state does not.) The popover
+/// content is labelled by its trigger (`aria-labelledby` is the trigger's id), so the trigger can
+/// be found from wherever focus is without this crate knowing its element. A no-op when focus is
+/// not inside a popover, so it never steals focus from somewhere the user moved it to.
+fn return_focus_to_trigger() {
+    let _ = dioxus::document::eval(
+        r#"const open = document.activeElement && document.activeElement.closest('[popover][aria-labelledby], dialog[aria-labelledby]');
+        const trigger = open && document.getElementById(open.getAttribute('aria-labelledby'));
+        if (trigger) trigger.focus();"#,
+    );
+}
+
+/// What a completed selection does to the popover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectionClose {
+    /// `close_on_select: false` -- the popover stays open.
+    Stay,
+    /// `close_delay` is zero -- close in the same turn as the selection.
+    Immediately,
+    /// Hold the popover open for the dwell, then close it.
+    After(Duration),
+}
+
+fn selection_close(close_on_select: bool, close_delay: Duration) -> SelectionClose {
+    if !close_on_select {
+        SelectionClose::Stay
+    } else if close_delay.is_zero() {
+        SelectionClose::Immediately
+    } else {
+        SelectionClose::After(close_delay)
+    }
+}
+
+/// The one pending "close after the dwell" timer of a picker.
+///
+/// Scope-owned, following `crate::interval::use_interval`: the timer is a Dioxus task spawned
+/// in the PICKER's own scope (not whichever scope happened to call [`Self::schedule`] -- the
+/// calendar inside the popover unmounts when the popover does), so it is dropped with the picker
+/// and there is no JS `setTimeout` for anything to forget to clear (`dioxus_sdk_time::sleep`:
+/// `tokio` on native, `gloo_timers` on wasm, whose timeout is cleared when its future is
+/// dropped). At most one is pending at a time: scheduling replaces, and [`Self::cancel`] drops
+/// it, so every interaction, reopen or new selection during the dwell restarts or cancels it
+/// instead of racing it.
+///
+/// The wait is counted from the selection, not from when the selected day is painted: no effect
+/// can be tied to the render of one particular day cell (the cell renders in a later pass than
+/// the picker's own), and on ordinary hardware the difference is a frame. `close_delay` is the
+/// time between the click and the start of the exit animation.
+#[derive(Clone, Copy)]
+struct CloseDwell {
+    scope: ScopeId,
+    task: Signal<Option<Task>>,
+}
+
+/// Create the picker's [`CloseDwell`] and wire it to the popover's `open` signal: the pending
+/// close is cancelled whenever the popover opens or closes, so a close scheduled for one open
+/// session can never land on the next one (Escape, an outside click or the trigger during the
+/// dwell, then a reopen before it elapses). A hook: call it unconditionally, once per render,
+/// from the picker root.
+fn use_close_dwell(open: Signal<bool>) -> CloseDwell {
+    let dwell = CloseDwell {
+        scope: current_scope_id(),
+        task: use_signal(|| None),
+    };
+    use_effect(move || {
+        let _ = open();
+        dwell.cancel();
+    });
+    dwell
+}
+
+impl CloseDwell {
+    /// Drop the pending close, if any.
+    fn cancel(mut self) {
+        let task = self.task.write().take();
+        if let Some(task) = task {
+            task.cancel();
+        }
+    }
+
+    /// Whether a close is currently waiting out its dwell.
+    fn is_pending(self) -> bool {
+        self.task.peek().is_some()
+    }
+
+    /// Run `close` after `delay`, replacing whatever was already pending.
+    fn schedule(mut self, delay: Duration, close: impl FnOnce() + 'static) {
+        self.cancel();
+        let mut slot = self.task;
+        let task = Runtime::current().spawn(self.scope, async move {
+            sleep(delay).await;
+            slot.set(None);
+            close();
+        });
+        self.task.set(Some(task));
+    }
+}
+
+impl BaseDatePickerContext {
+    /// A selection has just been completed (a date picked, or a range's end date picked): close
+    /// the popover as `close_on_select`/`close_delay` say. The selected state is already painted
+    /// by the time a dwell elapses, the popover's own exit animation runs after it, and focus
+    /// returns to the trigger exactly as it does for any other close.
+    fn selection_complete(self) {
+        let mut open = self.open;
+        match selection_close(*self.close_on_select.peek(), *self.close_delay.peek()) {
+            SelectionClose::Stay => self.dwell.cancel(),
+            SelectionClose::Immediately => {
+                self.dwell.cancel();
+                return_focus_to_trigger();
+                open.set(false);
+            }
+            SelectionClose::After(delay) => self.dwell.schedule(delay, move || {
+                return_focus_to_trigger();
+                open.set(false);
+            }),
+        }
+    }
 }
 
 /// The context provided by the [`DatePicker`] component to its children.
@@ -78,6 +222,20 @@ pub struct DatePickerProps {
     /// Unavailable dates
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
+
+    /// Whether picking a date closes the popover. Defaults to `true`. When `false` the popover
+    /// stays open after a selection, so several dates can be tried without reopening it; Escape,
+    /// an outside click and the trigger still close it.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub close_on_select: ReadSignal<bool>,
+
+    /// How long the popover stays open after a selection before it closes (and plays its exit
+    /// animation), so the selected state is visible for a moment first. Defaults to
+    /// [`DEFAULT_CLOSE_DELAY`] (300 ms); `Duration::ZERO` closes immediately. A key press, a month
+    /// change or a close/reopen during the pause cancels the pending close, and picking another
+    /// date restarts it. Ignored when `close_on_select` is `false`.
+    #[props(default = ReadSignal::new(Signal::new(DEFAULT_CLOSE_DELAY)))]
+    pub close_delay: ReadSignal<Duration>,
 
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(false)))]
@@ -139,6 +297,7 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
     let open = use_signal(|| false);
     let focus = use_collection_provider(props.roving_loop);
     let available_ranges = use_memo(move || AvailableRanges::new(&props.disabled_ranges.read()));
+    let dwell = use_close_dwell(open);
 
     // Create context provider for child components
     use_context_provider(|| BaseDatePickerContext {
@@ -148,6 +307,9 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
         focus,
         enabled_date_range: DateRange::new(props.min_date, props.max_date),
         available_ranges,
+        close_on_select: props.close_on_select,
+        close_delay: props.close_delay,
+        dwell,
     });
 
     use_context_provider(|| DatePickerContext {
@@ -162,8 +324,14 @@ pub fn DatePicker(props: DatePickerProps) -> Element {
     });
     let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
 
+    // A key pressed anywhere in the picker is the user taking over, so a close that is still
+    // waiting out its dwell is cancelled. The selection itself schedules the close only AFTER its
+    // own keydown has bubbled through here (Enter's `click` is dispatched once the keydown has
+    // finished, Space's on keyup). Not the pointer: a second press on the day that was just
+    // selected has to reach `DatePickerCalendar` with the close still pending, see there.
     rsx! {
         div {
+            onkeydown: move |_| dwell.cancel(),
             ..merged,
             {props.children}
         }
@@ -179,9 +347,25 @@ pub struct DateRangePickerContext {
 }
 
 impl DateRangePickerContext {
-    /// Set the selected date
+    /// Set the selected range -- but only if it differs from the controlled value, so a caller
+    /// that already holds it (an echo of the parent's own value) never reports it back.
+    ///
+    /// The comparison reads the controlled value through `.peek()`, never tracked syntax, and that
+    /// is load-bearing, not style: this is called from `DateRangePickerInputValue`'s sync-up
+    /// effect, and a tracked read would subscribe that effect to the parent's value. Every change
+    /// the PARENT makes to the range (including the one a calendar click has just reported
+    /// upward) would then wake the sync-up effect too -- and, when it runs before the sync-down
+    /// effect has copied the new range into the segment signals, it reads the PREVIOUS range
+    /// there, finds it differs from the parent's value, and reports the stale range back up. The
+    /// parent applies it (one render later), the sync-down effect copies it into the segments,
+    /// the sync-up effect reports that, and the two ranges alternate forever -- a wasm loop that
+    /// never yields to the browser (the second range completed in one page froze the tab; the
+    /// order the two effects wake in is hash-ordered, so it reproduced on some builds, and on some
+    /// opens, and not on others). `DatePickerContext::set_date` already reads its value this way,
+    /// and the `check-self-subscribing-effects.sh` gate now rejects any method an effect calls
+    /// that reads its own fields with tracked syntax.
     pub fn set_range(&mut self, range: Option<DateRange>) {
-        if (self.date_range)() != range {
+        if *self.date_range.peek() != range {
             self.set_selected_range.call(range);
         }
     }
@@ -217,6 +401,21 @@ pub struct DateRangePickerProps {
     /// Unavailable dates
     #[props(default)]
     pub disabled_ranges: ReadSignal<Vec<DateRange>>,
+
+    /// Whether completing a range (picking its end date) closes the popover. Defaults to `true`.
+    /// When `false` the popover stays open after a range is picked, so several can be tried
+    /// without reopening it; Escape, an outside click and the trigger still close it. Picking the
+    /// range's start never closes it either way.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub close_on_select: ReadSignal<bool>,
+
+    /// How long the popover stays open after the range's end date is picked before it closes (and
+    /// plays its exit animation), so the selected range is visible for a moment first. Defaults to
+    /// [`DEFAULT_CLOSE_DELAY`] (300 ms); `Duration::ZERO` closes immediately. Any press or key
+    /// inside the picker (so the first click of a new range), a month change or a close/reopen
+    /// during the pause cancels the pending close. Ignored when `close_on_select` is `false`.
+    #[props(default = ReadSignal::new(Signal::new(DEFAULT_CLOSE_DELAY)))]
+    pub close_delay: ReadSignal<Duration>,
 
     /// Whether focus should loop around when reaching the end.
     #[props(default = ReadSignal::new(Signal::new(false)))]
@@ -278,6 +477,7 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
     let focus = use_collection_provider(props.roving_loop);
 
     let available_ranges = use_memo(move || AvailableRanges::new(&props.disabled_ranges.read()));
+    let dwell = use_close_dwell(open);
 
     // Create context provider for child components
     use_context_provider(|| BaseDatePickerContext {
@@ -287,6 +487,9 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
         focus,
         enabled_date_range: DateRange::new(props.min_date, props.max_date),
         available_ranges,
+        close_on_select: props.close_on_select,
+        close_delay: props.close_delay,
+        dwell,
     });
 
     use_context_provider(|| DateRangePickerContext {
@@ -303,8 +506,16 @@ pub fn DateRangePicker(props: DateRangePickerProps) -> Element {
     });
     let merged = merge_attributes(vec![defaults, props.attributes.clone(), owned]);
 
+    // A press or a key anywhere in the picker is the user taking over, so a close that is still
+    // waiting out its dwell is cancelled -- in particular, the first click of a NEW range during
+    // the dwell of the previous one (that click only anchors the range and reports nothing, so
+    // this is the only place that can see it). The selection itself schedules the close only AFTER
+    // its own pointerdown/keydown has bubbled through here (Enter's `click` is dispatched once the
+    // keydown has finished, Space's on keyup).
     rsx! {
         div {
+            onpointerdown: move |_| dwell.cancel(),
+            onkeydown: move |_| dwell.cancel(),
             ..merged,
             {props.children}
         }
@@ -318,6 +529,12 @@ pub struct DatePickerPopoverProps {
     /// Whether the popover is a modal and should capture focus.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub is_modal: ReadSignal<bool>,
+
+    /// Whether a **modal** popover dims the page behind it with the shared overlay scrim, like
+    /// [`PopoverRootProps::overlay`] (which this is forwarded to). Defaults to `false`: no scrim.
+    /// Has no effect while `is_modal` is `false`, which the styled pickers always are.
+    #[props(default = ReadSignal::new(Signal::new(false)))]
+    pub overlay: ReadSignal<bool>,
 
     /// The controlled open state of the popover.
     pub open: ReadSignal<Option<bool>>,
@@ -410,6 +627,7 @@ pub fn DatePickerPopover(props: DatePickerPopoverProps) -> Element {
             // switch the calendar onto the non-modal, trigger-anchored arm
             // instead.
             is_modal: props.is_modal,
+            overlay: props.overlay,
             open: open(),
             on_open_change: move |v| open.set(v),
             attributes: props.attributes,
@@ -520,7 +738,7 @@ pub struct DatePickerCalendarProps<T: DefaultCalendarProps + Properties + Partia
 /// ```
 #[component]
 pub fn DatePickerCalendar(props: DatePickerCalendarProps<CalendarProps>) -> Element {
-    let mut base_ctx = use_context::<BaseDatePickerContext>();
+    let base_ctx = use_context::<BaseDatePickerContext>();
     let mut ctx = use_context::<DatePickerContext>();
 
     #[allow(non_snake_case)]
@@ -538,15 +756,28 @@ pub fn DatePickerCalendar(props: DatePickerCalendarProps<CalendarProps>) -> Elem
     rsx! {
         Calendar {
             selected_date: ctx.selected_date,
-            on_date_change: move |date| {
+            on_date_change: move |date: Option<Date>| {
+                // While a close is pending, "no date" is a click on the day that was JUST
+                // selected (a double-click, or someone confirming what they are watching land),
+                // which the calendar reads as a toggle-off. That is not what they mean, and the
+                // dwell is what opened the window for it, so it keeps the selection and restarts
+                // the wait instead of clearing the value. Without a pending close (`close_on_select:
+                // false`, or the popover reopened) a click on the selected day still clears it.
+                if date.is_none() && base_ctx.dwell.is_pending() {
+                    base_ctx.selection_complete();
+                    return;
+                }
                 ctx.set_date(date);
-                base_ctx.open.set(false);
+                base_ctx.selection_complete();
             },
             disabled_ranges: base_ctx.available_ranges.read().to_disabled_ranges(),
             on_format_weekday: props.on_format_weekday,
             on_format_month: props.on_format_month,
             view_date: view_date(),
-            on_view_change: move |date| view_date.set(date),
+            on_view_change: move |date| {
+                base_ctx.dwell.cancel();
+                view_date.set(date);
+            },
             today: props.today,
             disabled: props.disabled,
             first_day_of_week: props.first_day_of_week,
@@ -596,7 +827,7 @@ pub fn DatePickerCalendar(props: DatePickerCalendarProps<CalendarProps>) -> Elem
 /// ```
 #[component]
 pub fn DateRangePickerCalendar(props: DatePickerCalendarProps<RangeCalendarProps>) -> Element {
-    let mut base_ctx = use_context::<BaseDatePickerContext>();
+    let base_ctx = use_context::<BaseDatePickerContext>();
     let mut ctx = use_context::<DateRangePickerContext>();
 
     #[allow(non_snake_case)]
@@ -614,15 +845,20 @@ pub fn DateRangePickerCalendar(props: DatePickerCalendarProps<RangeCalendarProps
     rsx! {
         RangeCalendar {
             selected_range: ctx.date_range,
+            // `RangeCalendar` only reports a range once its END date is picked (the first click
+            // just anchors it), so this is the "range is complete" moment -- never the start.
             on_range_change: move |range| {
                 ctx.set_range(range);
-                base_ctx.open.set(false);
+                base_ctx.selection_complete();
             },
             disabled_ranges: base_ctx.available_ranges.read().to_disabled_ranges(),
             on_format_weekday: props.on_format_weekday,
             on_format_month: props.on_format_month,
             view_date: view_date(),
-            on_view_change: move |date| view_date.set(date),
+            on_view_change: move |date| {
+                base_ctx.dwell.cancel();
+                view_date.set(date);
+            },
             today: props.today,
             disabled: props.disabled,
             first_day_of_week: props.first_day_of_week,
@@ -1609,9 +1845,19 @@ pub fn DatePickerInputValue(props: DatePickerInputValueProps) -> Element {
     rsx! {
         DateElement {
             selected_date: ctx.selected_date,
-            on_date_change: move |date| {
+            on_date_change: move |date: Option<Date>| {
+                // `DateElement` reports EVERY date its three segments resolve to -- the one just typed
+                // AND the one the calendar just selected (the segments re-render from it and commit
+                // it back up). Only a typed commit, which changes the value, closes the popover here:
+                // the echo of a calendar selection finds the value already set, and closing on it
+                // closed the popover on the same frame as the click -- ahead of `close_delay`, and
+                // even with `close_on_select: false`. The calendar closes it itself
+                // (`BaseDatePickerContext::selection_complete`).
+                let changed = *ctx.selected_date.peek() != date;
                 ctx.set_date(date);
-                base_ctx.open.set(false);
+                if changed {
+                    base_ctx.open.set(false);
+                }
             },
             on_format_day_placeholder: props.on_format_day_placeholder,
             on_format_month_placeholder: props.on_format_month_placeholder,
@@ -2874,5 +3120,300 @@ mod tests {
             ctx.set_range(changed);
             assert_eq!(emitted(), vec![changed]);
         });
+    }
+
+    // ---- the close dwell (`close_on_select` / `close_delay`) -----------------------------
+
+    use std::{cell::Cell, rc::Rc};
+
+    const DWELL: Duration = Duration::from_millis(300);
+
+    #[test]
+    fn selection_close_policy() {
+        assert_eq!(selection_close(false, DWELL), SelectionClose::Stay);
+        assert_eq!(selection_close(false, Duration::ZERO), SelectionClose::Stay);
+        assert_eq!(
+            selection_close(true, Duration::ZERO),
+            SelectionClose::Immediately
+        );
+        assert_eq!(selection_close(true, DWELL), SelectionClose::After(DWELL));
+        assert_eq!(
+            selection_close(true, DEFAULT_CLOSE_DELAY),
+            SelectionClose::After(Duration::from_millis(300))
+        );
+    }
+
+    /// Shared with the test through a root context: the picker's dwell handle and `open` signal
+    /// (captured by the probe on each render) and whether the probe is mounted.
+    #[derive(Clone, Default)]
+    struct DwellHarness {
+        dwell: Rc<Cell<Option<CloseDwell>>>,
+        open: Rc<Cell<Option<Signal<bool>>>>,
+        mounted: Rc<Cell<bool>>,
+    }
+
+    #[component]
+    fn DwellHost() -> Element {
+        let harness: DwellHarness = consume_context();
+        rsx! {
+            if harness.mounted.get() {
+                DwellProbe {}
+            }
+        }
+    }
+
+    /// Stands in for the picker root: it owns `open` and the `CloseDwell`, exactly as `DatePicker`
+    /// does.
+    #[component]
+    fn DwellProbe() -> Element {
+        let harness: DwellHarness = consume_context();
+        let open = use_signal(|| true);
+        harness.open.set(Some(open));
+        harness.dwell.set(Some(use_close_dwell(open)));
+        rsx! { "probe" }
+    }
+
+    fn dwell_dom() -> (VirtualDom, DwellHarness) {
+        let harness = DwellHarness::default();
+        harness.mounted.set(true);
+        let mut dom = VirtualDom::new(DwellHost).with_root_context(harness.clone());
+        dom.rebuild_in_place();
+        dom.process_events();
+        (dom, harness)
+    }
+
+    /// What `selection_complete` does from the calendar (a child scope): start the wait.
+    fn schedule_close(dom: &mut VirtualDom, harness: &DwellHarness, delay: Duration) {
+        let dwell = harness.dwell.get().expect("probe rendered");
+        let mut open = harness.open.get().expect("probe rendered");
+        dom.in_scope(ScopeId::APP, || {
+            dwell.schedule(delay, move || open.set(false))
+        });
+        // Poll the spawned task once so its `sleep` is registered at the current virtual time.
+        dom.process_events();
+    }
+
+    fn commit_render(dom: &mut VirtualDom) {
+        dom.render_immediate_to_vec();
+        dom.process_events();
+    }
+
+    fn is_open(dom: &mut VirtualDom, harness: &DwellHarness) -> bool {
+        let open = harness.open.get().expect("probe rendered");
+        dom.in_scope(ScopeId::APP, || *open.peek())
+    }
+
+    fn is_pending(dom: &mut VirtualDom, harness: &DwellHarness) -> bool {
+        let dwell = harness.dwell.get().expect("probe rendered");
+        dom.in_scope(ScopeId::APP, || dwell.is_pending())
+    }
+
+    fn cancel(dom: &mut VirtualDom, harness: &DwellHarness) {
+        let dwell = harness.dwell.get().expect("probe rendered");
+        dom.in_scope(ScopeId::APP, || dwell.cancel());
+    }
+
+    async fn advance(dom: &mut VirtualDom, by: Duration) {
+        tokio::time::advance(by).await;
+        dom.process_events();
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn the_picker_closes_once_after_the_delay_and_not_before() {
+        let (mut dom, harness) = dwell_dom();
+        assert!(
+            !is_pending(&mut dom, &harness),
+            "nothing pending before a selection"
+        );
+        schedule_close(&mut dom, &harness, DWELL);
+        assert!(
+            is_pending(&mut dom, &harness),
+            "a selection leaves a close pending"
+        );
+
+        advance(&mut dom, DWELL - Duration::from_millis(1)).await;
+        assert!(
+            is_open(&mut dom, &harness),
+            "must still be open inside the dwell"
+        );
+        assert!(is_pending(&mut dom, &harness));
+        advance(&mut dom, Duration::from_millis(1)).await;
+        assert!(
+            !is_open(&mut dom, &harness),
+            "closes once the dwell has elapsed"
+        );
+        assert!(
+            !is_pending(&mut dom, &harness),
+            "and nothing is pending once it has"
+        );
+        advance(&mut dom, DWELL * 4).await;
+        assert!(!is_open(&mut dom, &harness));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn scheduling_again_restarts_the_wait_instead_of_stacking_a_second_close() {
+        let (mut dom, harness) = dwell_dom();
+        schedule_close(&mut dom, &harness, DWELL);
+        advance(&mut dom, Duration::from_millis(200)).await;
+        schedule_close(&mut dom, &harness, DWELL); // the user picked another date
+
+        advance(&mut dom, Duration::from_millis(200)).await;
+        assert!(
+            is_open(&mut dom, &harness),
+            "the first schedule's deadline has passed, but it was replaced"
+        );
+        advance(&mut dom, Duration::from_millis(100)).await;
+        assert!(
+            !is_open(&mut dom, &harness),
+            "the restarted wait elapses once"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn cancel_drops_the_pending_close() {
+        let (mut dom, harness) = dwell_dom();
+        schedule_close(&mut dom, &harness, DWELL);
+        advance(&mut dom, Duration::from_millis(100)).await;
+        cancel(&mut dom, &harness);
+        assert!(
+            !is_pending(&mut dom, &harness),
+            "cancelled means nothing is pending"
+        );
+        advance(&mut dom, DWELL * 4).await;
+        assert!(
+            is_open(&mut dom, &harness),
+            "an interaction during the dwell cancels the close"
+        );
+
+        // Cancelling when nothing is pending is a no-op, and the dwell is reusable.
+        cancel(&mut dom, &harness);
+        schedule_close(&mut dom, &harness, DWELL);
+        advance(&mut dom, DWELL).await;
+        assert!(!is_open(&mut dom, &harness));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn closing_or_reopening_the_popover_cancels_the_pending_close() {
+        let (mut dom, harness) = dwell_dom();
+        commit_render(&mut dom); // the mount-time effect run
+        schedule_close(&mut dom, &harness, DWELL);
+        advance(&mut dom, Duration::from_millis(100)).await;
+
+        // The user closes the popover (Escape / outside click / trigger) and reopens it inside the dwell.
+        let mut open = harness.open.get().unwrap();
+        dom.in_scope(ScopeId::APP, || open.set(false));
+        commit_render(&mut dom);
+        dom.in_scope(ScopeId::APP, || open.set(true));
+        commit_render(&mut dom);
+
+        advance(&mut dom, DWELL * 4).await;
+        assert!(
+            is_open(&mut dom, &harness),
+            "the close scheduled for the previous open session must not land on this one"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn a_started_wait_never_fires_after_the_picker_unmounts() {
+        let (mut dom, harness) = dwell_dom();
+        let fired = Rc::new(Cell::new(0usize));
+        let dwell = harness.dwell.get().unwrap();
+        let counter = fired.clone();
+        // Scheduled from OUTSIDE the probe's scope, as the calendar (a child scope) would.
+        dom.in_scope(ScopeId::APP, || {
+            dwell.schedule(DWELL, move || counter.set(counter.get() + 1))
+        });
+        dom.process_events();
+        advance(&mut dom, Duration::from_millis(100)).await;
+
+        // Unmount the picker mid-dwell.
+        harness.mounted.set(false);
+        dom.mark_dirty(ScopeId::APP);
+        dom.render_immediate_to_vec();
+        for _ in 0..10 {
+            advance(&mut dom, DWELL).await;
+        }
+        assert_eq!(
+            fired.get(),
+            0,
+            "a timer owned by the picker's scope is gone with it: nothing may fire after unmount"
+        );
+    }
+
+    // ---- a controlled range change is never answered (the second-range page hang) -----------------
+
+    /// A controlled `DateRangePicker` the way the demo uses it: the parent owns the range and
+    /// applies whatever `on_range_change` reports. Everything the picker reports is recorded.
+    #[derive(Clone, Default)]
+    struct RangeHarness {
+        selected: Rc<Cell<Option<Signal<Option<DateRange>>>>>,
+        reported: Rc<std::cell::RefCell<Vec<Option<DateRange>>>>,
+    }
+
+    #[component]
+    fn ControlledRangeHost() -> Element {
+        let harness: RangeHarness = consume_context();
+        let mut selected =
+            use_signal(|| Some(DateRange::new(date!(2026 - 02 - 01), date!(2026 - 02 - 05))));
+        harness.selected.set(Some(selected));
+        rsx! {
+            DateRangePicker {
+                selected_range: selected(),
+                on_range_change: move |range: Option<DateRange>| {
+                    harness.reported.borrow_mut().push(range);
+                    selected.set(range);
+                },
+                DateRangePickerInput {}
+            }
+        }
+    }
+
+    /// Run the VirtualDom until it is quiet -- bounded, so a regression is a failed assertion and
+    /// not a hung test (the bug this guards is an unbounded loop).
+    fn settle(dom: &mut VirtualDom) {
+        for _ in 0..60 {
+            dom.process_events();
+            dom.render_immediate_to_vec();
+        }
+    }
+
+    /// A range the PARENT sets (a calendar click it has just applied, a "this week" button) must
+    /// never be reported back through `on_range_change`: the picker already holds it. It used to
+    /// be, once the picker had held a different complete range: the sync-up effect
+    /// (`DateRangePickerInputValue`) was subscribed to the parent's value through
+    /// `DateRangePickerContext::set_range`'s tracked read, so a parent change woke it ahead of the
+    /// sync-down effect, it read the PREVIOUS range from the segments and reported that, and the
+    /// two ranges then alternated forever -- completing a second range froze the tab. Which of the
+    /// two effects wakes first is hash-ordered, hence the many changes: with the bug at least one
+    /// of them wakes them the wrong way round.
+    #[test]
+    fn a_range_the_parent_sets_is_never_reported_back() {
+        let harness = RangeHarness::default();
+        let mut dom = VirtualDom::new(ControlledRangeHost).with_root_context(harness.clone());
+        dom.rebuild_in_place();
+        settle(&mut dom);
+        assert!(
+            harness.reported.borrow().is_empty(),
+            "mounting a controlled range must not report anything: {:?}",
+            harness.reported.borrow()
+        );
+
+        let mut selected = harness.selected.get().expect("host rendered");
+        for step in 0..16i64 {
+            let start = date!(2026 - 03 - 01) + time::Duration::days(step * 3);
+            let next = Some(DateRange::new(start, start + time::Duration::days(2)));
+            dom.in_scope(ScopeId::APP, || selected.set(next));
+            settle(&mut dom);
+            assert!(
+                harness.reported.borrow().is_empty(),
+                "step {step}: the picker answered the parent's own range {next:?} with {:?}",
+                harness.reported.borrow()
+            );
+            assert_eq!(
+                dom.in_scope(ScopeId::APP, || *selected.peek()),
+                next,
+                "step {step}: the parent's range was overwritten"
+            );
+        }
     }
 }

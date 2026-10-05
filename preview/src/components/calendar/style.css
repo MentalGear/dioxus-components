@@ -1,16 +1,24 @@
-/* Calendar Container */
+/* Calendar Container
+ *
+ * The card chrome (`border`, `background-color`, `box-shadow`) can be switched off by a container
+ * that already IS the card -- a popover panel -- through `--dx-calendar-border`,
+ * `--dx-calendar-background` and `--dx-calendar-shadow` (custom properties inherit, so the
+ * container sets them without this stylesheet or its own naming namespace being crossed).
+ *
+ * Months (`month_count > 1`) sit side by side in this flex row with a gap, and WRAP onto their own
+ * rows when the row is wider than the space it has -- a phone-width viewport, or a narrow card --
+ * so two months stack instead of overflowing, without a breakpoint to keep in sync with whatever
+ * contains the calendar. shadcn's `numberOfMonths` does the same with `flex-col md:flex-row`. */
 .dx-calendar {
     display: flex;
     width: fit-content;
     max-width: 100%;
-    flex-direction: row;
-    border: 1px solid var(--dx-border);
+    flex-flow: row wrap;
+    border: var(--dx-calendar-border, 1px solid var(--dx-border));
     border-radius: var(--dx-radius-lg);
-    background-color: var(--dx-background);
-    box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-        sans-serif;
+    background-color: var(--dx-calendar-background, var(--dx-background));
+    box-shadow: var(--dx-calendar-shadow, 0 2px 10px rgb(0 0 0 / 10%));
+    gap: var(--dx-space-4);
 }
 
 /* Calendar Navigation */
@@ -109,10 +117,14 @@
     justify-content: center;
 }
 
-/* Calendar Grid */
+/* Calendar Grid
+ *
+ * One month. `flex: 1 1 auto` (not `width: 100%`): a view must be sized by its own content so
+ * several of them can share a row and wrap, while still growing to fill a calendar that is wider
+ * than its content (a caller-set width, or a month alone on a wrapped row). */
 .dx-calendar-view {
     display: flex;
-    width: 100%;
+    flex: 1 1 auto;
     flex-direction: column;
 }
 

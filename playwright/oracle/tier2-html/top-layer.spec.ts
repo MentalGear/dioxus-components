@@ -954,6 +954,14 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
   });
 
   test("ColorPicker popover on the CSS-anchor path tracks its trigger through a scroll", async ({ page }) => {
+    // A viewport with room for the whole panel below the trigger, so the 150px scroll below cannot cross the flip
+    // threshold (see the "headroom" note in the case above). The panel is 386px tall and opens 8px under a trigger
+    // whose bottom edge is at y ~ 453, so at Playwright's default 1280x720 it does NOT fit: `position-try-fallbacks:
+    // flip-block` correctly opens it ABOVE the trigger (offset -428), and the scroll then frees enough room below
+    // that it flips back (offset +8) -- a 436px jump that reads as "frozen / drifted" but is the flip, not a tracking
+    // failure. Measured on a release SSG build (2026-10-05): 720 -> -428 then 8; 900/1000/1100 -> 8 then 8, exactly
+    // tracked on this Chromium 1194, CSS-anchor path (empty inline `top`). dev-docs/backlog.md rows 21/106.
+    await page.setViewportSize({ width: 1280, height: 1000 });
     // dev-docs/backlog.md row 109: SSG lane -- `gotoHydrated`, see this
     // file's own `gotoFixture` doc.
     await gotoHydrated(page, `${BASE_URL}/component/?name=color_picker&`, {
@@ -975,10 +983,10 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
     // end-user positioning is never wrong; this test's whole point, though,
     // is to isolate the *CSS-only* path specifically, which this Chromium
     // quirk can only be kept out of by not scrolling before the open it is
-    // asserting about. A stray earlier concern about needing room below the
-    // trigger to avoid a spurious flip at scrollY=0 does not hold on this
-    // fixture, confirmed by execution: `data-side` stays "bottom"
-    // (unflipped) either way, on this viewport.
+    // asserting about. Room below the trigger DOES matter at the default
+    // 720px-tall viewport (the panel flips above it there -- see the
+    // viewport note at the top of this case), which is why the viewport is
+    // enlarged above rather than the flip being ignored.
     const trigger = page.getByRole("button", { name: /Color picker/i }).first();
     await expect(trigger).toBeVisible();
     await trigger.evaluate((el) => (el as HTMLElement).click());
@@ -1001,12 +1009,15 @@ test.describe("Rule 8 — scroll tracking: an anchored overlay's content keeps i
     // stable "before" to compare "after" against.
     await page.waitForTimeout(200);
 
-    const offsetOf = async () =>
-      page.evaluate(() => {
-        const c = document.querySelector("dialog[popover]")!.getBoundingClientRect();
-        const t = document.querySelector('[style*="anchor-name"]')!.getBoundingClientRect();
-        return { top: c.top - t.bottom, left: c.left - t.left };
-      });
+    // This picker's own trigger and panel -- NOT `document.querySelector('[style*="anchor-name"]')` /
+    // `("dialog[popover]")`: the header's theme picker (a `.dx-theme-picker-trigger` button with an inline
+    // `anchor-name`, and its own popover dialog) precedes the demo in the DOM, so those first-match selectors
+    // measured the header, which does not scroll with the content.
+    const offsetOf = async () => {
+      const t = await trigger.evaluate((el) => el.getBoundingClientRect().toJSON());
+      const c = await content.evaluate((el) => el.getBoundingClientRect().toJSON());
+      return { top: c.top - t.bottom, left: c.left - t.left };
+    };
 
     const before = await offsetOf();
     await page.evaluate(() => window.scrollBy(0, 150));

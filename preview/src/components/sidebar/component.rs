@@ -5,10 +5,10 @@ use crate::components::sheet::{
 };
 use crate::components::skeleton::Skeleton;
 use crate::components::tooltip::{Tooltip, TooltipContent, TooltipTrigger};
-use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::PanelLeft;
 use dioxus_primitives::dioxus_attributes::attributes;
+use dioxus_primitives::js_listener::{use_js_listeners, JsListeners};
 use dioxus_primitives::merge_attributes;
 use dioxus_primitives::use_controlled;
 
@@ -158,36 +158,20 @@ pub fn use_sidebar() -> SidebarCtx {
 pub fn use_is_mobile() -> Signal<bool> {
     let mut is_mobile = use_signal(|| false);
 
-    use_effect(move || {
-        spawn(async move {
-            let js_code = format!(
+    // The resize listener belongs to this component: `use_js_listeners` removes it when the
+    // provider unmounts (it used to be reachable only through a `window.__sidebarResizeHandler`
+    // global, so a second provider, or a remount before the drop ran, orphaned the first).
+    use_js_listeners(move || {
+        Some(
+            JsListeners::install(&format!(
                 r#"
-                function checkMobile() {{
-                    return window.innerWidth < {MOBILE_BREAKPOINT};
-                }}
-                function handleResize() {{
-                    dioxus.send(checkMobile());
-                }}
-                window.__sidebarResizeHandler = handleResize;
-                window.addEventListener('resize', window.__sidebarResizeHandler);
+                const checkMobile = () => window.innerWidth < {MOBILE_BREAKPOINT};
+                listen(window, 'resize', () => dioxus.send(checkMobile()));
                 dioxus.send(checkMobile());
                 "#
-            );
-            let mut eval = document::eval(&js_code);
-
-            while let Ok(result) = eval.recv::<bool>().await {
-                is_mobile.set(result);
-            }
-        });
-    });
-
-    use_drop(|| {
-        _ = document::eval(
-            r#"
-            window.removeEventListener('resize', window.__sidebarResizeHandler);
-            delete window.__sidebarResizeHandler;
-            "#,
-        );
+            ))
+            .on_message(move |mobile: bool| is_mobile.set(mobile)),
+        )
     });
 
     is_mobile
@@ -226,37 +210,20 @@ pub fn SidebarProvider(
 
     use_context_provider(|| ctx);
 
-    use_effect(move || {
-        spawn(async move {
-            let js_code = format!(
+    use_js_listeners(move || {
+        Some(
+            JsListeners::install(&format!(
                 r#"
-                function sidebarKeyHandler(event) {{
+                listen(window, 'keydown', (event) => {{
                     if (event.key === '{SIDEBAR_KEYBOARD_SHORTCUT}' && (event.metaKey || event.ctrlKey)) {{
                         event.preventDefault();
                         dioxus.send(true);
                     }}
-                }}
-                window.__sidebarKeyHandler = sidebarKeyHandler;
-                window.addEventListener('keydown', window.__sidebarKeyHandler);
+                }});
                 "#
-            );
-            let mut eval = document::eval(&js_code);
-
-            loop {
-                if eval.recv::<bool>().await.is_ok() {
-                    ctx.toggle();
-                }
-            }
-        });
-    });
-
-    use_drop(|| {
-        _ = document::eval(
-            r#"
-            window.removeEventListener('keydown', window.__sidebarKeyHandler);
-            delete window.__sidebarKeyHandler;
-            "#,
-        );
+            ))
+            .on_message(move |_: bool| ctx.toggle()),
+        )
     });
 
     let sidebar_style = format!(
@@ -272,6 +239,9 @@ pub fn SidebarProvider(
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
+        // Eager: the mobile branch mounts `Sheet` only below the breakpoint, so on a desktop first render its
+        // `Link` would be inserted late (a runtime switch to mobile) -- not render-blocking.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
         div { ..merged, {children} }
     }
 }
@@ -361,6 +331,9 @@ pub fn Sidebar(
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/sidebar/style.css") }
+        // Eager: the mobile branch mounts `Sheet` only below the breakpoint, so on a desktop first render its
+        // `Link` would be inserted late (a runtime switch to mobile) -- not render-blocking.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/sheet/style.css") }
         div {
             class: "dx-sidebar-desktop",
             "data-state": state().as_str(),

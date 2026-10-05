@@ -78,6 +78,36 @@
 #      found inside the effect's span has its own matching-paren span
 #      computed and excluded from the read/write scan the same way.
 #
+# A SECOND shape, found live on 2026-10-05 (dev-docs/backlog.md row 83's
+# follow-up -- the same DateRangePicker page hang, a different closure of
+# the cycle): an effect that CALLS a method whose body reads one of the
+# method's own fields with tracked syntax silently subscribes the effect to
+# that field -- the read happens inside the effect's reactive context even
+# though it is written in another function. `DateRangePickerContext::
+# set_range` was the case: a guarded setter ("only report if it differs")
+# that compared against the controlled `selected_range` prop with
+# `(self.date_range)()`, called from `DateRangePickerInputValue`'s sync-up
+# effect. Every change the PARENT made to the range then woke that effect
+# too; when it ran before the sync-down effect had copied the new range
+# into the segment signals it reported the PREVIOUS range back up, the
+# parent applied it, and the two ranges alternated forever (a wasm loop
+# that never yielded -- the second range completed in one page froze the
+# tab; wake order is hash-ordered, so it reproduced on some builds and some
+# opens and not on others, which is why no single run could clear it).
+# Neither the effect's own tracked-read-then-write set (it writes nothing
+# itself -- the write is the callback) nor row 83's equality guards see it.
+# So the second check is by construction, not by instance: for every `fn`
+# with a `self` receiver defined in a file, find its tracked reads of its
+# own fields -- `(self.f)()`, `self.f.read()`, `self.f.cloned()` -- in a
+# method that also EMITS (`.call(`/`.set(`/`.write(`: a setter, not a getter
+# an effect legitimately derives from) and flag every `use_effect` in the
+# same file that calls a method of that name.
+# The fix is always the same one `DatePickerContext::set_date` already
+# had: read the compared value through `.peek()` (a setter exists to
+# EMIT, never to subscribe its caller). Name-based and per-file, so it can
+# over-flag two types that share a method name; resolve by peeking in the
+# method, or (reviewed, by the file's owner) by `TRACKED_CALLEE_ALLOWED`.
+#
 # Everything else stays a syntactic, conservative check: it does not
 # attempt to prove a given read+write pair on a real `Signal` is
 # REACHABLE on the same run, or that the re-trigger it causes is
@@ -103,8 +133,10 @@
 #     needs it to wake the effect; a pointer id change is always
 #     accompanied by a `dragging` transition). `dragging` itself IS this
 #     effect's wake switch (pointerdown sets it, pointerup/cancel clears
-#     it) and has to stay tracked to do that job, so it is allowlisted
-#     below instead of peeked.
+#     it) and had to stay tracked to do that job, so it was allowlisted
+#     instead of peeked. The entry was retired on 2026-10-05: this check
+#     passes without it (the drawer's drag effect no longer reads and writes
+#     `dragging` in one closure), so the allowlist is empty again.
 #   - `color_picker/component.rs`'s two hex/hue sync effects (`value`,
 #     `current_hue`) were each read only to guard a write against
 #     clobbering already-correct or mid-edit state, with the effect's
@@ -152,19 +184,24 @@ from pathlib import Path
 # comment's "Known HEAD findings". Empty by default: populating this is a
 # deliberate, reviewed decision (by whoever owns the file in question),
 # not something this script does on its own initiative.
-NON_SELF_TERMINATING = {
-    # `DrawerContent`'s drag effect: `dragging` is this effect's wake
-    # switch (it must stay tracked so the effect re-runs on
-    # pointerdown/pointerup) and is only written back to `false` behind
-    # the same `if !dragging() { return; }` guard it sits under -- the one
-    # extra re-run that write schedules reads `dragging()` as `false` and
-    # returns immediately (batch 2 integration, `primitives/src/drawer.rs`;
-    # see `eab243e`'s message for the fuller analysis, and the header
-    # comment above for why `active_pointer_id` in the same effect was
-    # instead fixed by construction with `.peek()` rather than allowlisted
-    # here).
-    ("drawer.rs", "dragging"),
-}
+NON_SELF_TERMINATING: set[tuple[str, str]] = set()
+
+# (method name, containing-file basename) pairs reviewed by hand: the method
+# is only ever called from an effect that genuinely wants its tracked read.
+# Empty by default -- see the header's second shape.
+TRACKED_CALLEE_ALLOWED: set[tuple[str, str]] = set()
+
+FN_WITH_SELF_RE = re.compile(
+    r"\bfn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>(){}]*>)?\s*\(\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?|mut\s+)?self\b"
+)
+SELF_PAREN_CALL_RE = re.compile(r"\(\s*self\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\)\s*\(\s*\)")
+SELF_READ_RE = re.compile(r"\bself\.([a-zA-Z_][a-zA-Z0-9_]*)\.(?:read|cloned)\(\s*\)")
+METHOD_CALL_RE = re.compile(r"\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(")
+# What makes a method a SETTER/EMITTER rather than a getter: it hands a value
+# on (`.call(` a callback) or writes a signal (`.set(`/`.write(`). A getter an
+# effect calls (`is_open`, `clamp_for`) wants its tracked read -- that is how
+# an effect derives from state. A guarded setter never does.
+EMIT_RE = re.compile(r"\.(?:call|set|write)\s*\(")
 
 USE_EFFECT_RE = re.compile(r"\buse_effect\s*\(")
 READ_BARE_RE = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\(\s*\)")
@@ -348,6 +385,78 @@ def find_violations(path, text):
     return violations
 
 
+def tracked_self_readers(stripped):
+    """name -> (def_line_offset, [(field, offset)]) for every `fn` with a
+    `self` receiver whose body reads one of `self`'s own fields with tracked
+    syntax -- see the header's second shape."""
+    found = {}
+    for m in FN_WITH_SELF_RE.finditer(stripped):
+        open_brace = stripped.find("{", m.end())
+        semi = stripped.find(";", m.end())
+        if open_brace == -1 or (semi != -1 and semi < open_brace):
+            continue  # a trait method declaration with no body
+        depth, i, n = 0, open_brace, len(stripped)
+        while i < n:
+            if stripped[i] == "{":
+                depth += 1
+            elif stripped[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = stripped[open_brace:i]
+        if not EMIT_RE.search(body):
+            continue  # a getter: tracked reads are how an effect derives state
+        reads = []
+        for rx in (SELF_PAREN_CALL_RE, SELF_READ_RE):
+            for rm in rx.finditer(body):
+                reads.append((rm.group(1), open_brace + rm.start()))
+        if reads:
+            found.setdefault(m.group(1), (m.start(), reads))
+    return found
+
+
+def find_callee_violations(path, text):
+    """An effect that calls a same-file method which reads its own field with
+    tracked syntax -- see the header's second shape."""
+    stripped = strip_rust(text)
+    readers = tracked_self_readers(stripped)
+    if not readers:
+        return []
+    violations = []
+    base_name = Path(path).name
+    for m in USE_EFFECT_RE.finditer(stripped):
+        if preceded_by_dot(stripped, m.start()):
+            continue
+        open_paren = m.end() - 1
+        close_paren = matching_paren(stripped, open_paren)
+        span_start = open_paren + 1
+        spawn_spans = spawned_task_spans(stripped, span_start, close_paren)
+        seen = set()
+        for cm in METHOD_CALL_RE.finditer(stripped, span_start, close_paren):
+            name = cm.group(1)
+            abs_pos = cm.start()
+            if name not in readers or name in seen:
+                continue
+            if inside_any(abs_pos, spawn_spans):
+                continue
+            if (name, base_name) in TRACKED_CALLEE_ALLOWED:
+                continue
+            seen.add(name)
+            def_pos, reads = readers[name]
+            field, read_pos = reads[0]
+            violations.append(
+                (
+                    path,
+                    text.count("\n", 0, abs_pos) + 1,
+                    name,
+                    field,
+                    text.count("\n", 0, read_pos) + 1,
+                )
+            )
+    return violations
+
+
 def main():
     targets = sys.argv[1:]
     if targets:
@@ -359,9 +468,31 @@ def main():
                 paths.extend(sorted(root.rglob("*.rs")))
 
     all_violations = []
+    callee_violations = []
     for path in paths:
         text = path.read_text(encoding="utf-8")
         all_violations.extend(find_violations(str(path), text))
+        callee_violations.extend(find_callee_violations(str(path), text))
+
+    if callee_violations:
+        print(
+            "check-self-subscribing-effects: found use_effect closure(s) "
+            "calling a method that reads its own field with tracked syntax "
+            "(the effect silently subscribes to that field):",
+            file=sys.stderr,
+        )
+        for path, call_line, name, field, read_line in sorted(callee_violations):
+            print(
+                f"{path}:{call_line}: this use_effect calls `.{name}(`, whose "
+                f"body reads `self.{field}` with tracked syntax at line "
+                f"{read_line} -- read it through `.peek()` there (a setter "
+                f"emits, it never subscribes its caller; "
+                f"DateRangePickerContext::set_range hung the page this way, "
+                f"dev-docs/backlog.md row 83 follow-up)",
+                file=sys.stderr,
+            )
+        if not all_violations:
+            sys.exit(1)
 
     if all_violations:
         print(
@@ -382,7 +513,8 @@ def main():
 
     print(
         "check-self-subscribing-effects: OK -- no signal read with tracked "
-        "syntax is written in the same use_effect closure."
+        "syntax is written in the same use_effect closure, and no use_effect "
+        "calls a method that reads its own field with tracked syntax."
     )
 
 

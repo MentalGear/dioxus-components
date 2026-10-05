@@ -26,3 +26,11 @@ The styled `Calendar` and `RangeCalendar` render a complete month view by defaul
 ## Direction / RTL
 
 `Calendar`/`RangeCalendar` accept a `dir: Option<Direction>` prop. Under RTL, the day grid's `ArrowLeft`/`ArrowRight` swap (`ArrowLeft` moves to the next day, `ArrowRight` to the previous one); `ArrowUp`/`ArrowDown` (+/-7 days) are unaffected. No Radix Calendar exists to cite (shadcn's own wraps `react-day-picker`) -- this follows the same arrow-key convention as every other RTL-aware component here, and matches standard calendar-widget RTL practice generally. See the `rtl` variant.
+
+## Multiple months
+
+`month_count` renders that many months in one calendar. They sit side by side in a flex row with a
+gap (the previous-month button on the first month, the next-month button on the last) and wrap onto
+their own rows when the row is wider than the space available -- on a phone, or in a narrow card, two
+months stack vertically instead of overflowing. Inside a `DatePicker`/`DateRangePicker` popover, the
+panel grows to fit the months. See the `multi_month` variant.
