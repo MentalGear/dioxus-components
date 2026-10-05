@@ -71,6 +71,25 @@ Click, `Enter` and `Space` all select. A disabled item cannot be selected and
 is skipped by arrow keys and typeahead. Unlike the dropdown and context menus, shadcn's menubar draws the check at the inline **start** -- same `--dx-menu-item-indicator-*` slot construction, on the other side. A plain item can reserve the same slot with `"data-inset": "true"` (shadcn's `inset`) so a menu that mixes plain and checkable items keeps its labels on one edge. See the `checkboxes` and
 `radio_group` variants.
 
+## Hover switching, or click only
+
+A menubar never opens a menu from a hover alone -- the first menu always takes
+a click. Once one is open, though, hovering another trigger switches to it (the
+native menubar convention). Pass `open_on_hover: false` to the `Menubar` to turn
+that off:
+
+```rust
+Menubar {
+    // Default is `true`.
+    open_on_hover: false,
+    MenubarMenu { /* ... */ }
+}
+```
+
+Moving the pointer across the triggers then does nothing: another menu opens
+only on click, `Enter` / `Space` or the arrow keys. Keyboard behaviour is the
+same in both modes. See the `click_only` variant.
+
 ## Direction / RTL
 
 `Menubar` accepts a `dir: Option<Direction>` prop. Its top-level trigger row is always horizontal, so `ArrowLeft`/`ArrowRight` between menus always swaps under RTL. See the `rtl` variant.

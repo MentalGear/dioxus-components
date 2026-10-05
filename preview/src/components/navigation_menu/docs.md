@@ -43,6 +43,36 @@ NavigationMenu {
 `NavigationMenuLink` renders a plain `<a>`, not a router `Link`. If your app is
 served below a base path, prefix each `href` with it yourself.
 
+## Open on hover, or click only
+
+By default a trigger opens its panel when the pointer rests on it for a
+moment (150 ms), and the panel closes again when the pointer leaves the
+trigger and the panel. Pass `open_on_hover: false` to the `NavigationMenu` for
+**click activation** instead:
+
+```rust
+NavigationMenu {
+    aria_label: "Main",
+    // Default is `true`.
+    open_on_hover: false,
+    NavigationMenuList { /* ... */ }
+}
+```
+
+With `open_on_hover: false` hovering a trigger does nothing, a panel opens
+only on click (or `Enter` / `Space` / `ArrowDown`), and the pointer leaving a
+panel does **not** close it. It closes on a second click of its trigger,
+`Escape`, choosing a link, focus leaving the navigation menu, or a pointer
+press anywhere outside it. Keyboard behaviour is the same in both modes, and
+touch never hover-opens (a tap is a click). Use it when panels hold dense
+content a pointer should be able to cross freely, or when you simply do not
+want menus opening under a resting mouse. See the `click_only` variant.
+
+`open_on_hover` is this library's name for the switch (Base UI calls the same
+idea `openOnHover` on `Menu.Trigger`); Radix's and Base UI's own
+`NavigationMenu` only tune the hover *delay* and have no switch. The delays
+here are fixed.
+
 ## Keyboard interaction
 
 - `Enter` / `Space`: activates a focused trigger, toggling its panel.

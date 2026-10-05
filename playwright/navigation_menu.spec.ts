@@ -3,6 +3,7 @@ import { type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
 import { gotoHydrated } from './hydration';
+import { expectFadeKeepsTransform } from './assert-anchor-transform';
 
 const URL = `${BASE_URL}/component/?name=navigation_menu&`;
 const GOTO = { timeout: 20 * 60 * 1000 }; // Increase timeout to 20 minutes
@@ -205,12 +206,23 @@ test.describe('Open animation never reflows the content (user-reported)', () => 
     // Read past this file's own --dx-motion-duration-base (150ms)
     // transition so this is the *settled* value, not a mid-transition one.
     await page.waitForTimeout(300);
-    const settledClosedTransform = await page.evaluate(() => {
+    // The motion lives in the individual `scale`/`translate` properties since 2026-10-05 (an animated
+    // `transform` would REPLACE an anchor's centring `translateX(-50%)` -- see "Open/close animation"
+    // below), so the closed endpoint is read there. It also closes the cascade tie this test was written
+    // for by construction: the engine's `transform: none` is a different property and can no longer win
+    // against the motion at all.
+    const settledClosed = await page.evaluate(() => {
       const el = document.querySelector('.dx-navigation-menu-content');
-      return el ? getComputedStyle(el).transform : null;
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { transform: cs.transform, scale: cs.scale, translate: cs.translate };
     });
-    expect(settledClosedTransform).not.toBeNull();
-    expect(settledClosedTransform).not.toBe('none');
+    expect(settledClosed).not.toBeNull();
+    // `scale(0.98)` / `translateY(var(--dx-space-2))`, never the identity ("1" / "none" / "0px 0px").
+    expect(settledClosed!.scale).toBe('0.98');
+    expect(['none', '0px 0px', '0px']).not.toContain(settledClosed!.translate);
+    // ...and the element's own `transform` was never touched by it.
+    expect(settledClosed!.transform).toBe('none');
   });
 });
 
@@ -390,5 +402,160 @@ test.describe('Axe automated scan', () => {
     await expectNoAxeViolations(page, 'navigation_menu: open', {
       excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `open_on_hover: false` -- click activation
+// (preview/src/components/navigation_menu/variants/click_only/mod.rs, which
+// renders alongside `main` on this page under its own `aria_label` and
+// trigger names, so none of the hover-driven tests above can match it).
+// Default behaviour (hover opens / pointer-leave closes) is covered by every
+// test above, unchanged.
+// ---------------------------------------------------------------------------
+test.describe('open_on_hover: false (click activation)', () => {
+  const HOVER_SETTLE_MS = 1000; // >> HOVER_OPEN_INTENT_DELAY (150ms) + HOVER_CLOSE_GRACE_DELAY (300ms)
+
+  function clickNav(page: Page) {
+    return page.getByRole('navigation', { name: 'Click-only navigation menu' });
+  }
+
+  test('hovering a trigger for a second does not open its panel; a click does', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+
+    await guides.hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+    await expect(clickNav(page).getByRole('link', { name: 'Installation' })).toHaveCount(0);
+
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await expect(clickNav(page).getByRole('link', { name: 'Installation' })).toBeVisible();
+
+    // A second click toggles it shut.
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('the pointer leaving a click-opened panel does not close it', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+
+    // Away from both the trigger and the panel -- with hover on this would
+    // close after HOVER_CLOSE_GRACE_DELAY (300ms); wait well past it.
+    await page.getByRole('heading', { level: 1 }).hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await expect(clickNav(page).getByRole('link', { name: 'Installation' })).toBeVisible();
+  });
+
+  test('hovering the other trigger while one is open does not switch; clicking it does', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    const reference = clickNav(page).getByRole('button', { name: 'Reference' });
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+
+    await reference.hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await expect(reference).toHaveAttribute('aria-expanded', 'false');
+
+    await reference.click();
+    await expect(reference).toHaveAttribute('aria-expanded', 'true');
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Enter / Space open it, Escape closes it and returns focus to the trigger', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+
+    await guides.focus();
+    await page.keyboard.press('Enter');
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+    await expect(guides).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('a pointer press outside the navigation menu closes the open panel', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+
+    // Not a focus change on engines that do not focus a button on click:
+    // the outside-press listener is what has to do it.
+    await page.getByRole('heading', { level: 1 }).click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('an outside pointerdown that moves no focus (Safari-style: a button is not focused on click) still closes it', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+
+    // A synthetic pointerdown on the page heading: no mouse move, no focus
+    // change, so the trigger's `onblur` close can't be what closes the panel
+    // -- only `NavigationMenuOutsidePressDismiss` can.
+    await page.getByRole('heading', { level: 1 }).dispatchEvent('pointerdown');
+    await expect(guides).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a press inside the panel (on a link) is not an outside press', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await guides.click();
+    const link = clickNav(page).getByRole('link', { name: 'Theming' });
+    await expect(link).toBeVisible();
+    // pointerdown on the link must not dismiss before the click lands.
+    await page.mouse.move(0, 0);
+    const box = await link.boundingBox();
+    if (!box) throw new Error('no box for the panel link');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await page.mouse.up();
+  });
+
+  test('has no axe violations', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const guides = clickNav(page).getByRole('button', { name: 'Guides' });
+    await guides.click();
+    await expect(guides).toHaveAttribute('aria-expanded', 'true');
+    await expectNoAxeViolations(page, 'navigation_menu click_only: open', {
+      excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Open/close fade vs. the anchor's centring transform (2026-10-05). An anchored overlay centres itself
+// with `transform: translateX(-50%)` (top_layer.rs's engine stylesheet); a `@keyframes` that sets
+// `transform` REPLACES it for as long as it runs (the date picker played its fade 144px off-centre, the
+// colour picker 133px). `NavigationMenuContent` sets no `data-side`, so it has no centring to lose today -- the same
+// shape, latent -- so this probes the rendered keyframes instead of sampling a position that could not
+// move anyway: `assert-anchor-transform.ts` supplies an inline `transform`, seeks the element's own
+// CSS animation to its start/midpoint/end, and asserts the transform survives while `scale`/`translate`
+// do the moving. Source-level guard: scripts/check-anchored-keyframes.sh.
+// ---------------------------------------------------------------------------
+test.describe('Open/close animation', () => {
+  test('the fade animates translate/scale and leaves transform alone (open and close)', async ({ page }) => {
+    await page.goto(URL, GOTO);
+    const trigger = nav(page).getByRole('button', { name: 'Getting started' });
+    await trigger.hover();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const content = page.locator('.dx-navigation-menu-content[data-state="open"]').first();
+    await expect(content).toBeVisible();
+    await expectFadeKeepsTransform(content, 'navigation menu content, open');
+    await expectFadeKeepsTransform(content, 'navigation menu content, close', { 'data-state': 'closed' });
   });
 });

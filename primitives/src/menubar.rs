@@ -31,6 +31,10 @@ struct MenubarContext {
     // between top-level `MenubarMenu`s -- always horizontal (a menubar is a
     // single row) -- see `direction::Direction::resolve_horizontal`'s doc.
     direction: Direction,
+
+    // `MenubarProps::open_on_hover` -- read by `MenubarTrigger`'s
+    // `onmouseenter`, the only pointer-hover behaviour a `Menubar` has.
+    open_on_hover: ReadSignal<bool>,
 }
 
 /// The props for the [`Menubar`] component.
@@ -49,6 +53,22 @@ pub struct MenubarProps {
     /// [`crate::direction::DirectionProvider`], or LTR if there is none.
     #[props(default)]
     pub dir: Option<Direction>,
+
+    /// Whether, once one menu is open, hovering another [`MenubarTrigger`]
+    /// switches to that menu without a click. Defaults to `true` (the
+    /// native menubar convention, and what Radix does unconditionally).
+    /// Set it to `false` for **click activation**: moving the pointer
+    /// across the triggers while a menu is open does nothing -- another
+    /// menu opens only on click, `Enter`, `Space` or the arrow keys.
+    ///
+    /// A `Menubar` never opens a menu from a hover alone (the first menu
+    /// always takes a click), so this switch only governs the
+    /// "hover-switch while one is open" half. Keyboard behaviour (`ArrowLeft`/
+    /// `ArrowRight` moving to and opening the neighbouring menu) is identical
+    /// in both modes. Same name as Base UI's `Menu.Trigger` `openOnHover`
+    /// prop, which Base UI's `Menubar` has no equivalent of.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub open_on_hover: ReadSignal<bool>,
 
     /// Additional attributes to apply to the menubar element.
     #[props(extends = GlobalAttributes)]
@@ -138,6 +158,7 @@ pub fn Menubar(props: MenubarProps) -> Element {
         disabled: props.disabled,
         focus,
         direction,
+        open_on_hover: props.open_on_hover,
     });
     use_effect(move || {
         let index = ctx.focus.focused_index();
@@ -629,8 +650,10 @@ pub fn MenubarTrigger(props: MenubarTriggerProps) -> Element {
                     ctx.focus.set_focus(Some(index.cloned()));
                 }
             },
+            // Hover-switch between menus once one is open -- off when
+            // `MenubarProps::open_on_hover` is `false` (click activation).
             onmouseenter: move |_| {
-                if !disabled() && (ctx.open_menu)().is_some() {
+                if (ctx.open_on_hover)() && !disabled() && (ctx.open_menu)().is_some() {
                     ctx.focus.set_focus(Some(index.cloned()));
                 }
             },
@@ -925,6 +948,12 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     rsx! {
         div {
             id: id.clone(),
+            // Items commit on `pointerdown` and close the menu right there;
+            // the mousedown that follows must not focus the pressed (about
+            // to unmount) item, or focus ends on `<body>` instead of the
+            // trigger the commit just refocused (docs/backlog.md row 140) --
+            // see `menu_root::keep_focus_on_pointerdown`.
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             {children}
         }
@@ -970,6 +999,9 @@ fn MenubarContentRendered(id: String, attributes: Vec<Attribute>, children: Elem
     rsx! {
         div {
             id,
+            // See the web arm's identical guard above (docs/backlog.md row
+            // 140).
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             {children}
         }

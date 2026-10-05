@@ -3,6 +3,7 @@ import { type Locator, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 import { gotoHydrated } from "./hydration";
+import { expectFadeKeepsTransform } from "./assert-anchor-transform";
 
 test("pointer navigation", async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 }); // Increase timeout to 20 minutes
@@ -259,12 +260,13 @@ test.describe("Checkable items", () => {
     await expect(optionsMenu).toHaveAttribute("data-state", "open");
     await expect(pinned).toHaveAttribute("aria-checked", "true");
 
-    // Pointer: closes, and the (controlled) state survives the close. (Where
-    // DOM focus lands after a pointer select is the plain MenubarItem's
-    // behaviour too -- selection commits on pointerdown, the click then
-    // focuses an item that is being unmounted -- so it is not asserted here.)
+    // Pointer: closes, the (controlled) state survives the close, and -- as
+    // for the keyboard below (docs/backlog.md row 140) -- focus returns to
+    // the menu's own trigger. Selection commits on pointerdown, so the
+    // mousedown that follows must not focus the item being unmounted.
     await pinned.click();
     await expect(optionsMenu, "a checkbox item closes the menu by default").toHaveCount(0);
+    await expect(options, "a pointer selection returns focus to the trigger").toBeFocused();
     await options.click();
     await expect(pinned, "the (controlled) state survived the close").toHaveAttribute("aria-checked", "false");
     await page.keyboard.press("Escape");
@@ -337,5 +339,78 @@ test.describe("Axe automated scan", () => {
     const fileMenuContent = page.getByRole("menu").filter({ has: page.getByRole("menuitem", { name: "New" }) }).last();
     await expect(fileMenuContent).toHaveAttribute("data-state", "open");
     await expectNoAxeViolations(page, "menubar: File menu open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `open_on_hover: false` -- once one menu is open, hovering another trigger
+// does not switch to it (preview/src/components/menubar/variants/click_only/
+// mod.rs; renders alongside `main` on this page under its own labels). The
+// default hover-switch is the unchanged "pointer navigation" test at the top
+// of this file.
+// ---------------------------------------------------------------------------
+test.describe("open_on_hover: false (click activation)", () => {
+  const HOVER_SETTLE_MS = 1000;
+
+  // The open content popup, named after its trigger (`aria-labelledby`) --
+  // `MenubarMenu`'s own always-rendered wrapper is also `role="menu"`, so a
+  // bare `getByRole("menu")` would resolve to it too.
+  function menuNamed(page: Page, trigger: string) {
+    return page.getByRole("menu", { name: trigger, exact: true });
+  }
+
+  test("hovering another trigger while a menu is open does not switch; clicking it does", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    const insert = page.getByRole("menuitem", { name: "Insert", exact: true });
+    const tools = page.getByRole("menuitem", { name: "Tools", exact: true });
+
+    await insert.click();
+    await expect(menuNamed(page, "Insert")).toHaveAttribute("data-state", "open");
+
+    await tools.hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(menuNamed(page, "Insert")).toHaveAttribute("data-state", "open");
+    await expect(menuNamed(page, "Tools")).toHaveCount(0);
+
+    await tools.click();
+    await expect(menuNamed(page, "Tools")).toHaveAttribute("data-state", "open");
+    await expect(menuNamed(page, "Insert")).toHaveCount(0);
+  });
+
+  test("hovering a trigger with nothing open never opens a menu", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole("menuitem", { name: "Insert", exact: true }).hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(menuNamed(page, "Insert")).toHaveCount(0);
+  });
+
+  test("keyboard: ArrowDown still opens the menu and focuses its first item", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    const insert = page.getByRole("menuitem", { name: "Insert", exact: true });
+    await insert.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(menuNamed(page, "Insert")).toHaveAttribute("data-state", "open");
+    await expect(page.getByRole("menuitem", { name: "Table", exact: true })).toBeFocused();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Open/close fade vs. the anchor's centring transform (2026-10-05). An anchored overlay centres itself
+// with `transform: translateX(-50%)` (top_layer.rs's engine stylesheet); a `@keyframes` that sets
+// `transform` REPLACES it for as long as it runs (the date picker played its fade 144px off-centre, the
+// colour picker 133px). `MenubarContent` sets no `data-side`, so it has no centring to lose today -- the same
+// shape, latent -- so this probes the rendered keyframes instead of sampling a position that could not
+// move anyway: `assert-anchor-transform.ts` supplies an inline `transform`, seeks the element's own
+// CSS animation to its start/midpoint/end, and asserts the transform survives while `scale`/`translate`
+// do the moving. Source-level guard: scripts/check-anchored-keyframes.sh.
+// ---------------------------------------------------------------------------
+test.describe("Open/close animation", () => {
+  test("the fade animates translate/scale and leaves transform alone (open and close)", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=menubar&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole("menuitem", { name: "File" }).click();
+    const content = page.locator('.dx-menubar-content[data-state="open"]').last();
+    await expect(content).toBeVisible();
+    await expectFadeKeepsTransform(content, "menubar content, open");
+    await expectFadeKeepsTransform(content, "menubar content, close", { "data-state": "closed" });
   });
 });

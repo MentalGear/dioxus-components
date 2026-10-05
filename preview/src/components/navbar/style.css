@@ -1,6 +1,5 @@
 .dx-navbar {
   display: flex;
-  box-sizing: border-box;
   padding: var(--dx-space-1);
   border: none;
   border-radius: var(--dx-radius-lg);
@@ -156,15 +155,23 @@
   animation: dx-navbar-content-animate-out-start var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
+/* `scale`/`translate`, not `transform`: an animated `transform` REPLACES an anchor's own
+ * centring transform (`translateX(-50%)`, `primitives/src/top_layer.rs`'s engine stylesheet)
+ * for as long as the animation runs, which played the date/colour picker panels 144px/133px
+ * off their anchor. This content sets no `data-side`, so no centring applies to it today; the
+ * individual properties compose with `transform` and keep it safe if one ever does.
+ * Guard: scripts/check-anchored-keyframes.sh. */
 @keyframes dx-navbar-content-animate-out-start {
   0% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateX(-100%) scale(0.98); /* rtl-physical: see comment above */
+    scale: 0.98;
+    translate: -100% 0; /* rtl-physical: see comment above */
   }
 }
 
@@ -175,12 +182,14 @@
 @keyframes dx-navbar-content-animate-out-end {
   0% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateX(100%) scale(0.98); /* rtl-physical: see comment above */
+    scale: 0.98;
+    translate: 100% 0; /* rtl-physical: see comment above */
   }
 }
 
@@ -191,12 +200,14 @@
 @keyframes dx-navbar-content-animate-out-closed {
   0% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateY(1rem) scale(0.98);
+    scale: 0.98;
+    translate: 0 1rem;
   }
 }
 
@@ -210,12 +221,14 @@
 @keyframes dx-navbar-content-animate-out-start-rtl {
   0% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateX(100%) scale(0.98); /* rtl-physical */
+    scale: 0.98;
+    translate: 100% 0; /* rtl-physical */
   }
 }
 
@@ -226,12 +239,14 @@
 @keyframes dx-navbar-content-animate-out-end-rtl {
   0% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateX(-100%) scale(0.98); /* rtl-physical */
+    scale: 0.98;
+    translate: -100% 0; /* rtl-physical */
   }
 }
 
@@ -243,14 +258,16 @@
 @keyframes dx-navbar-content-animate-in {
   0% {
     opacity: 0;
-    transform: translateY(1rem) scale(0.98);
+    scale: 0.98;
+    translate: 0 1rem;
   }
 
   /* rtl-physical: resting state, zero offset on both axes -- no side is
      encoded, so nothing to mirror. */
   100% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 }
 

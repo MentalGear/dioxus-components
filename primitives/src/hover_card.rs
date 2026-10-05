@@ -48,6 +48,17 @@ pub struct HoverCardProps {
 ///
 /// The `HoverCard` component wraps a [`HoverCardTrigger`] and a [`HoverCardContent`]. It provides a way to show additional information when hovering over an element.
 ///
+/// ## No `open_on_hover` option
+///
+/// Unlike the menus' `open_on_hover` switch (`NavigationMenu`, `Navbar`,
+/// `Menubar`, the `DropdownMenu`/`ContextMenu` submenus), a hover card has no
+/// click-activated mode: hover (and focus) *is* its definition -- the content
+/// is supplementary and must never be the only way to reach anything. For a
+/// panel opened by a click, use [`crate::popover`]. (Hover/focus *delays* --
+/// Radix `HoverCard`'s `openDelay`/`closeDelay`, Base UI `PreviewCard.Trigger`'s
+/// `delay`/`closeDelay` -- are a possible future prop; this component opens
+/// and closes without one today.)
+///
 /// ## Example
 ///
 /// ```rust

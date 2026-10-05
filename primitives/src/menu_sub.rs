@@ -41,6 +41,16 @@
 //!   [`DelayedAction`] is that same primitive, factored out so it isn't
 //!   reinvented a third and fourth time for `DropdownMenuSubTrigger`/
 //!   `ContextMenuSubTrigger`.
+//! - The **`open_on_hover` switch** ([`SubMenuState::open_on_hover`]) and the
+//!   four pointer-hover entry points ([`SubMenuState::hover_enter_trigger`],
+//!   [`SubMenuState::hover_leave_trigger`], [`SubMenuState::hover_enter_content`],
+//!   [`SubMenuState::hover_leave_content`]) that honour it. This is the one
+//!   place a submenu's *pointer-hover* behaviour is decided: the two timers
+//!   are private to this module, so a host (`DropdownMenuSub`,
+//!   `ContextMenuSub`, or a future one) can only reach them through these
+//!   gated methods and cannot grow an ungated `onmouseenter` of its own.
+//!   See [`SubMenuState::open_on_hover`] for the semantics and the Base UI
+//!   reference.
 //!
 //! # Scope: one level of nesting
 //!
@@ -90,7 +100,10 @@ use crate::{use_effect_with_cleanup, use_unique_id};
 /// against Radix `Sub`/`Portal` semantics"). A short delay, not an instant
 /// open, keeps a pointer merely passing over the trigger on its way
 /// elsewhere from flashing open every submenu it crosses -- the exact
-/// defect an instant hover-open produces.
+/// defect an instant hover-open produces. Only applies while
+/// [`SubMenuState::open_on_hover`] is `true` (the default); Base UI's
+/// equivalent knob is `SubmenuTrigger`'s `delay` prop (default 100 ms) --
+/// not exposed here, this constant stays the one value.
 pub(crate) const SUBMENU_OPEN_INTENT_DELAY: Duration = Duration::from_millis(200);
 
 /// Grace delay before a pointer leaving a sub-trigger (without entering its
@@ -223,7 +236,7 @@ pub(crate) struct SubMenuState {
     /// why a `Sub`'s hover timers must live here, on the state both halves
     /// already share via context, rather than as `*SubTrigger`'s own
     /// private `use_delayed_action()` locals).
-    pub(crate) hover_open: DelayedAction,
+    hover_open: DelayedAction,
     /// Close-grace timer for this submenu's hover-intent contract
     /// ([`SUBMENU_CLOSE_GRACE_DELAY`]). Lives on `SubMenuState`, not as
     /// `*SubTrigger`'s own private state, so that BOTH halves of a `Sub` --
@@ -247,7 +260,38 @@ pub(crate) struct SubMenuState {
     /// same contract the trigger already has) closes that gap: the submenu
     /// now only closes once the pointer has left *both* the trigger and its
     /// content without re-entering either within the grace window.
-    pub(crate) hover_close: DelayedAction,
+    hover_close: DelayedAction,
+    /// Whether a pointer *hovering* (rather than clicking) opens this
+    /// submenu. Default `true` (see `DropdownMenuSubProps::open_on_hover`);
+    /// `false` makes it click/Enter/Space/arrow-key only.
+    ///
+    /// Matches Base UI's `Menu.SubmenuTrigger` `openOnHover` prop (default
+    /// `true`; <https://base-ui.com/react/components/menu>, "SubmenuTrigger"
+    /// props table) -- Radix's `DropdownMenu.Sub`/`ContextMenu.Sub` have no
+    /// such switch (hover-open is unconditional there). Unlike Base UI, which
+    /// puts the prop on the *trigger*, it lives on the `Sub` boundary here
+    /// (and so on this shared state): this crate's submenu hover timers are
+    /// shared by the trigger *and* the content, and the content half (its
+    /// "pointer is inside, don't close" cancel and "pointer left, close"
+    /// schedule) must switch off together with the trigger half, or a
+    /// click-opened submenu would still be closed by merely moving the mouse
+    /// out of it.
+    ///
+    /// When `false`:
+    /// - hovering the sub-trigger schedules nothing -- the submenu opens only
+    ///   through [`Self::open_with_focus`] (a click, or Enter/Space/the open
+    ///   arrow key), exactly as it already does for touch;
+    /// - leaving the trigger or the content schedules no close either: a
+    ///   submenu the user opened on purpose is not taken away by the pointer
+    ///   drifting off it (Base UI documents `closeDelay` as applying only to
+    ///   "the menu that was opened on hover"). It closes the way every
+    ///   keyboard-opened submenu already does -- Escape / the close arrow, an
+    ///   outside click, or focus moving elsewhere
+    ///   ([`use_sub_outside_dismiss`]).
+    ///
+    /// Keyboard behaviour is untouched either way (APG's ArrowRight/Enter/
+    /// Space open, ArrowLeft/Escape close).
+    pub(crate) open_on_hover: ReadSignal<bool>,
 }
 
 impl SubMenuState {
@@ -262,6 +306,67 @@ impl SubMenuState {
         self.initial_focus.set(Some(target));
         self.set_open.call(true);
     }
+
+    /// Cancel both pending hover timers, whatever `open_on_hover` is. Called
+    /// when the user commits to an explicit click, which supersedes any
+    /// hover-intent that was still pending.
+    pub(crate) fn cancel_hover(&mut self) {
+        self.hover_open.cancel();
+        self.hover_close.cancel();
+    }
+
+    /// The pointer entered this submenu's trigger: after
+    /// [`SUBMENU_OPEN_INTENT_DELAY`] open the submenu -- *without* moving
+    /// keyboard focus (see [`SubMenuState::initial_focus`]'s doc for why this
+    /// calls `set_open` directly rather than [`Self::open_with_focus`]). A
+    /// no-op unless [`Self::open_on_hover`]. The caller owns the `disabled`
+    /// check (the disabled state lives on its own trigger props).
+    pub(crate) fn hover_enter_trigger(&mut self) {
+        if !(self.open_on_hover)() {
+            return;
+        }
+        self.hover_close.cancel();
+        let set_open = self.set_open;
+        self.hover_open
+            .schedule(SUBMENU_OPEN_INTENT_DELAY, move || set_open.call(true));
+    }
+
+    /// The pointer left this submenu's trigger: drop a not-yet-fired open
+    /// and, after [`SUBMENU_CLOSE_GRACE_DELAY`], close unless the pointer
+    /// reached the content (or came back) first. A no-op unless
+    /// [`Self::open_on_hover`].
+    pub(crate) fn hover_leave_trigger(&mut self) {
+        if !(self.open_on_hover)() {
+            return;
+        }
+        self.hover_open.cancel();
+        let set_open = self.set_open;
+        self.hover_close
+            .schedule(SUBMENU_CLOSE_GRACE_DELAY, move || set_open.call(false));
+    }
+
+    /// The pointer entered this submenu's own content: hovering it is as good
+    /// as hovering the trigger for keeping it open -- see
+    /// [`SubMenuState::hover_close`]'s doc. A no-op unless
+    /// [`Self::open_on_hover`].
+    pub(crate) fn hover_enter_content(&mut self) {
+        if !(self.open_on_hover)() {
+            return;
+        }
+        self.cancel_hover();
+    }
+
+    /// The pointer left this submenu's own content: close after the grace
+    /// delay unless it re-entered the content or the trigger. A no-op unless
+    /// [`Self::open_on_hover`].
+    pub(crate) fn hover_leave_content(&mut self) {
+        if !(self.open_on_hover)() {
+            return;
+        }
+        let set_open = self.set_open;
+        self.hover_close
+            .schedule(SUBMENU_CLOSE_GRACE_DELAY, move || set_open.call(false));
+    }
 }
 
 /// Build a fresh [`SubMenuState`] for one `Sub`. `open`/`set_open` are
@@ -273,6 +378,7 @@ pub(crate) fn use_sub_menu_state(
     open: Memo<bool>,
     set_open: Callback<bool>,
     roving_loop: ReadSignal<bool>,
+    open_on_hover: ReadSignal<bool>,
 ) -> SubMenuState {
     SubMenuState {
         open,
@@ -283,6 +389,7 @@ pub(crate) fn use_sub_menu_state(
         content_id: use_unique_id(),
         hover_open: use_delayed_action(),
         hover_close: use_delayed_action(),
+        open_on_hover,
     }
 }
 

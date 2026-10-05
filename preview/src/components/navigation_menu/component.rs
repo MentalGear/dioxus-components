@@ -15,6 +15,7 @@ pub fn NavigationMenu(props: NavigationMenuProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/navigation_menu/style.css") }
         navigation_menu::NavigationMenu {
             disabled: props.disabled,
+            open_on_hover: props.open_on_hover,
             attributes: merged,
             {props.children}
         }

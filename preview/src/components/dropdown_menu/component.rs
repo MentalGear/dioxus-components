@@ -94,6 +94,7 @@ pub fn DropdownMenuSub(props: DropdownMenuSubProps) -> Element {
             default_open: props.default_open,
             on_open_change: props.on_open_change,
             roving_loop: props.roving_loop,
+            open_on_hover: props.open_on_hover,
             {props.children}
         }
     }
