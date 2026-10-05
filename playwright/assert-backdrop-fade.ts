@@ -18,13 +18,18 @@
  * THE CONSTRUCTION these assertions pin down (see the six `style.css` files): the
  * dialog's own `::backdrop` is the ONLY painter (the wrapper is transparent), it
  * fades in via `@starting-style`, and both directions are the one `transition`
- * declaration so they cannot differ. What lets the exit play differs by component:
- * Dialog, AlertDialog, Sheet, Drawer and CommandDialog put `transition: overlay ... allow-discrete`
- * on the dialog, which holds it in the top layer after `close()`; the modal Popover
- * (whose anchored position is keyed on `:modal`, so it must stay modal) has
- * `popover.rs` defer `close()` until its exit animations settle. The numbers come
- * from one token set (`--dx-overlay-duration`, `-ease`, `-scrim`, `-blur`) defined
- * once in `dx-components-theme.css`, with no per-stylesheet fallback.
+ * declaration so they cannot differ. What lets the exit play is the same for every
+ * overlay on every engine: the dialog is kept open -- a modal, in the top layer, with
+ * its `::backdrop` -- until its exit animations have settled, and only then
+ * `close()`d. Dialog, AlertDialog, Sheet, Drawer and CommandDialog get that from the
+ * shared `use_dialog_open_driver` (`primitives/src/lib.rs`); the modal Popover from
+ * `popover.rs`'s own driver of the same construction. Their stylesheets key the exit on
+ * `data-state="closed"` and carry no `transition: overlay allow-discrete` (Chromium-only
+ * keep-alive that this replaced). `assert-modal-exit.ts` pins the panel half of that
+ * (same size, always modal, `close()` after the exit); `modal-exit.spec.ts` runs both
+ * over every consumer derived from the source. The numbers come from one token set
+ * (`--dx-overlay-duration`, `-ease`, `-scrim`, `-blur`) defined once in
+ * `dx-components-theme.css`, with no per-stylesheet fallback.
  *
  * Like `assert-fade-out.ts`, the duration/direction claims are read from the
  * browser's own `transitionrun` events (queued, never dropped) rather than from
@@ -107,19 +112,20 @@ export async function captureBackdrop(
         const ev = e as TransitionEvent;
         if (ev.pseudoElement !== "::backdrop") return;
         const dlg = ev.target as HTMLDialogElement;
-        const anim = document
-          .getAnimations()
-          .find(
-            (a) =>
-              (a.effect as KeyframeEffect | null)?.target === dlg &&
-              (a.effect as KeyframeEffect | null)?.pseudoElement === "::backdrop" &&
-              (a as CSSTransition).transitionProperty === ev.propertyName,
-          );
-        const d = Number(anim?.effect?.getComputedTiming().duration ?? 0);
-        // Closing is either the native `[open]` already gone (Escape/`close()` on
-        // Dialog, AlertDialog, Sheet, Drawer) or the component's own `data-state`
-        // already "closed" while the dialog is still held open (the modal Popover,
-        // which waits out its exit before calling `close()`).
+        // The transition's own duration, read from the `::backdrop`'s computed `transition-*` lists
+        // (what the browser used), not from the running animation: `transitionrun` is dispatched at the
+        // next frame, and on a starved main thread a short transition can already have finished -- and
+        // left `getAnimations()` -- by then, which read as a 0ms "snap" (backlog row 115's class).
+        const cs = getComputedStyle(dlg, "::backdrop");
+        const props = cs.transitionProperty.split(",").map((p) => p.trim());
+        const durs = cs.transitionDuration.split(",").map((p) => p.trim());
+        const at = props.indexOf(ev.propertyName);
+        const raw = at < 0 ? "0s" : durs[at % durs.length];
+        const d = raw.endsWith("ms") ? parseFloat(raw) : parseFloat(raw) * 1000;
+        // Closing is the dialog's own (or its wrapper's) `data-state` already "closed" while
+        // the dialog is still held open -- every overlay waits out its exit before calling
+        // `close()` -- or, for a native close that bypassed that (a `method="dialog"` form),
+        // the `[open]` attribute already gone.
         const closing = !dlg.open || (dlg.closest("[data-state]") as HTMLElement | null)?.dataset.state === "closed";
         st.transitions.push({
           phase: closing ? "close" : "open",

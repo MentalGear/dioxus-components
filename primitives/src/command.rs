@@ -808,6 +808,12 @@ pub struct CommandDialogProps {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub is_modal: ReadSignal<bool>,
 
+    /// Whether the palette dims the page behind it with the shared overlay scrim.
+    /// Defaults to `true`; forwarded to [`crate::dialog::DialogRoot`]'s `overlay`
+    /// (`false` puts `data-dx-overlay="off"` on the `<dialog>`).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub overlay: ReadSignal<bool>,
+
     /// The controlled `open` state of the dialog.
     #[props(default)]
     pub open: ReadSignal<Option<bool>>,
@@ -899,6 +905,7 @@ pub fn CommandDialog(props: CommandDialogProps) -> Element {
         crate::dialog::DialogRoot {
             id: props.id,
             is_modal: props.is_modal,
+            overlay: props.overlay,
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,

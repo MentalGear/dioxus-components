@@ -15,6 +15,7 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/popover/style.css") }
         popover::PopoverRoot {
             is_modal: props.is_modal,
+            overlay: props.overlay,
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,

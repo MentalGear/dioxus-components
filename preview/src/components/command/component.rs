@@ -17,6 +17,11 @@ pub struct CommandDialogProps {
     #[props(default)]
     pub id: ReadSignal<Option<String>>,
 
+    /// Whether the palette dims the page behind it with the shared overlay scrim
+    /// (default `true`; `false` sets `data-dx-overlay="off"` on the `<dialog>`).
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub overlay: ReadSignal<bool>,
+
     #[props(default)]
     pub open: ReadSignal<Option<bool>>,
 
@@ -47,6 +52,7 @@ pub fn CommandDialog(props: CommandDialogProps) -> Element {
         document::Link { rel: "stylesheet", href: asset!("/src/components/command/style.css") }
         command::CommandDialog {
             id: props.id,
+            overlay: props.overlay,
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,

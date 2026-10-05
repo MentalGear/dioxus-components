@@ -51,6 +51,14 @@
   background: transparent;
 }
 
+/* `overlay: false` (`data-dx-overlay="off"`, set on this element and on the `<dialog>`):
+ * the theme's one `dialog[data-dx-overlay="off"]::backdrop` rule removes the web arm's
+ * scrim; this one removes the scrim this element paints where there is no top layer. */
+.dx-command-dialog-backdrop[data-dx-overlay="off"] {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-command-dialog-backdrop[data-state="closed"] {
   animation: dx-command-dialog-backdrop-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
@@ -80,14 +88,23 @@
   }
 }
 
-/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares --
- * `dialog`, `alert_dialog`, `sheet`, `drawer` and this one carry this block
- * verbatim (renamed); the modal popover's is the same rule keyed on
- * `data-state`. `playwright/assert-backdrop-fade.ts`, run from all six specs,
- * fails if one of them drifts. See `../dialog/style.css` for the full account:
- * the dialog's own top-layer `::backdrop` is the only scrim painter, it fades in
- * via `@starting-style` and out via `overlay ... allow-discrete` on the dialog
- * itself, and in and out are one `transition` so they cannot differ in length.
+/* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
+ * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
+ * (renamed); the modal popover's is the same rule keyed on `data-state` (see its
+ * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
+ * fails if one of them drifts.
+ *
+ * The dialog's own top-layer `::backdrop` is the only thing that paints the
+ * scrim. It fades in via `@starting-style` and out because its `background` and
+ * `backdrop-filter` fall back to transparent/none the moment the dialog's
+ * `data-state` flips to "closed" -- while the dialog is STILL open and modal:
+ * `use_dialog_open_driver` (`primitives/src/lib.rs`) calls `close()` only once the
+ * panel's and the scrim's animations have settled, so the `::backdrop` stays in the
+ * top layer for the whole exit on every engine. Nothing here depends on
+ * `transition: overlay allow-discrete` (Chromium only); and the visible state is
+ * keyed on `[open][data-state="open"]`, never `[open]` alone, because `[open]`
+ * outlives `data-state="open"` through the exit. In and out are one `transition`,
+ * so they cannot differ in length.
  *
  * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
  * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
@@ -99,41 +116,49 @@
     background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-.dx-command-dialog[open]::backdrop {
+.dx-command-dialog[open][data-state="open"]::backdrop {
   backdrop-filter: blur(var(--dx-overlay-blur));
   background: var(--dx-overlay-scrim);
 }
 
 @starting-style {
-  .dx-command-dialog[open]::backdrop {
+  .dx-command-dialog[open][data-state="open"]::backdrop {
     backdrop-filter: none;
     background: transparent;
   }
 }
 
 /* The panel fades and zooms with the same tokens (Nova's `fade-in-0 zoom-in-95`
- * / `fade-out-0 zoom-out-95`, exactly `dialog`'s), and the `overlay` entry is
- * what keeps the closing dialog -- and with it the `::backdrop` fade above -- in
- * the top layer for the exit. `dialog.` is deliberate: the non-web arm is a plain
- * `div` that is never `[open]` and must stay visible. */
+ * / `fade-out-0 zoom-out-95`) and is visible only while `[open][data-state="open"]`;
+ * the exit is the move back to the base rule, played while the dialog is still a
+ * modal in the top layer. Until `showModal()` runs (a mounted dialog's first frames)
+ * and after the final `close()`, `display: none` -- the UA rule this stylesheet's own
+ * `display: flex` overrode -- keeps it from being rendered outside the top layer,
+ * where its `position: fixed` box is resolved against, and clipped to, the nearest
+ * layout-contained ancestor (the home page's `content-visibility` demo cards).
+ * `dialog.` is deliberate: the non-web arm is a plain `div` that is never `[open]`
+ * and must stay visible. */
 dialog.dx-command-dialog {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) scale(0.95); /* rtl-physical: the viewport-centering below */
   transition:
     opacity var(--dx-overlay-duration) var(--dx-overlay-ease),
-    transform var(--dx-overlay-duration) var(--dx-overlay-ease),
-    overlay var(--dx-overlay-duration) allow-discrete;
+    transform var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-dialog.dx-command-dialog[open] {
+dialog.dx-command-dialog:not([open]) {
+  display: none;
+}
+
+dialog.dx-command-dialog[open][data-state="open"] {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%) scale(1); /* rtl-physical: the viewport-centering below */
 }
 
 @starting-style {
-  dialog.dx-command-dialog[open] {
+  dialog.dx-command-dialog[open][data-state="open"] {
     opacity: 0;
     transform: translateX(-50%) scale(0.95); /* rtl-physical: the viewport-centering below */
   }
@@ -217,6 +242,15 @@ dialog.dx-command-dialog[open] {
 
   /* touch-action: manipulation -- disables iOS Safari double-tap-to-zoom on this control while still allowing pan/pinch scrolling (touch-action: none must never be used, it breaks scrolling); mirrors the shared app-layer rule in preview/assets/main.css. Copied-out components ship without main.css, so this needs to live here too. */
   touch-action: manipulation;
+}
+
+/* The keyboard focus ring: the shared `--dx-ring-field` token every text field
+ * draws (`../input/style.css`'s `.dx-input:focus-visible`). The input resets
+ * `outline` above and sits borderless in a bottom-ruled strip, so without this
+ * nothing marks focus; the ring is drawn on the input's own box, the element
+ * that has focus. `playwright/focus-ring.spec.ts` holds it to Input's. */
+.dx-command-input:focus-visible {
+  box-shadow: var(--dx-ring-field);
 }
 
 .dx-command-input::placeholder {

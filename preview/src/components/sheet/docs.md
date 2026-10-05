@@ -42,12 +42,11 @@ This component's `style.css` was checked line-by-line against shadcn/ui v4's
 with it, translated onto this repo's own design tokens rather than copying
 Tailwind classes verbatim:
 
-- **Overlay**: `fixed inset-0 bg-black/50`. On the web build, `.dx-sheet` is
-  a real `<dialog>` (`primitives/src/dialog.rs`'s modal web arm), so the
-  visible tint moved to its native `::backdrop` pseudo-element there; the
-  non-web (Blitz) arm has no such element, so `.dx-sheet-root` keeps the
-  tint for that arm. Both are driven by the same `bg-black/50` value and the
-  same fade keyframes.
+- **Overlay**: `fixed inset-0 bg-black/50` in shadcn; here the shared overlay
+  scrim every modal uses. On the web build, `.dx-sheet` is a real `<dialog>`
+  (`primitives/src/dialog.rs`'s modal web arm), so the scrim is its native
+  `::backdrop` pseudo-element; the non-web (Blitz) arm has no such element,
+  so `.dx-sheet-root` paints the same scrim for that arm.
 - **Content**: `fixed z-50 flex flex-col gap-4 bg-background shadow-lg`,
   sliding in from its `data-side` with `transition ease-in-out`, a 500ms
   open / 300ms close duration (this repo's motion scale has no exact 500ms
@@ -84,3 +83,9 @@ Tailwind classes verbatim:
   Fixed by resetting `margin`/`inset`/`width`/`height` to a known, non-auto
   baseline on `.dx-sheet` itself and letting each `[data-side]` rule reopen
   (set back to `auto`) exactly the one edge it doesn't pin.
+
+## Overlay
+
+A modal sheet dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
+
+Closing keeps the sheet a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.

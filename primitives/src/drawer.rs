@@ -21,31 +21,49 @@
 //!
 //! ## Drag construction
 //!
-//! Movement tracking reuses this crate's own house pattern for pointer
-//! drags -- [`crate::slider`]'s `onpointerdown` seeding
-//! `crate::pointer::track_pointer_down`, then a reactive `use_effect`
-//! polling `crate::pointer::pointer_position` on every global
-//! `pointermove` the crate-wide listener in `pointer.rs` already installs --
-//! rather than the DOM's native `setPointerCapture`, which is not reachable
-//! from Dioxus's synthetic event handlers without an escape to
-//! `document::eval` per element anyway.
+//! The whole gesture lives in one real-DOM script ([`GESTURE_JS`], installed by
+//! `use_drawer_gesture` on [`DrawerContent`]'s own root element), and the Rust
+//! side only reacts to three messages: `start` (with the panel's measured size),
+//! `move` (the cumulative offset, oriented so positive always means "toward the
+//! closing edge") and `end` (the release velocity, and whether the browser
+//! cancelled the gesture). It replaced a design that polled
+//! `crate::pointer::pointer_position` from a reactive effect and timed its
+//! samples with the wall clock of whenever that effect happened to run. Two
+//! defects of that design are closed by construction:
 //!
-//! Two things `slider.rs` doesn't need that a drag-to-dismiss gesture does:
+//! - **The release velocity was noise.** It was the displacement between the
+//!   LAST TWO samples over their effect-run times, floored at 1 ms: on a busy
+//!   main thread several `pointermove`s collapse into one effect run and a slow
+//!   drag read as a fling (`drawer.spec.ts`'s old "short, slow drag" test noted
+//!   it closed the drawer in roughly 1 run in 3). The script timestamps every
+//!   sample with the event's own `timeStamp` and takes the velocity over the last
+//!   [`VELOCITY_WINDOW_MS`] of movement before the release; a pause before
+//!   letting go is therefore no flick, and a flick needs at least
+//!   [`FLICK_MIN_DISTANCE_PX`] of travel so jitter cannot read as one.
+//! - **The direction was decided in three places.** Orientation (down for
+//!   `Bottom`, up for `Top`, and so on) is applied once, in the script, from the
+//!   `vertical`/`sign` pair [`DrawerSide::drag_axis`] hands it; everything after
+//!   -- the live offset, the rubber band, the release decision -- works on that
+//!   one oriented number, so a drag toward the OPEN side can never be positive.
+//!   `DrawerSide`s are physical screen edges (a `Right` drawer slides in from the
+//!   physical right, in RTL too, exactly as `Sheet`'s do), so no `dir` flip
+//!   belongs here.
 //!
-//! - **Gating *where* a drag may start.** A pointerdown on an interactive
-//!   descendant (button/link/form control) or on content that is scrolled
-//!   away from the drag edge must not start a drawer drag. Neither is
-//!   discoverable from Dioxus's synthetic `PointerData` (no `event.target`
-//!   accessor -- see `dioxus-html`'s `HasPointerData` trait), so
-//!   `use_drawer_drag_start_gate` installs one real
-//!   `addEventListener('pointerdown', ...)` -- same `document::eval` idiom
-//!   `lib.rs`'s `use_outside_dismiss` already uses for its own real-DOM-target
-//!   need -- on [`DrawerContent`]'s own root element. A native `pointerdown`
-//!   bubbles, so this one listener also catches gestures started on
-//!   [`DrawerHandle`], a descendant; it forwards only an approved
-//!   `(pointer_id, x, y)` triple back to `crate::pointer::track_pointer_down`.
-//! - **A release *decision*.** `slider.rs` only ever clamps a continuous
-//!   value; `should_close_on_release`'s threshold/velocity math is new.
+//! A drag that began inside the drawer and ended over its `::backdrop` used to be
+//! read as a backdrop click by `crate::use_dialog_backdrop_dismiss` and closed the
+//! drawer whichever way it was dragged; that hook now requires the PRESS to have
+//! started on the backdrop too, so it is a dialog-wide fix, not a drawer one.
+//!
+//! Gating *where* a drag may start still needs the real DOM target (Dioxus's
+//! synthetic `PointerData` has no `event.target`): a press on an interactive
+//! descendant (button/link/form control), or on content scrolled away from the
+//! drag edge, must not start a drawer drag. The same script does that, before it
+//! starts tracking. A native `pointerdown` bubbles, so one listener on
+//! [`DrawerContent`]'s root also catches a gesture begun on [`DrawerHandle`].
+//! Mouse, touch and pen all arrive as Pointer Events, so one path serves them;
+//! a mouse press other than the primary button never starts a drag, and a
+//! `pointercancel` (the browser claiming the gesture for a pan) ends it as a
+//! snap-back, never a dismissal.
 //!
 //! ## Why `translate`, not `transform`, carries the live drag offset
 //!
@@ -80,11 +98,9 @@ use crate::dialog::{
     DialogContent, DialogCtx, DialogDescription, DialogDescriptionProps, DialogRoot, DialogTitle,
     DialogTitleProps,
 };
-use crate::{merge_attributes, pointer, use_effect_with_cleanup, use_id_or, use_unique_id};
-use dioxus::html::geometry::ClientPoint;
+use crate::{merge_attributes, use_effect_with_cleanup, use_id_or, use_unique_id};
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
-use std::rc::Rc;
 
 /// Which edge of the viewport a [`Drawer`] slides in from, and is dragged
 /// toward to dismiss.
@@ -115,19 +131,21 @@ impl DrawerSide {
         }
     }
 
-    /// Whether this side's drag axis is vertical (`Top`/`Bottom`) rather
-    /// than horizontal (`Left`/`Right`).
-    fn is_vertical(self) -> bool {
-        matches!(self, DrawerSide::Top | DrawerSide::Bottom)
-    }
-
-    /// `1.0` when the dismiss direction is the positive screen-axis
-    /// direction (down for `Bottom`, right for `Right`); `-1.0` when it is
-    /// the negative direction (up for `Top`, left for `Left`).
-    fn dismiss_sign(self) -> f64 {
+    /// The screen axis a drag toward this side's closing edge runs along, as
+    /// `(vertical, sign)`: `vertical` is `true` for `Top`/`Bottom`, and `sign`
+    /// is `1.0` when the closing direction is the positive screen-axis
+    /// direction (down for `Bottom`, right for `Right`) and `-1.0` when it is
+    /// the negative one (up for `Top`, left for `Left`). Multiplying a raw
+    /// pointer delta along that axis by `sign` gives the number the whole
+    /// gesture runs on: positive is toward the closing edge, negative is
+    /// toward (and past) the open position. The screen sides are physical, so
+    /// this does not depend on the text direction.
+    fn drag_axis(self) -> (bool, f64) {
         match self {
-            DrawerSide::Bottom | DrawerSide::Right => 1.0,
-            DrawerSide::Top | DrawerSide::Left => -1.0,
+            DrawerSide::Bottom => (true, 1.0),
+            DrawerSide::Top => (true, -1.0),
+            DrawerSide::Right => (false, 1.0),
+            DrawerSide::Left => (false, -1.0),
         }
     }
 }
@@ -145,6 +163,18 @@ const DISMISS_DRAG_RATIO: f64 = 0.25;
 /// Tier-3 "opinion", same source as that constant.
 const DISMISS_VELOCITY_PX_PER_MS: f64 = 0.5;
 
+/// A flick must have travelled at least this far toward the closing edge to
+/// count: a press with a few pixels of jitter can momentarily exceed
+/// [`DISMISS_VELOCITY_PX_PER_MS`] (1 px in 1 ms is already 1 px/ms) and must
+/// not dismiss the drawer.
+const FLICK_MIN_DISTANCE_PX: f64 = 10.0;
+
+/// The release velocity is measured over the pointer movement of this many
+/// milliseconds before letting go (using each event's own `timeStamp`), so a
+/// pause before the release is no flick and a long, slow drag followed by a
+/// quick wrist flick is read for what the hand did last.
+const VELOCITY_WINDOW_MS: f64 = 100.0;
+
 /// How much a drag *away* from the dismiss direction -- past the
 /// fully-open resting position -- is damped, instead of hard-clamped to
 /// exactly `0`: gives a small, springy "rubber band" resistance rather
@@ -153,16 +183,6 @@ const DISMISS_VELOCITY_PX_PER_MS: f64 = 0.5;
 const RUBBER_BAND_RATIO: f64 = 0.25;
 /// The rubber band's own maximum travel, in CSS pixels.
 const RUBBER_BAND_MAX_PX: f64 = 24.0;
-
-/// Projects a raw pointer-move delta onto `side`'s drag axis, oriented so a
-/// positive result always means "further toward dismissed" -- regardless
-/// of which of the four sides `side` is -- which is what lets the rest of
-/// this module's clamp/threshold/rubber-band math be written once,
-/// side-agnostically, instead of once per side.
-fn dismiss_oriented_delta(side: DrawerSide, delta_x: f64, delta_y: f64) -> f64 {
-    let raw = if side.is_vertical() { delta_y } else { delta_x };
-    raw * side.dismiss_sign()
-}
 
 /// The dismiss-oriented `raw` accumulated offset, converted to what should
 /// actually be displayed: unchanged (up to the panel's own measured size,
@@ -191,8 +211,8 @@ fn damped_display_offset(raw: f64, panel_size: Option<f64>) -> f64 {
 /// real screen axis and sign.
 fn translate_style(side: DrawerSide, offset: f64) -> String {
     // Explicit fast path for the resting value, rather than always
-    // computing `offset * side.dismiss_sign()`: for `Top`/`Left`
-    // (`dismiss_sign() == -1.0`), `0.0 * -1.0` is IEEE 754 negative zero,
+    // computing `offset * sign`: for `Top`/`Left`
+    // (`sign == -1.0`), `0.0 * -1.0` is IEEE 754 negative zero,
     // which `f64`'s `Display` renders as `"-0"` -- a real, if purely
     // cosmetic, `"translate: 0 -0px"` for those two sides every time the
     // resting/reset value (by far the most common one -- every open and
@@ -200,8 +220,9 @@ fn translate_style(side: DrawerSide, offset: f64) -> String {
     if offset == 0.0 {
         return "translate: 0 0px".to_string();
     }
-    let signed = offset * side.dismiss_sign();
-    if side.is_vertical() {
+    let (vertical, sign) = side.drag_axis();
+    let signed = offset * sign;
+    if vertical {
         format!("translate: 0 {signed}px")
     } else {
         format!("translate: {signed}px 0")
@@ -211,11 +232,14 @@ fn translate_style(side: DrawerSide, offset: f64) -> String {
 /// Whether a release should close the drawer: dragged past
 /// [`DISMISS_DRAG_RATIO`] of the panel's own size along its axis, or
 /// released while moving faster than [`DISMISS_VELOCITY_PX_PER_MS`] toward
-/// dismissal -- shadcn/ui Drawer (Vaul)'s own two release heuristics
-/// (tier-3 "opinion", see `playwright/drawer.spec.ts`'s header). A `raw`
-/// offset at or behind the resting position (`<= 0`, i.e. the rubber-band
-/// overshoot case) never closes, regardless of velocity -- a fling in the
-/// "open further" direction is not a dismiss gesture.
+/// dismissal after travelling at least [`FLICK_MIN_DISTANCE_PX`] -- shadcn/ui
+/// Drawer (Vaul)'s own two release heuristics (tier-3 "opinion", see
+/// `playwright/drawer.spec.ts`'s header). `raw_offset` and `velocity` are both
+/// dismiss-oriented (positive is toward the closing edge), so a drag toward the
+/// OPEN side can never close: a `raw` offset at or behind the resting position
+/// (`<= 0`, i.e. the rubber-band overshoot case) never closes, regardless of
+/// velocity -- a fling in the "open further" direction is not a dismiss
+/// gesture.
 fn should_close_on_release(
     raw_offset: f64,
     panel_size: Option<f64>,
@@ -228,21 +252,9 @@ fn should_close_on_release(
         Some(size) if size > 0.0 => raw_offset / size > DISMISS_DRAG_RATIO,
         _ => false,
     };
-    past_distance_threshold || velocity_px_per_ms > DISMISS_VELOCITY_PX_PER_MS
-}
-
-/// Coarse wall-clock milliseconds, used only as the two-sample basis for a
-/// release velocity (elapsed time between the last two pointer-move
-/// samples within a single drag) -- never persisted or compared across
-/// separate drags, so wall-clock jumps are not a concern.
-/// `time::UtcDateTime::now()` rather than `std::time::Instant::now()`: the
-/// latter panics on `wasm32-unknown-unknown` (no OS clock), which is
-/// exactly why this crate's own `web` Cargo feature already enables
-/// `time/wasm-bindgen` (`Cargo.toml`) for the `OffsetDateTime`/
-/// `UtcDateTime` calls `calendar.rs`/`lib.rs` already make unconditionally
-/// on both targets.
-fn now_ms() -> f64 {
-    (time::UtcDateTime::now().unix_timestamp_nanos() as f64) / 1_000_000.0
+    let flicked =
+        velocity_px_per_ms > DISMISS_VELOCITY_PX_PER_MS && raw_offset >= FLICK_MIN_DISTANCE_PX;
+    past_distance_threshold || flicked
 }
 
 /// Selects an element that must never itself start a drawer drag when a
@@ -251,29 +263,79 @@ fn now_ms() -> f64 {
 const INTERACTIVE_SELECTOR: &str =
     "button, a[href], input, select, textarea, [contenteditable=\"\"], [contenteditable=\"true\"], [role=\"button\"]";
 
-/// [`use_drawer_drag_start_gate`]'s script. Structurally the same
-/// recv-id/addEventListener/recv-sentinel/removeEventListener shape as
-/// `lib.rs`'s `use_outside_dismiss` and `use_dialog_backdrop_dismiss` --
-/// the house idiom, in this crate, for anything that needs the real DOM
-/// event target rather than Dioxus's synthetic one.
+/// [`use_drawer_gesture`]'s script: the whole drag gesture, in the real DOM.
+/// Structurally the same recv-params/addEventListener/recv-sentinel/
+/// removeEventListener shape as `lib.rs`'s `use_outside_dismiss` and
+/// `use_dialog_backdrop_dismiss`.
 ///
-/// Two checks against the real `pointerdown`, in order:
-/// 1. `event.target.closest(INTERACTIVE_SELECTOR)` -- reject a press that
-///    landed on (or inside) an interactive descendant.
-/// 2. Walk from `event.target` up to the content root looking for the
-///    nearest scrollable ancestor *along the drag axis*; if it is
-///    scrolled away from `0` (the edge nearest the drag gesture), reject
-///    -- that pointerdown should scroll that region first, not start
-///    dismissing the drawer. [`DrawerHandle`] itself is never nested
-///    inside such a region (it sits alongside the scrollable body, not
-///    within it), so a drag started there walks no scrollable ancestor at
-///    all and is never rejected by this check -- no special-case needed.
-const DRAG_START_GATE_JS: &str = r#"const id = await dioxus.recv();
+/// Parameters, in order: the content element's id, `vertical`, `sign` (from
+/// [`DrawerSide::drag_axis`]), [`INTERACTIVE_SELECTOR`], [`VELOCITY_WINDOW_MS`],
+/// and `enabled` (the drawer's `dismissible`).
+///
+/// A `pointerdown` starts a drag unless
+/// 1. it is a non-primary mouse button, or
+/// 2. `event.target.closest(INTERACTIVE_SELECTOR)` matches -- the press landed on
+///    (or inside) an interactive descendant, or
+/// 3. the nearest scrollable ancestor *along the drag axis* is scrolled away from
+///    `0` (the edge nearest the drag) -- that press should scroll that region
+///    first. [`DrawerHandle`] itself is never nested inside such a region, so a
+///    drag started there walks no scrollable ancestor at all.
+///
+/// Then, until that pointer is released or cancelled, every `pointermove` updates
+/// the oriented offset (`raw delta * sign`, positive toward the closing edge) and
+/// one timestamped sample; the offset is forwarded at most once a frame, and the
+/// release forwards the last offset, then the velocity over the final
+/// `windowMs` (0 when the pointer paused or was cancelled). Messages are
+/// `[kind, a, b]`: `start` (size of the panel along the axis), `move` (offset),
+/// `end` (velocity, cancelled as 0/1).
+const GESTURE_JS: &str = r#"const id = await dioxus.recv();
 const vertical = await dioxus.recv();
+const sign = await dioxus.recv();
 const interactiveSelector = await dioxus.recv();
+const windowMs = await dioxus.recv();
+const enabled = await dioxus.recv();
 const el = document.getElementById(id);
-if (el) {
-    const onPointerDown = (e) => {
+if (el && enabled) {
+    const finite = (n) => (Number.isFinite(n) ? n : 0);
+    let drag = null;
+    let raf = 0;
+    const flush = () => {
+        raf = 0;
+        if (drag) dioxus.send(['move', finite(drag.offset), 0]);
+    };
+    const velocityAt = (t) => {
+        const recent = drag.samples.filter(([at]) => at >= t - windowMs);
+        if (recent.length < 2) return 0;
+        const [t0, o0] = recent[0];
+        const [t1, o1] = recent[recent.length - 1];
+        return t1 > t0 ? (o1 - o0) / (t1 - t0) : 0;
+    };
+    const onMove = (e) => {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        drag.offset = ((vertical ? e.clientY - drag.startY : e.clientX - drag.startX)) * sign;
+        drag.samples.push([e.timeStamp, drag.offset]);
+        if (!raf) raf = requestAnimationFrame(flush);
+    };
+    const stop = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    };
+    const end = (e, cancelled) => {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        const velocity = cancelled ? 0 : finite(velocityAt(e.timeStamp));
+        const offset = finite(drag.offset);
+        drag = null;
+        stop();
+        dioxus.send(['move', offset, 0]);
+        dioxus.send(['end', velocity, cancelled ? 1 : 0]);
+    };
+    const onUp = (e) => end(e, false);
+    const onCancel = (e) => end(e, true);
+    const onDown = (e) => {
+        if (drag) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (e.target.closest(interactiveSelector)) return;
         let node = e.target;
         while (node && node !== el.parentElement) {
@@ -289,36 +351,78 @@ if (el) {
             if (node === el) break;
             node = node.parentElement;
         }
-        dioxus.send([e.pointerId, e.clientX, e.clientY]);
+        const rect = el.getBoundingClientRect();
+        drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, offset: 0, samples: [[e.timeStamp, 0]] };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onCancel);
+        dioxus.send(['start', vertical ? rect.height : rect.width, 0]);
     };
-    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointerdown', onDown);
     await dioxus.recv();
-    el.removeEventListener('pointerdown', onPointerDown);
+    el.removeEventListener('pointerdown', onDown);
+    drag = null;
+    stop();
 }"#;
 
-/// Installs the [`DRAG_START_GATE_JS`] listener on the element identified
-/// by `content_id` for the lifetime of the calling component, calling
-/// `on_start(pointer_id, client_x, client_y)` for every approved
-/// pointerdown.
-fn use_drawer_drag_start_gate(
+/// One message from [`GESTURE_JS`], already oriented toward the closing edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum DragEvent {
+    /// A drag was approved; `size` is the panel's extent along the drag axis.
+    Start { size: f64 },
+    /// The cumulative offset toward the closing edge (negative past the open
+    /// position).
+    Move { offset: f64 },
+    /// The pointer was released (or cancelled) at `velocity` px/ms toward the
+    /// closing edge.
+    End { velocity: f64, cancelled: bool },
+}
+
+impl DragEvent {
+    /// Decodes a `[kind, a, b]` wire message; an unknown kind is ignored.
+    fn from_wire(kind: &str, a: f64, b: f64) -> Option<Self> {
+        match kind {
+            "start" => Some(Self::Start { size: a }),
+            "move" => Some(Self::Move { offset: a }),
+            "end" => Some(Self::End {
+                velocity: a,
+                cancelled: b != 0.0,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Installs the [`GESTURE_JS`] listener on the element identified by
+/// `content_id` for the lifetime of the calling component, calling `on_event`
+/// for every message. Reinstalled (not left stale) when `side` or `dismissible`
+/// changes.
+fn use_drawer_gesture(
     content_id: Memo<String>,
     side: ReadSignal<DrawerSide>,
-    on_start: impl FnMut(i32, f64, f64) + Clone + 'static,
+    dismissible: ReadSignal<bool>,
+    on_event: impl FnMut(DragEvent) + Clone + 'static,
 ) {
     use_effect_with_cleanup(move || {
-        // Reactive read: `side` changing (unusual, but not disallowed --
-        // `side` is a plain `ReadSignal` prop) tears down and reinstalls
-        // this listener with the new axis rather than leaving the
-        // scroll-direction check silently stale.
-        let vertical = side.cloned().is_vertical();
-        let mut eval = document::eval(DRAG_START_GATE_JS);
+        // Reactive reads: `side` and `dismissible` changing (unusual, but not
+        // disallowed -- both are plain `ReadSignal` props) tears down and
+        // reinstalls this listener with the new axis / enablement rather than
+        // leaving the script silently stale.
+        let (vertical, sign) = side.cloned().drag_axis();
+        let enabled = dismissible.cloned();
+        let mut eval = document::eval(GESTURE_JS);
         let _ = eval.send(content_id.cloned());
         let _ = eval.send(vertical);
+        let _ = eval.send(sign);
         let _ = eval.send(INTERACTIVE_SELECTOR);
-        let mut on_start = on_start.clone();
+        let _ = eval.send(VELOCITY_WINDOW_MS);
+        let _ = eval.send(enabled);
+        let mut on_event = on_event.clone();
         spawn(async move {
-            while let Ok((pointer_id, x, y)) = eval.recv::<(i32, f64, f64)>().await {
-                on_start(pointer_id, x, y);
+            while let Ok((kind, a, b)) = eval.recv::<(String, f64, f64)>().await {
+                if let Some(event) = DragEvent::from_wire(&kind, a, b) {
+                    on_event(event);
+                }
             }
         });
         move || {
@@ -353,6 +457,14 @@ pub struct DrawerRootProps {
     /// [`crate::dialog::DialogRoot`].
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub is_modal: ReadSignal<bool>,
+
+    /// Whether the drawer dims the page behind it with the shared overlay scrim.
+    /// Defaults to `true`. Forwarded unchanged to [`crate::dialog::DialogRoot`]:
+    /// `false` puts `data-dx-overlay="off"` on the `<dialog>`, which the theme
+    /// turns into a transparent `::backdrop`; focus trap, inertness and
+    /// click-outside dismissal are untouched.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub overlay: ReadSignal<bool>,
 
     /// The controlled `open` state of the drawer.
     pub open: ReadSignal<Option<bool>>,
@@ -438,6 +550,7 @@ pub fn Drawer(props: DrawerRootProps) -> Element {
         DialogRoot {
             id: props.id,
             is_modal: props.is_modal,
+            overlay: props.overlay,
             open: props.open,
             default_open: props.default_open,
             on_open_change: props.on_open_change,
@@ -475,8 +588,8 @@ pub struct DrawerContentProps {
 /// for why `translate` and not `transform`) tracking the pointer.
 ///
 /// Owns the drag gesture for both itself and any [`DrawerHandle`] rendered
-/// inside it -- see `use_drawer_drag_start_gate`'s doc for why one
-/// listener on this component's own root element covers both surfaces.
+/// inside it -- see [`GESTURE_JS`]'s doc for why one listener on this
+/// component's own root element covers both surfaces.
 ///
 /// ## Example
 ///
@@ -493,161 +606,68 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
     let id_opt = use_memo(move || Some(id()));
 
     let mut dragging = use_signal(|| false);
+    // Cumulative offset toward the closing edge, as `GESTURE_JS` reports it
+    // (negative past the open position); the panel's extent along the drag
+    // axis, measured by the script when the drag starts; and, once a drag has
+    // CLOSED the drawer, the offset the panel was released at.
     let mut raw_offset = use_signal(|| 0.0_f64);
     let mut panel_size = use_signal(|| None::<f64>);
-    let mut panel_element = use_signal(|| None::<Rc<MountedData>>);
-    let mut active_pointer_id = use_signal(|| None::<i32>);
-    let mut last_sample = use_hook(|| CopyValue::new(None::<(ClientPoint, f64)>));
-    let mut last_velocity = use_hook(|| CopyValue::new(0.0_f64));
+    let mut released_offset = use_signal(|| None::<f64>);
 
-    // Gate + start: see this module's doc for why starting a drag needs a
-    // real DOM listener rather than a declarative `onpointerdown`.
-    use_drawer_drag_start_gate(id, side, move |pointer_id, x, y| {
-        if !dismissible() || active_pointer_id.peek().is_some() {
-            return;
+    // Gesture: see this module's doc for why it is a real DOM script rather
+    // than a declarative `onpointerdown`.
+    use_drawer_gesture(id, side, dismissible, move |event| match event {
+        DragEvent::Start { size } => {
+            if !dismissible() || *dragging.peek() {
+                return;
+            }
+            raw_offset.set(0.0);
+            panel_size.set(Some(size));
+            released_offset.set(None);
+            dragging.set(true);
         }
-
-        pointer::track_pointer_down(pointer_id, ClientPoint::new(x, y));
-        active_pointer_id.set(Some(pointer_id));
-        last_sample.set(Some((ClientPoint::new(x, y), now_ms())));
-        last_velocity.set(0.0);
-        dragging.set(true);
-
-        // Measure the panel fresh for every drag -- see this module's doc
-        // for why a live `onresize` refresh is not worth the extra
-        // plumbing on top of this.
-        if let Some(element) = panel_element.peek().clone() {
-            let vertical = side.cloned().is_vertical();
-            spawn(async move {
-                if let Ok(rect) = element.get_client_rect().await {
-                    let size = if vertical {
-                        rect.height()
-                    } else {
-                        rect.width()
-                    };
-                    panel_size.set(Some(size));
-                }
-            });
+        DragEvent::Move { offset } => {
+            if *dragging.peek() {
+                raw_offset.set(offset);
+            }
+        }
+        DragEvent::End {
+            velocity,
+            cancelled,
+        } => {
+            if !*dragging.peek() {
+                return;
+            }
+            let raw = *raw_offset.peek();
+            let size = *panel_size.peek();
+            dragging.set(false);
+            if !cancelled && should_close_on_release(raw, size, velocity) {
+                // Hold the panel where the pointer left it: the exit keyframe
+                // (`transform`) then carries it the rest of the way from HERE.
+                // Resetting the offset to 0 instead made `translate` ease back
+                // to rest while the exit slid the panel out -- a visible hitch
+                // against the release point.
+                released_offset.set(Some(damped_display_offset(raw, size)));
+                dialog_ctx.set_open(false);
+            } else {
+                raw_offset.set(0.0);
+            }
         }
     });
 
+    // A drawer reopened while it was still closing starts from rest, not from
+    // wherever the last drag released it. Reads `open` only; the writes are
+    // guarded by a `peek`, so this never subscribes to what it writes.
     use_effect(move || {
-        // `dragging()` -- deliberately NOT `.peek()` -- is this effect's
-        // only wake/sleep switch, and both halves of that are load-bearing:
-        //
-        // - WAKE: the only way this effect ever reacts to a NEW drag
-        //   starting (`dragging.set(true)` in `use_drawer_drag_start_gate`'s
-        //   callback, below) is by having read `dragging` with tracked
-        //   syntax on some PRIOR run. Dioxus's own docs are explicit about
-        //   the alternative: "If the `use_effect` call was skipped due to
-        //   an early return, the effect will no longer activate"
-        //   (dioxus-hooks `docs/side_effects.md`) -- `reset_and_run_in`
-        //   (dioxus-hooks `use_effect.rs`) rebuilds this effect's
-        //   subscriptions from scratch on every run, purely from what that
-        //   SAME run reads before returning. The very first run (mount,
-        //   `dragging` still `false`) hits the early return on the next
-        //   line with NO other read before it -- `.peek()` here would mean
-        //   that run subscribes to nothing at all, and no later
-        //   `dragging.set(true)` would ever wake this effect again. Proven
-        //   by reading dioxus-hooks 0.7.9's own source and docs, not
-        //   assumed; not re-proven by a live A/B run in this session.
-        // - SLEEP: symmetrically, once a drag ends (the `dragging.set(false)`
-        //   a few lines down), THAT write reschedules this same effect (it
-        //   is still subscribed, from reading `dragging()` earlier in this
-        //   very run) for exactly one more pass, which reads `dragging()`
-        //   as `false` and returns immediately -- shrinking this effect's
-        //   own subscriptions back down to just `{dragging}` until the next
-        //   drag. `scripts/check-self-subscribing-effects.sh` (another
-        //   lane's new guard, dev-docs/backlog.md row 73's class) flags
-        //   exactly this read+later-write pair; per that script's own
-        //   analysis this is real but bounded (one extra, terminating run,
-        //   not the unbounded self-retrigger `raw_offset` below was
-        //   actually fixed for) -- and, per the above, is not merely safe
-        //   but the mechanism this effect's wake/sleep lifecycle depends on.
-        //   Left as tracked syntax on purpose. `scripts/check-self-
-        //   subscribing-effects.sh` does carry a reviewed
-        //   `NON_SELF_TERMINATING` allowlist entry for exactly this
-        //   `("drawer.rs", "dragging")` pair (added at batch-2
-        //   integration) -- that is not the silent, unreasoned
-        //   "allowlist away" this comment meant to rule out when it was
-        //   first written, before that mechanism existed: the entry
-        //   quotes this same analysis rather than replacing it, so the
-        //   guard can say "seen, and here is why it is safe" instead of
-        //   either false-alarming on every run or silently ignoring a
-        //   read+later-write pair that would be a real bug in any other
-        //   effect. Read this comment and that entry together.
-        if !dragging() {
-            return;
-        }
-        // `active_pointer_id`, unlike `dragging` just above, is read
-        // through `.peek()`: every place that writes it (`use_drawer_drag_
-        // start_gate`'s callback, and the release branch below) always
-        // writes `dragging` in the very same call, so `dragging`'s own
-        // tracked read already reschedules this effect at every moment
-        // `active_pointer_id` could matter -- tracking it too was pure
-        // duplication, and it fell into the exact read+write-in-the-same-
-        // run shape `check-self-subscribing-effects.sh` now flags, unlike
-        // `dragging` above, with no wake/sleep role of its own to lose.
-        let Some(pointer_id) = *active_pointer_id.peek() else {
-            return;
-        };
-
-        let Some(position) = pointer::pointer_position(pointer_id) else {
-            // The crate-wide global `pointerup`/`pointercancel` listener
-            // (`pointer.rs`) removed this id -- the gesture ended. Decide
-            // close-vs-snap-back from whatever was accumulated up to the
-            // last real move sample.
-            //
-            // `.peek()`, not `()`: this effect must never subscribe to
-            // `raw_offset` itself -- see the `.peek()` note on the write
-            // below, in the branch that made this bug catastrophic rather
-            // than merely redundant.
-            let should_close =
-                should_close_on_release(*raw_offset.peek(), panel_size(), last_velocity.cloned());
-
-            dragging.set(false);
-            active_pointer_id.set(None);
-            last_sample.set(None);
+        if dialog_ctx.is_open() && released_offset.peek().is_some() {
+            released_offset.set(None);
             raw_offset.set(0.0);
-
-            if should_close {
-                dialog_ctx.set_open(false);
-            }
-            return;
-        };
-
-        let now = now_ms();
-        if let Some((last_position, last_time)) = last_sample.cloned() {
-            let delta_x = position.x - last_position.x;
-            let delta_y = position.y - last_position.y;
-            let elapsed_ms = (now - last_time).max(1.0);
-            let axis_delta = dismiss_oriented_delta(side.cloned(), delta_x, delta_y);
-
-            last_velocity.set(axis_delta / elapsed_ms);
-            // Regression (found by live reproduction: `page.mouse.down()`
-            // on the handle hung forever, and a follow-up `page.evaluate`
-            // hung too, proving the tab's main thread -- not just the
-            // test -- was wedged). `raw_offset()` reads through the
-            // tracked call syntax, which subscribes *this very effect* to
-            // `raw_offset`; the `.set()` right after then reliably
-            // re-triggers it. `dragging` never flips false on this path,
-            // so nothing ever breaks the cycle -- an infinite,
-            // synchronous self-retrigger from the instant a drag starts,
-            // exactly matching the observed hang. `.peek()` reads the
-            // current value without subscribing, the same fix (and the
-            // same documented reason) `lib.rs`'s `use_animated_open`
-            // already uses for its own read-then-write `generation`
-            // counter: "Written through `.write()` / read through
-            // `.peek()` only -- never `.read()` -- so this effect never
-            // subscribes to its own counter."
-            let current_offset = *raw_offset.peek();
-            raw_offset.set(current_offset + axis_delta);
         }
-        last_sample.set(Some((position, now)));
     });
 
     let is_open = dialog_ctx.is_open();
-    let offset = damped_display_offset(raw_offset(), panel_size());
+    let offset =
+        released_offset().unwrap_or_else(|| damped_display_offset(raw_offset(), panel_size()));
     let style = translate_style(side.cloned(), offset);
 
     let content_base = attributes!(div {
@@ -655,7 +675,6 @@ pub fn DrawerContent(props: DrawerContentProps) -> Element {
         "data-state": if is_open { "open" } else { "closed" },
         "data-dragging": if dragging() { "true" } else { "false" },
         style: style,
-        onmounted: move |evt| panel_element.set(Some(evt.data())),
     });
     let content_attributes = merge_attributes(vec![content_base, props.attributes]);
 
@@ -835,24 +854,59 @@ mod tests {
         assert_eq!(DrawerSide::default(), DrawerSide::Bottom);
     }
 
+    /// The orientation every drag runs on: `(vertical, sign)` such that a raw delta
+    /// times `sign` is positive toward the side's own closing edge. `GESTURE_JS`
+    /// applies exactly this, so this table is the specification of which way each
+    /// side closes -- a bottom drawer closes DOWN (never up), a top drawer UP, a
+    /// right drawer RIGHT, a left drawer LEFT.
     #[test]
-    fn dismiss_oriented_delta_is_positive_toward_each_sides_own_edge() {
-        // Bottom: dragging down (positive Y) is toward dismissal.
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Bottom, 0.0, 10.0), 10.0);
-        // Top: dragging up (negative Y) is toward dismissal.
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Top, 0.0, -10.0), 10.0);
-        // Right: dragging right (positive X) is toward dismissal.
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Right, 10.0, 0.0), 10.0);
-        // Left: dragging left (negative X) is toward dismissal.
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Left, -10.0, 0.0), 10.0);
+    fn drag_axis_points_toward_each_sides_own_closing_edge() {
+        assert_eq!(DrawerSide::Bottom.drag_axis(), (true, 1.0));
+        assert_eq!(DrawerSide::Top.drag_axis(), (true, -1.0));
+        assert_eq!(DrawerSide::Right.drag_axis(), (false, 1.0));
+        assert_eq!(DrawerSide::Left.drag_axis(), (false, -1.0));
+    }
+
+    /// Applies the script's orientation to a pointer delta, for the cases below.
+    fn oriented(side: DrawerSide, delta_x: f64, delta_y: f64) -> f64 {
+        let (vertical, sign) = side.drag_axis();
+        (if vertical { delta_y } else { delta_x }) * sign
     }
 
     #[test]
-    fn dismiss_oriented_delta_is_negative_away_from_each_sides_own_edge() {
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Bottom, 0.0, -5.0), -5.0);
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Top, 0.0, 5.0), -5.0);
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Right, -5.0, 0.0), -5.0);
-        assert_eq!(dismiss_oriented_delta(DrawerSide::Left, 5.0, 0.0), -5.0);
+    fn movement_toward_the_closing_edge_is_positive_and_away_from_it_negative() {
+        // Screen y grows downward: a bottom drawer closes with +y, a top one with -y.
+        assert!(oriented(DrawerSide::Bottom, 0.0, 10.0) > 0.0);
+        assert!(oriented(DrawerSide::Bottom, 0.0, -10.0) < 0.0);
+        assert!(oriented(DrawerSide::Top, 0.0, -10.0) > 0.0);
+        assert!(oriented(DrawerSide::Top, 0.0, 10.0) < 0.0);
+        assert!(oriented(DrawerSide::Right, 10.0, 0.0) > 0.0);
+        assert!(oriented(DrawerSide::Right, -10.0, 0.0) < 0.0);
+        assert!(oriented(DrawerSide::Left, -10.0, 0.0) > 0.0);
+        assert!(oriented(DrawerSide::Left, 10.0, 0.0) < 0.0);
+        // The cross axis never counts.
+        assert_eq!(oriented(DrawerSide::Bottom, 500.0, 0.0), 0.0);
+        assert_eq!(oriented(DrawerSide::Right, 0.0, 500.0), 0.0);
+    }
+
+    #[test]
+    fn drag_event_decodes_the_wire_messages_and_ignores_unknown_ones() {
+        assert_eq!(
+            DragEvent::from_wire("start", 346.0, 0.0),
+            Some(DragEvent::Start { size: 346.0 })
+        );
+        assert_eq!(
+            DragEvent::from_wire("move", -12.5, 0.0),
+            Some(DragEvent::Move { offset: -12.5 })
+        );
+        assert_eq!(
+            DragEvent::from_wire("end", 0.8, 1.0),
+            Some(DragEvent::End {
+                velocity: 0.8,
+                cancelled: true
+            })
+        );
+        assert_eq!(DragEvent::from_wire("nonsense", 1.0, 1.0), None);
     }
 
     #[test]
@@ -892,8 +946,8 @@ mod tests {
 
     #[test]
     fn translate_style_resting_value_is_the_same_for_every_side() {
-        // Regression: `0.0 * side.dismiss_sign()` is negative zero for
-        // `Top`/`Left` (`dismiss_sign() == -1.0`), which `f64::Display`
+        // Regression: `0.0 * sign` is negative zero for
+        // `Top`/`Left` (`sign == -1.0`), which `f64::Display`
         // would otherwise render as the literal text `"-0"`.
         for side in [
             DrawerSide::Top,
@@ -947,6 +1001,22 @@ mod tests {
     #[test]
     fn should_close_on_release_with_no_measured_panel_size_falls_back_to_velocity_only() {
         assert!(!should_close_on_release(1000.0, None, 0.0));
-        assert!(should_close_on_release(1.0, None, 0.6));
+        assert!(should_close_on_release(40.0, None, 0.6));
+    }
+
+    #[test]
+    fn should_close_on_release_ignores_a_fast_twitch_that_travelled_almost_nowhere() {
+        // 3px in 2ms is 1.5px/ms, but it is jitter, not a flick.
+        assert!(!should_close_on_release(3.0, Some(400.0), 1.5));
+        // The same speed after a real throw is.
+        assert!(should_close_on_release(30.0, Some(400.0), 1.5));
+    }
+
+    #[test]
+    fn should_close_on_release_never_closes_a_drag_toward_the_open_side() {
+        // The owner's bug: dragging a bottom drawer UP (negative, oriented) --
+        // however far, however fast -- is never a dismissal.
+        assert!(!should_close_on_release(-300.0, Some(400.0), 2.0));
+        assert!(!should_close_on_release(-300.0, Some(400.0), -2.0));
     }
 }

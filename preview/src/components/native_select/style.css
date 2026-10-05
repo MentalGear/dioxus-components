@@ -16,7 +16,8 @@
   border-radius: var(--dx-radius-lg);
   appearance: none;
   background: none;
-  background-color: var(--light, var(--dx-background)) var(--dark, color-mix(in oklab, #FFFFFF26 30%, transparent));
+  background-color: var(--light, var(--dx-background))
+    var(--dark, color-mix(in oklab, var(--dx-input) 30%, transparent));
   box-shadow: inset 0 0 0 1px var(--dx-input);
   color: var(--dx-foreground);
   cursor: pointer;
@@ -31,19 +32,44 @@
 
 .dx-native-select:hover:not(:disabled),
 .dx-native-select:focus-visible {
-  background: var(--light, var(--dx-accent)) var(--dark, color-mix(in oklab, #FFFFFF26 50%, transparent));
+  background: var(--light, var(--dx-accent)) var(--dark, color-mix(in oklab, var(--dx-input) 50%, transparent));
   color: var(--dx-accent-foreground);
   outline: none;
 }
 
+/* A native select is a field, not a button: Nova gives it the same
+ * `focus-visible:border-ring ring-3 ring-ring/50` as the input
+ * (`registry/bases/base/ui/native-select.tsx` -> `.cn-native-select`), so it
+ * draws the shared `--dx-ring-field` token rather than the 2px `--dx-ring`
+ * of the button-like controls. */
 .dx-native-select:focus-visible {
-  box-shadow: var(--dx-ring);
+  box-shadow: var(--dx-ring-field);
 }
 
 .dx-native-select:disabled {
   color: var(--dx-muted-foreground);
   cursor: not-allowed;
   opacity: var(--dx-opacity-disabled);
+}
+
+/* The open list. A native `<select>`'s popup is painted by the browser, not by the page: it takes its
+ * scheme from `color-scheme` (the theme sets it on the root, `dx-components-theme.css`, so the popup,
+ * its scrollbar and its highlight follow the mode) and, in Chromium, its colours from the options
+ * themselves. The select's own fill is translucent in dark mode (`--dx-input` at 30%) and the popup
+ * has nothing to blend it with, so the options are given the popover's opaque surface and ink --
+ * the same pair every other listbox in the library opens on. Declared on `option` and `optgroup`
+ * (the only elements the popup lets a page style); the scheme alone would leave a preset's tinted
+ * popover and the library's own dark ramp unmatched. A flat selector list, not a `:where()` one:
+ * see the theme file's note on selector lists inside pseudo-class arguments. */
+.dx-native-select option,
+.dx-native-select optgroup {
+  background-color: var(--dx-popover);
+  color: var(--dx-popover-foreground);
+}
+
+.dx-native-select option:disabled,
+.dx-native-select optgroup:disabled {
+  color: var(--dx-muted-foreground);
 }
 
 .dx-native-select-icon {

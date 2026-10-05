@@ -44,6 +44,11 @@
 #      `passive: true` (a bare `true`/`{capture: true}` is non-passive for
 #      wheel and touch on elements, and the "root-level passive" default does
 #      not apply to a capturing listener on `window`).
+#   3. The same events through the scope-owned helper (`listen(target, 'wheel', ..)`
+#      in a `JsListeners` script, `primitives/src/js_listener.rs`) with
+#      `passive: false` in the options: the helper defaults those events to passive,
+#      so only an explicit `passive: false` is a blocking listener. Needs a
+#      `blocking-ok:` reason (a JS comment on the line above, inside the script).
 #
 # Escape hatches, both with a reason:
 #   - a Rust line:   `ontouchstart: move |e| { .. }, // blocking-ok: <reason>`
@@ -82,14 +87,6 @@ ALLOWLIST = {
         "context menu is OPEN and removes them in that effect's cleanup -- blocking the page "
         "scroll behind an open menu is its job"
     ),
-    "primitives/src/scroll_lock.rs": (
-        "KNOWN GAP, not a clean pass: the modal scroll lock needs non-passive window wheel/"
-        "touchmove while a lock is held, but `ensure_scroll_block_listeners_installed` installs "
-        "them PERMANENTLY at the first lock (a `__dxScrollLocked` flag then gates them), so after "
-        "the first dialog/popover/dropdown opens, every wheel/touch on the page waits for the main "
-        "thread for the rest of the session. The fix is install-on-lock / remove-on-unlock; "
-        "tracked in dev-docs/research/scroll-jank-2026-10-04.md (follow-ups)"
-    ),
 }
 
 ATTR_RE = re.compile(
@@ -97,6 +94,11 @@ ATTR_RE = re.compile(
 )
 LISTENER_RE = re.compile(
     r"addEventListener\s*\(\s*(['\"`])(wheel|mousewheel|touchstart|touchmove|DOMMouseScroll)\1"
+)
+# The scope-owned helper (`primitives/src/js_listener.rs`): `listen(target, 'wheel', handler, options)`
+# is passive unless the options say `passive: false`, so only that spelling is a blocking listener.
+HELPER_RE = re.compile(
+    r"(?<![\w.$])listen\s*\(\s*[\w.$]+\s*,\s*(['\"`])(wheel|mousewheel|touchstart|touchmove|DOMMouseScroll)\1"
 )
 MARKER = "blocking-ok:"
 
@@ -140,6 +142,18 @@ def scan(path_str, text, allowlisted):
                               f"non-passive listener, so the whole page's wheel/touch waits for the main thread"))
 
     if not allowlisted:
+        for m in HELPER_RE.finditer(text):
+            open_paren = text.index("(", m.start())
+            close = matching_paren(text, open_paren)
+            span = text[open_paren:close + 1]
+            if not re.search(r"passive\s*:\s*false", span):
+                continue
+            ln = line_of(text, m.start())
+            if MARKER in lines[ln - 1] or (ln > 1 and MARKER in lines[ln - 2]):
+                continue
+            out.append((ln, f"`listen(.., '{m.group(2)}', .., {{ passive: false }})` -- a blocking "
+                            f"{m.group(2)} listener makes the compositor wait for the main thread "
+                            f"(the helper's default is passive; say why it must not be)"))
         for m in LISTENER_RE.finditer(text):
             open_paren = text.index("(", m.start())
             close = matching_paren(text, open_paren)

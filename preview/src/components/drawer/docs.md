@@ -27,7 +27,7 @@ Drawer {
 
 ## Drag to dismiss
 
-Dragging [`DrawerHandle`] or anywhere on [`DrawerContent`] itself toward `side` tracks the pointer live. Releasing past 25% of the panel's own size along that axis, or with enough velocity, finishes closing the drawer; releasing short of that snaps it back open. Set `dismissible: false` on `Drawer` to disable the drag gesture entirely while keeping Escape and `DrawerClose` working.
+Dragging [`DrawerHandle`] or anywhere on [`DrawerContent`] itself toward `side` tracks the pointer live. Only movement toward the drawer's own closing edge dismisses it -- down for the default bottom drawer, up for `side: DrawerSide::Top`, and so on for `Left`/`Right`; dragging the other way rubber-bands and snaps back, however far or fast, and releasing the pointer over the backdrop is not a dismissal either. Releasing past 25% of the panel's own size along the closing axis, or flicking toward the closing edge (at least 0.5px/ms over the last 100ms, after at least 10px), finishes closing the drawer; releasing short of that snaps it back open. Mouse, touch and pen behave the same. Set `dismissible: false` on `Drawer` to disable the drag gesture entirely while keeping Escape and `DrawerClose` working.
 
 A drag never starts from an interactive descendant (a button, link, or form control), or from content that is scrolled away from the drag edge -- either is read as "interact with (or scroll) this instead," not "dismiss the drawer."
 
@@ -46,3 +46,9 @@ DrawerClose {
     }
 }
 ```
+
+## Overlay
+
+A modal drawer dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
+
+Closing keeps the drawer a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.

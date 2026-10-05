@@ -333,13 +333,22 @@ test.describe("Close-fade animation, non-modal arm (docs/backlog.md rows 19, 7)"
 });
 
 // The scrim. The modal Popover is a `<dialog>` + `showModal()` with no wrapper of
-// its own, so before this its whole scrim was the UA's default `::backdrop`
-// (`rgba(0 0 0 / 10%)`, no transition): it appeared in one frame and vanished in
-// one frame. It now paints the same scrim as Dialog/AlertDialog/Sheet/Drawer and
-// fades it in and out for the same length (`assert-backdrop-fade.ts` owns the
-// claim; the other four specs run the identical assertion).
+// its own, so before the shared-scrim fix its whole scrim was the UA's default
+// `::backdrop` (`rgba(0 0 0 / 10%)`, no transition): it appeared in one frame and
+// vanished in one frame. It now paints the same scrim as Dialog/AlertDialog/Sheet/
+// Drawer and fades it in and out for the same length (`assert-backdrop-fade.ts` owns
+// the claim; the other four specs run the identical assertion).
+//
+// But a popover dims nothing by default: shadcn's has no overlay, so `PopoverRoot`'s
+// `overlay` prop defaults to false, which puts `data-dx-overlay="off"` on the dialog
+// and the theme's one `dialog[data-dx-overlay="off"]::backdrop` rule removes the scrim
+// (`dx-components-theme.css`; `overlay-switch.spec.ts` covers that rule on every modal
+// component). Modality is a separate axis (`is_modal`) and is unaffected: the main demo
+// is modal and still undimmed, the `overlay` variant is modal AND dimmed.
+const TRANSPARENT = /^(rgba\(0, 0, 0, 0\)|transparent)$/;
+
 test.describe("Scrim", () => {
-  test("modal popover paints the shared scrim and fades it in and out", async ({ page }) => {
+  test("a modal popover dims nothing by default (overlay defaults to false) but is still modal", async ({ page }) => {
     await page.goto(`${BASE_URL}/component/?name=popover&`);
     const trigger = page.getByRole("button", { name: "Show Popover", exact: true });
     await expect(trigger).toBeVisible();
@@ -348,7 +357,42 @@ test.describe("Scrim", () => {
       () => trigger.click(),
       () => page.keyboard.press("Escape"),
     );
-    assertSharedBackdrop(capture, await resolveOverlayMs(page), "popover (modal)");
+    // Not one frame of scrim while opening, open or closing, and no blur either.
+    const peak = Math.max(...capture.samples.map((sample) => sample[2]));
+    expect(peak, "the ::backdrop must stay fully transparent for the whole open/close cycle").toBeLessThan(0.001);
+    expect(capture.settled.backgroundColor).toMatch(TRANSPARENT);
+    expect(capture.settled.backdropFilter).toBe("none");
+  });
+
+  test("the default carries data-dx-overlay=off on a dialog that is still a real modal", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=popover&`);
+    await page.getByRole("button", { name: "Show Popover", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("data-dx-overlay", "off");
+    expect(await dialog.evaluate((el) => (el as HTMLDialogElement).matches(":modal"))).toBe(true);
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  test("overlay: true paints the shared scrim and fades it in and out", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=popover&variant=overlay&`);
+    const trigger = page.getByRole("button", { name: "Open with overlay", exact: true });
+    await expect(trigger).toBeVisible();
+    const capture = await captureBackdrop(
+      page,
+      () => trigger.click(),
+      () => page.keyboard.press("Escape"),
+    );
+    assertSharedBackdrop(capture, await resolveOverlayMs(page), "popover (modal, overlay: true)");
+  });
+
+  test("overlay: true sets nothing on the dialog (the scrim shows by absence of the switch)", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=popover&variant=overlay&`);
+    await page.getByRole("button", { name: "Open with overlay", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    expect(await dialog.getAttribute("data-dx-overlay")).toBeNull();
+    expect(await dialog.evaluate((el) => (el as HTMLDialogElement).matches(":modal"))).toBe(true);
   });
 
   test("modal popover content fades out too, for as long as the scrim", async ({ page }) => {
@@ -376,7 +420,7 @@ test.describe("Scrim", () => {
       const cs = getComputedStyle(el, "::backdrop");
       return { background: cs.backgroundColor, filter: cs.backdropFilter };
     });
-    expect(backdrop.background).toMatch(/^(rgba\(0, 0, 0, 0\)|transparent)$/);
+    expect(backdrop.background).toMatch(TRANSPARENT);
     expect(backdrop.filter).toBe("none");
   });
 });

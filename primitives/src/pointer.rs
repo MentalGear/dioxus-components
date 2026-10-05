@@ -1,4 +1,6 @@
-use crate::dioxus_core::{queue_effect, Runtime};
+use std::cell::RefCell;
+
+use crate::js_listener::JsListeners;
 use dioxus::html::geometry::ClientPoint;
 use dioxus::prelude::*;
 
@@ -8,45 +10,55 @@ struct Pointer {
     position: ClientPoint,
 }
 
-static POINTERS: GlobalSignal<Vec<Pointer>> = Global::new(|| {
-    let runtime = Runtime::current();
-    queue_effect(move || {
-        runtime.spawn(ScopeId::ROOT, async move {
-            let mut pointer_updates = dioxus::document::eval(
-                // clientX/clientY (not pageX/pageY) must match element handlers
-                // that store `evt.client_coordinates()` and viewport-relative
-                // rects from getBoundingClientRect.
-                "window.addEventListener('pointerdown', (e) => {
-                    dioxus.send(['down', [e.pointerId, e.clientX, e.clientY]]);
-                });
-                window.addEventListener('pointermove', (e) => {
-                    dioxus.send(['move', [e.pointerId, e.clientX, e.clientY]]);
-                });
-                window.addEventListener('pointerup', (e) => {
-                    dioxus.send(['up', [e.pointerId, e.clientX, e.clientY]]);
-                });
-                window.addEventListener('pointercancel', (e) => {
-                    dioxus.send(['up', [e.pointerId, e.clientX, e.clientY]]);
-                });",
-            );
+static POINTERS: GlobalSignal<Vec<Pointer>> = Global::new(Vec::new);
 
-            while let Ok((event_type, (pointer_id, x, y))) =
-                pointer_updates.recv::<(String, (i32, f64, f64))>().await
-            {
-                let position = ClientPoint::new(x, y);
+thread_local! {
+    /// The `window` pointer listeners that feed [`POINTERS`]. They exist exactly while at
+    /// least one pointer is tracked: installed by the first [`add_pointer`], dropped (which
+    /// removes them) when the last pointer goes up. They used to be installed once by the
+    /// global signal's initializer and kept for the rest of the visit, so after the first
+    /// slider or resizable handle was touched, every `pointermove` anywhere on the page
+    /// crossed the JS/wasm boundary for good (backlog row 159).
+    static BRIDGE: RefCell<Option<JsListeners>> = const { RefCell::new(None) };
+}
 
-                match event_type.as_str() {
-                    "down" => add_pointer(pointer_id, position),
-                    "move" => update_pointer(pointer_id, position),
-                    "up" => remove_pointer(pointer_id),
-                    _ => {}
-                }
+/// Installs the bridge if it is not up. clientX/clientY (not pageX/pageY) must match element
+/// handlers that store `evt.client_coordinates()` and viewport-relative rects from
+/// getBoundingClientRect.
+fn ensure_bridge() {
+    BRIDGE.with(|bridge| {
+        if bridge.borrow().is_some() {
+            return;
+        }
+        let listeners = JsListeners::install(
+            "const send = (kind) => (e) => dioxus.send([kind, [e.pointerId, e.clientX, e.clientY]]);
+            listen(window, 'pointerdown', send('down'));
+            listen(window, 'pointermove', send('move'));
+            listen(window, 'pointerup', send('up'));
+            listen(window, 'pointercancel', send('up'));",
+        )
+        .on_message_in_root(|(event_type, (pointer_id, x, y)): (String, (i32, f64, f64))| {
+            let position = ClientPoint::new(x, y);
+
+            match event_type.as_str() {
+                "down" => add_pointer(pointer_id, position),
+                "move" => update_pointer(pointer_id, position),
+                "up" => remove_pointer(pointer_id),
+                _ => {}
             }
         });
+        *bridge.borrow_mut() = Some(listeners);
     });
+}
 
-    Vec::new()
-});
+/// Removes the bridge's listeners once no pointer is tracked.
+fn release_bridge_if_idle(idle: bool) {
+    if idle {
+        // Taken out of the cell before it is dropped, so the drop never runs under a borrow.
+        let listeners = BRIDGE.with(|bridge| bridge.borrow_mut().take());
+        drop(listeners);
+    }
+}
 
 pub(crate) fn track_pointer_down(pointer_id: i32, position: ClientPoint) {
     add_pointer(pointer_id, position);
@@ -61,8 +73,11 @@ pub(crate) fn pointer_position(pointer_id: i32) -> Option<ClientPoint> {
 }
 
 fn add_pointer(pointer_id: i32, position: ClientPoint) {
-    let mut pointers = POINTERS.write();
-    upsert_pointer(&mut pointers, pointer_id, position);
+    {
+        let mut pointers = POINTERS.write();
+        upsert_pointer(&mut pointers, pointer_id, position);
+    }
+    ensure_bridge();
 }
 
 fn upsert_pointer(pointers: &mut Vec<Pointer>, pointer_id: i32, position: ClientPoint) {
@@ -87,7 +102,12 @@ fn update_pointer(pointer_id: i32, position: ClientPoint) {
 }
 
 fn remove_pointer(pointer_id: i32) {
-    POINTERS.write().retain(|pointer| pointer.id != pointer_id);
+    let idle = {
+        let mut pointers = POINTERS.write();
+        pointers.retain(|pointer| pointer.id != pointer_id);
+        pointers.is_empty()
+    };
+    release_bridge_if_idle(idle);
 }
 
 #[cfg(test)]

@@ -172,14 +172,11 @@ test('a drag away from the dismiss direction never exposes the viewport edge', a
     const box = await content.boundingBox();
     if (box) maxGapBelow = Math.max(maxGapBelow, viewport.height - (box.y + box.height));
   }
-  // Read while the pointer is still down -- NOT after `mouse.up()`. This
-  // gesture ends 160px above the handle, over the dialog's `::backdrop`, so
-  // the release's click (common ancestor of the handle and the backdrop =
-  // the dialog itself, outside its own rect) is a backdrop dismiss and the
-  // panel starts its close animation; a `getComputedStyle` taken a
-  // round-trip later under load can land on the closed/unmounted panel,
-  // where `filter` is `none` (dev-docs/backlog.md row 115, observed twice
-  // in 20 repeats under `--workers=4`).
+  // Read while the pointer is still down, so a `getComputedStyle` cannot land on a
+  // closed/unmounted panel (backlog row 115). This gesture ends 160px above the handle,
+  // over the dialog's `::backdrop`; that used to be read as a backdrop click and closed the
+  // drawer (the owner's "dragging UP closes it" report, fixed in
+  // `use_dialog_backdrop_dismiss`) -- the dedicated tests below pin that.
   const filterValue = await content.evaluate((el) => getComputedStyle(el).filter);
   await page.mouse.up();
 
@@ -219,7 +216,7 @@ test('dragging over the handle or the drawer content does not select text', asyn
 
   // Drag #2: the actual reproduction. A drag gesture starts from a
   // `pointerdown` anywhere on the content not gated out
-  // (primitives/src/drawer.rs's `use_drawer_drag_start_gate`), which
+  // (primitives/src/drawer.rs's `GESTURE_JS`), which
   // includes ordinary text -- sweep across the description paragraph the
   // same way a user's finger/mouse would while trying to grab the panel by
   // its content rather than precisely on the handle. Confirmed live
@@ -304,25 +301,11 @@ test('a short, slow drag snaps back without closing the drawer', async ({ page }
   // Short (well under the 25% distance threshold for any reasonably-sized
   // panel) and slow -- must snap back, not close.
   //
-  // The velocity half of that needs the same care the long-drag test
-  // above already takes, not just a pause *after* the move: drawer.rs's
-  // `use_drawer_drag_move`'s velocity is `axis_delta / elapsed_ms` between
-  // the last two pointermove samples ONLY, floored at 1ms
-  // (`elapsed_ms.max(1.0)`, guarding the real division only) -- a pause
-  // *after* the drag's one and only `mouse.move` call changes nothing
-  // about the velocity already recorded from THAT move's own internal
-  // `steps`, whose real inter-step timing is under no guarantee at all
-  // (found by execution: a single `mouse.move(..., { steps: 2 })` here,
-  // exactly as it read before this fix, reordered the drawer to "closed"
-  // in roughly 1 of 3 runs even on an otherwise idle box, every time with
-  // the identical `data-state` mismatch -- Playwright dispatches a
-  // `{ steps: N }` move's synthetic events as fast as the page processes
-  // them, occasionally under 1ms apart, which the `.max(1.0)` floor turns
-  // into an artificially explosive velocity rather than a merely
-  // undefined one). Splitting the same 15px into two explicit moves with
-  // a real, measured pause between them -- the long-drag test's own
-  // technique -- gives the last-two-samples velocity a genuine, timed
-  // denominator instead of an incidental one.
+  // Slow means slow in the browser's own event time: the drawer reads the release velocity from
+  // each `pointermove`'s `timeStamp` over the last 100ms before the release
+  // (primitives/src/drawer.rs `GESTURE_JS`), so the two explicit moves with real pauses between
+  // them (and after) are what make this a non-flick. The old design timed its samples by when a
+  // reactive effect happened to run and closed this drawer in roughly 1 run in 3.
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX, startY + 7, { steps: 1 });
@@ -337,6 +320,244 @@ test('a short, slow drag snaps back without closing the drawer', async ({ page }
   // primitives/src/drawer.rs's module doc for why not `transform`) --
   // snapping back resets it to exactly 0.
   await expect.poll(async () => content.getAttribute('style')).toContain('translate: 0 0px');
+});
+
+// ---------------------------------------------------------------------------------------
+// Drag direction, threshold and flick (owner report 2026-10-05: "a mouse drag UPWARDS on the
+// handle closes a bottom drawer"). Only movement toward the drawer's own closing edge may
+// dismiss it -- down for the bottom drawer, up for the top one -- and only past
+// DISMISS_DRAG_RATIO of its size or as a flick (>= 0.5px/ms over the last 100ms, after at
+// least 10px). Everything else snaps back, and a drag the other way rubber-bands.
+// ---------------------------------------------------------------------------------------
+
+type PointerKind = 'mouse' | 'touch' | 'pen';
+
+/**
+ * Drags from the centre of `selector` by `(dx, dy)` with synthetic Pointer Events of the given
+ * type -- the only way to drive touch and pen deterministically, and the same events a real
+ * device raises: the drawer listens to `pointerdown` on its root and `pointermove`/`pointerup`
+ * on the window, whatever the pointer type. The velocity is read from each event's
+ * `timeStamp`, which a synthetic event takes when it is CREATED, so:
+ *   - a FLICK (`flick: true`) is dispatched in ONE synchronous task, spinning `stepMs` between
+ *     events -- a busy page (a debug build re-rendering the panel on every move) cannot stretch
+ *     the gesture and turn a flick into a slow drag;
+ *   - a slow drag awaits real timers between events (`stepMs`), and `pauseBeforeUpMs` holds the
+ *     pointer still before it is released (a pause is no flick). Jank only makes these slower.
+ * Resolves after the release.
+ */
+async function pointerDrag(
+  page: import('@playwright/test').Page,
+  selector: string,
+  opts: { kind: PointerKind; dx: number; dy: number; steps: number; stepMs: number; pauseBeforeUpMs?: number; flick?: boolean },
+) {
+  await page.evaluate(
+    async ({ selector, kind, dx, dy, steps, stepMs, pauseBeforeUpMs, flick }) => {
+      const el = document.querySelector(selector) as HTMLElement;
+      const r = el.getBoundingClientRect();
+      const x0 = r.x + r.width / 2;
+      const y0 = r.y + r.height / 2;
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const spin = (ms: number) => {
+        const t = performance.now();
+        while (performance.now() - t < ms) { /* hold the task: deterministic event spacing */ }
+      };
+      const init = (x: number, y: number) => ({
+        bubbles: true, cancelable: true, composed: true, pointerId: 41, pointerType: kind,
+        isPrimary: true, clientX: x, clientY: y, button: 0, buttons: 1,
+      });
+      el.dispatchEvent(new PointerEvent('pointerdown', init(x0, y0)));
+      for (let i = 1; i <= steps; i++) {
+        if (flick) spin(stepMs);
+        else await sleep(stepMs);
+        el.dispatchEvent(new PointerEvent('pointermove', init(x0 + (dx * i) / steps, y0 + (dy * i) / steps)));
+      }
+      if (pauseBeforeUpMs) await sleep(pauseBeforeUpMs);
+      el.dispatchEvent(new PointerEvent('pointerup', { ...init(x0 + dx, y0 + dy), buttons: 0 }));
+    },
+    { selector, ...opts },
+  );
+}
+
+const CONTENT = '[data-slot="drawer-content"]';
+const HANDLE = '[data-slot="drawer-handle"]';
+const ROOT = '[data-slot="drawer-root"]';
+
+async function openBottom(page: import('@playwright/test').Page) {
+  await gotoHydrated(page, URL, GOTO_OPTS);
+  await page.getByRole('button', { name: 'Move Goal' }).click();
+  await expect(page.locator(ROOT)).toHaveAttribute('data-state', 'open');
+  await awaitAnimationsSettled(page.locator(CONTENT));
+}
+
+async function openTop(page: import('@playwright/test').Page) {
+  await gotoHydrated(page, URL, GOTO_OPTS);
+  await page.getByRole('button', { name: 'Open from Top' }).click();
+  await expect(page.locator(ROOT)).toHaveAttribute('data-state', 'open');
+  await awaitAnimationsSettled(page.locator(CONTENT));
+}
+
+/** The drawer is still open, still modal, and back at rest -- after a gesture that must not dismiss it. */
+async function expectStillOpenAtRest(page: import('@playwright/test').Page) {
+  // Longer than the exit (200ms) plus the driver's wait, so a dismissal that was merely slow cannot pass.
+  await page.waitForTimeout(900);
+  await expect(page.locator(ROOT)).toHaveAttribute('data-state', 'open');
+  await expect(page.locator(CONTENT)).toHaveCount(1);
+  expect(await page.locator(CONTENT).evaluate((el) => (el as HTMLDialogElement).matches(':modal'))).toBe(true);
+  await expect.poll(async () => page.locator(CONTENT).getAttribute('style')).toContain('translate: 0 0px');
+}
+
+test("a mouse drag UP on a bottom drawer's handle never closes it, however far, even released over the backdrop", async ({ page }) => {
+  await openBottom(page);
+  const handleBox = await page.locator(HANDLE).boundingBox();
+  if (!handleBox) throw new Error('drawer handle has no bounding box');
+  const startX = handleBox.x + handleBox.width / 2;
+  const startY = handleBox.y + handleBox.height / 2;
+
+  // Slow, long, and ending far above the panel -- on the dialog's `::backdrop`. The release's
+  // `click` has the dialog as its target, outside its box: before the fix that was a backdrop
+  // dismiss, whichever way the drawer had been dragged.
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(startX, startY - (40 * i), { steps: 2 });
+    await page.waitForTimeout(20);
+  }
+  await page.mouse.up();
+  await expectStillOpenAtRest(page);
+
+  // And a FAST fling upward is no dismissal either (velocity counts only toward the closing edge).
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX, startY - 120, { steps: 3 });
+  await page.mouse.up();
+  await expectStillOpenAtRest(page);
+});
+
+test('a text selection or drag that starts inside a dialog and ends on its backdrop does not dismiss it', async ({ page }) => {
+  // The class behind the drawer report, on the shared hook: a press inside the panel and a
+  // release over the `::backdrop` produce a `click` on the dialog itself. Only a press that
+  // ALSO began on the backdrop is a dismissal.
+  await openBottom(page);
+  const title = page.locator('[data-slot="drawer-title"]');
+  const box = await title.boundingBox();
+  if (!box) throw new Error('drawer title has no bounding box');
+  await page.mouse.move(box.x + 4, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 4, 20, { steps: 6 });
+  await page.mouse.up();
+  await expectStillOpenAtRest(page);
+
+  // A real backdrop click (press and release both on it) still dismisses.
+  await page.mouse.click(2, 2);
+  await expect(page.locator(ROOT)).toHaveCount(0);
+});
+
+for (const kind of ['mouse', 'touch', 'pen'] as const) {
+  test.describe(`${kind} pointer on a bottom drawer`, () => {
+    test(`dragging UP, far and fast, never closes it`, async ({ page }) => {
+      await openBottom(page);
+      await pointerDrag(page, HANDLE, { kind, dx: 0, dy: -300, steps: 6, stepMs: 8, flick: true });
+      await expectStillOpenAtRest(page);
+    });
+
+    test(`dragging DOWN past the threshold closes it`, async ({ page }) => {
+      await openBottom(page);
+      const h = (await page.locator(CONTENT).boundingBox())!.height;
+      // 40% of the panel, slowly, then held still before release: the distance rule, not a flick.
+      await pointerDrag(page, HANDLE, { kind, dx: 0, dy: h * 0.4, steps: 8, stepMs: 60, pauseBeforeUpMs: 200 });
+      await expect(page.locator(ROOT)).toHaveCount(0);
+    });
+
+    test(`a short, slow drag DOWN snaps back`, async ({ page }) => {
+      await openBottom(page);
+      await pointerDrag(page, HANDLE, { kind, dx: 0, dy: 24, steps: 4, stepMs: 60, pauseBeforeUpMs: 150 });
+      await expectStillOpenAtRest(page);
+    });
+
+    test(`a flick DOWN closes it even though it is short`, async ({ page }) => {
+      await openBottom(page);
+      const h = (await page.locator(CONTENT).boundingBox())!.height;
+      // 15% of the panel (under the 25% distance threshold) in ~12ms: only the velocity can close it.
+      await pointerDrag(page, HANDLE, { kind, dx: 0, dy: h * 0.15, steps: 3, stepMs: 4, flick: true });
+      await expect(page.locator(ROOT)).toHaveCount(0);
+    });
+
+    test(`a twitch of a few pixels is no flick`, async ({ page }) => {
+      await openBottom(page);
+      await pointerDrag(page, HANDLE, { kind, dx: 0, dy: 4, steps: 2, stepMs: 2, flick: true });
+      await expectStillOpenAtRest(page);
+    });
+  });
+}
+
+test.describe('top drawer: the closing edge is UP', () => {
+  const GRAB = '[data-slot="drawer-title"]';
+
+  test('dragging DOWN (toward the open side) never closes it', async ({ page }) => {
+    await openTop(page);
+    await pointerDrag(page, GRAB, { kind: 'mouse', dx: 0, dy: 300, steps: 6, stepMs: 8, flick: true });
+    await page.waitForTimeout(900);
+    await expect(page.locator(ROOT)).toHaveAttribute('data-state', 'open');
+    await expect(page.locator(CONTENT)).toHaveCount(1);
+  });
+
+  test('dragging UP past the threshold closes it', async ({ page }) => {
+    await openTop(page);
+    const h = (await page.locator(CONTENT).boundingBox())!.height;
+    await pointerDrag(page, GRAB, { kind: 'mouse', dx: 0, dy: -h * 0.5, steps: 8, stepMs: 60, pauseBeforeUpMs: 200 });
+    await expect(page.locator(ROOT)).toHaveCount(0);
+  });
+
+  test('a flick UP closes it', async ({ page }) => {
+    await openTop(page);
+    const h = (await page.locator(CONTENT).boundingBox())!.height;
+    await pointerDrag(page, GRAB, { kind: 'touch', dx: 0, dy: -h * 0.15, steps: 3, stepMs: 4, flick: true });
+    await expect(page.locator(ROOT)).toHaveCount(0);
+  });
+});
+
+test('a real-mouse flick closes a bottom drawer; a drag-close carries on from the release point instead of easing back first', async ({ page }) => {
+  await openBottom(page);
+  const content = page.locator(CONTENT);
+  const box = (await content.boundingBox())!;
+  const handleBox = (await page.locator(HANDLE).boundingBox())!;
+  const startX = handleBox.x + handleBox.width / 2;
+  const startY = handleBox.y + handleBox.height / 2;
+
+  // Sample the panel's top edge from the release on. The panel was let go ~35% down; the exit
+  // must carry it on from there (monotonically toward the bottom edge), not ease it back to rest
+  // while the exit keyframe slides it out (the hitch that read as the Drawer "glitching" on close).
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) {
+    await page.mouse.move(startX, startY + (box.height * 0.35 * i) / 5, { steps: 2 });
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(200);
+  await page.evaluate((selector) => {
+    const w = window as unknown as { __tops: number[]; __run: boolean };
+    w.__tops = [];
+    w.__run = true;
+    const tick = () => {
+      const el = document.querySelector(selector);
+      // Once the exit is over the dialog is `display: none` (rect all zeros) until it unmounts: not a frame of the slide.
+      const r = el?.getBoundingClientRect();
+      if (r && r.height > 0) w.__tops.push(r.top);
+      if (w.__run) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, CONTENT);
+  await page.mouse.up();
+  await expect(page.locator(ROOT)).toHaveCount(0);
+  const tops = await page.evaluate(() => {
+    const w = window as unknown as { __tops: number[]; __run: boolean };
+    w.__run = false;
+    return w.__tops;
+  });
+  expect(tops.length).toBeGreaterThan(1);
+  let worstBackslide = 0;
+  for (let i = 1; i < tops.length; i++) worstBackslide = Math.max(worstBackslide, tops[i - 1] - tops[i]);
+  expect(worstBackslide, `the panel moved back toward the open position by ${worstBackslide}px after release: ${tops.map(Math.round).join(',')}`).toBeLessThanOrEqual(1);
 });
 
 test.describe('Axe automated scan', () => {

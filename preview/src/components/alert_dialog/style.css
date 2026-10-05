@@ -20,6 +20,14 @@
   background: transparent;
 }
 
+/* `overlay: false` (`data-dx-overlay="off"`, set on this element and on the `<dialog>`):
+ * the theme's one `dialog[data-dx-overlay="off"]::backdrop` rule removes the web arm's
+ * scrim; this one removes the scrim this element paints where there is no top layer. */
+.dx-alert-dialog-backdrop[data-dx-overlay="off"] {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-alert-dialog-backdrop[data-state="closed"] {
   animation: dx-alert-animate-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
@@ -51,20 +59,21 @@
 
 /* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
  * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
- * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * (renamed); the modal popover's is the same rule keyed on `data-state` (see its
  * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
  * fails if one of them drifts.
  *
  * The dialog's own top-layer `::backdrop` is the only thing that paints the
- * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
- * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
- * timings) and, alone on Popover and Sheet, snapped in and out with no
- * transition at all. It fades in via `@starting-style` and out via
- * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
- * from the top layer synchronously and the `::backdrop` goes with it, so
- * without that keep-alive no exit transition could ever play. In and out are
- * one `transition`, so they cannot differ in length. Engines without
- * `overlay` transitions keep the old snap-out; nothing else changes.
+ * scrim. It fades in via `@starting-style` and out because its `background` and
+ * `backdrop-filter` fall back to transparent/none the moment the dialog's
+ * `data-state` flips to "closed" -- while the dialog is STILL open and modal:
+ * `use_dialog_open_driver` (`primitives/src/lib.rs`) calls `close()` only once the
+ * panel's and the scrim's animations have settled, so the `::backdrop` stays in the
+ * top layer for the whole exit on every engine. Nothing here depends on
+ * `transition: overlay allow-discrete` (Chromium only); and the visible state is
+ * keyed on `[open][data-state="open"]`, never `[open]` alone, because `[open]`
+ * outlives `data-state="open"` through the exit. In and out are one `transition`,
+ * so they cannot differ in length.
  *
  * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
  * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
@@ -76,42 +85,49 @@
     background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-.dx-alert-dialog[open]::backdrop {
+.dx-alert-dialog[open][data-state="open"]::backdrop {
   backdrop-filter: blur(var(--dx-overlay-blur));
   background: var(--dx-overlay-scrim);
 }
 
 @starting-style {
-  .dx-alert-dialog[open]::backdrop {
+  .dx-alert-dialog[open][data-state="open"]::backdrop {
     backdrop-filter: none;
     background: transparent;
   }
 }
 
 /* The panel fades and zooms with the same tokens (Nova's `fade-in-0 zoom-in-95`
- * / `fade-out-0 zoom-out-95`), and the `overlay` entry is what keeps the closing
- * dialog -- and with it the `::backdrop` fade above -- in the top layer for the
- * exit. `dialog.` is deliberate: the non-web arm is a plain `div` that is never
- * `[open]` and must stay visible. A mounted-but-not-yet-shown dialog is `opacity: 0`
- * too, so it no longer flashes in place for the frames before `showModal()`. */
+ * / `fade-out-0 zoom-out-95`) and is visible only while `[open][data-state="open"]`;
+ * the exit is the move back to the base rule, played while the dialog is still a
+ * modal in the top layer. Until `showModal()` runs (a mounted dialog's first frames)
+ * and after the final `close()`, `display: none` -- the UA rule this stylesheet's own
+ * `display: flex` overrode -- keeps it from being rendered outside the top layer,
+ * where its `position: fixed` box is resolved against, and clipped to, the nearest
+ * layout-contained ancestor (the home page's `content-visibility` demo cards).
+ * `dialog.` is deliberate: the non-web arm is a plain `div` that is never `[open]`
+ * and must stay visible. */
 dialog.dx-alert-dialog {
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
   transition:
     opacity var(--dx-overlay-duration) var(--dx-overlay-ease),
-    transform var(--dx-overlay-duration) var(--dx-overlay-ease),
-    overlay var(--dx-overlay-duration) allow-discrete;
+    transform var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-dialog.dx-alert-dialog[open] {
+dialog.dx-alert-dialog:not([open]) {
+  display: none;
+}
+
+dialog.dx-alert-dialog[open][data-state="open"] {
   opacity: 1;
   pointer-events: auto;
   transform: translate(-50%, -50%) scale(1); /* rtl-physical: the viewport-centering below */
 }
 
 @starting-style {
-  dialog.dx-alert-dialog[open] {
+  dialog.dx-alert-dialog[open][data-state="open"] {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.95); /* rtl-physical: the viewport-centering below */
   }
@@ -153,8 +169,6 @@ dialog.dx-alert-dialog[open] {
   background: var(--dx-background);
   box-shadow: 0 2px 10px rgb(0 0 0 / 18%);
   color: var(--dx-foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
   gap: var(--dx-space-4);
   text-align: center;
   transform: translate(-50%, -50%); /* rtl-physical: see comment above */
