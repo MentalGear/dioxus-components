@@ -39,9 +39,12 @@
     background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
+/* The focused slot: the keyboard focus ring, the shared `--dx-ring-field`
+ * token `Input` draws (`../input/style.css`'s `.dx-input:focus-visible`). (The
+ * real input is invisible, so the active slot is where focus shows.) */
 .dx-input-otp-slot[data-active="true"] {
   z-index: var(--dx-z-raise);
-  box-shadow: var(--dx-ring);
+  box-shadow: var(--dx-ring-field);
 }
 
 /* The fake caret -- a blinking bar drawn on the active slot only, since the

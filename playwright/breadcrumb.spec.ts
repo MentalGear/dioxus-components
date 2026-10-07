@@ -20,3 +20,15 @@ test.describe("Axe automated scan", () => {
     await expectNoAxeViolations(page, "breadcrumb: loaded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
   });
 });
+
+// `BreadcrumbEllipsis` is a `<span>` placed inside a `BreadcrumbItem` (shadcn's shape). It used to render an `<li>`,
+// so the demo nested an `<li>` in an `<li>` (backlog row 160). Axe does not flag that nesting, so it is asserted directly.
+test("the ellipsis is a span inside its item: no li nested in an li", async ({ page }) => {
+  await page.goto(`${BASE_URL}/component/?name=breadcrumb&`, { timeout: 20 * 60 * 1000 });
+  const ellipsis = page.locator(".dx-breadcrumb-ellipsis").first();
+  await expect(ellipsis).toBeVisible();
+  expect(await ellipsis.evaluate((el) => el.tagName)).toBe("SPAN");
+  await expect(ellipsis).toHaveAttribute("aria-hidden", "true");
+  expect(await ellipsis.evaluate((el) => el.parentElement!.tagName)).toBe("LI");
+  expect(await page.locator("#component-preview-frame li li").count()).toBe(0);
+});

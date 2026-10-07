@@ -13,7 +13,7 @@ use crate::dashboard::common::{
     LOREM_IPSUM, TABS,
 };
 
-use super::avatars::avatar_profile_for_key;
+use super::avatars::avatar_src_for;
 use super::state::{EmailClientState, EmailClientStateStoreExt, EmailClientStateStoreImplExt};
 
 #[derive(Clone, PartialEq)]
@@ -216,7 +216,7 @@ fn MessageRow(
                 ImageAvatar {
                     size: AvatarImageSize::Small,
                     shape: AvatarShape::Circle,
-                    src: "{avatar_profile_for_key(m.sender.addr).src}",
+                    src: avatar_src_for(&m.sender),
                     alt: "{m.sender.name}",
                     {m.sender.initials}
                 }

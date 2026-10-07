@@ -88,6 +88,9 @@ pub fn ColorPickerRoot(props: ColorPickerRootProps) -> Element {
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
+        // Eager: the hex field in the popover is the themed `Input`, whose own `Link` would only be
+        // inserted when the popover first mounts its content -- late and not render-blocking.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/input/style.css") }
         color_picker::ColorPicker {
             color: props.color,
             on_color_change: props.on_color_change,
@@ -145,6 +148,9 @@ pub struct ColorPickerProps {
 pub fn ColorPicker(props: ColorPickerProps) -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/color_picker/style.css") }
+        // Eager: the hex field in the popover is the themed `Input`, whose own `Link` would only be
+        // inserted when the popover first mounts its content -- late and not render-blocking.
+        document::Link { rel: "stylesheet", href: asset!("/src/components/input/style.css") }
         ColorPickerRoot {
             color: props.color,
             on_color_change: props.on_color_change,

@@ -10,8 +10,9 @@ use dioxus::prelude::*;
 ///
 /// Unlike shadcn's (non-modal) popover this one is `is_modal` (the primitive's
 /// default): focus is trapped, the page behind it is inert and a click outside
-/// dismisses it, so it dims the page with the same scrim every modal overlay
-/// shares. The `non_modal` variant shows the shadcn default, which has no overlay.
+/// dismisses it. Like shadcn's, it does not dim the page: `overlay` defaults to
+/// `false`. The `overlay` variant turns the shared modal scrim on; the `non_modal`
+/// variant shows shadcn's own default (no trap, no overlay, light-dismissed).
 #[component]
 pub fn Demo() -> Element {
     rsx! {

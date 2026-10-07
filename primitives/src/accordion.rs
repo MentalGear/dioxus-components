@@ -1,5 +1,6 @@
 //! Defines the [`Accordion`] component and its sub-components.
 
+use crate::collapsible::{hidden_attribute, use_beforematch, PanelHidden};
 use crate::collection::{collection_item, use_item, CollectionOptions, CollectionState};
 use crate::dioxus_elements::Key;
 use crate::{merge_attributes, use_animated_open, use_id_or, use_unique_id};
@@ -30,6 +31,9 @@ struct AccordionContext {
     /// Whether the accordion is horizontal.
     horizontal: ReadSignal<bool>,
 
+    /// Whether closed content stays mounted as `hidden="until-found"`.
+    hidden_until_found: ReadSignal<bool>,
+
     /// Roving focus state, keyed by the per-item runtime id.
     focus: CollectionState,
 }
@@ -40,6 +44,7 @@ impl AccordionContext {
         disabled: ReadSignal<bool>,
         collapsible: ReadSignal<bool>,
         horizontal: ReadSignal<bool>,
+        hidden_until_found: ReadSignal<bool>,
     ) -> Self {
         Self {
             next_id: Signal::new(0),
@@ -48,6 +53,7 @@ impl AccordionContext {
             disabled,
             collapsible,
             horizontal,
+            hidden_until_found,
             focus: CollectionState::new(
                 ReadSignal::new(Signal::new(true)),
                 CollectionOptions::default(),
@@ -125,6 +131,27 @@ pub struct AccordionProps {
     #[props(default)]
     pub horizontal: ReadSignal<bool>,
 
+    /// Keep every [`AccordionContent`] mounted while closed and mark it `hidden="until-found"`, so
+    /// the browser's find-in-page (Ctrl+F) and `#fragment` navigation can reach text inside closed
+    /// items. When they do, the browser reveals the content and the item opens: the item's
+    /// `on_change` is called with `true`, and when [`allow_multiple_open`](Self::allow_multiple_open)
+    /// is false the other open item closes, exactly as if its trigger had been clicked.
+    ///
+    /// Defaults to false, which unmounts closed content after its close animation, so it costs
+    /// nothing until opted in; opting in renders every item's content into the server-rendered
+    /// HTML as well. Opening because of a match is not animated (the browser has already scrolled
+    /// to the match at full size); the close animation is unchanged, and the content is re-hidden
+    /// once it finishes.
+    ///
+    /// Browser support: Chrome 102+, Safari 26.2+ (does not scroll to the match) and Firefox 139+
+    /// (148+ for a correct scroll target). Engines that do not know `until-found` treat it as plain
+    /// `hidden`: closed content stays unsearchable, as without the prop. Like `hidden`, closed
+    /// content is not in the accessibility tree.
+    ///
+    /// Revealing is not blocked by `disabled` on the accordion or on an item.
+    #[props(default)]
+    pub hidden_until_found: ReadSignal<bool>,
+
     /// Attributes to extend the root element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -190,6 +217,7 @@ pub fn Accordion(props: AccordionProps) -> Element {
             props.disabled,
             props.collapsible,
             props.horizontal,
+            props.hidden_until_found,
         )
     });
 
@@ -338,6 +366,7 @@ pub struct AccordionContentProps {
 ///
 /// The accordion content component represents the content of an accordion item that can be
 /// expanded or collapsed. The contents will only be displayed when the [`AccordionItem`] is open.
+/// With [`AccordionProps::hidden_until_found`] they stay mounted while closed, as `hidden="until-found"`.
 ///
 /// This must be used underneath the [`AccordionItem`] component.
 ///
@@ -371,20 +400,63 @@ pub struct AccordionContentProps {
 ///
 /// The [`AccordionContent`] component defines the following data attributes you can use to control styling:
 /// - `data-open`: Indicates if the accordion item is open. values are `true` or `false`.
+/// - `data-closing`: Present (`true`) only while the close animation runs: the item is closed but
+///   the content has not been removed (or re-hidden) yet. Style the close animation on this, not on
+///   `data-open="false"`, which is also what a closed `hidden="until-found"` panel looks like.
+/// - `data-revealed`: Present (`true`) while the item is open because the browser revealed it for a
+///   find-in-page or `#fragment` match. It is already at full size and scrolled to, so it should
+///   not play the open animation.
 #[component]
 pub fn AccordionContent(props: AccordionContentProps) -> Element {
     let item: Item = use_context();
     let id = use_id_or(item.aria_id, props.id);
-    let ctx: AccordionContext = use_context();
+    let mut ctx: AccordionContext = use_context();
     let open = use_memo(move || ctx.is_open(item.id));
+    let until_found = ctx.hidden_until_found;
 
     let render_element = use_animated_open(id, open);
 
-    let owned = attributes!(div { "data-open": open });
+    // `render_element` is the content's presence in the DOM: it turns on a few frames after the
+    // item opens and off once the close animation has settled. So "closed but still present" is
+    // exactly the close animation.
+    let closing = !open() && render_element();
+
+    // With `hidden_until_found` the content never unmounts. It is shown while the item is open and
+    // while it animates closed, and `hidden="until-found"` once that has settled. Deriving it from
+    // `open()` as well (not `render_element()` alone) renders a default-open item shown in the
+    // server HTML, where `render_element` is still false.
+    let hidden = if open() || render_element() || !until_found() {
+        PanelHidden::Shown
+    } else {
+        PanelHidden::UntilFound
+    };
+
+    // The browser un-hides the content itself; open the item to match. `set_open` closes the
+    // other items unless multiple may be open, same as the trigger.
+    let mut revealed = use_signal(|| false);
+    use_beforematch(id, until_found, move || {
+        if !ctx.is_open(item.id) {
+            revealed.set(true);
+            ctx.set_open(item.id);
+        }
+    });
+    // A later close or re-open is an ordinary, animated one.
+    use_effect(move || {
+        if !open() {
+            revealed.set(false);
+        }
+    });
+
+    let mut owned = attributes!(div {
+        "data-open": open,
+        "data-closing": closing.then_some("true"),
+        "data-revealed": (open() && revealed()).then_some("true"),
+    });
+    owned.push(hidden_attribute(hidden));
     let merged = merge_attributes(vec![props.attributes.clone(), owned]);
 
     rsx! {
-        if render_element() {
+        if render_element() || until_found() {
             div {
                 id: id,
                 ..merged,
@@ -524,5 +596,87 @@ impl Item {
 
     pub fn aria_id(&self) -> String {
         (self.aria_id)()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::find_elements;
+
+    fn render(app: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(app);
+        dom.rebuild_in_place();
+        dioxus_ssr::render(&dom)
+    }
+
+    /// `(data-open, HIDDEN)` of every `AccordionContent` div: the elements with an `id` and a
+    /// `data-open` but no `data-disabled` (the item and root divs carry `data-disabled`).
+    fn contents(html: &str) -> Vec<(String, Option<String>)> {
+        find_elements(html, |a| {
+            a.contains_key("id") && a.contains_key("data-open") && !a.contains_key("data-disabled")
+        })
+        .into_iter()
+        .map(|el| {
+            (
+                el.attrs["data-open"].clone(),
+                el.attrs.get("HIDDEN").cloned(),
+            )
+        })
+        .collect()
+    }
+
+    #[component]
+    fn Plain() -> Element {
+        rsx! {
+            Accordion {
+                AccordionItem { index: 0usize,
+                    AccordionTrigger { "one" }
+                    AccordionContent { "first text" }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn UntilFound() -> Element {
+        rsx! {
+            Accordion { hidden_until_found: true,
+                AccordionItem { index: 0usize, default_open: true,
+                    AccordionTrigger { "one" }
+                    AccordionContent { "first text" }
+                }
+                AccordionItem { index: 1usize,
+                    AccordionTrigger { "two" }
+                    AccordionContent { "second text" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn closed_content_is_unmounted_by_default() {
+        let html = render(Plain);
+        assert!(!html.contains("first text"), "{html}");
+        assert!(contents(&html).is_empty(), "{html}");
+    }
+
+    #[test]
+    fn hidden_until_found_renders_closed_items_searchable_and_open_items_shown() {
+        // The same markup the client hydrates: the open item is shown (not waiting for the
+        // client-only `use_animated_open` effect), the closed one is `until-found`.
+        let html = render(UntilFound);
+        assert!(
+            html.contains("first text") && html.contains("second text"),
+            "{html}"
+        );
+        assert_eq!(
+            contents(&html),
+            vec![
+                ("true".to_string(), None),
+                ("false".to_string(), Some("until-found".to_string())),
+            ],
+            "{html}"
+        );
     }
 }

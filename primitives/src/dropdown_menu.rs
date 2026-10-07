@@ -851,14 +851,12 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
-            onpointerdown: move |event| {
-                // The user is starting a click inside the dropdown menu.
-                // Prevent the blur event from occurring during pointerdown,
-                // to keep the dropdown menu open until pointerup happens,
-                // thus enabling onclick/onselect events to fire.
-                event.prevent_default();
-                event.stop_propagation();
-            },
+            // The user is starting a click inside the dropdown menu. Prevent
+            // the blur event from occurring during pointerdown, to keep the
+            // dropdown menu open until pointerup happens, thus enabling
+            // onclick/onselect events to fire -- see
+            // `menu_root::keep_focus_on_pointerdown`.
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
             {children}
@@ -914,14 +912,12 @@ fn DropdownMenuContentRendered(
     rsx! {
         div {
             id,
-            onpointerdown: move |event| {
-                // The user is starting a click inside the dropdown menu.
-                // Prevent the blur event from occurring during pointerdown,
-                // to keep the dropdown menu open until pointerup happens,
-                // thus enabling onclick/onselect events to fire.
-                event.prevent_default();
-                event.stop_propagation();
-            },
+            // The user is starting a click inside the dropdown menu. Prevent
+            // the blur event from occurring during pointerdown, to keep the
+            // dropdown menu open until pointerup happens, thus enabling
+            // onclick/onselect events to fire -- see
+            // `menu_root::keep_focus_on_pointerdown`.
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             crate::scroll_lock::ScrollLockGuard { active: scroll_lock_active }
             {children}
@@ -1343,6 +1339,22 @@ pub struct DropdownMenuSubProps {
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub roving_loop: ReadSignal<bool>,
 
+    /// Whether hovering the [`DropdownMenuSubTrigger`] opens this submenu
+    /// (after a short hover-intent delay), and leaving it closes it again.
+    /// Defaults to `true`. Set it to `false` for **click activation**: the
+    /// submenu then opens only on click, `Enter`, `Space` or the open arrow
+    /// key, and pointer movement never opens *or* closes it (it closes via
+    /// `Escape`/the close arrow, an outside click, or focus moving
+    /// elsewhere). Touch never hover-opens either way.
+    ///
+    /// Same name, and same default, as Base UI's `Menu.SubmenuTrigger`
+    /// `openOnHover` prop; it sits on the `Sub` rather than the trigger here
+    /// because the hover timers are shared by the trigger and the content --
+    /// see `crate::menu_sub`'s `SubMenuState::open_on_hover`. Keyboard
+    /// behaviour is identical in both modes.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub open_on_hover: ReadSignal<bool>,
+
     /// The children of the submenu, which should include a
     /// [`DropdownMenuSubTrigger`] and a [`DropdownMenuSubContent`].
     pub children: Element,
@@ -1420,7 +1432,8 @@ pub struct DropdownMenuSubProps {
 #[component]
 pub fn DropdownMenuSub(props: DropdownMenuSubProps) -> Element {
     let (open, set_open) = use_controlled(props.open, props.default_open, props.on_open_change);
-    let mut sub = crate::menu_sub::use_sub_menu_state(open, set_open, props.roving_loop);
+    let mut sub =
+        crate::menu_sub::use_sub_menu_state(open, set_open, props.roving_loop, props.open_on_hover);
 
     // Closing (however triggered -- Escape/ArrowLeft, hover-leave, an
     // outside interaction, or the enclosing menu closing entirely and
@@ -1543,7 +1556,9 @@ pub struct DropdownMenuSubTriggerProps {
 /// doc for the citation-free rationale); hover-opening does **not** move
 /// keyboard focus. Leaving the trigger without entering its submenu closes
 /// it after a short grace delay, so a diagonal mouse move from the trigger
-/// toward its own submenu content is not misread as "left."
+/// toward its own submenu content is not misread as "left." Pass
+/// `open_on_hover: false` to [`DropdownMenuSub`] to turn all of this off and
+/// make the submenu click/keyboard-activated only.
 ///
 /// This must be used inside a [`DropdownMenuSub`].
 ///
@@ -1573,13 +1588,13 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
     let focused = move || item.focused();
     let onmounted = item.onmounted();
 
-    // Shared with this submenu's own content (`DropdownMenuSubContentRendered`)
-    // via `SubMenuState`, not private locals -- see
-    // `SubMenuState::hover_close`'s doc for why hovering the content itself
-    // must be able to cancel/reschedule the same close timer the trigger's
-    // own `onmouseleave` below schedules.
-    let mut hover_open = sub.hover_open;
-    let mut hover_close = sub.hover_close;
+    // The hover-intent timers are shared with this submenu's own content
+    // (`DropdownMenuSubContentRendered`) via `SubMenuState`, not private
+    // locals -- see `SubMenuState::hover_close`'s doc for why hovering the
+    // content itself must be able to cancel/reschedule the same close timer
+    // the trigger's own `onmouseleave` below schedules -- and are only
+    // reachable through its `hover_*` methods, which honour
+    // `DropdownMenuSubProps::open_on_hover`.
 
     let id = use_id_or(sub.trigger_id, props.id);
 
@@ -1596,23 +1611,17 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
 
         onmounted,
 
+        // Hover opens without moving keyboard focus (and does nothing at all
+        // when `open_on_hover` is `false`) -- see `SubMenuState::
+        // hover_enter_trigger`.
         onmouseenter: move |_| {
             if disabled() {
                 return;
             }
-            hover_close.cancel();
-            hover_open.schedule(crate::menu_sub::SUBMENU_OPEN_INTENT_DELAY, move || {
-                // Hover opens without moving keyboard focus -- see
-                // `SubMenuState::initial_focus`'s doc for why this calls
-                // `set_open` directly rather than `open_with_focus`.
-                sub.set_open.call(true);
-            });
+            sub.hover_enter_trigger();
         },
         onmouseleave: move |_| {
-            hover_open.cancel();
-            hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
-                sub.set_open.call(false);
-            });
+            sub.hover_leave_trigger();
         },
 
         onclick: move |event: Event<MouseData>| {
@@ -1620,8 +1629,7 @@ pub fn DropdownMenuSubTrigger(props: DropdownMenuSubTriggerProps) -> Element {
             if disabled() {
                 return;
             }
-            hover_open.cancel();
-            hover_close.cancel();
+            sub.cancel_hover();
             // A pointer click (unlike a hover-intent open) does move focus
             // -- touch users have no hover state to rely on, so a tap here
             // must be a complete "open and land in the submenu" action.
@@ -1768,11 +1776,10 @@ fn DropdownMenuSubContentRendered(
     let mut sub: crate::menu_sub::SubMenuState = use_context();
     let open = sub.open;
     // See `SubMenuState::hover_close`'s doc: this submenu's own content
-    // shares its trigger's hover timers so hovering *either* half keeps the
-    // submenu open, and only leaving both (without re-entering either)
-    // within the grace window actually closes it.
-    let mut hover_open = sub.hover_open;
-    let mut hover_close = sub.hover_close;
+    // shares its trigger's hover timers (via `SubMenuState`'s
+    // `hover_enter_content`/`hover_leave_content`) so hovering *either* half
+    // keeps the submenu open, and only leaving both (without re-entering
+    // either) within the grace window actually closes it.
     // docs/backlog.md row 11 (Phase 6, typeahead): this submenu's own
     // buffer, independent of the enclosing menu's root-level one -- see
     // `DropdownMenu`'s identical call for the general rationale.
@@ -1949,22 +1956,16 @@ fn DropdownMenuSubContentRendered(
             // timers, so hovering this submenu's own content is exactly as
             // good as hovering its trigger for keeping it open.
             onmouseenter: move |_| {
-                hover_open.cancel();
-                hover_close.cancel();
+                sub.hover_enter_content();
             },
             onmouseleave: move |_| {
-                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
-                    sub.set_open.call(false);
-                });
+                sub.hover_leave_content();
             },
-            onpointerdown: move |event| {
-                // Same rationale as `DropdownMenuContentRendered`'s
-                // identical guard: keep this submenu open across the
-                // pointerdown-to-pointerup gap of a click inside it, so
-                // `onclick`/`on_select` still fire.
-                event.prevent_default();
-                event.stop_propagation();
-            },
+            // Same rationale as `DropdownMenuContentRendered`'s identical
+            // guard: keep this submenu open across the pointerdown-to-
+            // pointerup gap of a click inside it, so `onclick`/`on_select`
+            // still fire.
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             {children}
         }
@@ -1989,8 +1990,6 @@ fn DropdownMenuSubContentRendered(
     // See `SubMenuState::hover_close`'s doc: this arm still gets the same
     // shared-timer fix as the web arm, for parity even though Blitz mouse
     // events are lower-priority here.
-    let mut hover_open = sub.hover_open;
-    let mut hover_close = sub.hover_close;
     // docs/backlog.md row 11 (Phase 6, typeahead): see the web arm's
     // identical call above for the general rationale.
     let mut typeahead = crate::typeahead::use_typeahead_state();
@@ -2066,18 +2065,12 @@ fn DropdownMenuSubContentRendered(
             id,
             onkeydown,
             onmouseenter: move |_| {
-                hover_open.cancel();
-                hover_close.cancel();
+                sub.hover_enter_content();
             },
             onmouseleave: move |_| {
-                hover_close.schedule(crate::menu_sub::SUBMENU_CLOSE_GRACE_DELAY, move || {
-                    sub.set_open.call(false);
-                });
+                sub.hover_leave_content();
             },
-            onpointerdown: move |event| {
-                event.prevent_default();
-                event.stop_propagation();
-            },
+            onpointerdown: crate::menu_root::keep_focus_on_pointerdown,
             ..attributes,
             {children}
         }

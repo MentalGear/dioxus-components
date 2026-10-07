@@ -361,13 +361,38 @@ test.describe("selected/range state outranks :hover (user report, calendar-state
   // keeping its muted "between" look. /component/block/... isolates one
   // variant per page, avoiding the multi-panel ambiguity every other test
   // in this file works around with #component-preview-frame.first().
+  //
+  // dev-docs/backlog.md row 113 -- this test used to time out (90 s) on every
+  // run: "waiting for locator(...:not([data-disabled="true"])).nth(4)", which
+  // never resolved. The row's guess was that it depends on today's date. That
+  // guess does not hold up: with the clock pinned to 2026-09-26 (the day the
+  // row was filed), 2026-05-15, 2026-01-31 and 2026-02-28 the locator resolves
+  // to all 31 May cells every time, because the `range` demo fixes its own
+  // `view_date` to 2026-05-15 and its min/max (1995-2035) leave May 2026
+  // entirely available. What DOES reproduce that exact timeout, deterministically,
+  // is the URL: `/component/block/calendar/range/` (the path-segment form) is
+  // only ever served by the dev server's SPA fallback; the static SSG server
+  // has no prerendered file for it and answers 404 (confirmed with curl: 404
+  // vs. 200 for the query form below), so on that lane the calendar is never
+  // rendered and the first `.click()` waits out the whole test timeout. Two
+  // changes, so neither cause can come back:
+  //  1. the legacy query form `/component/block/?name=calendar&variant=range&`,
+  //     which both lanes serve (every other block-page spec here uses it);
+  //  2. the date is pinned with Playwright's clock (`Date`/`new Date()` only --
+  //     timers keep running) to a day OUTSIDE the demo's May 2026 view, so
+  //     `data-today` can never land on one of the cells below whatever day this
+  //     runs on, and a precondition (31 cells) fails in seconds, with a clear
+  //     message, instead of burning the timeout.
   test("a range's in-between day keeps its muted look while hovered, not the endpoint look", async ({ page }) => {
-    await page.goto(`${BASE_URL}/component/block/calendar/range/`, {
+    await page.clock.setFixedTime(new Date("2026-09-26T12:00:00Z"));
+    await page.goto(`${BASE_URL}/component/block/?name=calendar&variant=range&`, {
       timeout: 20 * 60 * 1000,
     });
     await page.waitForLoadState("networkidle");
 
     const days = page.locator('.dx-calendar-grid-cell[data-month="current"]:not([data-disabled="true"])');
+    // May 2026 (the demo's own fixed view): 31 current-month days. Fail fast, and say why.
+    await expect(days, "the range demo should render May 2026's 31 days").toHaveCount(31, { timeout: 30_000 });
     const start = days.nth(4); // day "5"
     const end = days.nth(11); // day "12"
     const between = days.nth(7); // day "8", strictly inside 5..12

@@ -2,18 +2,7 @@
 
 use std::ops::RangeInclusive;
 
-use super::types::VirtualItem;
 use super::window::window;
-
-/// Binary search to find the nearest item at or before the given offset.
-///
-/// Returns the index of the item whose `start` position is closest to
-/// (but not exceeding) the given offset.
-pub(crate) fn find_nearest_binary_search(measurements: &[VirtualItem], offset: u32) -> usize {
-    measurements
-        .binary_search_by(|item| item.start().cmp(&offset))
-        .unwrap_or_else(|idx| idx.saturating_sub(1))
-}
 
 /// Extract indices from a range with overscan applied.
 ///

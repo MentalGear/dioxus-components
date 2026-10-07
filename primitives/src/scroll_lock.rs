@@ -109,16 +109,43 @@
 //! overflow amount defeats `scrollbar-gutter: stable` on this engine," the
 //! only remaining lever that cannot trip either failure mode is to never
 //! pull it at all -- block the scroll *input* instead of the scroll
-//! *capability*. A single pair of `window`-level, capturing (`{ capture:
-//! true, passive: false }`) `wheel` and `keydown` listeners, installed once
-//! per WASM instance and toggled only via a plain boolean flag
-//! (`window.__dxScrollLocked`), call `preventDefault()` on an event that
-//! would otherwise reach the document root -- and nothing else. Confirmed
-//! by execution (both an isolated repro and the real app under
-//! `xvfb.local.config.ts`): `clientWidth` stays bit-for-bit constant through
-//! a full lock/unlock cycle, because nothing about `<html>`/`<body>`'s
-//! style ever changes; wheel and the keyboard's Page/Home/End/Arrow scroll
-//! keys are fully blocked while locked and fully restored on unlock.
+//! *capability*. A set of `window`-level, capturing (`{ capture: true,
+//! passive: false }`) `wheel`, `keydown` and `touchmove` listeners (plus a
+//! passive `touchstart` that remembers where the gesture began) call
+//! `preventDefault()` on an event that would otherwise reach the document
+//! root -- and nothing else. They exist **only while a lock is held**: the
+//! outermost lock installs them through [`crate::js_listener::JsListeners`]
+//! and the last release drops that value, which removes every one of them
+//! (`window.__dxScrollLocked` mirrors "held" for tests). Confirmed by execution
+//! (both an isolated repro and the real app under `xvfb.local.config.ts`):
+//! `clientWidth` stays bit-for-bit constant through a full lock/unlock cycle,
+//! because nothing about `<html>`/`<body>`'s style ever changes; wheel and the
+//! keyboard's Page/Home/End/Arrow scroll keys are fully blocked while locked and
+//! fully restored on unlock.
+//!
+//! **Why they must not outlive the lock (backlog rows 149 and 159).** An earlier
+//! version of this generation installed the listeners once, at the first lock
+//! ever taken on the page, and kept them for the rest of the visit behind a
+//! boolean. A non-passive `wheel`/`touchmove` listener on `window` makes the
+//! compositor wait for the main thread before it may scroll, so after the first
+//! Dialog, Popover or menu had opened once, *every* wheel tick on the page paid
+//! that wait again (Chromium `DidHandleInputEventSentToMain` 40/40 ticks versus 0;
+//! wheel latency max 388 ms versus 143 ms with a busy main thread,
+//! `dev-docs/research/scroll-jank-2026-10-04.md` section 7.3).
+//! `DOMDebugger.getEventListeners(window)` after one open-and-close showed
+//! `wheel` and `touchmove` still there, non-passive.
+//!
+//! **When the lock releases.** At the real close of the surface, never at the
+//! state flip: a modal `<dialog>` keeps playing its exit animation, still in the
+//! top layer, after `open` has gone `false`
+//! ([`crate::use_dialog_open_driver`]), and until its `close()` the page behind
+//! must still not scroll. [`use_modal_closed`] is the hand-off: a
+//! `use_scroll_lock` publishes a release handle to its subtree and the shared
+//! `close`-event sync ([`crate::use_dialog_close_sync`]) calls it when the
+//! `<dialog>` has really closed, ~250 ms (`use_animated_open`'s unmount hold)
+//! before the component unmounts. The unmount cleanup stays as the fallback
+//! (a surface that is not a `<dialog>`, a dialog removed while open), and both
+//! paths are idempotent.
 //!
 //! This is closer to Radix's own reference implementation than any earlier
 //! generation here: `@radix-ui/react-dialog` et al. delegate to
@@ -321,6 +348,8 @@ use std::rc::Rc;
 use dioxus::document;
 use dioxus::prelude::*;
 
+use crate::js_listener::JsListeners;
+
 thread_local! {
     /// Whether [`ensure_scrollbar_gutter_baseline`]'s `document::eval` has
     /// already been scheduled once in this WASM instance. `use_scroll_lock`
@@ -333,10 +362,6 @@ thread_local! {
     /// this flag alone would not survive e.g. a hot-reload that resets Rust
     /// statics but leaves the already-injected style tag in the live DOM.
     static SCROLLBAR_GUTTER_BASELINE_INSTALLED: Cell<bool> = const { Cell::new(false) };
-
-    /// Same idempotency guard as above, for the [`use_scroll_lock`]
-    /// event-blocking listeners (module docs, "Generation 4").
-    static SCROLL_BLOCK_LISTENERS_INSTALLED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Installs the permanent `scrollbar-gutter: stable` baseline described in
@@ -375,103 +400,96 @@ pub(crate) fn ensure_scrollbar_gutter_baseline() {
     let _ = eval;
 }
 
-/// Installs the permanent, capturing `wheel`/`keydown`/`touchmove` listeners
-/// described in the module docs ("Generation 4"), at most once per WASM
-/// instance. The listeners themselves check `window.__dxScrollLocked` (a
-/// plain boolean, flipped by [`use_scroll_lock`]'s lock/unlock effects) on
-/// every event, so installing them once, permanently, and simply toggling
-/// that flag is equivalent to adding/removing them per lock cycle, without
-/// the bookkeeping (or hot-reload edge cases) of tracking listener
-/// identities across many `use_scroll_lock` instances sharing one
-/// `ScrollLockState`.
-fn ensure_scroll_block_listeners_installed() {
-    if SCROLL_BLOCK_LISTENERS_INSTALLED.with(|installed| installed.replace(true)) {
-        return;
-    }
-    let eval = document::eval(
-        r#"
-        if (!window.__dxScrollBlockInstalled) {
-            window.__dxScrollBlockInstalled = true;
-            window.__dxScrollLocked = false;
+/// The script that blocks page scroll while a lock is held (module docs, "Generation 4").
+/// Run through [`JsListeners::install`] by the outermost lock and torn down, listeners and
+/// all, when the last lock releases: it contains no `removeEventListener`, because `listen`
+/// derives the removal. It first sends `[scrollX, scrollY]` so the position can be restored
+/// on release.
+const SCROLL_BLOCK_JS: &str = r#"
+    dioxus.send([window.scrollX, window.scrollY]);
+    // `__dxScrollLocked` mirrors "a lock is held" (counted, because two independent
+    // lock chains can be held at once); the listeners themselves exist only while it is true.
+    window.__dxScrollLockN = (window.__dxScrollLockN || 0) + 1;
+    window.__dxScrollLocked = true;
+    cleanup(() => {
+        window.__dxScrollLockN = Math.max(0, (window.__dxScrollLockN || 0) - 1);
+        window.__dxScrollLocked = window.__dxScrollLockN > 0;
+    });
 
-            const dxHasRole = (el) => !!(el && el.getAttribute && el.getAttribute('role'));
-            const dxIsFormControl = (el) => {
-                if (!el) return false;
-                const tag = el.tagName;
-                return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
-            };
-            // Walks from `el` up to (but not including) <body>/<html>
-            // looking for a scroll container that can still consume `delta`
-            // along one axis (`horizontal` picks overflow-x/scrollLeft, else
-            // overflow-y/scrollTop) -- see the module docs' "Not blocked
-            // unconditionally" section for why this exists. The axis matters:
-            // a purely horizontal wheel/touch gesture has no vertical delta,
-            // so a vertical-only check never finds a horizontally scrollable
-            // region (a code block, a wide table) and blocks it.
-            const dxFindScrollableAncestor = (el, delta, horizontal) => {
-                while (el && el !== document.body && el !== document.documentElement) {
-                    if (el.nodeType === 1) {
-                        const style = getComputedStyle(el);
-                        if (horizontal) {
-                            if (/(auto|scroll|overlay)/.test(style.overflowX) && el.scrollWidth > el.clientWidth) {
-                                // scrollLeft is 0 at the start edge and runs
-                                // negative in RTL, so normalise to "distance
-                                // scrolled from the start edge".
-                                const max = el.scrollWidth - el.clientWidth;
-                                const rtl = style.direction === 'rtl';
-                                const fromLeft = rtl ? el.scrollLeft + max : el.scrollLeft;
-                                if (delta < 0 && fromLeft > 0) return el;
-                                if (delta > 0 && fromLeft < max - 1) return el;
-                            }
-                        } else if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
-                            if (delta < 0 && el.scrollTop > 0) return el;
-                            if (delta > 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return el;
-                        }
+    const dxHasRole = (el) => !!(el && el.getAttribute && el.getAttribute('role'));
+    const dxIsFormControl = (el) => {
+        if (!el) return false;
+        const tag = el.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+    };
+    // Walks from `el` up to (but not including) <body>/<html>
+    // looking for a scroll container that can still consume `delta`
+    // along one axis (`horizontal` picks overflow-x/scrollLeft, else
+    // overflow-y/scrollTop) -- see the module docs' "Not blocked
+    // unconditionally" section for why this exists. The axis matters:
+    // a purely horizontal wheel/touch gesture has no vertical delta,
+    // so a vertical-only check never finds a horizontally scrollable
+    // region (a code block, a wide table) and blocks it.
+    const dxFindScrollableAncestor = (el, delta, horizontal) => {
+        while (el && el !== document.body && el !== document.documentElement) {
+            if (el.nodeType === 1) {
+                const style = getComputedStyle(el);
+                if (horizontal) {
+                    if (/(auto|scroll|overlay)/.test(style.overflowX) && el.scrollWidth > el.clientWidth) {
+                        // scrollLeft is 0 at the start edge and runs
+                        // negative in RTL, so normalise to "distance
+                        // scrolled from the start edge".
+                        const max = el.scrollWidth - el.clientWidth;
+                        const rtl = style.direction === 'rtl';
+                        const fromLeft = rtl ? el.scrollLeft + max : el.scrollLeft;
+                        if (delta < 0 && fromLeft > 0) return el;
+                        if (delta > 0 && fromLeft < max - 1) return el;
                     }
-                    el = el.parentElement;
+                } else if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+                    if (delta < 0 && el.scrollTop > 0) return el;
+                    if (delta > 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return el;
                 }
-                return null;
-            };
-
-            window.addEventListener('wheel', (e) => {
-                if (!window.__dxScrollLocked) return;
-                const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-                if (dxFindScrollableAncestor(e.target, horizontal ? e.deltaX : e.deltaY, horizontal)) return;
-                e.preventDefault();
-            }, { passive: false, capture: true });
-
-            // Space is deliberately excluded -- see the module docs'
-            // "Not blocked unconditionally" section.
-            const DX_SCROLL_KEYS = { PageUp: -1, PageDown: 1, Home: -1, End: 1, ArrowUp: -1, ArrowDown: 1 };
-            window.addEventListener('keydown', (e) => {
-                if (!window.__dxScrollLocked) return;
-                if (!(e.key in DX_SCROLL_KEYS)) return;
-                if (dxIsFormControl(e.target) || dxHasRole(e.target)) return;
-                if (dxFindScrollableAncestor(e.target, DX_SCROLL_KEYS[e.key], false)) return;
-                e.preventDefault();
-            }, { passive: false, capture: true });
-
-            let dxTouchStartX = null;
-            let dxTouchStartY = null;
-            window.addEventListener('touchstart', (e) => {
-                const one = e.touches && e.touches.length === 1;
-                dxTouchStartX = one ? e.touches[0].clientX : null;
-                dxTouchStartY = one ? e.touches[0].clientY : null;
-            }, { passive: true, capture: true });
-            window.addEventListener('touchmove', (e) => {
-                if (!window.__dxScrollLocked || dxTouchStartY === null) return;
-                if (!e.touches || e.touches.length !== 1) return;
-                const dx = dxTouchStartX - e.touches[0].clientX;
-                const dy = dxTouchStartY - e.touches[0].clientY;
-                const horizontal = Math.abs(dx) > Math.abs(dy);
-                if (dxFindScrollableAncestor(e.target, horizontal ? dx : dy, horizontal)) return;
-                e.preventDefault();
-            }, { passive: false, capture: true });
+            }
+            el = el.parentElement;
         }
-        "#,
-    );
-    let _ = eval;
-}
+        return null;
+    };
+
+    // blocking-ok: this lock exists to cancel the wheel; the listener is installed only while a lock is held and removed with it
+    listen(window, 'wheel', (e) => {
+        const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+        if (dxFindScrollableAncestor(e.target, horizontal ? e.deltaX : e.deltaY, horizontal)) return;
+        e.preventDefault();
+    }, { passive: false, capture: true });
+
+    // Space is deliberately excluded -- see the module docs'
+    // "Not blocked unconditionally" section.
+    const DX_SCROLL_KEYS = { PageUp: -1, PageDown: 1, Home: -1, End: 1, ArrowUp: -1, ArrowDown: 1 };
+    listen(window, 'keydown', (e) => {
+        if (!(e.key in DX_SCROLL_KEYS)) return;
+        if (dxIsFormControl(e.target) || dxHasRole(e.target)) return;
+        if (dxFindScrollableAncestor(e.target, DX_SCROLL_KEYS[e.key], false)) return;
+        e.preventDefault();
+    }, { passive: false, capture: true });
+
+    let dxTouchStartX = null;
+    let dxTouchStartY = null;
+    listen(window, 'touchstart', (e) => {
+        const one = e.touches && e.touches.length === 1;
+        dxTouchStartX = one ? e.touches[0].clientX : null;
+        dxTouchStartY = one ? e.touches[0].clientY : null;
+    }, { passive: true, capture: true });
+    // blocking-ok: same as the wheel listener above -- held only while a lock is held
+    listen(window, 'touchmove', (e) => {
+        if (dxTouchStartY === null) return;
+        if (!e.touches || e.touches.length !== 1) return;
+        const dx = dxTouchStartX - e.touches[0].clientX;
+        const dy = dxTouchStartY - e.touches[0].clientY;
+        const horizontal = Math.abs(dx) > Math.abs(dy);
+        if (dxFindScrollableAncestor(e.target, horizontal ? dx : dy, horizontal)) return;
+        e.preventDefault();
+    }, { passive: false, capture: true });
+"#;
 
 /// Per-nesting-chain lock count, and the page scroll position captured just
 /// before the outermost lock in the chain engaged.
@@ -479,6 +497,9 @@ fn ensure_scroll_block_listeners_installed() {
 struct ScrollLockInner {
     count: usize,
     original_scroll: Option<(f64, f64)>,
+    /// The block listeners, alive from the 0 -> 1 transition of `count` to the 1 -> 0 one.
+    /// Dropping it is what removes them from `window`.
+    listeners: Option<JsListeners>,
 }
 
 #[derive(Clone)]
@@ -562,7 +583,7 @@ pub(crate) fn use_early_scroll_capture(open: Memo<bool>) {
 ///
 /// Nested locks -- e.g. a dialog that opens a second, nested dialog -- share
 /// one counter (see module docs): only the count's 0 -> 1 transition
-/// engages the block, and only its 1 -> 0 transition releases it. That
+/// installs the block listeners, and only its 1 -> 0 transition removes them. That
 /// means a still-open outer modal is never affected by an inner one
 /// closing, and there is no window in which the page is briefly, visibly
 /// unlocked between an inner modal's close and an outer modal's
@@ -571,92 +592,144 @@ pub(crate) fn use_early_scroll_capture(open: Memo<bool>) {
 /// Call this from a component that mounts exactly while the lock should be
 /// held and unmounts when it shouldn't (this crate's `*Content` components,
 /// which are conditionally rendered by `use_animated_open`) -- the lock is
-/// acquired in this hook's effect and released in its unmount cleanup.
+/// acquired in this hook's effect. It is released at the first of:
+/// * the surface's real close, when a modal `<dialog>` below this component
+///   reports it ([`use_modal_closed`]) and `active` is already false -- after
+///   the exit animation, never at the `open` flip;
+/// * this component's unmount.
 pub(crate) fn use_scroll_lock(active: Memo<bool>) {
     let state = use_scroll_lock_state();
 
-    // Permanent baseline and listeners (see module docs) -- unconditional,
-    // run once per WASM instance, and never re-run or reverted by the
-    // lock/unlock toggle below.
+    // Permanent baseline (see module docs) -- unconditional, run once per
+    // WASM instance, and never re-run or reverted by the lock/unlock toggle
+    // below. The scroll-blocking listeners are NOT part of it: they exist only
+    // while a lock is held.
     use_effect(ensure_scrollbar_gutter_baseline);
-    use_effect(ensure_scroll_block_listeners_installed);
 
     // Whether *this* hook instance is the one that incremented the shared
     // counter -- tracked separately from `active` because by the time this
     // component unmounts, `active` has typically already flipped to false
     // (see adaptation note 2 above), so it can't be used to decide whether
-    // the matching decrement is still owed.
-    let mut acquired = use_signal(|| false);
+    // the matching decrement is still owed. A plain `Rc<Cell>`, not a signal: it
+    // is read from the close-event task and from the unmount cleanup, never reactively,
+    // and must stay readable after this component's own signals are gone.
+    let acquired = use_hook(|| Rc::new(Cell::new(false)));
+
+    // Handed to the `<dialog>` driver below this component, which calls it when the
+    // dialog has really closed. A no-op once this component is gone.
+    let alive = use_hook(|| Rc::new(Cell::new(true)));
+    use_hook({
+        let state = state.clone();
+        let acquired = acquired.clone();
+        let alive = alive.clone();
+        move || {
+            provide_context(ModalClosedRelease(Rc::new(move || {
+                // Still wanted (a controlled surface that was not closed, or one that
+                // reopened while the close was in flight): keep the lock.
+                if alive.get() && !active.try_peek().map(|v| *v).unwrap_or(true) {
+                    release(&state, &acquired);
+                }
+            })))
+        }
+    });
 
     let lock_state = state.clone();
+    let lock_acquired = acquired.clone();
     use_effect(move || {
-        if !active() || *acquired.peek() {
+        if !active() || lock_acquired.get() {
             return;
         }
-        acquired.set(true);
+        lock_acquired.set(true);
         let is_outermost = {
             let mut inner = lock_state.0.borrow_mut();
             inner.count += 1;
             inner.count == 1
         };
         if is_outermost {
-            let lock_state = lock_state.clone();
-            spawn(async move {
-                let mut eval = document::eval(
-                    r#"
-                    dioxus.send([window.scrollX, window.scrollY]);
-                    window.__dxScrollLocked = true;
-                    "#,
-                );
-                if let Ok((x, y)) = eval.recv::<(f64, f64)>().await {
-                    let mut inner = lock_state.0.borrow_mut();
+            let position_state = lock_state.clone();
+            let listeners =
+                JsListeners::install(SCROLL_BLOCK_JS).on_message(move |(x, y): (f64, f64)| {
                     // Don't clobber an earlier, pre-jump capture --
                     // `use_early_scroll_capture` (called from `DialogRoot`/
                     // `AlertDialogRoot`) may already have run by now with a
                     // more trustworthy value; see its doc.
-                    inner.original_scroll.get_or_insert((x, y));
-                }
-            });
+                    position_state
+                        .0
+                        .borrow_mut()
+                        .original_scroll
+                        .get_or_insert((x, y));
+                });
+            lock_state.0.borrow_mut().listeners = Some(listeners);
         }
     });
 
-    // Cleanup only runs when this hook's owning component unmounts.
-    // `acquired` (not `active`) records whether this instance still owes a
-    // decrement -- see adaptation note 2 above.
+    // Cleanup only runs when this hook's owning component unmounts. `acquired` (not
+    // `active`) records whether this instance still owes a decrement -- see adaptation
+    // note 2 above. Idempotent with the early release above.
     crate::use_effect_cleanup(move || {
-        if !*acquired.peek() {
-            return;
-        }
-        let restore = {
-            let mut inner = state.0.borrow_mut();
-            inner.count = inner.count.saturating_sub(1);
-            (inner.count == 0).then(|| inner.original_scroll.take())
-        };
-        if let Some(original_scroll) = restore {
-            let eval = document::eval(
-                r#"window.__dxScrollLocked = false;
-                const scroll = await dioxus.recv();
-                if (scroll) {
-                    const [x, y] = scroll;
-                    // Restores whatever page position was in effect just
-                    // before the lock engaged -- see the module docs
-                    // ("Scroll-position capture and restore") for why this
-                    // exists: a real, measured page-scroll jump (confirmed
-                    // on both Chromium and Firefox, most visibly a native
-                    // `<dialog>`'s own `showModal()` autofocus/scroll-into-
-                    // view behavior) otherwise persists silently through the
-                    // lock and is never undone once it releases, leaving the
-                    // page permanently scrolled away from where the user
-                    // left it -- e.g. its sticky top nav rendering
-                    // off-screen. This is a mitigation for that symptom, not
-                    // a fix for whatever causes the scroll to move in the
-                    // first place while locked.
-                    window.scrollTo(x, y);
-                }"#,
-            );
-            let _ = eval.send(original_scroll);
-        }
+        alive.set(false);
+        release(&state, &acquired);
     });
+}
+
+/// What a `use_scroll_lock` publishes to its subtree: "the surface under me really closed,
+/// release the lock if nothing wants it any more". See [`use_modal_closed`].
+#[derive(Clone)]
+struct ModalClosedRelease(Rc<dyn Fn()>);
+
+/// A handle for the `<dialog>` driver to say that its dialog has really closed (the
+/// `close` event, fired after the exit animation by [`crate::use_dialog_open_driver`]'s
+/// `close()`). A no-op when no [`use_scroll_lock`] sits above the caller.
+#[derive(Clone)]
+#[cfg_attr(not(feature = "web"), allow(dead_code))]
+pub(crate) struct ModalClosed(Option<Rc<dyn Fn()>>);
+
+#[cfg_attr(not(feature = "web"), allow(dead_code))]
+impl ModalClosed {
+    /// Release the lock held for this surface, if it is no longer wanted.
+    pub(crate) fn notify(&self) {
+        if let Some(release) = &self.0 {
+            release();
+        }
+    }
+}
+
+/// Finds the [`use_scroll_lock`] above (or in) the calling component. Call it after
+/// `use_scroll_lock` in the same component, or from any descendant.
+#[cfg_attr(not(feature = "web"), allow(dead_code))]
+pub(crate) fn use_modal_closed() -> ModalClosed {
+    use_hook(|| ModalClosed(try_consume_context::<ModalClosedRelease>().map(|r| r.0)))
+}
+
+/// Gives back this instance's share of the lock, if it holds one: the last release removes
+/// the block listeners (dropping [`JsListeners`]) and restores the pre-lock scroll position.
+fn release(state: &ScrollLockState, acquired: &Cell<bool>) {
+    if !acquired.replace(false) {
+        return;
+    }
+    let (listeners, restore) = {
+        let mut inner = state.0.borrow_mut();
+        inner.count = inner.count.saturating_sub(1);
+        if inner.count == 0 {
+            (inner.listeners.take(), inner.original_scroll.take())
+        } else {
+            (None, None)
+        }
+    };
+    // Removes `wheel`/`keydown`/`touchstart`/`touchmove` from `window`.
+    drop(listeners);
+    if let Some((x, y)) = restore.filter(|(x, y)| x.is_finite() && y.is_finite()) {
+        // Restores whatever page position was in effect just before the lock engaged --
+        // see the module docs ("Scroll-position capture and restore") for why this
+        // exists: a real, measured page-scroll jump (confirmed on both Chromium and
+        // Firefox, most visibly a native `<dialog>`'s own `showModal()` autofocus/
+        // scroll-into-view behavior) otherwise persists silently through the lock and
+        // is never undone once it releases, leaving the page permanently scrolled away
+        // from where the user left it -- e.g. its sticky top nav rendering off-screen.
+        // This is a mitigation for that symptom, not a fix for whatever causes the
+        // scroll to move in the first place while locked.
+        let _ = document::eval(&format!("window.scrollTo({x}, {y});"));
+    }
 }
 
 /// Mount-scoped host for [`use_scroll_lock`], for a `*Content` component

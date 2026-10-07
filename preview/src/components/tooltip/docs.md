@@ -21,3 +21,11 @@ Tooltip {
     }
 }
 ```
+
+## No click-only mode
+
+Unlike the menus (`NavigationMenu`, `Navbar`, `Menubar` and the dropdown /
+context menu submenus), which take an `open_on_hover` prop to switch hover
+off, a tooltip has no such option: hovering or focusing the trigger *is* what
+shows it, and it is a non-interactive hint, never the only way to reach
+something. For a panel opened by a click, use [Popover](/component/popover/).

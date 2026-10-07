@@ -150,6 +150,74 @@ test("ContextMenu returns focus to its trigger on Escape", async ({ page }) => {
  * It exists to prove the oracle itself is sound: if this fails too, the
  * harness is wrong, not the components.
  */
+// --- Pointer selection (dev-docs/backlog.md row 140) ----------------------
+//
+// The tests above all close by keyboard. A *pointer* selection must land focus
+// in the same place -- on the trigger -- for the same reason (the focused item
+// unmounts with the content, and focus would otherwise fall to <body>).
+//
+// Row 140 was Menubar only: its items commit on `pointerdown` and close the
+// menu right there, so the mousedown that follows focused the item being
+// unmounted and focus ended on the page. DropdownMenu/ContextMenu commit on
+// click/pointerup and were already fine; they are pinned here so a future
+// change to a menu-family host cannot reopen the class
+// (`menu_root::keep_focus_on_pointerdown`).
+
+test("Menubar returns focus to its trigger after a pointer selection", async ({ page }) => {
+  await open(page, "menubar");
+
+  const fileMenu = page.getByRole("menuitem", { name: "File", exact: true });
+  await fileMenu.click();
+  const fileContent = page
+    .getByRole("menu")
+    .filter({ has: page.getByRole("menuitem", { name: "New", exact: true }) })
+    .last();
+  await expect(fileContent).toHaveAttribute("data-state", "open");
+
+  await fileContent.getByRole("menuitem", { name: "Save", exact: true }).click();
+  await expect(fileContent).toHaveCount(0);
+
+  expect(
+    await focusReport(page),
+    "APG menubar: choosing an item closes the menu and returns focus to the menubar item, by pointer as by keyboard",
+  ).toContain("File");
+  await expect(fileMenu).toBeFocused();
+});
+
+test("DropdownMenu returns focus to its trigger after a pointer selection", async ({ page }) => {
+  await open(page, "dropdown_menu");
+
+  const trigger = page.getByRole("button", { name: "Open Menu" });
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("data-state", "open");
+
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(trigger).toHaveAttribute("data-state", "closed");
+
+  expect(
+    await focusReport(page),
+    "APG menu-button: choosing an item closes the menu and returns focus to the menu button",
+  ).toContain("Open Menu");
+  await expect(trigger).toBeFocused();
+});
+
+test("ContextMenu returns focus to its trigger after a pointer selection", async ({ page }) => {
+  await open(page, "context_menu");
+
+  const trigger = page.getByRole("button", { name: "right click here" });
+  await trigger.click({ button: "right" });
+  await expect(page.getByRole("menu")).toHaveAttribute("data-state", "open");
+
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+
+  expect(
+    await focusReport(page),
+    "choosing an item closes the context menu and returns focus to its trigger",
+  ).toContain("right click here");
+  await expect(trigger).toBeFocused();
+});
+
 test("CONTROL: Dialog returns focus to its trigger on close", async ({ page }) => {
   await open(page, "dialog");
 

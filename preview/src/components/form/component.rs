@@ -62,6 +62,85 @@ use crate::components::select::{Select, SelectOption};
 use crate::components::switch::Switch;
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::CheckboxState;
+use dioxus_primitives::js_listener::{use_js_listeners, JsListeners};
+
+/// The ONLY way a preview page renders a `<form>` (`scripts/check-demo-forms.sh` fails on any other).
+///
+/// # The defect this exists for (owner report: "submit buttons in the demo / docs pages reload the page")
+///
+/// A bare `form { .. }` with no `onsubmit` is a real HTML form: clicking its submit button, or pressing
+/// Enter in one of its fields, runs the browser's form submission algorithm, which NAVIGATES to the form's
+/// action URL with the entry list as the query string -- the page reloads (`/component/card/` ->
+/// `/component/card/?`). Dioxus does nothing to prevent that on its own: `dioxus-web-0.7.9/src/dom.rs:113-116`
+/// calls `preventDefault` only when a handler explicitly cleared `Event::default_action_enabled()`, and a
+/// form with no `onsubmit` has no handler to do so. Two independent windows, so the cure needs both halves:
+///
+/// 1. HYDRATED: an `onsubmit` that calls `prevent_default()`. Forgotten once (the card's login form), it is
+///    forgotten silently: nothing fails until someone clicks.
+/// 2. PRE-HYDRATION: the SSG page is plain HTML until the wasm bundle boots and hydration attaches
+///    listeners (`data-node-hydration="..,submit:1"` is the only trace of a handler in the served markup).
+///    A submit in that window, or with scripting off, is a native submit no Rust handler can stop.
+///
+/// # The construction
+///
+/// `method="dialog"` on the `<form>`. Per the HTML Standard's form submission algorithm ("If method is
+/// dialog: if form does not have an ancestor dialog element, then return") a dialog-method form outside a
+/// `<dialog>` never navigates: no scripting, no listener, no URL scheme, so it holds before hydration,
+/// with JS disabled, and under any CSP. Constraint validation and the `submit` event still run, so the
+/// handler (and `required` blocking) behave exactly as for a normal form. Chosen over
+/// `action="javascript:void(0)"`, which also works but is a script URL (blocked, and noisy, under a strict
+/// `script-src`), and over `action="#"` / a document-level capture listener (the first still navigates
+/// with a query string; the second needs a head script owned outside the component dirs).
+/// `prevent_default()` stays as the second half: inside a real `<dialog>` (the compose modal) a
+/// dialog-method submit would close the dialog natively behind Dioxus's state, and the handler is the
+/// documented place to react to the submit.
+///
+/// Callers can neither forget nor undo it: the props extend `GlobalAttributes` only (no `action` /
+/// `method` / `target`), and the gate rejects a raw `form {` anywhere else in `preview/src` unless it
+/// carries `method: "dialog"` itself (the native `<dialog>` reference in `top_layer`).
+///
+/// `onsubmit` runs after `prevent_default()` and receives the event. `show_status` (default on) renders a
+/// polite live region, empty until the first submit, that then reads "Submitted ..." so the demo still
+/// visibly demonstrates a submission; pass `false` when the page reports the result itself (the fixture
+/// below, the compose modal's toast).
+#[component]
+pub fn DemoForm(
+    #[props(extends=GlobalAttributes)] attributes: Vec<Attribute>,
+    #[props(default = true)] show_status: bool,
+    onsubmit: Option<EventHandler<FormEvent>>,
+    children: Element,
+) -> Element {
+    let mut submits = use_signal(|| 0u32);
+    // `method` is ours: `GlobalAttributes` cannot carry it, so the caller's attributes are appended to this
+    // base and can never replace it. Built as a plain `Attribute` (no `dioxus_primitives` helper), which
+    // keeps this file inside `check-preview-composition` and leaves no literal `method` beside the spread
+    // for `check-attr-spread-collision` to flag.
+    let mut merged = vec![Attribute::new("method", "dialog", None, false)];
+    merged.extend(attributes);
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/form/style.css") }
+        form {
+            onsubmit: move |evt: FormEvent| {
+                evt.prevent_default();
+                submits += 1;
+                if let Some(handler) = &onsubmit {
+                    handler.call(evt);
+                }
+            },
+            ..merged,
+            {children}
+            if show_status {
+                output {
+                    class: "dx-form-demo-status",
+                    "data-submit-count": "{submits}",
+                    if submits() > 0 {
+                        "Submitted. This is a demo, so nothing was sent."
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Builds JS that reads `new FormData(form)` and writes one `name=value` line
 /// per entry, in insertion order, into the result element -- this is the
@@ -141,9 +220,7 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
         r#"
         const form = document.getElementById('{form_id}');
         const report = document.getElementById('{report_id}');
-        if (form && report && !form.dataset.dxInvalidWired) {{
-            form.dataset.dxInvalidWired = '1';
-
+        if (form && report) {{
             // `[class*="dx-form-field"]` rather than `.dx-form-field`: this is
             // deliberately loose (docs/backlog.md row 32 dropped `#[css_module]`'s
             // hashing, so the rendered class is now the plain `dx-form-field`
@@ -162,7 +239,7 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
             let pending = new Set();
             let order = [];
             let scheduled = false;
-            form.addEventListener('invalid', (event) => {{
+            listen(form, 'invalid', (event) => {{
                 const target = event.target;
                 pending.add(target.name || target.id || target.tagName);
                 order.push(target);
@@ -246,10 +323,10 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
                     }});
                 }}, 0);
             }}
-            document.addEventListener('click', reviewInvalidMarkers, true);
-            document.addEventListener('keyup', reviewInvalidMarkers, true);
-            form.addEventListener('change', reviewInvalidMarkers, true);
-            form.addEventListener('input', reviewInvalidMarkers, true);
+            listen(document, 'click', reviewInvalidMarkers, true);
+            listen(document, 'keyup', reviewInvalidMarkers, true);
+            listen(form, 'change', reviewInvalidMarkers, true);
+            listen(form, 'input', reviewInvalidMarkers, true);
 
             // Deferred a macrotask out (`setTimeout(_, 0)`, same reasoning as
             // the `invalid` batching above): each library control's own
@@ -259,7 +336,7 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
             // re-render and the marker came right back on every library
             // control (only the native references' cleared for good), so
             // this waits for that settle first.
-            form.addEventListener('reset', () => {{
+            listen(form, 'reset', () => {{
                 setTimeout(() => {{
                     form.querySelectorAll('[data-invalid]').forEach((el) => el.removeAttribute('data-invalid'));
                 }}, 0);
@@ -280,10 +357,16 @@ fn watch_invalid_js(form_id: &str, report_id: &str) -> String {
 /// lands.
 #[component]
 pub fn FormFixture() -> Element {
-    // Wire the capturing `invalid` listener once, after the required-blocking
-    // form mounts. This reads no reactive signals, so it only runs once.
-    use_effect(move || {
-        let _ = document::eval(&watch_invalid_js("form-required", "invalid-report"));
+    // Wire the capturing `invalid` listener (and the `document`-level ones that clear the
+    // markers again) after the required-blocking form mounts. They belong to this component:
+    // `use_js_listeners` removes every one of them when the fixture unmounts -- the `document`
+    // `click`/`keyup` ones used to stay on the page after the route was left, one more pair
+    // per visit. This reads no reactive signals, so it only runs once.
+    use_js_listeners(move || {
+        Some(JsListeners::install(&watch_invalid_js(
+            "form-required",
+            "invalid-report",
+        )))
     });
 
     rsx! {
@@ -301,11 +384,11 @@ pub fn FormFixture() -> Element {
                     code { "name=value" }
                     " line per entry, in insertion order, below."
                 }
-                form {
+                DemoForm {
                     id: "entries-form",
                     class: "dx-form",
-                    onsubmit: move |evt: FormEvent| {
-                        evt.prevent_default();
+                    show_status: false,
+                    onsubmit: move |_: FormEvent| {
                         let _ = document::eval(&read_form_data_js("entries-form", "form-result"));
                     },
 
@@ -465,11 +548,11 @@ pub fn FormFixture() -> Element {
                     code { "invalid" }
                     " on the offending controls, listed below in insertion order."
                 }
-                form {
+                DemoForm {
                     id: "form-required",
                     class: "dx-form",
-                    onsubmit: move |evt: FormEvent| {
-                        evt.prevent_default();
+                    show_status: false,
+                    onsubmit: move |_: FormEvent| {
                         let _ = document::eval(&read_form_data_js("form-required", "required-result"));
                     },
 
@@ -610,6 +693,81 @@ mod tests {
             + pat.len();
         let end = start + tag[start..].find('"').expect("attribute value is quoted");
         &tag[start..end]
+    }
+
+    /// The pre-hydration half of the "demo submits never reload" construction (`DemoForm`'s doc): the
+    /// SERVER-rendered `<form>` itself must already carry `method="dialog"` (a dialog-method form outside
+    /// a `<dialog>` is a no-op submit), and nothing that could navigate (`action`, `target`). Hydration
+    /// attaches `onsubmit` only after the wasm bundle boots; this attribute is all a click before that has.
+    #[test]
+    fn demo_form_is_inert_in_the_served_markup_before_any_handler_runs() {
+        #[component]
+        fn Sample() -> Element {
+            rsx! {
+                DemoForm { id: "sample", class: "x", div { "child" } }
+            }
+        }
+        let mut dom = VirtualDom::new(Sample);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+
+        let tag = tag_containing(&html, "id=\"sample\"");
+        assert!(
+            tag.starts_with("<form"),
+            "expected the <form> start tag, got: {tag}"
+        );
+        assert_eq!(
+            attr_value(tag, "method"),
+            "dialog",
+            "DemoForm must render method=\"dialog\" (never navigates outside a <dialog>), got: {tag}"
+        );
+        assert!(
+            !tag.contains("action=") && !tag.contains("target="),
+            "DemoForm must not render an action/target: {tag}"
+        );
+        assert_eq!(
+            attr_value(tag, "class"),
+            "x",
+            "caller attributes still pass through: {tag}"
+        );
+        // The confirmation region exists (empty) before the first submit, and the child is rendered.
+        assert!(
+            html.contains("dx-form-demo-status"),
+            "missing status region in: {html}"
+        );
+        assert!(
+            !html.contains("Submitted."),
+            "no confirmation before a submit: {html}"
+        );
+        assert!(
+            html.contains("child"),
+            "children are rendered inside the form: {html}"
+        );
+    }
+
+    /// Every form the preview ships goes through `DemoForm`: render the card's login demo and the form
+    /// fixture and check each served `<form>` start tag carries `method="dialog"`.
+    #[test]
+    fn every_rendered_form_in_the_fixture_is_a_demo_form() {
+        let mut dom = VirtualDom::new(FormFixture);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let forms: Vec<&str> = html
+            .match_indices("<form")
+            .map(|(at, _)| &html[at..at + html[at..].find('>').expect("start tag closes")])
+            .collect();
+        assert_eq!(
+            forms.len(),
+            2,
+            "the fixture has exactly two forms: {forms:?}"
+        );
+        for tag in forms {
+            assert_eq!(
+                attr_value(tag, "method"),
+                "dialog",
+                "raw navigating form: {tag}"
+            );
+        }
     }
 
     /// Item 1 fix (2026-09-01, live-site report): a themed control's class

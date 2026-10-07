@@ -28,3 +28,7 @@ FieldSet {
     }
 }
 ```
+
+## Styling the label
+
+`FieldLabel` renders the themed `Label` (`<label class="dx-label dx-field-label">`) and retunes it through `Label`'s slot variables (see the Label docs): `--dx-label-line-height` always (shadcn's `FieldLabel` is `Label` plus `leading-snug`), and `--dx-label-color` while the field is `invalid`. `Field`'s stylesheet never declares `font-size`, `line-height`, or `color` on the label itself, so the label looks the same on every route regardless of which stylesheet loads first.

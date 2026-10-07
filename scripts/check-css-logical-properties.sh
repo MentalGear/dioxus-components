@@ -14,7 +14,10 @@
 #   4-value `inset`), border-left/right(-color/-width/-style),
 #   border-{top,bottom}-{left,right}-radius (and asymmetric border-radius
 #   shorthands), text-align: left/right, float: left/right, a non-zero
-#   translateX()/translate3d()/translate() (transforms are never
+#   translateX()/translate3d()/translate() in `transform` -- and the same x
+#   offset in the individual `translate` property, which animations use
+#   instead of `transform` so they compose with an anchor's own centring
+#   transform (scripts/check-anchored-keyframes.sh) -- (transforms are never
 #   direction-aware, so a real sign always encodes a physical side),
 #   transform-origin: left/right, background-position: left/right.
 #
@@ -195,6 +198,13 @@ def classify(prop, value):
         return "physical background-position"
     if p == "transform" and nonzero_translate(value):
         return "non-zero translateX/translate3d/translate (never direction-aware)"
+    if p == "translate":
+        # The individual property: `translate: <x> [<y> [<z>]]` (or `none`). Only the first token is the
+        # inline axis. A `var(...)`/`calc(...)` x is treated as non-zero -- it cannot be proven zero, so it
+        # needs the same marker a literal offset does.
+        toks = split_top_level(value)
+        if toks and toks[0].lower() != "none" and not is_zero_len(toks[0]):
+            return "non-zero `translate` x offset (never direction-aware)"
     if p == "margin" and shorthand_lr_asymmetric(value):
         return "asymmetric margin shorthand"
     if p == "padding" and shorthand_lr_asymmetric(value):

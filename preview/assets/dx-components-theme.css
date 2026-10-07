@@ -9,14 +9,48 @@
  * scan before landing.
  */
 
+/* Native controls follow the mode: `color-scheme` is what makes the browser draw its
+ * own widgets in the active scheme -- a native `<select>`'s popup, scrollbars, the
+ * date/time inputs and the checkbox/radio/range parts nobody styled, and the system
+ * colours (`Canvas`, `CanvasText`, `Field`, ...). Without it every one of them stays
+ * light however dark the page is, because the `--dark`/`--light` space toggle below
+ * only reaches colours WE declare, never the browser's.
+ *
+ * One construction, two paths, neither a second source of truth for "which mode is
+ * active":
+ *   - `:root { color-scheme: light dark }` -- no `data-theme` (no JS, or a host that
+ *     never calls `theme_seed`): the browser follows `prefers-color-scheme` itself,
+ *     the very media feature the `@media` blocks below key the tokens on;
+ *   - `html[data-theme="dark"|"light"]` -- the explicit choice (theme.rs sets that
+ *     attribute on <html> from the cookie before first paint) pins the scheme, so an
+ *     OS-dark user who picked light gets light native controls and vice versa.
+ * `html[data-theme]` (0,1,1) out-ranks `:root` (0,1,0), so no ordering is needed.
+ * It is set on the root and inherited, not per component, so a control a component
+ * forgot (or that a host app composes in) is correct by default. The computed value
+ * is `light dark` on the no-`data-theme` path and `dark`/`light` on the other, so to
+ * ask which scheme is really in force read a system colour, not this property.
+ *
+ * Side effects, all intended: the canvas, the default scrollbars and the system
+ * colours follow the mode; and an <iframe> whose scheme differs from its embedder's
+ * is painted on an opaque canvas, so a demo iframe must share the page's scheme (it
+ * does: it loads this same file and reads the same `data-theme`). A `<select>`'s
+ * `<option>` colours are NOT covered by the scheme alone -- the popup is painted
+ * from the options' own colours in Chromium -- see
+ * `preview/src/components/native_select/style.css`. */
+:root {
+  color-scheme: light dark;
+}
+
 html[data-theme="dark"] {
   --dark: initial;
   --light: ;
+  color-scheme: dark;
 }
 
 html[data-theme="light"] {
   --dark: ;
   --light: initial;
+  color-scheme: light;
 }
 
 html[data-theme="dark"] [class~="dxc-system"] {
@@ -431,6 +465,62 @@ html[data-theme="light"] [class~="dxc-system"] {
   /* Nova's focus ring: `ring-3 ring-ring/50` (the `border-ring` half is a
    * per-component `border-color`/inset shadow). */
   --dx-ring-focus: 0 0 0 3px color-mix(in oklab, var(--dx-ring-color) 50%, transparent);
+  /* The keyboard-focus ring of every text-entry control (Input, Textarea,
+   * Select trigger, Native Select, Combobox, InputGroup, InputOTP slot):
+   * Nova's `focus-visible:border-ring focus-visible:ring-3 ring-ring/50` as one
+   * `box-shadow` -- the ring-coloured 1px edge drawn inside, over the resting
+   * `input` edge, plus the shared `--dx-ring-focus` halo outside. One token so a
+   * field can no longer be written with the halo and forget the edge (or the
+   * other way round), and a retuned ring moves them all together.
+   * `playwright/focus-ring.spec.ts` asserts every field resolves to this value. */
+  --dx-ring-field: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
+}
+
+/* ============================================================================
+ * Modal overlay switch: `data-dx-overlay="off"` on a `<dialog>`.
+ *
+ * Every modal component built on a native `<dialog>` (Dialog, AlertDialog, Sheet,
+ * Drawer, CommandDialog, the modal Popover) has an `overlay` prop. `overlay: true`
+ * renders nothing extra and the dialog's `::backdrop` paints the shared scrim
+ * (`--dx-overlay-*` above); `overlay: false` puts `data-dx-overlay="off"` on the
+ * `<dialog>`, and this ONE rule removes the scrim for all of them. The modality
+ * (focus trap, inert page, click-outside dismissal) is untouched -- only the dim
+ * and the blur go. Popover's default is `overlay: false` (shadcn's popover has no
+ * overlay); the rest of the family keeps its scrim unless told otherwise.
+ *
+ * Why a direct, `!important` rule and not "set `--dx-overlay-scrim: transparent`
+ * on the dialog and let the components read it":
+ *   - A component's own `.dx-x[open]::backdrop { background: ... }` is
+ *     (0,2,1)+; this rule is `:where()` (0,0,1). Without `!important` every
+ *     component would out-rank it and the switch would silently do nothing. With
+ *     it, the switch wins over any author `::backdrop` rule whatever its
+ *     specificity or source order, and no component has to know it exists.
+ *   - The token route only works where `::backdrop` inherits custom properties
+ *     from its originating element. Chromium does (verified here on 141: the
+ *     scrim tokens defined on :root resolve on the `::backdrop`, and a value set
+ *     on the dialog overrides them). Per MDN's compatibility data, from memory and
+ *     NOT verifiable in this repo's Chromium-only sandbox, that arrived in
+ *     Chrome/Edge 122, Firefox 120 and Safari 17.4. The shared scrim itself
+ *     already needs it (an engine without it resolves `var(--dx-overlay-scrim)`
+ *     to nothing and paints no scrim at all), but THIS rule must not, or the
+ *     switch would depend on a second feature.
+ *   - A bare `<dialog>` that carries the attribute but none of our CSS still gets
+ *     the UA's default `rgb(0 0 0 / 10%)` `::backdrop`; this rule beats that too
+ *     (author origin over user-agent), so the attribute means the same thing on
+ *     every dialog.
+ * `background`/`backdrop-filter` are the only two properties a scrim paints with
+ * (`playwright/assert-backdrop-fade.ts`), so those two are the whole rule. The
+ * dialog stays in the top layer and keeps its modality; flipping the attribute
+ * while the dialog is open fades the scrim out or in through the component's own
+ * `::backdrop` transition.
+ *
+ * Not covered: the scrim a non-top-layer renderer paints with a wrapper `div`
+ * (Dialog's non-web arm and `is_modal: false`) is not a `<dialog>`; those
+ * components must leave the wrapper out themselves when `overlay` is false.
+ * ========================================================================== */
+:where(dialog[data-dx-overlay="off"])::backdrop {
+  backdrop-filter: none !important;
+  background: transparent !important;
 }
 
 /* ============================================================================
@@ -565,5 +655,27 @@ html[data-theme="light"] [class~="dxc-system"] {
   [role="slider"] {
     animation-duration: var(--dx-motion-duration-reduced) !important;
     transition-duration: var(--dx-motion-duration-reduced) !important;
+  }
+}
+
+/* Forced colors (Windows contrast themes, `forced-colors: active`): the UA discards `box-shadow`, and every
+ * component draws its focus ring with `box-shadow` while resetting `outline` (42 `outline: none`
+ * declarations in 31 sheets), so 30 controls on 23 components had NO focus indicator. One rule closes the
+ * class instead of 42 sites: a system-colour outline on every `:focus-visible` element, whatever its class
+ * (the chart's focusable root is a class-less `div[data-slot="chart"]`, which a `.dx-*` filter missed).
+ * `!important` is acceptable because this is a user-requested override mode. INSET (`-2px`) on purpose: an
+ * outset outline is clipped by an `overflow` ancestor (the accordion trigger inside its item), an inset one
+ * never is.
+ * `main` is the skip link's focus target (`tabindex="-1"`), not a control. The highlighted option of a
+ * combobox/command list is an `aria-activedescendant` option: it never takes real focus and its
+ * background change is flattened in this mode, so `data-highlighted` carries the outline. The InputOtp
+ * input is an `opacity: 0` overlay, so its active SLOT draws the indicator. Proven on every page by
+ * `playwright/all-routes.spec.ts` (forced-colors keyboard-focus check). */
+@media (forced-colors: active) {
+  :focus-visible:not(main),
+  [class*="dx-"][data-highlighted="true"],
+  .dx-input-otp-slot[data-active="true"] {
+    outline: 2px solid Highlight !important;
+    outline-offset: -2px !important;
   }
 }

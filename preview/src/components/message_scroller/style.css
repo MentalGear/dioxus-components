@@ -69,6 +69,16 @@
   flex-shrink: 0;
 }
 
+/* A `MessageScrollerRows` chunk: up to 20 rows laid out as the content lays out its own rows
+ * (a column with the same gap), skipped as one unit. */
+.dx-message-scroller-chunk {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: inherit;
+}
+
 /* `Virtualization::ContentVisibility` (the default, `data-virtualize` on the
  * content): the browser skips layout and paint for off-screen rows while they
  * stay in the DOM, so the accessibility tree and selection still reach every
@@ -77,9 +87,23 @@
  * row's last rendered height. The rows the controller marks `data-keep-rendered`
  * (the live edge, the row with focus, the rows holding the selection) are never
  * skipped. Override `--dx-message-scroller-row-estimate` to tune the first-render
- * height guess. */
+ * height guess.
+ *
+ * The skip unit is a `MessageScrollerRows` chunk when rows are rendered through it (a
+ * chunk is `--dx-chunk-rows` rows and the gaps between them), and the row itself for rows
+ * written directly as children of the content. Chunks are what to use for a long transcript:
+ * the browser does per-frame work for every element it may skip, so one per row costs
+ * main-thread time proportional to the row count on every scroll frame. */
 .dx-message-scroller-content[data-virtualize="content-visibility"] > .dx-message-scroller-item:not([data-keep-rendered]) {
   contain-intrinsic-size: auto var(--dx-message-scroller-row-estimate, 10rem);
+  content-visibility: auto;
+}
+
+.dx-message-scroller-content[data-virtualize="content-visibility"] > .dx-message-scroller-chunk:not([data-keep-rendered]) {
+  contain-intrinsic-block-size: auto calc(
+    var(--dx-message-scroller-row-estimate, 10rem) * var(--dx-chunk-rows, 1) +
+      var(--dx-space-6) * (var(--dx-chunk-rows, 1) - 1)
+  );
   content-visibility: auto;
 }
 

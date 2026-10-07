@@ -16,3 +16,11 @@ HoverCard {
     }
 }
 ```
+
+## No click-only mode
+
+Unlike the menus (`NavigationMenu`, `Navbar`, `Menubar` and the dropdown /
+context menu submenus), which take an `open_on_hover` prop to switch hover
+off, a hover card has no such option: hovering (or focusing) the trigger *is*
+what opens it, and its content is supplementary -- never the only way to reach
+something. For a panel opened by a click, use [Popover](/component/popover/).

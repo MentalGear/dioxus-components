@@ -44,11 +44,26 @@
   }
 }
 
+/* `FieldLabel` renders `<label class="dx-label dx-field-label">` (it composes
+ * `Label`). Field retunes the label through `Label`'s SLOT VARIABLES
+ * (label/style.css), set on the label's own element, and never declares
+ * `font-size`/`line-height`/`color` on it: `.dx-label` and `.dx-field-label`
+ * are both (0,1,0), so a property both declared was decided by which sheet
+ * loaded last -- 12.8px on /component/field/, 14px on the home gallery. A
+ * custom property is not the property `.dx-label` declares, so there is no
+ * contest in any load order (and no `.dx-label` selector here, which would
+ * leave Field's own namespace, `scripts/check-dx-class-prefix.sh`;
+ * `scripts/check-cross-component-overrides.sh` holds the line).
+ *
+ * shadcn's `FieldLabel` is `Label` (`text-sm leading-none font-medium gap-2`)
+ * plus `leading-snug`: the one difference from the base label is the line
+ * height, so that is the only slot set here. */
 .dx-field-label {
-  color: var(--dx-foreground);
-  font-size: var(--dx-text-sm);
-  font-weight: 500;
-  line-height: 1.25;
+  --dx-label-line-height: 1.375;
+}
+
+.dx-field[data-invalid="true"] .dx-field-label {
+  --dx-label-color: var(--dx-destructive);
 }
 
 /*
@@ -85,10 +100,6 @@
   color: var(--dx-destructive);
   font-size: var(--dx-text-sm);
   line-height: 1.5;
-}
-
-.dx-field[data-invalid="true"] .dx-field-label {
-  color: var(--dx-destructive);
 }
 
 .dx-field-separator {

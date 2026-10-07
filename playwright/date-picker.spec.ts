@@ -31,7 +31,7 @@
  */
 
 import { test, expect } from "./fixtures";
-import { type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 import { gotoHydrated } from "./hydration";
@@ -61,6 +61,18 @@ async function rectOf(page: Page, locator: ReturnType<typeof trigger>) {
   });
 }
 
+/**
+ * Viewport height for the two geometry tests below. The demo's panel is 278px tall and opens 8px below its
+ * trigger, whose bottom edge sits at y ~ 446 on this page, so at Playwright's default 1280x720 only ~274px of
+ * room is left below it: `position-try-fallbacks: flip-block` correctly puts the panel ABOVE the trigger (and,
+ * after a 150px scroll that frees room below, flips it back -- a ~164px jump that reads as "the offset changed").
+ * Neither is an anchoring bug: the panel is doing what the contract says when it does not fit. These tests ask
+ * "is the panel anchored to its trigger, below it, and does it track a scroll", which only has a defined answer
+ * when it fits, so they run in a viewport tall enough that it does (dev-docs/backlog.md row 21; measured on a
+ * release SSG build, 2026-10-05: 720 -> flips above, 800/900/1000 -> below and exact scroll tracking).
+ */
+const ROOMY_VIEWPORT = { width: 1280, height: 900 };
+
 test("opens the calendar popover on trigger click", async ({ page }) => {
   await gotoDatePicker(page);
   await expect(content(page)).toBeHidden();
@@ -71,6 +83,7 @@ test("opens the calendar popover on trigger click", async ({ page }) => {
 });
 
 test("anchors the popup next to its trigger, not viewport-centered or offset", async ({ page }) => {
+  await page.setViewportSize(ROOMY_VIEWPORT); // see ROOMY_VIEWPORT: at 720px tall the panel correctly flips above
   await gotoDatePicker(page);
   await trigger(page).click();
   await expect(content(page)).toBeVisible();
@@ -84,6 +97,9 @@ test("anchors the popup next to its trigger, not viewport-centered or offset", a
   const c = await rectOf(page, content(page));
   const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const debug = JSON.stringify({ trigger: t, content: c, viewport });
+
+  // Precondition, so a too-short viewport fails loudly as itself instead of as a confusing "not below".
+  expect(viewport.height - t.bottom, `no room below the trigger for the panel -- ${debug}`).toBeGreaterThan(c.height + 8);
 
   // Below the trigger (this fixture's default side is "bottom"), not
   // centered in the viewport -- the pre-fix modal arm rendered far enough
@@ -142,6 +158,7 @@ test("uses the CSS-anchor path, not the JS-measured fallback (no inline top/left
 });
 
 test("offset to trigger is unchanged after scrolling (CSS anchor tracks scroll natively)", async ({ page }) => {
+  await page.setViewportSize(ROOMY_VIEWPORT); // see ROOMY_VIEWPORT: at 720px tall the panel flips above, then back below
   await gotoDatePicker(page);
   // Raw DOM click, scrollY kept at 0 for the open -- see the identical
   // note on the "uses the CSS-anchor path" test above for why: this
@@ -155,12 +172,14 @@ test("offset to trigger is unchanged after scrolling (CSS anchor tracks scroll n
   await expect(content(page)).toBeVisible();
   await page.waitForTimeout(200);
 
-  const offsetOf = async () =>
-    page.evaluate(() => {
-      const c = document.querySelector('[class*="dx-anchor-popover"]')!.getBoundingClientRect();
-      const t = document.querySelector('[style*="anchor-name"]')!.getBoundingClientRect();
-      return { top: c.top - t.bottom, left: c.left - t.left };
-    });
+  // The date picker's own trigger and panel -- NOT `document.querySelector('[style*="anchor-name"]')`: since the
+  // header's theme picker button (`.dx-theme-picker-trigger`, inline `anchor-name`) came first in the DOM, that
+  // selector measured the sticky header button, whose offset to the panel drifts by exactly the scroll delta.
+  const offsetOf = async () => {
+    const t = await rectOf(page, trigger(page));
+    const c = await rectOf(page, content(page));
+    return { top: c.top - t.bottom, left: c.left - t.left };
+  };
 
   const before = await offsetOf();
   await page.evaluate(() => window.scrollBy(0, 150));
@@ -306,6 +325,109 @@ async function pressEach(page: Page, keys: string[]) {
   for (const key of keys) {
     await page.keyboard.press(key);
   }
+}
+
+type Scheme = "light" | "dark";
+
+/** The site keys its colour scheme on `html[data-theme]`, falling back to `prefers-color-scheme`; set both (see component-catalog.spec.ts). */
+async function setScheme(page: Page, scheme: Scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+  await page.evaluate((s) => document.documentElement.setAttribute("data-theme", s), scheme);
+}
+
+/** What a design token resolves to as a computed `color`, for comparing against an element's. */
+async function tokenColor(page: Page, token: string) {
+  return page.evaluate((t) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${t})`;
+    document.body.appendChild(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+}
+
+/** Wait until `locator`'s box has stopped moving (the open animation and the anchor positioning have settled). */
+async function waitSettled(locator: Locator) {
+  let prev = "";
+  await expect
+    .poll(
+      async () => {
+        const box = await locator.evaluate((el) => {
+          const b = el.getBoundingClientRect();
+          return `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`;
+        });
+        const stable = box === prev;
+        prev = box;
+        return stable;
+      },
+      { timeout: 5000, intervals: [100] },
+    )
+    .toBe(true);
+}
+
+/**
+ * Records, in the BROWSER's clock (so Playwright round trips -- which a busy machine stretches to
+ * seconds -- cannot blur a 300 ms dwell): when the LAST click lands, when a day first reads
+ * `data-selected="true"` (and what state the popover was in right then), and when `dialog` flips to
+ * `data-state="closed"`.
+ */
+async function armDwellProbe(dialog: Locator) {
+  await dialog.evaluate((d) => {
+    const w = window as unknown as { __dwell: { click: number; selected: number; stateAtSelected: string; closed: number } };
+    w.__dwell = { click: 0, selected: 0, stateAtSelected: "", closed: 0 };
+    document.addEventListener("click", () => (w.__dwell.click = performance.now()), { capture: true });
+    new MutationObserver((records) => {
+      for (const r of records) {
+        const el = r.target as Element;
+        if (r.attributeName === "data-selected" && el.getAttribute("data-selected") === "true" && !w.__dwell.selected) {
+          w.__dwell.selected = performance.now();
+          w.__dwell.stateAtSelected = d.getAttribute("data-state") ?? "";
+        }
+        if (r.attributeName === "data-state" && el === d && d.getAttribute("data-state") === "closed" && !w.__dwell.closed) {
+          w.__dwell.closed = performance.now();
+        }
+      }
+    }).observe(d, { attributes: true, attributeFilter: ["data-state", "data-selected"], subtree: true });
+  });
+}
+async function readDwell(page: Page) {
+  const t = await page.evaluate(
+    () => (window as unknown as { __dwell: { click: number; selected: number; stateAtSelected: string; closed: number } }).__dwell,
+  );
+  return { ...t, held: t.closed - t.click };
+}
+
+type Step =
+  | { click: number }
+  | { pointerdown: number }
+  | { key: string; on: number }
+  | { clickTrigger: true }
+  | { wait: number };
+
+/**
+ * Runs `steps` against the open `dialog`'s current-month day cells inside ONE `page.evaluate`, so the
+ * gaps between them are what the test says (`wait`, in the page's own clock) rather than however long
+ * Playwright round trips take. A 300 ms dwell can only be raced from inside the page.
+ */
+async function runSteps(dialog: Locator, steps: Step[]) {
+  await dialog.evaluate(async (d, steps) => {
+    const day = (n: number) => {
+      const cell = Array.from(d.querySelectorAll<HTMLElement>('.dx-calendar-grid-cell[data-month="current"]')).find(
+        (c) => c.textContent?.trim() === String(n),
+      );
+      if (!cell) throw new Error(`no day ${n}`);
+      return cell;
+    };
+    const root = d.closest(".dx-date-picker") as HTMLElement;
+    for (const step of steps) {
+      if ("click" in step) day(step.click).click();
+      else if ("pointerdown" in step) day(step.pointerdown).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true, pointerType: "mouse" }));
+      else if ("key" in step) day(step.on).dispatchEvent(new KeyboardEvent("keydown", { key: step.key, bubbles: true, composed: true }));
+      else if ("clickTrigger" in step) (root.querySelector('button[aria-label="Show Calendar"]') as HTMLElement).click();
+      else await new Promise((r) => setTimeout(r, step.wait));
+    }
+  }, steps);
 }
 
 test.describe("Segment typing (digit entry, spinbutton-pattern.html #keyboard_interaction's 'textbox' technique)", () => {
@@ -929,34 +1051,89 @@ test.describe("Internationalized variant (variant=internationalized)", () => {
 
 test.describe("Unavailable dates variant (variant=unavailable_dates)", () => {
   test("a day inside a disabled range renders data-unavailable and clicking it does not select or commit anything", async ({ page }) => {
-    // `preview/.../unavailable_dates/mod.rs` disables three ranges starting
-    // 2026-05-15; jump the calendar there via its month/year <select>s
-    // (same controls `calendar.spec.ts` already drives) rather than
-    // clicking "previous month" repeatedly. `RangeCalendarDay::
-    // handle_day_select` (calendar.rs) early-returns for an unavailable
-    // date before ever calling `set_selected_date`/committing anything, and
-    // never sets a native `disabled` attribute (confirmed live: `.disabled`
-    // is `false`) -- only `data-disabled`/`data-unavailable` plus
-    // `cursor: not-allowed` styling communicate it, so the real assertion
-    // has to be behavioural (nothing changes), not "the click fails."
+    // The demo computes its disabled ranges from today and keeps them inside the
+    // month the picker opens on (`unavailable_dates/mod.rs`), so no month/year
+    // navigation is needed -- and none is done here, which is the point: the
+    // first version of this test jumped to a hard-coded May 2026 through the
+    // selects, and the demo it exercised showed nothing to anyone opening it on
+    // any other month. `RangeCalendarDay::handle_day_select` (calendar.rs)
+    // early-returns for an unavailable date before ever calling
+    // `set_selected_date`/committing anything, and never sets a native
+    // `disabled` attribute (confirmed live: `.disabled` is `false`) -- only
+    // `data-disabled`/`data-unavailable` plus styling communicate it, so the
+    // real assertion has to be behavioural (nothing changes), not "the click fails."
     await gotoDatePicker(page);
     await pickerTrigger(page, "unavailable_dates").click();
     const dialog = pickerContent(page, "unavailable_dates");
     await expect(dialog).toBeVisible();
 
-    await dialog.locator("select").nth(1).selectOption("2026"); // year
-    await dialog.locator("select").first().selectOption({ index: 4 }); // May
-    const may15 = dialog.locator('[data-unavailable="true"]').first();
-    await expect(may15).toHaveAttribute("aria-label", "Friday, May 15, 2026");
-    await expect(may15).toHaveJSProperty("disabled", false);
+    const unavailable = dialog.locator('.dx-calendar-grid-cell[data-unavailable="true"]');
+    const day1 = unavailable.first();
+    await expect(day1).toBeVisible();
+    await expect(day1).toHaveJSProperty("disabled", false);
+    await expect(day1).toHaveAttribute("aria-disabled", "true");
 
     const startDayBefore = await rangeSegment(page, "start", "day", "unavailable_dates").textContent();
-    await may15.click({ force: true });
+    await day1.click({ force: true });
     await page.waitForTimeout(150);
 
     await expect(dialog).toBeVisible(); // no commit means no close either
     await expect(rangeSegment(page, "start", "day", "unavailable_dates")).toHaveText(startDayBefore!);
   });
+
+  test("the month the picker opens on has unavailable days, all inside that month (the demo can't go stale)", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page, "unavailable_dates").click();
+    const dialog = pickerContent(page, "unavailable_dates");
+    await expect(dialog).toBeVisible();
+
+    // 3 ranges of 3 + 3 + 2 days, by construction (see the demo's `unavailable_ranges`).
+    const unavailable = dialog.locator('.dx-calendar-grid-cell[data-unavailable="true"]');
+    await expect(unavailable).toHaveCount(8);
+    const labels = await unavailable.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    const now = await page.evaluate(() => {
+      const n = new Date();
+      return { year: n.getFullYear(), month: n.toLocaleString("en-US", { month: "long" }) };
+    });
+    for (const label of labels) {
+      // "Friday, May 15, 2026"
+      expect(label, "an unavailable day outside the month in view").toMatch(new RegExp(`, ${now.month} \\d+, ${now.year}$`));
+    }
+    // ...and every one of them is a real cell of the CURRENT month (not a spill-over day).
+    await expect(dialog.locator('.dx-calendar-grid-cell[data-unavailable="true"]:not([data-month="current"])')).toHaveCount(0);
+  });
+
+  for (const scheme of ["light", "dark"] as const) {
+    test(`unavailable days are muted AND struck through, visibly distinct from available days (${scheme})`, async ({ page }) => {
+      await gotoDatePicker(page);
+      await setScheme(page, scheme);
+      await pickerTrigger(page, "unavailable_dates").click();
+      const dialog = pickerContent(page, "unavailable_dates");
+      await expect(dialog).toBeVisible();
+
+      const unavailable = dialog.locator('.dx-calendar-grid-cell[data-month="current"][data-unavailable="true"]').first();
+      const available = dialog
+        .locator('.dx-calendar-grid-cell[data-month="current"]:not([data-unavailable="true"])')
+        .first();
+      await expect(unavailable).toBeVisible();
+
+      const read = (l: Locator) =>
+        l.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { color: cs.color, line: cs.textDecorationLine, cursor: cs.cursor, opacity: cs.opacity };
+        });
+      const u = await read(unavailable);
+      const a = await read(available);
+      const muted = await tokenColor(page, "--dx-muted-foreground");
+
+      expect(u.line, "line-through, as react-day-picker's unavailable modifier").toContain("line-through");
+      expect(a.line).not.toContain("line-through");
+      expect(u.color, "the muted-foreground token").toBe(muted);
+      expect(u.color, "distinct from an available day").not.toBe(a.color);
+      expect(u.cursor).toBe("not-allowed");
+      expect(u.opacity, "not faded a second time by the picker's own [data-disabled] rule").toBe("1");
+    });
+  }
 });
 
 test.describe("Completing a range selection via the calendar", () => {
@@ -1018,5 +1195,463 @@ test.describe("Completing a range selection via the calendar", () => {
     await expect(end.month).toHaveText(mm);
     await expect(end.day).toHaveText("10");
     expect(await page.evaluate(() => 1 + 1)).toBe(2);
+  });
+});
+
+/**
+ * -----------------------------------------------------------------------
+ * Completing SEVERAL ranges in a row (dev-docs/backlog.md row 83's follow-up, 2026-10-05).
+ *
+ * The test above completes ONE range, and a second range hung the tab for a different reason than
+ * the first: `DateRangePickerContext::set_range` compared against the controlled value with a
+ * TRACKED read, and `DateRangePickerInputValue`'s sync-up effect calls it -- so every change the
+ * parent made to the range (the one a calendar click had just reported upward) woke that effect
+ * too. When it ran before the sync-down effect had copied the new range into the segments it read
+ * the PREVIOUS range from them, reported it, the parent applied it, and the two ranges alternated
+ * forever: a wasm loop that never yields to the browser, so even `page.evaluate(() => 1 + 1)`
+ * never returned. The first range could not trigger it (nothing was in the segments yet, so there
+ * was nothing stale to report) and which effect wakes first is hash-ordered -- a debug dev-server
+ * build hung on the 2nd range, a release SSG build on the 3rd, a build with two extra log lines
+ * on the 4th -- so no single count of ranges proves it gone: this completes six, and ALSO counts
+ * what the demo's `on_range_change` was told, which a ping-pong inflates long before it freezes.
+ * (Guarded natively too: `a_range_the_parent_sets_is_never_reported_back`, primitives/src/date_picker.rs.)
+ * -----------------------------------------------------------------------
+ */
+test.describe("Completing several ranges in a row (variant=range)", () => {
+  /** `page.evaluate` that FAILS after 2 s instead of hanging the test: a wasm loop never answers it. */
+  async function expectResponsive(page: Page, label: string) {
+    const answer = await Promise.race([
+      page.evaluate(() => 1 + 1),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 2000)),
+    ]);
+    expect(answer, `the page stopped responding ${label} (a wasm loop -- see this describe's comment)`).toBe(2);
+  }
+
+  test("six ranges: each is reported exactly once, shown in the segments, and the page stays responsive after every one", async ({ page }) => {
+    const reported: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().includes("Selected range:")) reported.push(message.text());
+    });
+    await gotoDatePicker(page);
+    const trigger = pickerTrigger(page, "range");
+    const dialog = pickerContent(page, "range");
+    const start = { day: rangeSegment(page, "start", "day", "range") };
+    const end = { day: rangeSegment(page, "end", "day", "range") };
+    const pad = (day: number) => String(day).padStart(2, "0");
+
+    // Start before end, end before start, adjacent, a long span: the stale pair a ping-pong reports
+    // is always the PREVIOUS range, so each step has to differ from the one before it.
+    const picks: Array<[number, number]> = [[6, 13], [15, 20], [3, 9], [10, 12], [22, 25], [1, 2]];
+    for (const [index, [first, second]] of picks.entries()) {
+      const label = `after range ${index + 1} (${first} -> ${second})`;
+      await trigger.click({ timeout: 5000 });
+      await expect(dialog).toBeVisible();
+      await dayCell(dialog, first).click({ timeout: 5000 });
+      await dayCell(dialog, second).click({ timeout: 5000 });
+      await expect(dialog).toBeHidden({ timeout: 5000 });
+      await expectResponsive(page, label);
+      await expect(start.day, label).toHaveText(pad(Math.min(first, second)));
+      await expect(end.day, label).toHaveText(pad(Math.max(first, second)));
+      // One completion, one report -- and nothing more once the segments have caught up.
+      await expect.poll(() => reported.length, { message: `the demo's on_range_change was told ${label}`, timeout: 5000 }).toBe(index + 1);
+      await page.waitForTimeout(150);
+      expect(reported.length, `a range the parent set was reported back ${label}: ${reported.join(" | ")}`).toBe(index + 1);
+    }
+    await expectResponsive(page, "after all six");
+  });
+});
+
+/**
+ * -----------------------------------------------------------------------
+ * The calendar's stylesheet is on the page BEFORE the popover is ever opened. The calendar sits
+ * inside the popover, whose content mounts on first open, so the `<link>` that `CalendarRoot`
+ * carries used to be inserted then -- late, and not render-blocking: the first open painted the
+ * calendar unstyled for a frame or two. The styled pickers now render it at the picker root. (The
+ * docs site's SSG bundle carries it either way; a `dx components add date_picker` project, and
+ * `dx serve`, do not, which is what this checks.)
+ * -----------------------------------------------------------------------
+ */
+test.describe("Calendar stylesheet before the first open", () => {
+  test("a calendar rule is already loaded while every picker on the page is still closed", async ({ page }) => {
+    await gotoDatePicker(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() =>
+            Array.from(document.styleSheets).some((sheet) => {
+              try {
+                return Array.from(sheet.cssRules).some((rule) => rule.cssText.includes(".dx-calendar-grid-cell"));
+              } catch {
+                return false; // a cross-origin sheet (fonts) -- not ours
+              }
+            }),
+          ),
+        { message: "no loaded stylesheet carries the calendar's rules before the first open", timeout: 10000 },
+      )
+      .toBe(true);
+  });
+});
+
+/**
+ * -----------------------------------------------------------------------
+ * Multi-month panel (owner report 1): the popover panel used to be sized for ONE month
+ * (`.dx-popover-content { width: 18rem }`), so with `month_count: 2` the second month rendered
+ * outside it. The panel is now `width: max-content` (capped to the viewport) and the months wrap
+ * inside it -- side by side when there is room, stacked when there is not.
+ * -----------------------------------------------------------------------
+ */
+async function monthGeometry(dialog: Locator) {
+  return dialog.evaluate((d) => {
+    const rect = (e: Element) => {
+      const b = e.getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height };
+    };
+    const cal = d.querySelector(".dx-calendar") as HTMLElement;
+    const views = Array.from(d.querySelectorAll(".dx-calendar-view"));
+    return {
+      viewport: { w: document.documentElement.clientWidth, h: window.innerHeight },
+      dialog: rect(d),
+      calendar: { ...rect(cal), scrollW: cal.scrollWidth, clientW: cal.clientWidth },
+      views: views.map(rect),
+      prevPerView: views.map((v) => v.querySelectorAll(".dx-calendar-nav-prev").length),
+      nextPerView: views.map((v) => v.querySelectorAll(".dx-calendar-nav-next").length),
+    };
+  });
+}
+
+async function openMultiMonth(page: Page) {
+  await gotoDatePicker(page);
+  await pickerTrigger(page, "multi_month").click();
+  const dialog = pickerContent(page, "multi_month");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("grid")).toHaveCount(2);
+  await waitSettled(dialog);
+  return dialog;
+}
+
+test.describe("Multi-month popover panel (variant=multi_month)", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    test(`the panel grows to hold both months side by side, with a gap; prev is on the first month, next on the last (${scheme})`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await gotoDatePicker(page);
+      await setScheme(page, scheme);
+      await pickerTrigger(page, "multi_month").click();
+      const dialog = pickerContent(page, "multi_month");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("grid")).toHaveCount(2);
+      await waitSettled(dialog);
+
+      const g = await monthGeometry(dialog);
+      const debug = JSON.stringify(g);
+      expect(g.views, debug).toHaveLength(2);
+      // Both months are INSIDE the panel (this was the bug: the 2nd one sat outside it).
+      for (const v of g.views) {
+        expect(v.left, debug).toBeGreaterThanOrEqual(g.dialog.left - 0.5);
+        expect(v.right, debug).toBeLessThanOrEqual(g.dialog.right + 0.5);
+      }
+      expect(g.calendar.scrollW, `the calendar overflows its own box: ${debug}`).toBeLessThanOrEqual(g.calendar.clientW + 1);
+      // Side by side on one row, with a gap between them.
+      expect(Math.abs(g.views[0].top - g.views[1].top), debug).toBeLessThanOrEqual(1);
+      expect(g.views[1].left - g.views[0].right, debug).toBeGreaterThanOrEqual(8);
+      // Nav: prev on the first month only, next on the last month only.
+      expect(g.prevPerView, debug).toEqual([1, 0]);
+      expect(g.nextPerView, debug).toEqual([0, 1]);
+      // The panel is inside the viewport.
+      expect(g.dialog.left, debug).toBeGreaterThanOrEqual(-0.5);
+      expect(g.dialog.right, debug).toBeLessThanOrEqual(g.viewport.w + 0.5);
+      // And it is a real surface in this scheme (not transparent), so the months are readable on it.
+      const surface = await dialog.evaluate((d) => getComputedStyle(d).backgroundColor);
+      expect(surface).not.toBe("rgba(0, 0, 0, 0)");
+    });
+  }
+
+  test.describe("at phone width", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("the months stack vertically and the panel stays inside the viewport", async ({ page }) => {
+      const dialog = await openMultiMonth(page);
+      const g = await monthGeometry(dialog);
+      const debug = JSON.stringify(g);
+
+      expect(g.views, debug).toHaveLength(2);
+      // Stacked: the second month starts below the first, in the same column.
+      expect(g.views[1].top, debug).toBeGreaterThanOrEqual(g.views[0].bottom - 0.5);
+      expect(Math.abs(g.views[1].left - g.views[0].left), debug).toBeLessThanOrEqual(1);
+      // Both inside the panel, which is inside the viewport; nothing scrolls sideways.
+      for (const v of g.views) {
+        expect(v.left, debug).toBeGreaterThanOrEqual(g.dialog.left - 0.5);
+        expect(v.right, debug).toBeLessThanOrEqual(g.dialog.right + 0.5);
+      }
+      expect(g.calendar.scrollW, debug).toBeLessThanOrEqual(g.calendar.clientW + 1);
+      expect(g.dialog.left, debug).toBeGreaterThanOrEqual(-0.5);
+      expect(g.dialog.right, debug).toBeLessThanOrEqual(g.viewport.w + 0.5);
+      expect(g.dialog.width, debug).toBeLessThanOrEqual(g.viewport.w);
+      expect(g.prevPerView, debug).toEqual([1, 0]);
+      expect(g.nextPerView, debug).toEqual([0, 1]);
+    });
+  });
+});
+
+/**
+ * -----------------------------------------------------------------------
+ * Closing after a selection (owner report 3): the popover used to close on the same frame as the
+ * click, so nobody saw the selected state. It now holds open for `close_delay` (default 300 ms),
+ * then plays its normal exit animation and returns focus to the trigger. `close_on_select: false`
+ * keeps it open. The timer is owned by the picker's scope (cancelled on unmount -- covered by the
+ * `date_picker` unit tests) and by any press/key inside the picker, month navigation, or a reopen.
+ * -----------------------------------------------------------------------
+ */
+const DWELL_MIN_MS = 280; // 300 ms default, less a little clock slack
+const CLOSE_MAX_MS = 10_000; // "closes eventually, not stuck" -- loose on purpose, a loaded CI box stretches timers
+
+test.describe("Closing after a selection: dwell, then close", () => {
+  test("a day click keeps the popover open with the day shown selected, then closes it after the dwell and returns focus to the trigger", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+    await armDwellProbe(dialog);
+
+    await dayCell(dialog, 15).click();
+
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    const t = await readDwell(page);
+    const debug = JSON.stringify(t);
+    expect(t.selected, `the day never showed as selected: ${debug}`).toBeGreaterThan(0);
+    expect(t.stateAtSelected, `the popover was already closing when the day showed as selected: ${debug}`).toBe("open");
+    expect(t.held, `held open ${t.held} ms: ${debug}`).toBeGreaterThanOrEqual(DWELL_MIN_MS);
+    expect(t.held, debug).toBeLessThanOrEqual(CLOSE_MAX_MS);
+    // The value was committed on the click, not on close, and focus is back on the trigger.
+    await expect(segment(page, "day")).toHaveText("15");
+    await expect(pickerTrigger(page)).toBeFocused();
+  });
+
+  test("keyboard selection (Enter on a day) dwells the same way", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+    await armDwellProbe(dialog);
+
+    await dayCell(dialog, 20).focus();
+    await page.keyboard.press("Enter");
+
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    const t = await readDwell(page);
+    const debug = JSON.stringify(t);
+    expect(t.stateAtSelected, debug).toBe("open");
+    expect(t.held, debug).toBeGreaterThanOrEqual(DWELL_MIN_MS);
+    expect(t.held, debug).toBeLessThanOrEqual(CLOSE_MAX_MS);
+    await expect(segment(page, "day")).toHaveText("20");
+    await expect(pickerTrigger(page)).toBeFocused();
+  });
+
+  test("Space on a day dwells the same way", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+    await armDwellProbe(dialog);
+
+    await dayCell(dialog, 21).focus();
+    await page.keyboard.press("Space");
+
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    const t = await readDwell(page);
+    const debug = JSON.stringify(t);
+    expect(t.stateAtSelected, debug).toBe("open");
+    expect(t.held, debug).toBeGreaterThanOrEqual(DWELL_MIN_MS);
+    expect(t.held, debug).toBeLessThanOrEqual(CLOSE_MAX_MS);
+  });
+
+  test("range picker: the first click (the start) never closes it; the end click completes the range, then it dwells and closes", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page, "range").click();
+    const dialog = pickerContent(page, "range");
+    await expect(dialog).toBeVisible();
+    await armDwellProbe(dialog);
+
+    await dayCell(dialog, 5).click();
+    // Well past the dwell: an incomplete range must not close the picker.
+    await page.waitForTimeout(DWELL_MIN_MS * 3);
+    await expect(dialog).toHaveAttribute("data-state", "open");
+
+    await dayCell(dialog, 10).click();
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    const t = await readDwell(page);
+    const debug = JSON.stringify(t);
+    expect(t.held, `measured from the END click: ${debug}`).toBeGreaterThanOrEqual(DWELL_MIN_MS);
+    expect(t.held, debug).toBeLessThanOrEqual(CLOSE_MAX_MS);
+    await expect(rangeSegment(page, "start", "day", "range")).toHaveText("05");
+    await expect(rangeSegment(page, "end", "day", "range")).toHaveText("10");
+    await expect(pickerTrigger(page, "range")).toBeFocused();
+  });
+
+  test("a key pressed inside the picker during the dwell cancels the pending close (it does not close under the user)", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+
+    // Select, then the user takes over 20 ms later (one page.evaluate: the gap is exactly that).
+    await runSteps(dialog, [{ click: 12 }, { wait: 20 }, { key: "ArrowRight", on: 12 }]);
+    await page.waitForTimeout(DWELL_MIN_MS * 3);
+    await expect(dialog).toHaveAttribute("data-state", "open");
+    await expect(dayCell(dialog, 12)).toHaveAttribute("data-selected", "true");
+
+    // Escape still closes it.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+  });
+
+  test("clicking the day that was just selected again (a double-click) keeps the selection instead of toggling it off", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+
+    await runSteps(dialog, [{ click: 17 }, { wait: 80 }, { click: 17 }]); // inside the dwell
+    await expect(dayCell(dialog, 17)).toHaveAttribute("data-selected", "true");
+    await expect(segment(page, "day")).toHaveText("17");
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    await expect(segment(page, "day")).toHaveText("17"); // and still set once it has closed
+  });
+
+  test("range picker: starting a NEW range during the dwell of the previous one cancels the close", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page, "range").click();
+    const dialog = pickerContent(page, "range");
+    await expect(dialog).toBeVisible();
+
+    // 5..10 completes (a close is now pending); 40 ms later the user presses on 15, which only anchors a new range.
+    await runSteps(dialog, [{ click: 5 }, { wait: 20 }, { click: 10 }, { wait: 40 }, { pointerdown: 15 }, { click: 15 }]);
+    await page.waitForTimeout(DWELL_MIN_MS * 3);
+    await expect(dialog).toHaveAttribute("data-state", "open"); // not closed under a half-picked range
+    await expect(dayCell(dialog, 15)).toHaveAttribute("data-selected", "true");
+
+    // Escape abandons the half-picked range (RangeCalendar), and a second Escape closes the popover.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+  });
+
+  test("closing and reopening during the dwell: the pending close does not land on the reopened popover", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+
+    // Select, then close through the trigger 20 ms later, inside the dwell.
+    await runSteps(dialog, [{ click: 9 }, { wait: 20 }, { clickTrigger: true }]);
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    await pickerTrigger(page).click(); // reopen: the original deadline is still to come, or has just passed
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(DWELL_MIN_MS * 3);
+    await expect(dialog).toHaveAttribute("data-state", "open");
+  });
+
+  test("selecting another day during the dwell restarts it, and the popover closes once, measured from the last click", async ({ page }) => {
+    await gotoDatePicker(page);
+    await pickerTrigger(page).click();
+    const dialog = pickerContent(page);
+    await expect(dialog).toBeVisible();
+    await armDwellProbe(dialog);
+
+    await runSteps(dialog, [{ click: 8 }, { wait: 150 }, { click: 11 }]);
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    const t = await readDwell(page);
+    expect(t.held, `measured from the LAST click: ${JSON.stringify(t)}`).toBeGreaterThanOrEqual(DWELL_MIN_MS);
+    await expect(segment(page, "day")).toHaveText("11");
+  });
+});
+
+test.describe("close_on_select: false (variant=keep_open)", () => {
+  test("a date pick keeps the popover open; Escape, the trigger and an outside click still close it", async ({ page }) => {
+    await gotoDatePicker(page);
+    const first = pickerTrigger(page, "keep_open");
+    await first.click();
+    const dialog = pickerContent(page, "keep_open");
+    await expect(dialog).toBeVisible();
+
+    await dayCell(dialog, 14).click();
+    await expect(dayCell(dialog, 14)).toHaveAttribute("data-selected", "true");
+    await page.waitForTimeout(DWELL_MIN_MS * 3);
+    await expect(dialog).toHaveAttribute("data-state", "open"); // well past the default dwell
+
+    // Another date can be tried without reopening.
+    await dayCell(dialog, 16).click();
+    await expect(dayCell(dialog, 16)).toHaveAttribute("data-selected", "true");
+    await page.waitForTimeout(DWELL_MIN_MS * 2);
+    await expect(dialog).toHaveAttribute("data-state", "open");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+
+    // The trigger closes it...
+    await first.click();
+    await expect(dialog).toBeVisible();
+    await first.click();
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+
+    // ...and so does a click outside.
+    await first.click();
+    await expect(dialog).toBeVisible();
+    await page.getByRole("heading", { level: 1 }).first().click();
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+  });
+});
+
+/**
+ * -----------------------------------------------------------------------
+ * Open/close animation (owner report 5). The popover centres itself on its trigger with
+ * `transform: translateX(-50%)` (top_layer.rs's engine stylesheet). The date picker's fade used to
+ * animate `transform: translateY(...)` too, which REPLACES that for the length of the animation: the
+ * panel played its fade half a panel-width to the right of where it settles (144 px for one month)
+ * and snapped back on the last frame -- on every open and every close. The fade now animates
+ * `translate`, which composes with `transform`.
+ * -----------------------------------------------------------------------
+ */
+test.describe("Open/close animation", () => {
+  test("the panel's horizontal centre does not move at all while it fades in and out (the animation must not replace the anchor centring)", async ({ page }) => {
+    await gotoDatePicker(page);
+    const dialog = content(page);
+
+    // Warm-up open: the calendar's own stylesheet is delivered lazily on the first open (a separate,
+    // first-open-only matter), which changes the panel's size mid-open. Measure a settled open.
+    await trigger(page).click();
+    await expect(dialog).toBeVisible();
+    await waitSettled(dialog);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await page.evaluate(() => {
+      const w = window as unknown as { __cx: number[]; __stop: boolean };
+      w.__cx = [];
+      w.__stop = false;
+      const tick = () => {
+        const d = document.querySelector(".dx-date-picker-popover-content");
+        if (d) {
+          const b = d.getBoundingClientRect();
+          if (b.width) w.__cx.push(b.x + b.width / 2);
+        }
+        if (!w.__stop) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await trigger(page).click();
+    await expect(dialog).toBeVisible();
+    await waitSettled(dialog);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    const cx = await page.evaluate(() => {
+      const w = window as unknown as { __cx: number[]; __stop: boolean };
+      w.__stop = true;
+      return w.__cx;
+    });
+
+    expect(cx.length, "sampled frames across the open and the close").toBeGreaterThan(6);
+    const spread = Math.max(...cx) - Math.min(...cx);
+    expect(spread, `centre x moved by ${spread}px across the fade: ${JSON.stringify(cx.map(Math.round))}`).toBeLessThanOrEqual(1.5);
   });
 });

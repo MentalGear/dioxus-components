@@ -122,8 +122,18 @@
        prefers-reduced-motion override needed here -- these are native
        `<button>` elements, already covered by dx-components-theme.css's
        shared reduced-motion layer's bare `button` selector (confirmed
-       live, see this lane's report). */
-    transition: opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out);
+       live, see this lane's report) -- for the durations. The one thing that
+       layer does not touch is a transition DELAY, so the `:disabled` rule
+       below carries its own reduced-motion override for the visibility
+       delay.
+
+       `visibility` is in the list on purpose, at `0s` and no delay: this
+       is the transition an arrow gets when it becomes ENABLED again, so a
+       hidden arrow (see `:disabled` below) is visible again from the first
+       frame of its fade back in rather than after it. */
+    transition:
+        opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
+        visibility 0s linear 0s;
 }
 
 .dx-carousel-previous svg,
@@ -150,10 +160,61 @@
     transform: scaleX(-1);
 }
 
+/* The disabled arrow (the one at the first/last slide of a carousel that does
+   not loop; a looping carousel never disables either).
+
+   `--dx-carousel-nav-disabled-opacity` is the whole look: unset it is
+   `--dx-opacity-disabled` (0.5, shadcn's `disabled:opacity-50`), exactly
+   what this rule shipped with. Set it on `.dx-carousel` -- or any ancestor, or
+   inline via `Carousel`'s `nav_disabled_opacity` prop, which does just that --
+   and both arrows follow. It is read here with a fallback and deliberately
+   NOT declared on `.dx-carousel` with a default: a declaration on that
+   element would shadow a value set on an ancestor.
+
+   `--dx-carousel-nav-disabled-visibility` is the other half of "fade it all
+   out". An arrow at opacity 0 is invisible but, left alone, still in the
+   accessibility tree and still hit-testable. CSS cannot derive `hidden` from
+   "that variable is 0" (a numeric custom property does not map to a keyword,
+   and a style query on it is not available in every engine), so the
+   variable carries the keyword itself: the prop sets it to `hidden` exactly
+   when the opacity is 0, and a stylesheet-only caller sets both:
+
+       .my-carousel {
+           --dx-carousel-nav-disabled-opacity: 0;
+           --dx-carousel-nav-disabled-visibility: hidden;
+       }
+
+   Unset it is `visible`, i.e. no change at all.
+
+   The hide waits for the fade: opacity runs for the slow motion token with no
+   delay, and the visibility flip is a zero-length transition whose DELAY is
+   that same token, so it lands the moment the opacity reaches its end. The
+   arrow is visible and fading until then, then removed from the accessibility
+   tree, the tab order and the hit test. `visibility` (unlike `display`) keeps
+   the arrow's box, so the other arrow and the track never move. Becoming
+   enabled again uses the base rule's `0s` delay instead, so the arrow is back
+   from the first frame of the fade in. No `transition-behavior: allow-discrete`
+   needed -- `visibility` interpolates (`visible` for the whole of the
+   interval, then the end value) in every engine that has transitions. */
 .dx-carousel-previous:disabled,
 .dx-carousel-next:disabled {
     cursor: not-allowed;
-    opacity: var(--dx-opacity-disabled);
+    opacity: var(--dx-carousel-nav-disabled-opacity, var(--dx-opacity-disabled));
+    transition:
+        opacity var(--dx-motion-duration-slow) var(--dx-motion-ease-out),
+        visibility 0s linear var(--dx-motion-duration-slow);
+    visibility: var(--dx-carousel-nav-disabled-visibility, visible);
+}
+
+/* The shared reduced-motion layer (dx-components-theme.css) shortens every
+   transition DURATION on a `button` to a near-zero token, but leaves delays
+   alone: without this, a reduced-motion user would get an instant opacity
+   change and then a hidden arrow still announced for the full fade time. */
+@media (prefers-reduced-motion: reduce) {
+    .dx-carousel-previous:disabled,
+    .dx-carousel-next:disabled {
+        transition-delay: 0s, var(--dx-motion-duration-reduced);
+    }
 }
 
 .dx-carousel-previous:focus-visible,

@@ -13,7 +13,9 @@
 //!   genuine ARIA-subclass refinement of `<dialog>`'s implicit role,
 //!   <https://www.w3.org/TR/html-aria/#el-dialog>), driven by the same
 //!   `crate::use_dialog_open_driver`/`crate::use_dialog_close_sync` pair
-//!   `dialog.rs` uses. No backdrop-click dismiss: unlike `Dialog`,
+//!   `dialog.rs` uses. Closing waits for the exit animation (the driver
+//!   defers `close()`; see `dialog.rs`), so the `<dialog>` carries its own
+//!   `data-state`. No backdrop-click dismiss: unlike `Dialog`,
 //!   `AlertDialogContent` has never called `use_outside_dismiss` (APG
 //!   discourages light-dismissing an alert dialog), and this slice does not
 //!   add an equivalent for the web arm either.
@@ -30,6 +32,7 @@ use dioxus_attributes::attributes;
 struct AlertDialogCtx {
     open: Memo<bool>,
     set_open: Callback<bool>,
+    overlay: ReadSignal<bool>,
     labelledby: String,
     describedby: String,
 }
@@ -45,6 +48,12 @@ pub struct AlertDialogRootProps {
     /// The open state of the alert dialog. If this is provided, it will be used to control the open state of the dialog.
     #[props(default)]
     pub open: ReadSignal<Option<bool>>,
+    /// Whether the alert dialog dims the page behind it with the shared overlay scrim. Defaults to `true`.
+    /// When `false` the `<dialog>` (and the root element) carry `data-dx-overlay="off"`, which the theme
+    /// turns into a transparent `::backdrop`; the modality itself is untouched. See
+    /// [`crate::dialog::DialogRootProps::overlay`].
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub overlay: ReadSignal<bool>,
     /// Callback to handle changes in the open state of the dialog.
     #[props(default)]
     pub on_open_change: Callback<bool>,
@@ -121,6 +130,7 @@ pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
     use_context_provider(|| AlertDialogCtx {
         open,
         set_open,
+        overlay: props.overlay,
         labelledby,
         describedby,
     });
@@ -135,6 +145,8 @@ pub fn AlertDialogRoot(props: AlertDialogRootProps) -> Element {
         props.attributes,
         attributes!(div {
             "data-state": if open() { "open" } else { "closed" },
+            // On the root too: without a top layer this wrapper is what a stylesheet paints the scrim on.
+            "data-dx-overlay": crate::dialog::overlay_off(props.overlay),
         }),
     ]);
 
@@ -257,6 +269,7 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
             aria_modal: "true",
             aria_labelledby: ctx.labelledby.clone(),
             aria_describedby: ctx.describedby.clone(),
+            "data-dx-overlay": crate::dialog::overlay_off(ctx.overlay),
         }),
     ]);
 
@@ -310,6 +323,10 @@ pub fn AlertDialogContent(props: AlertDialogContentProps) -> Element {
             aria_modal: "true",
             aria_labelledby: ctx.labelledby.clone(),
             aria_describedby: ctx.describedby.clone(),
+            // The dialog's own state: closing keeps it open (modal) while it animates out, so a
+            // stylesheet keys the exit on `[data-state="closed"]`. See `crate::use_dialog_open_driver`.
+            "data-state": if open() { "open" } else { "closed" },
+            "data-dx-overlay": crate::dialog::overlay_off(ctx.overlay),
         }),
     ]);
 

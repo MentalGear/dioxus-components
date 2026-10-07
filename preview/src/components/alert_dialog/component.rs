@@ -16,6 +16,7 @@ pub fn AlertDialog(props: AlertDialogRootProps) -> Element {
             id: props.id,
             default_open: props.default_open,
             open: props.open,
+            overlay: props.overlay,
             on_open_change: props.on_open_change,
             attributes: merged,
             alert_dialog::AlertDialogContent {

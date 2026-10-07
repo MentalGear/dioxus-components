@@ -147,3 +147,30 @@ pub(crate) fn content_labelledby_attributes(
         })
     }
 }
+
+/// The one definition of "a pointer press inside an open menu's content
+/// moves no DOM focus": cancel the press's default action (the browser's
+/// mousedown focus change onto the pressed element or, failing that, its
+/// nearest focusable ancestor) and keep the event from reaching any ancestor
+/// handler.
+///
+/// Every menu-family content wrapper (`DropdownMenuContent`/`SubContent`,
+/// `MenubarContent`) wires this as its `onpointerdown`. Two reasons, one
+/// construction:
+/// - the menu must stay open across a click's pointerdown-to-pointerup gap
+///   (an item focus change would otherwise blur the trigger and trip the
+///   blur-driven close before `onclick`/`on_select` fire);
+/// - a menu whose items **commit on `pointerdown`** (`MenubarItem`, the
+///   menubar's checkable items -- see `crate::menubar`) closes and refocuses
+///   the trigger *inside* that same pointerdown. The mousedown that follows
+///   it would then focus the pressed item, which is already being unmounted,
+///   and focus would end on `<body>` instead of the trigger (backlog row
+///   140: keyboard selection returned focus to the trigger, pointer
+///   selection did not). With the default cancelled, the refocus the commit
+///   made is the last focus change. Items that commit on `click`/`pointerup`
+///   (`DropdownMenu`, `ContextMenu`) never had the gap, but go through the
+///   same wrapper so the class cannot reappear in one host only.
+pub(crate) fn keep_focus_on_pointerdown(event: Event<PointerData>) {
+    event.prevent_default();
+    event.stop_propagation();
+}

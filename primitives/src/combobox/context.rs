@@ -1,6 +1,6 @@
 //! Shared state for the combobox component.
 
-use crate::selectable::{OptionState, SelectableContext};
+use crate::selectable::{OptionState, RcPartialEqValue, SelectableContext};
 use dioxus::prelude::*;
 
 /// The default case-insensitive substring filter.
@@ -28,6 +28,21 @@ pub(super) struct ComboboxContext {
     /// wiring. See `PopoverCtx::content_id`'s doc in `popover.rs` for the
     /// exact bug this guards against if the two ever named different ids.
     pub input_id: Signal<String>,
+
+    /// Whether the user has edited the input's text since the popup opened.
+    ///
+    /// This is what separates *engaging* the input from *querying* with it.
+    /// Opening the popup (a click, ArrowDown/ArrowUp, or a controlled `open`)
+    /// must leave the input's text alone -- it is the selected option's label
+    /// -- and list every option; only the first edit turns that text into a
+    /// query (`input_text`, `filter_query`). Reset by [`Self::open_session`]
+    /// for every user-initiated open and by `ComboboxList` once the popup has
+    /// finished closing (not at close: the closing list keeps its filter
+    /// through its exit animation).
+    pub edited: Signal<bool>,
+
+    /// The last label seen for the selected value -- see [`Self::selected_label`].
+    pub label: Signal<Option<(RcPartialEqValue, String)>>,
 }
 
 impl ComboboxContext {
@@ -43,8 +58,69 @@ impl ComboboxContext {
         move |option| filter.call((query.clone(), option.text_value.clone()))
     }
 
+    /// The selected option's label.
+    ///
+    /// Read from the option registry, which is briefly empty every time the
+    /// list mounts or unmounts: `ComboboxList` renders its options in two
+    /// different places (inline while closed, inside the popup while open), so
+    /// each one's cleanup removes it before its replacement has registered.
+    /// For that moment the input would flash empty -- and a write to a text
+    /// input's `value` throws the caret to the end, which is exactly the click
+    /// position this component promises to keep. So fall back to the last label
+    /// seen for the *same* value ([`Self::remember_label`]).
+    fn selected_label(&self) -> Option<String> {
+        if let Some(label) = self.selectable.selected_text() {
+            return Some(label);
+        }
+        let values = self.selectable.values.read();
+        let cached = self.label.read();
+        (*cached)
+            .as_ref()
+            .filter(|(value, _)| values.iter().any(|selected| selected == value))
+            .map(|(_, label)| label.clone())
+    }
+
+    /// Record the selected value's label while the registry can supply it.
+    pub fn remember_label(&mut self) {
+        let value = self.selectable.values.read().first().cloned();
+        let (Some(value), Some(label)) = (value, self.selectable.selected_text()) else {
+            return;
+        };
+        let unchanged = (*self.label.peek())
+            .as_ref()
+            .is_some_and(|(seen, text)| *seen == value && *text == label);
+        if !unchanged {
+            self.label.set(Some((value, label)));
+        }
+    }
+
+    /// The text the options are filtered by: the query once the user has
+    /// edited the input (or when there is no selected label to show), and
+    /// otherwise nothing, so a popup opened over a selection lists every option
+    /// instead of only the one matching its own label.
+    fn filter_query(&self) -> String {
+        if *self.edited.read() || self.selected_label().is_none() {
+            self.query.cloned()
+        } else {
+            String::new()
+        }
+    }
+
     fn predicate(&self) -> impl Fn(&OptionState) -> bool {
-        self.predicate_for(self.query.cloned())
+        self.predicate_for(self.filter_query())
+    }
+
+    /// What the input shows. The user's query while they are editing it; the
+    /// selected option's label otherwise -- including while the popup is open
+    /// and untouched (clicking or focusing must not change the text), and the
+    /// instant it closes (Escape, blur or a pick restore the label).
+    pub fn input_text(&self) -> String {
+        let open = (self.selectable.open)();
+        match self.selected_label() {
+            Some(label) if !(open && *self.edited.read()) => label,
+            _ if open => self.query.cloned(),
+            _ => String::new(),
+        }
     }
 
     pub fn is_visible(&self, tab_index: usize) -> bool {
@@ -61,24 +137,57 @@ impl ComboboxContext {
         self.selectable.options.read().iter().any(self.predicate())
     }
 
-    pub fn open_with_empty_query_and_focus_first(&mut self) {
-        let query = String::new();
-        self.set_query.call(query.clone());
-        let initial_focus = self
-            .selectable
-            .first_matching_enabled_index(self.predicate_for(query));
+    /// Start a fresh editing session: no edit yet, no query.
+    fn begin_session(&mut self) {
+        if *self.edited.peek() {
+            self.edited.set(false);
+        }
+        if !self.query.peek().is_empty() {
+            self.set_query.call(String::new());
+        }
+    }
+
+    /// The registration index of the selected option, if any. Read from the
+    /// option registry rather than the collection: a stale filter from the
+    /// previous session may still have the selected option marked hidden
+    /// there for a moment after a reopen.
+    fn selected_index(&self) -> Option<usize> {
+        let options = self.selectable.options.read();
+        options
+            .iter()
+            .filter(|option| self.selectable.is_selected(&option.value))
+            .map(|option| option.index)
+            .min()
+    }
+
+    fn open_session(&mut self, initial_focus: Option<usize>) {
+        self.begin_session();
         self.selectable.initial_focus.set(initial_focus);
         self.set_open(true);
     }
 
-    pub fn open_with_empty_query_and_focus_last(&mut self) {
-        let query = String::new();
-        self.set_query.call(query.clone());
-        let initial_focus = self
+    /// Open on a click: the selected option (if any) becomes the active one.
+    pub fn open_at_selected(&mut self) {
+        let selected = self.selected_index();
+        self.open_session(selected);
+    }
+
+    /// Open on ArrowDown: the selected option, else the first.
+    pub fn open_at_selected_or_first(&mut self) {
+        let first = self
             .selectable
-            .last_matching_enabled_index(self.predicate_for(query));
-        self.selectable.initial_focus.set(initial_focus);
-        self.set_open(true);
+            .first_matching_enabled_index(self.predicate_for(String::new()));
+        let target = self.selected_index().or(first);
+        self.open_session(target);
+    }
+
+    /// Open on ArrowUp: the selected option, else the last.
+    pub fn open_at_selected_or_last(&mut self) {
+        let last = self
+            .selectable
+            .last_matching_enabled_index(self.predicate_for(String::new()));
+        let target = self.selected_index().or(last);
+        self.open_session(target);
     }
 
     pub fn focused_option_id(&self) -> Option<String> {

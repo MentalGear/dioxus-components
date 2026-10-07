@@ -9,5 +9,6 @@
       "git": "https://github.com/DioxusLabs/components"
     }
   ],
+  "componentDependencies": ["checkbox", "radio_group", "select", "switch"],
   "globalAssets": ["../../../assets/dx-components-theme.css"]
 }

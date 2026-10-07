@@ -37,6 +37,18 @@ pub struct DragAndDropListProps {
     #[props(default)]
     pub aria_label: Option<String>,
 
+    /// Opacity of the drag ghost (the dragged item, left in the list as a
+    /// placeholder), `0.0` to `1.0`. Sets `--dx-dnd-ghost-opacity`. Unset: the
+    /// stylesheet's `0.9`.
+    #[props(default)]
+    pub ghost_opacity: Option<f32>,
+
+    /// The room the other items make at the drop slot: any CSS length
+    /// (`"25px"`, `"1.5rem"`), or a bare number of pixels. Sets
+    /// `--dx-dnd-drop-gap`. Unset: the stylesheet's `25px`.
+    #[props(default)]
+    pub drop_gap: Option<String>,
+
     /// Additional attributes to apply to the list element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -82,6 +94,8 @@ pub fn DragAndDropList(props: DragAndDropListProps) -> Element {
         drag_and_drop_list::DragAndDropList {
             items,
             aria_label: props.aria_label,
+            ghost_opacity: props.ghost_opacity,
+            drop_gap: props.drop_gap,
             attributes: merged,
             drag_and_drop_list::DragAndDropInstructions {}
             DragAndDropListItems {

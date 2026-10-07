@@ -71,6 +71,7 @@ gates=(
   "check-preview-composition|scripts/check-preview-composition.sh"
   "check-cfg-axis|scripts/check-cfg-axis.sh"
   "check-dx-class-prefix|scripts/check-dx-class-prefix.sh"
+  "check-cross-component-overrides|scripts/check-cross-component-overrides.sh"
   "check-css-literals|scripts/check-css-literals.sh"
   "check-hooks-in-closures|scripts/check-hooks-in-closures.sh"
   "check-self-subscribing-effects|scripts/check-self-subscribing-effects.sh"
@@ -84,7 +85,14 @@ gates=(
   "check-css-vars-defined|scripts/check-css-vars-defined.sh"
   "check-uncleared-intervals|scripts/check-uncleared-intervals.sh"
   "check-blocking-scroll-listeners|scripts/check-blocking-scroll-listeners.sh"
+  "check-js-listeners|scripts/check-js-listeners.sh"
   "check-eager-head-document|scripts/check-eager-head-document.sh"
+  "check-css-delivery|scripts/check-css-delivery.sh"
+  "check-anchored-keyframes|scripts/check-anchored-keyframes.sh"
+  "check-component-catalog|scripts/check-component-catalog.sh"
+  "check-demo-forms|scripts/check-demo-forms.sh"
+  "check-demo-remote-assets|scripts/check-demo-remote-assets.sh"
+  "check-component-fonts|scripts/check-component-fonts.sh"
   "fmt|cargo fmt --all -- --check"
   "clippy-default|cargo clippy --workspace $CLIPPY_FLAGS"
   "clippy-web|cargo clippy -p dioxus-primitives -p preview --features dioxus-primitives/web,preview/web $CLIPPY_FLAGS"
@@ -106,6 +114,10 @@ case "${CARGO_TARGET_DIR:-}" in
 esac
 [ "${CARGO_TARGET_DIR%/}" != "$repo_root/target" ] || die "CARGO_TARGET_DIR must not be the shared repo-root target/ (backlog row 100): $CARGO_TARGET_DIR"
 export CARGO_TARGET_DIR
+# Gates are one-shot checks, so the incremental cache is mostly dead weight: on 2026-10-05
+# it regrew to 11-13 GB in about an hour of shared gate runs and filled the session's disk
+# allowance three times. Default it off; a caller can still opt back in with CARGO_INCREMENTAL=1.
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 log_dir="${log_dir:-$CARGO_TARGET_DIR/run-gates}"
 mkdir -p "$log_dir" || die "cannot create log dir $log_dir"
 summary_tsv="$log_dir/summary.tsv"

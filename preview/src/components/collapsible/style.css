@@ -27,6 +27,35 @@
   text-decoration-line: underline;
 }
 
-.dx-collapsible-content {
+/*
+ * `display: contents` is only for the open (or unmounted-and-empty) wrapper.
+ * It must never apply to a `hidden` one: an author `display` beats the
+ * browser's own `[hidden]` handling, so a closed panel that stays mounted
+ * (`keep_mounted`, `hidden_until_found`) would stay on screen, and
+ * `display: contents` generates no box, which `content-visibility: hidden`
+ * needs. Leaving `display` to the browser while `hidden` is the one rule that
+ * is right in every engine:
+ *
+ * - plain `hidden` is `display: none`;
+ * - `hidden="until-found"` gets a real box (`block`) and is hidden with
+ *   `content-visibility: hidden`, so find-in-page can still search it (an author
+ *   `display: none` would make the text unsearchable);
+ * - an engine that does not know `until-found` treats it as plain `hidden`
+ *   (`display: none`), so the content stays closed instead of showing.
+ *
+ * `:where()` keeps the rule's specificity at a single class, as it was.
+ */
+.dx-collapsible-content:where(:not([hidden])) {
   display: contents;
+}
+
+/*
+ * An until-found panel is also taken out of flow at zero size, so it adds no
+ * gap in a flex or grid parent. The browser removes the attribute itself when
+ * find-in-page reveals it, and `display: contents` applies again.
+ */
+.dx-collapsible-content[hidden="until-found"] {
+  position: absolute;
+  block-size: 0;
+  inline-size: 0;
 }

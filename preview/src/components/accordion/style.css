@@ -34,8 +34,21 @@
 }
 
 .dx-accordion-content {
-  display: grid;
   grid-template-rows: 0fr;
+}
+
+/*
+ * `display: grid` is only for a panel that is not `hidden`. A closed panel stays
+ * mounted as `hidden="until-found"` when the accordion opts into
+ * `hidden_until_found`, and an author `display` would override the browser's own
+ * `[hidden]` handling: the panel needs the browser's `display: block` to be
+ * skipped with `content-visibility: hidden` (and stay searchable), and an engine
+ * that does not know `until-found` must still hide it as plain `hidden`
+ * (`display: none`) rather than show a collapsed grid. `:where()` keeps the
+ * rule's specificity at a single class.
+ */
+.dx-accordion-content:where(:not([hidden])) {
+  display: grid;
 }
 
 /*
@@ -54,8 +67,34 @@
   grid-template-rows: 1fr;
 }
 
-.dx-accordion-content[data-open="false"] {
+/*
+ * Opened because the browser revealed it for a find-in-page or `#fragment`
+ * match (`hidden_until_found`): it is already at full size and the browser has
+ * already scrolled to the match inside it, so animating it open from 0fr would
+ * collapse the match out from under the scroll.
+ */
+.dx-accordion-content[data-open="true"][data-revealed] {
+  animation: none;
+}
+
+/*
+ * `data-closing` (not `data-open="false"`) selects the exit animation: with
+ * `hidden_until_found` a closed panel stays mounted, so `data-open="false"` is
+ * also what it looks like at rest, and keying the animation on it would play a
+ * close animation on every page load.
+ */
+.dx-accordion-content[data-open="false"][data-closing] {
   animation: dx-accordion-close var(--dx-motion-duration-slower) var(--dx-motion-ease);
+}
+
+/*
+ * Visible, closed and not closing: the browser has just removed
+ * `hidden="until-found"` to reveal a match and the component's state has not
+ * caught up yet (it follows the `beforematch` event a moment later). Show it at
+ * full size meanwhile so the browser scrolls to the match's real position.
+ */
+.dx-accordion-content[data-open="false"]:not([hidden], [data-closing]) {
+  grid-template-rows: 1fr;
 }
 
 /*

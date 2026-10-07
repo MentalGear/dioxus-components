@@ -50,6 +50,17 @@ pub struct TooltipProps {
 /// element. It consists of a [`TooltipTrigger`] that activates the tooltip and a [`TooltipContent`]
 /// that displays the message.
 ///
+/// ## No `open_on_hover` option
+///
+/// Unlike the menus' `open_on_hover` switch (`NavigationMenu`, `Navbar`,
+/// `Menubar`, the `DropdownMenu`/`ContextMenu` submenus), a tooltip has no
+/// click-activated mode: hover and keyboard focus *are* its definition (WAI-ARIA
+/// tooltip: a non-interactive hint shown on hover/focus, never the only way
+/// to reach information). For a panel opened by a click, use
+/// [`crate::popover`]. (Hover *delays* -- Radix `Tooltip`'s `delayDuration`,
+/// Base UI `Tooltip.Trigger`'s `delay`/`closeDelay` -- are a possible future
+/// prop; this component opens and closes without one today.)
+///
 /// ## Example
 ///
 /// ```rust

@@ -61,6 +61,30 @@ DropdownMenuContent {
 }
 ```
 
+### Open on hover, or click only
+
+By default hovering a `DropdownMenuSubTrigger` opens its submenu after a short
+delay (200 ms) and leaving it closes the submenu again after a short grace
+delay, so a diagonal move toward the submenu is not misread as leaving. Pass
+`open_on_hover: false` to the `DropdownMenuSub` for **click activation**:
+
+```rust
+DropdownMenuSub {
+    // Default is `true`.
+    open_on_hover: false,
+    DropdownMenuSubTrigger { index: 0, "Export as" }
+    DropdownMenuSubContent { /* ... */ }
+}
+```
+
+The submenu then opens only on click, `Enter`, `Space` or the open arrow key,
+and the pointer never opens *or* closes it: it closes on `Escape` / the close
+arrow, an outside click, or focus moving elsewhere. Keyboard behaviour is the
+same in both modes, and touch never hover-opens. The prop is named after Base
+UI's `Menu.SubmenuTrigger` `openOnHover` (default `true`); it sits on the `Sub`
+rather than the trigger because the trigger and the submenu content share the
+hover timers. See the `click_only_submenu` variant.
+
 ## Checkbox and radio items
 
 `DropdownMenuCheckboxItem` and `DropdownMenuRadioGroup` + `DropdownMenuRadioItem` are shadcn's

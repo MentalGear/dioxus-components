@@ -5,7 +5,8 @@ use dioxus::prelude::*;
 /// focus or block the rest of the page and paints no overlay at all (shadcn's
 /// `Popover` has none); it is light-dismissed by the browser (`popover="auto"`).
 /// The `main` variant above is deliberately `is_modal` (the primitive's
-/// default), which dims the page with the shared modal scrim. Content is the
+/// default): it traps focus and makes the page inert, but dims nothing unless
+/// `overlay: true` (see the `overlay` variant). Content is the
 /// header of shadcn's own canonical Popover example ("Dimensions" / "Set the
 /// dimensions for the layer."), without the form rows, to keep this demo small.
 ///

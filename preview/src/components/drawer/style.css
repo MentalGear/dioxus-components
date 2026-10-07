@@ -19,6 +19,14 @@
   background: transparent;
 }
 
+/* `overlay: false` (`data-dx-overlay="off"`, set on this element and on the `<dialog>`):
+ * the theme's one `dialog[data-dx-overlay="off"]::backdrop` rule removes the web arm's
+ * scrim; this one removes the scrim this element paints where there is no top layer. */
+.dx-drawer-root[data-dx-overlay="off"] {
+  backdrop-filter: none;
+  background: transparent;
+}
+
 .dx-drawer-root[data-state="closed"] {
   animation: dx-drawer-root-out var(--dx-overlay-duration) var(--dx-overlay-ease) forwards;
   pointer-events: none;
@@ -50,20 +58,21 @@
 
 /* Modal-overlay scrim: the rule shape every native-`<dialog>` overlay shares.
  * `dialog`, `alert_dialog`, `sheet`, `drawer` and `command` carry this block
- * verbatim; the modal popover's is the same rule keyed on `data-state` (see its
+ * (renamed); the modal popover's is the same rule keyed on `data-state` (see its
  * stylesheet). `playwright/assert-backdrop-fade.ts`, run from all six specs,
  * fails if one of them drifts.
  *
  * The dialog's own top-layer `::backdrop` is the only thing that paints the
- * scrim. Before this, the UA's default `rgb(0 0 0 / 10%)` `::backdrop` sat under
- * each component's own scrim (19/37/50/55% peaks, five different 100-200ms
- * timings) and, alone on Popover and Sheet, snapped in and out with no
- * transition at all. It fades in via `@starting-style` and out via
- * `overlay ... allow-discrete` on the dialog itself: `close()` drops the dialog
- * from the top layer synchronously and the `::backdrop` goes with it, so
- * without that keep-alive no exit transition could ever play. In and out are
- * one `transition`, so they cannot differ in length. Engines without
- * `overlay` transitions keep the old snap-out; nothing else changes.
+ * scrim. It fades in via `@starting-style` and out because its `background` and
+ * `backdrop-filter` fall back to transparent/none the moment the dialog's
+ * `data-state` flips to "closed" -- while the dialog is STILL open and modal:
+ * `use_dialog_open_driver` (`primitives/src/lib.rs`) calls `close()` only once the
+ * panel's and the scrim's animations have settled, so the `::backdrop` stays in the
+ * top layer for the whole exit on every engine. Nothing here depends on
+ * `transition: overlay allow-discrete` (Chromium only); and the visible state is
+ * keyed on `[open][data-state="open"]`, never `[open]` alone, because `[open]`
+ * outlives `data-state="open"` through the exit. In and out are one `transition`,
+ * so they cannot differ in length.
  *
  * One token set drives it (`--dx-overlay-duration/-ease/-scrim/-blur`), defined
  * once in `dx-components-theme.css`; there is no per-component fallback to drift. */
@@ -75,13 +84,13 @@
     background-color var(--dx-overlay-duration) var(--dx-overlay-ease);
 }
 
-.dx-drawer[open]::backdrop {
+.dx-drawer[open][data-state="open"]::backdrop {
   backdrop-filter: blur(var(--dx-overlay-blur));
   background: var(--dx-overlay-scrim);
 }
 
 @starting-style {
-  .dx-drawer[open]::backdrop {
+  .dx-drawer[open][data-state="open"]::backdrop {
     backdrop-filter: none;
     background: transparent;
   }
@@ -170,19 +179,31 @@
   background: var(--dx-background);
   box-shadow: var(--dx-shadow-xl);
   color: var(--dx-foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   gap: var(--dx-space-4);
   inset: 0;
 
   /* The live drag offset (see this file's own top comment); no transition
    * while an active drag is in progress (below) so it tracks the pointer
-   * 1:1 with zero lag. The `overlay` entry keeps a closing drawer in the top
-   * layer -- and its `::backdrop` fade with it -- for the scrim's length, which
-   * is at least the slide-out's (`--dx-motion-duration-base`) below. */
-  transition:
-    translate var(--dx-motion-duration-base) var(--dx-motion-ease),
-    overlay var(--dx-overlay-duration) allow-discrete;
+   * 1:1 with zero lag. */
+  transition: translate var(--dx-motion-duration-base) var(--dx-motion-ease);
   will-change: transform, translate;
+}
+
+/* The drawer is a real modal in the top layer only between `showModal()` and the
+ * final `close()`, and `use_dialog_open_driver` (`primitives/src/lib.rs`) holds the
+ * `close()` until the slide-out below and the `::backdrop` fade have played. Outside
+ * that window the UA's `dialog:not([open]) { display: none }`, which this stylesheet's
+ * own `display: flex` overrides, is restored: a not-yet-shown or already-closed
+ * dialog is not in the top layer, where its `position: fixed` box is resolved against
+ * (and clipped to) the nearest layout-contained ancestor -- the home page's
+ * `content-visibility` demo cards -- so it would be drawn card-wide and 80% of a
+ * card tall instead of viewport-wide. During the exit it takes no pointer input. */
+dialog.dx-drawer:not([open]) {
+  display: none;
+}
+
+dialog.dx-drawer[data-state="closed"] {
+  pointer-events: none;
 }
 
 .dx-drawer[data-dragging="true"] {
@@ -316,18 +337,13 @@
   animation: dx-drawer-slide-in-left var(--dx-motion-duration-slow) var(--dx-motion-ease-out) forwards;
 }
 
-/* KNOWN GAP (mirrors preview/src/components/sheet/style.css's own note for
- * the identical tradeoff): a drag-triggered close animates purely through
- * the primitive's own `translate` transition (this file's top comment) and
- * never touches `data-state`/these exit keyframes at all until the drag's
- * own transition has already finished, at which point the panel is fully
- * off-screen either way -- so the two close paths (drag vs.
- * Escape/backdrop/`DrawerClose`) are both correct, but they ease very
- * slightly differently (the keyframe's `ease-in` vs. the drag settle's
- * plain `ease`). Cosmetic only; not fixed in this slice for the same
- * reason row 19/Sheet's equivalent gap wasn't -- true frame-for-frame
- * parity would need coupling this transition's duration/easing to the
- * exit keyframe's, out of scope here. */
+/* Exit. A programmatic close (button/Escape/backdrop) plays these keyframes; a
+ * drag-triggered close holds the inline `translate` at the release offset
+ * (`primitives/src/drawer.rs`'s `released_offset`) so the keyframe's `transform`
+ * carries the panel on from where the pointer let go, rather than the offset
+ * easing back to rest while the exit slides it out. Either way the dialog stays
+ * open and modal for the whole slide and `use_dialog_open_driver` calls `close()`
+ * once it (and the `::backdrop` fade) has finished. */
 .dx-drawer[data-state="closed"][data-side="bottom"] {
   animation: dx-drawer-slide-out-bottom var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }

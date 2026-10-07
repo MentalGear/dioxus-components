@@ -41,19 +41,25 @@ class FocusTrap {
       }
     );
     this.focusNext();
-    this.container.addEventListener("keydown", (event) => {
-      if (event.key === "Tab") {
-        if (event.shiftKey) {
-          this.focusPrevious();
-        } else {
-          this.focusNext();
-        }
-        event.preventDefault();
-      }
-    });
+    // listener-ok: element-owned -- remove() below takes it off again, so a container that
+    // outlives one trap (a re-opened surface keeps its node) never stacks a second Tab handler.
+    this.container.addEventListener("keydown", this.onKeyDown);
   }
 
+  // A field, not an inline arrow: `remove()` needs the same function object to unregister.
+  private onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Tab") {
+      if (event.shiftKey) {
+        this.focusPrevious();
+      } else {
+        this.focusNext();
+      }
+      event.preventDefault();
+    }
+  };
+
   remove() {
+    this.container.removeEventListener("keydown", this.onKeyDown);
     this.restoreFocusElement.focus();
   }
 

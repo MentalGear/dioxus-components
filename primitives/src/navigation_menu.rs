@@ -88,6 +88,13 @@
 //! hover-open/hover-close-grace timers) is reused as-is rather than
 //! reinvented a third time.
 //!
+//! Hover is an *option*, not a given: [`NavigationMenuProps::open_on_hover`]
+//! (default `true`, today's behaviour) switches the whole pointer-hover
+//! contract off, leaving **click activation** -- see that prop's doc for the
+//! exact semantics and the Base UI/Radix comparison. Every hover entry point
+//! in this file (the trigger's and the content's `onmouseenter`/
+//! `onmouseleave`) checks it first, so there is no ungated hover path left.
+//!
 //! # Detecting "focus left the nav" without `relatedTarget`
 //!
 //! The disclosure-navigation example's own accessibility-features note
@@ -149,7 +156,8 @@ use crate::collection::{
 };
 use crate::menu_sub::{use_delayed_action, DelayedAction};
 use crate::{
-    has_own_accessible_name, merge_attributes, use_animated_open, use_id_or, use_unique_id,
+    has_own_accessible_name, merge_attributes, use_animated_open, use_effect_with_cleanup,
+    use_id_or, use_unique_id,
 };
 
 /// Hover-intent delay before a pointer hovering a trigger opens its panel.
@@ -190,6 +198,9 @@ struct NavigationMenuContext {
     hover_close: DelayedAction,
     /// The "focus left the nav" debounce -- see this module's doc.
     blur_close: DelayedAction,
+    /// [`NavigationMenuProps::open_on_hover`], read by every pointer-hover
+    /// handler below.
+    open_on_hover: ReadSignal<bool>,
 }
 
 /// The props for the [`NavigationMenu`] component.
@@ -198,6 +209,27 @@ pub struct NavigationMenuProps {
     /// Whether the whole navigation menu is disabled.
     #[props(default)]
     pub disabled: ReadSignal<bool>,
+
+    /// Whether hovering a [`NavigationMenuTrigger`] opens its panel (after a
+    /// short hover-intent delay), and the pointer leaving the trigger and
+    /// panel closes it again. Defaults to `true`.
+    ///
+    /// Set it to `false` for **click activation**: a panel then opens only
+    /// when its trigger is clicked or activated with `Enter`/`Space`/
+    /// `ArrowDown`, hovering a trigger does nothing, and the pointer
+    /// leaving a click-opened panel does *not* close it. It closes the way
+    /// a keyboard-opened one does: clicking the trigger again, `Escape`,
+    /// choosing a link, focus leaving the navigation menu, or a pointer
+    /// press anywhere outside it. Keyboard behaviour is identical in both
+    /// modes, and touch never hover-opens either way (a tap is a click).
+    ///
+    /// Same name as Base UI's `Menu.Trigger` `openOnHover` prop. Base UI's
+    /// own `NavigationMenu` and Radix's `NavigationMenu` have no such
+    /// switch (they only tune the hover delay: Base UI `delay`/`closeDelay`,
+    /// Radix `delayDuration`/`skipDelayDuration`) -- this crate's delays
+    /// stay fixed constants.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub open_on_hover: ReadSignal<bool>,
 
     /// Additional attributes to apply to the root `nav` element. An
     /// accessible name (`aria_label`/`aria_labelledby`) is required by the
@@ -287,6 +319,7 @@ pub fn NavigationMenu(props: NavigationMenuProps) -> Element {
         hover_open,
         hover_close,
         blur_close,
+        open_on_hover: props.open_on_hover,
     });
 
     // Owned by this component -- disabled state must win over a caller's
@@ -494,8 +527,9 @@ pub struct NavigationMenuTriggerProps {
 /// # NavigationMenuTrigger
 ///
 /// A disclosure button (`aria-expanded`, `aria-controls`) that toggles its
-/// sibling [`NavigationMenuContent`] on click/Enter/Space, and on pointer
-/// hover after a short delay (see this module's doc).
+/// sibling [`NavigationMenuContent`] on click/Enter/Space, and -- unless
+/// [`NavigationMenuProps::open_on_hover`] is `false` -- on pointer hover
+/// after a short delay (see this module's doc).
 ///
 /// This must be used inside a [`NavigationMenuItem`] component.
 #[component]
@@ -563,8 +597,11 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
                 let want_open = !is_open.cloned();
                 ctx.set_open.call(want_open.then(|| index.cloned()));
             },
+            // Both hover handlers are no-ops when `open_on_hover` is
+            // `false` (click activation) -- see
+            // `NavigationMenuProps::open_on_hover`.
             onmouseenter: move |_| {
-                if disabled() {
+                if disabled() || !(ctx.open_on_hover)() {
                     return;
                 }
                 ctx.hover_close.cancel();
@@ -577,6 +614,9 @@ pub fn NavigationMenuTrigger(props: NavigationMenuTriggerProps) -> Element {
                 });
             },
             onmouseleave: move |_| {
+                if !(ctx.open_on_hover)() {
+                    return;
+                }
                 ctx.hover_open.cancel();
                 if (ctx.open)() != Some(index.cloned()) {
                     return;
@@ -751,6 +791,8 @@ pub fn NavigationMenuContent(props: NavigationMenuContentProps) -> Element {
 
     use_context_provider(|| NavigationMenuContentContext);
 
+    let ctx: NavigationMenuContext = use_context();
+
     rsx! {
         if render() {
             NavigationMenuContentRendered {
@@ -758,8 +800,67 @@ pub fn NavigationMenuContent(props: NavigationMenuContentProps) -> Element {
                 attributes: props.attributes,
                 children: props.children,
             }
+            // Click activation only: with no pointer-leave close, a press
+            // outside the nav is what dismisses a click-opened panel on
+            // engines that don't focus a button on click (Safari, macOS
+            // Firefox), where the trigger's own blur never fires.
+            if !(ctx.open_on_hover)() {
+                NavigationMenuOutsidePressDismiss {}
+            }
         }
     }
+}
+
+/// Click-activation mode's "press outside the navigation menu closes the
+/// open panel" -- mounted by [`NavigationMenuContent`] only while its panel
+/// is rendered *and* [`NavigationMenuProps::open_on_hover`] is `false`, so
+/// the default (hover) mode and every closed panel pay nothing for it.
+///
+/// Why a document-level listener at all: a hover-opened panel is closed by
+/// the pointer leaving it (the hover-close grace timer), and a keyboard- or
+/// Chromium-click-opened one by the trigger's `onblur`. A click-opened panel
+/// with hover switched off has only the latter, and Safari/macOS Firefox do
+/// not give a `<button>` focus on click -- so no blur ever arrives and the
+/// panel would stay open under a click on the page background. The check is
+/// "the target is outside the `nav` that holds this item's trigger" (found
+/// via the trigger's own id, `closest('nav')`), so a press on a sibling
+/// trigger or on this panel's own links is never a dismiss (the sibling
+/// trigger's own click switches panels). The focus half is already covered
+/// by the trigger/link `onblur` debounce, so this listens to `pointerdown`
+/// only.
+#[component]
+fn NavigationMenuOutsidePressDismiss() -> Element {
+    let ctx: NavigationMenuContext = use_context();
+    let item_ctx: NavigationMenuItemContext = use_context();
+    let trigger_id = item_ctx.trigger_id;
+    let index = item_ctx.index;
+
+    use_effect_with_cleanup(move || {
+        let mut eval = dioxus::document::eval(
+            "const triggerId = await dioxus.recv();
+            const onPointer = e => {
+                const trigger = document.getElementById(triggerId);
+                const nav = trigger && trigger.closest('nav');
+                if (nav && !nav.contains(e.target)) dioxus.send(true);
+            };
+            document.addEventListener('pointerdown', onPointer, true);
+            await dioxus.recv();
+            document.removeEventListener('pointerdown', onPointer, true);",
+        );
+        let _ = eval.send(trigger_id.cloned());
+        spawn(async move {
+            while let Ok(true) = eval.recv::<bool>().await {
+                if (ctx.open)() == Some(index.cloned()) {
+                    ctx.set_open.call(None);
+                }
+            }
+        });
+        move || {
+            let _ = eval.send(true);
+        }
+    });
+
+    rsx! {}
 }
 
 /// Web arm: promote to the top layer via `popover="manual"`, anchored to
@@ -861,10 +962,18 @@ fn NavigationMenuContentRendered(
     rsx! {
         div {
             id: id.clone(),
+            // No-ops when `open_on_hover` is `false`: a click-opened panel
+            // is not closed by the pointer leaving it.
             onmouseenter: move |_| {
+                if !(ctx.open_on_hover)() {
+                    return;
+                }
                 ctx.hover_close.cancel();
             },
             onmouseleave: move |_| {
+                if !(ctx.open_on_hover)() {
+                    return;
+                }
                 let target = index.cloned();
                 ctx.hover_close.schedule(HOVER_CLOSE_GRACE_DELAY, move || {
                     if (ctx.open)() == Some(target) {
@@ -946,10 +1055,18 @@ fn NavigationMenuContentRendered(
     rsx! {
         div {
             id,
+            // No-ops when `open_on_hover` is `false`: a click-opened panel
+            // is not closed by the pointer leaving it.
             onmouseenter: move |_| {
+                if !(ctx.open_on_hover)() {
+                    return;
+                }
                 ctx.hover_close.cancel();
             },
             onmouseleave: move |_| {
+                if !(ctx.open_on_hover)() {
+                    return;
+                }
                 let target = index.cloned();
                 ctx.hover_close.schedule(HOVER_CLOSE_GRACE_DELAY, move || {
                     if (ctx.open)() == Some(target) {

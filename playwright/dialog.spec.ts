@@ -59,6 +59,32 @@ test('test', async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
+test('a press inside the dialog released over its backdrop does not dismiss it (text selection, drags); a real backdrop click does', async ({ page }) => {
+  // A press inside the panel and a release over the `::backdrop` produce a `click` whose target is
+  // the dialog itself, outside its box -- identical, by target and coordinates, to a backdrop click.
+  // `use_dialog_backdrop_dismiss` (primitives/src/lib.rs) now also requires the PRESS to have begun
+  // on the backdrop (the Drawer's "drag up on the handle closes it" report was this).
+  await page.goto(`${BASE_URL}/component/?name=dialog&`, { timeout: 20 * 60 * 1000 });
+  await page.getByRole('button', { name: 'Show Dialog', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const title = dialog.getByText('Item information');
+  await title.waitFor();
+  const box = await title.boundingBox();
+  if (!box) throw new Error('dialog title has no bounding box');
+  await page.mouse.move(box.x + 4, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 4, 8, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('data-state', 'open');
+
+  // Press AND release on the backdrop: dismissed.
+  await page.mouse.click(2, 2);
+  await expect(dialog).toHaveCount(0);
+});
+
 test('dialog stays open when clicking non-focusable content inside it', async ({ page }) => {
   // Regression: `use_outside_dismiss` (shared with Popover) served pointerdown
   // and focusin with one handler. Clicking a non-focusable region inside the

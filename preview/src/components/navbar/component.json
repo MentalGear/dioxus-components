@@ -13,5 +13,6 @@
       "name": "dioxus-icons",
       "version": "0.1.0"
     }
-  ]
+  ],
+  "globalAssets": ["../../../assets/dx-components-theme.css"]
 }

@@ -25,6 +25,11 @@ struct NavbarContext {
     // between top-level nav triggers -- always horizontal (a navbar is a
     // single row) -- see `direction::Direction::resolve_horizontal`'s doc.
     direction: Direction,
+
+    // `NavbarProps::open_on_hover` -- read by `NavbarNav`'s
+    // `onmouseenter`/`onmouseleave`, the only pointer-hover behaviour a
+    // `Navbar` has.
+    open_on_hover: ReadSignal<bool>,
 }
 
 /// The props for the [`Navbar`] component.
@@ -43,6 +48,24 @@ pub struct NavbarProps {
     /// [`crate::direction::DirectionProvider`], or LTR if there is none.
     #[props(default)]
     pub dir: Option<Direction>,
+
+    /// Whether hovering a [`NavbarNav`] opens its dropdown (and, once one is
+    /// open, hovering another switches to it), and the pointer leaving the
+    /// nav closes it again. Defaults to `true`.
+    ///
+    /// Set it to `false` for **click activation**: a dropdown then opens only
+    /// when its [`NavbarTrigger`] is clicked or activated with `Enter`/
+    /// `ArrowDown`/`ArrowUp`, hovering does nothing (it neither opens a
+    /// dropdown nor switches between them), and the pointer leaving a
+    /// click-opened dropdown does not close it. It closes like a keyboard-
+    /// opened one: clicking its trigger again, `Escape`, or a press or focus
+    /// outside it (native popover light dismiss). Keyboard behaviour is
+    /// identical in both modes, and touch never hover-opens either way.
+    ///
+    /// Same name as Base UI's `Menu.Trigger` `openOnHover` prop; neither Base
+    /// UI nor Radix has a switch for hover on a navigation row.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub open_on_hover: ReadSignal<bool>,
 
     /// Additional attributes to apply to the navbar element.
     #[props(extends = GlobalAttributes)]
@@ -133,6 +156,7 @@ pub fn Navbar(props: NavbarProps) -> Element {
         disabled: props.disabled,
         focus,
         direction,
+        open_on_hover: props.open_on_hover,
     });
     use_effect(move || {
         let index = ctx.focus.focused_index();
@@ -419,8 +443,10 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
 
     rsx! {
         div {
+            // Both hover handlers are no-ops when `open_on_hover` is `false`
+            // (click activation) -- see `NavbarProps::open_on_hover`.
             onmouseenter: move |_| {
-                if !disabled() {
+                if !disabled() && (ctx.open_on_hover)() {
                     let index = Some(nav_ctx.index.cloned());
                     if (ctx.open_nav)().is_some() {
                         ctx.focus.set_focus(index);
@@ -430,7 +456,7 @@ pub fn NavbarNav(props: NavbarNavProps) -> Element {
                 }
             },
             onmouseleave: move |_| {
-                if is_open() {
+                if (ctx.open_on_hover)() && is_open() {
                     ctx.focus.clear_focus();
                 }
             },

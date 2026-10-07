@@ -12,6 +12,8 @@ use dioxus::prelude::{asset, manganis, Asset};
 use dioxus_core::AttributeValue::Text;
 use time::OffsetDateTime;
 
+use crate::js_listener::{use_js_listeners, JsListeners};
+
 pub use dioxus_attributes;
 
 pub mod accordion;
@@ -37,6 +39,7 @@ pub mod dropdown_menu;
 pub mod hover_card;
 pub mod input_otp;
 pub mod interval;
+pub mod js_listener;
 pub mod label;
 mod listbox;
 pub mod menu_item;
@@ -293,27 +296,21 @@ fn use_global_escape_listener(mut on_escape: impl FnMut() + Clone + 'static) {
 }
 
 fn use_global_keydown_listener(key: &'static str, on_escape: impl FnMut() + Clone + 'static) {
-    use_effect_with_cleanup(move || {
-        let mut escape = document::eval(
-            "let targetKey = await dioxus.recv();
-            function listener(event) {
-                if (event.key === targetKey) {
-                    event.preventDefault();
-                    dioxus.send(true);
-                }
-            }
-            document.addEventListener('keydown', listener);
-            await dioxus.recv();
-            document.removeEventListener('keydown', listener);",
-        );
-        let _ = escape.send(key);
+    use_js_listeners(move || {
         let mut on_escape = on_escape.clone();
-        spawn(async move {
-            while let Ok(true) = escape.recv().await {
-                on_escape();
-            }
-        });
-        move || _ = escape.send(true)
+        Some(
+            JsListeners::install(
+                "const targetKey = await dioxus.recv();
+                listen(document, 'keydown', (event) => {
+                    if (event.key === targetKey) {
+                        event.preventDefault();
+                        dioxus.send(true);
+                    }
+                });",
+            )
+            .arg(key)
+            .on_message(move |_: bool| on_escape()),
+        )
     });
 }
 
@@ -323,41 +320,33 @@ fn use_outside_dismiss(
     id: impl Readable<Target = String> + Copy + 'static,
     on_dismiss: impl FnMut() + Clone + 'static,
 ) {
-    use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            // A pointer press outside the root is always a dismiss, even when it
-            // lands on an ancestor element that wraps the popover (e.g. a scroll
-            // container around it).
-            const onPointer = e => {
-                const root = document.getElementById(id);
-                if (root && !root.contains(e.target)) dioxus.send(true);
-            };
-            // Focus moving outside the root dismisses too (e.g. tabbing away), but
-            // ignore focus that lands on an *ancestor* of the root. Clicking the
-            // popover's own non-focusable background blurs the focused control and
-            // the browser moves focus to the nearest focusable ancestor, which
-            // still contains the popover — that is not a real focus-out.
-            const onFocus = e => {
-                const root = document.getElementById(id);
-                if (root && !root.contains(e.target) && !e.target.contains(root)) dioxus.send(true);
-            };
-            document.addEventListener('pointerdown', onPointer, true);
-            document.addEventListener('focusin', onFocus, true);
-            await dioxus.recv();
-            document.removeEventListener('pointerdown', onPointer, true);
-            document.removeEventListener('focusin', onFocus, true);",
-        );
-        let _ = eval.send(id.cloned());
+    use_js_listeners(move || {
         let mut on_dismiss = on_dismiss.clone();
-        spawn(async move {
-            while let Ok(true) = eval.recv().await {
-                on_dismiss();
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
+        Some(
+            JsListeners::install(
+                "const id = await dioxus.recv();
+                // A pointer press outside the root is always a dismiss, even when it
+                // lands on an ancestor element that wraps the popover (e.g. a scroll
+                // container around it).
+                const onPointer = e => {
+                    const root = document.getElementById(id);
+                    if (root && !root.contains(e.target)) dioxus.send(true);
+                };
+                // Focus moving outside the root dismisses too (e.g. tabbing away), but
+                // ignore focus that lands on an *ancestor* of the root. Clicking the
+                // popover's own non-focusable background blurs the focused control and
+                // the browser moves focus to the nearest focusable ancestor, which
+                // still contains the popover — that is not a real focus-out.
+                const onFocus = e => {
+                    const root = document.getElementById(id);
+                    if (root && !root.contains(e.target) && !e.target.contains(root)) dioxus.send(true);
+                };
+                listen(document, 'pointerdown', onPointer, true);
+                listen(document, 'focusin', onFocus, true);",
+            )
+            .arg(id.cloned())
+            .on_message(move |_: bool| on_dismiss()),
+        )
     });
 }
 
@@ -436,26 +425,18 @@ fn use_form_reset_listener(
     id: impl Readable<Target = String> + Copy + 'static,
     on_reset: impl FnMut() + Clone + 'static,
 ) {
-    use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            const el = document.getElementById(id);
-            const form = el && (el.form || el.closest('form'));
-            const listener = () => dioxus.send(true);
-            if (form) form.addEventListener('reset', listener);
-            await dioxus.recv();
-            if (form) form.removeEventListener('reset', listener);",
-        );
-        let _ = eval.send(id.cloned());
+    use_js_listeners(move || {
         let mut on_reset = on_reset.clone();
-        spawn(async move {
-            while let Ok(true) = eval.recv().await {
-                on_reset();
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
+        Some(
+            JsListeners::install(
+                "const id = await dioxus.recv();
+                const el = document.getElementById(id);
+                const form = el && (el.form || el.closest('form'));
+                listen(form, 'reset', () => dioxus.send(true));",
+            )
+            .arg(id.cloned())
+            .on_message(move |_: bool| on_reset()),
+        )
     });
 }
 
@@ -490,6 +471,36 @@ fn use_form_reset_listener(
 /// (`docs/recommended-implementations.md` Caveat 1), the fullstack SSG
 /// prerender is a *host* (non-wasm) binary that also belongs on this arm
 /// whenever this crate's `web` feature is on.
+///
+/// ## Closing waits for the exit (backlog row 141; the modal-close regression)
+///
+/// `open` going `false` does **not** call `close()` on the spot. A native
+/// `close()` drops the `<dialog>` out of the top layer *synchronously*, and
+/// everything that made the panel a modal panel goes with it in that one frame: the
+/// `::backdrop` scrim, the viewport as the containing block of its `position: fixed`
+/// box, the `:modal` rules, an ancestor's `opacity` no longer being ignored. A
+/// closing panel is still animating out, so each of those showed as a glitch --
+/// worst on the home page, where every demo sits in a `.dx-component-card`
+/// (`content-visibility: auto`, so layout + paint containment): out of the top
+/// layer a fixed panel is positioned against, sized by and CLIPPED to its card, so a
+/// right-hand Sheet snapped from 384x800 to 384x256 and a Drawer from 1265x346 to
+/// 1105x205 mid-slide. `transition: overlay allow-discrete` papered over that
+/// in Chromium alone, and only until the `overlay` transition ended (not in step
+/// with the panel's own exit); Firefox and Safari had no keep-alive at all.
+///
+/// So this driver keeps the dialog a real, open modal -- same top layer, same
+/// geometry -- until every animation or transition running on it (the panel's own
+/// and its `::backdrop`'s) has settled, bounded by `DIALOG_EXIT_TIMEOUT_MS`, and only then
+/// calls `close()`: the same construction [`crate::popover`]'s modal arm uses, now
+/// on every engine and for every dialog-engine modal. A stylesheet therefore keys
+/// its exit on the dialog's `data-state="closed"` (set by every caller of this
+/// hook) and never needs an engine-specific keep-alive. With no animation at all
+/// (no stylesheet, reduced motion to `0s`) the wait is empty and it closes at once.
+///
+/// A newer request (a reopen while closing, or a second close) bumps a per-element
+/// generation, so a stale wait that wakes up later does nothing; Escape is routed
+/// here through state by [`use_dialog_close_sync`]'s `cancel` handler instead of
+/// being allowed to `close()` natively.
 #[cfg(feature = "web")]
 fn use_dialog_open_driver(
     id: impl Readable<Target = String> + Copy + 'static,
@@ -519,15 +530,46 @@ fn use_dialog_open_driver(
         // `use_popover_shown_while_mounted`, this hook's two siblings in
         // the fix's three exhaustive call sites.
         let inject = crate::top_layer::TOP_LAYER_INK_STYLES_INJECT_JS;
+        let timeout = DIALOG_EXIT_TIMEOUT_MS;
         document::eval(&format!(
             "{inject}
             const dialog = document.getElementById('{id}');
             if (!dialog) return;
-            if ({want_open} && !dialog.open) dialog.showModal();
-            if (!{want_open} && dialog.open) dialog.close();"
+            const gen = (dialog.__dxDialogGen = (dialog.__dxDialogGen || 0) + 1);
+            if ({want_open}) {{
+                if (!dialog.open) dialog.showModal();
+                return;
+            }}
+            if (!dialog.open) return;
+            requestAnimationFrame(async () => {{
+                // The exit: whatever is animating or transitioning on the dialog itself or
+                // its ::backdrop (a pseudo-element animation reports the originating
+                // element as its target). `getAnimations()` flushes style first, so the
+                // transitions this very `data-state` flip started are already in the list.
+                // An infinite animation is never an exit, and a finished one is done.
+                const exiting = () => document.getAnimations().filter((a) =>
+                    a.effect && a.effect.target === dialog && a.playState !== 'finished'
+                    && a.effect.getComputedTiming().endTime !== Infinity);
+                const deadline = performance.now() + {timeout};
+                // Re-read after each wave: an exit can chain (a transition that only
+                // starts once another ends).
+                for (let running = exiting(); running.length && performance.now() < deadline; running = exiting()) {{
+                    await Promise.race([
+                        Promise.allSettled(running.map((a) => a.finished)),
+                        new Promise((resolve) => setTimeout(resolve, Math.max(0, deadline - performance.now()))),
+                    ]);
+                }}
+                if (dialog.__dxDialogGen === gen && dialog.isConnected && dialog.open) dialog.close();
+            }});"
         ));
     });
 }
+
+/// How long [`use_dialog_open_driver`] waits for a dialog's exit animations before
+/// closing it anyway: the bound that keeps a stuck or very long animation from
+/// holding an open modal (and its inert page) hostage.
+#[cfg(feature = "web")]
+const DIALOG_EXIT_TIMEOUT_MS: u32 = 1500;
 
 /// Sync the `<dialog>` element's native `close` event -- fired on Escape's
 /// default `cancel` action, a `::backdrop`/outside-click `close()` call we
@@ -554,24 +596,31 @@ fn use_dialog_close_sync(
     id: impl Readable<Target = String> + Copy + 'static,
     set_open: Callback<bool>,
 ) {
-    use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            const dialog = document.getElementById(id);
-            const onClose = () => dioxus.send(true);
-            dialog.addEventListener('close', onClose);
-            await dioxus.recv();
-            dialog.removeEventListener('close', onClose);",
-        );
-        let _ = eval.send(id.cloned());
-        spawn(async move {
-            while let Ok(true) = eval.recv::<bool>().await {
+    // The page scroll lock above this dialog, if there is one, lets go at the dialog's real
+    // `close` -- after the exit animation, never at the `open` flip. See `scroll_lock.rs`.
+    let modal_closed = crate::scroll_lock::use_modal_closed();
+    use_js_listeners(move || {
+        let modal_closed = modal_closed.clone();
+        Some(
+            JsListeners::install(
+                "const id = await dioxus.recv();
+                const dialog = document.getElementById(id);
+                // Escape's `cancel` is routed through state instead of taking its default
+                // action, an immediate native `close()`: that would drop the dialog out of
+                // the top layer mid-exit (see `use_dialog_open_driver`), which instead closes
+                // it once the exit has played. A controlled dialog whose owner refuses the
+                // change also stays open, rather than closing natively behind its back.
+                listen(dialog, 'close', () => dioxus.send('close'));
+                listen(dialog, 'cancel', (e) => { e.preventDefault(); dioxus.send('cancel'); });",
+            )
+            .arg(id.cloned())
+            .on_message(move |event: String| {
                 set_open.call(false);
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
+                if event == "close" {
+                    modal_closed.notify();
+                }
+            }),
+        )
     });
 }
 
@@ -690,48 +739,69 @@ fn use_dialog_close_sync(
 /// execution-confirmed bugs" -- though this specific content has no exit
 /// animation) before the deferred frame ever fires, so the listener is
 /// never attached to an element already gone from the DOM.
+///
+/// ## The drag false positive (owner report, 2026-10-05: "dragging UP on a bottom
+/// Drawer's handle closes it")
+///
+/// A `click` is dispatched on the nearest common ancestor of where the press and
+/// the release landed. A press on the Drawer handle (or on text, or in an input)
+/// and a release over the `::backdrop` above the panel have the dialog itself as
+/// that ancestor, so the release produced a `click` with `target === dialog` and
+/// coordinates outside the dialog's box -- indistinguishable, by the checks above,
+/// from a real backdrop click. Every drag that began inside a dialog and ended
+/// outside it (a text selection, a slider, a Drawer pulled the wrong way) closed
+/// it. A dismissal is a *click on the backdrop*, so the press must have started
+/// there too: a `pointerdown` whose target is the dialog and which landed outside
+/// its box arms the next `click`, and any other press disarms it. Not tied to the
+/// Drawer: this is the shared hook for Dialog, Sheet, Drawer, CommandDialog and
+/// the modal Popover, so the whole class is closed here.
 #[cfg(feature = "web")]
 fn use_dialog_backdrop_dismiss(
     id: impl Readable<Target = String> + Copy + 'static,
     on_dismiss: impl FnMut() + Clone + 'static,
 ) {
-    use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            const dialog = document.getElementById(id);
-            const onClick = (e) => {
-                // Ignore a click that isn't pointer-originated (a keyboard
-                // Enter/Space activation) and any click that bubbled up from
-                // a descendant control rather than landing on the dialog
-                // element itself -- see this hook's doc comment.
-                if (e.detail === 0 || e.target !== dialog) return;
-                const rect = dialog.getBoundingClientRect();
-                const inside = e.clientX >= rect.left && e.clientX <= rect.right
-                    && e.clientY >= rect.top && e.clientY <= rect.bottom;
-                if (!inside) dioxus.send(true);
-            };
-            // Deferred by one frame -- see this hook's doc, 'The
-            // opening-gesture false positive' -- so the tap that opened
-            // this dialog (still finishing its own dispatch, or a
-            // same-gesture synthetic follow-up some engines emit) can never
-            // reach this listener.
-            const raf = requestAnimationFrame(() => {
-                dialog.addEventListener('click', onClick);
-            });
-            await dioxus.recv();
-            cancelAnimationFrame(raf);
-            dialog.removeEventListener('click', onClick);",
-        );
-        let _ = eval.send(id.cloned());
+    use_js_listeners(move || {
         let mut on_dismiss = on_dismiss.clone();
-        spawn(async move {
-            while let Ok(true) = eval.recv::<bool>().await {
-                on_dismiss();
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
+        Some(
+            JsListeners::install(
+                "const id = await dioxus.recv();
+                const dialog = document.getElementById(id);
+                const outside = (x, y) => {
+                    const rect = dialog.getBoundingClientRect();
+                    return !(x >= rect.left && x <= rect.right
+                        && y >= rect.top && y <= rect.bottom);
+                };
+                // Whether the press that this click completes began on the backdrop --
+                // see this hook's doc, 'The drag false positive'.
+                let pressedOnBackdrop = false;
+                const onDown = (e) => {
+                    pressedOnBackdrop = e.target === dialog && outside(e.clientX, e.clientY);
+                };
+                const onClick = (e) => {
+                    const startedOnBackdrop = pressedOnBackdrop;
+                    pressedOnBackdrop = false;
+                    // Ignore a click that isn't pointer-originated (a keyboard
+                    // Enter/Space activation) and any click that bubbled up from
+                    // a descendant control rather than landing on the dialog
+                    // element itself -- see this hook's doc comment.
+                    if (e.detail === 0 || e.target !== dialog) return;
+                    if (startedOnBackdrop && outside(e.clientX, e.clientY)) dioxus.send(true);
+                };
+                // Deferred by one frame -- see this hook's doc, 'The
+                // opening-gesture false positive' -- so the tap that opened
+                // this dialog (still finishing its own dispatch, or a
+                // same-gesture synthetic follow-up some engines emit) can never
+                // reach this listener. `cleanup` cancels a frame that has not
+                // fired yet; `listen` itself ignores one that fires late.
+                const raf = requestAnimationFrame(() => {
+                    listen(dialog, 'pointerdown', onDown);
+                    listen(dialog, 'click', onClick);
+                });
+                cleanup(() => cancelAnimationFrame(raf));",
+            )
+            .arg(id.cloned())
+            .on_message(move |_: bool| on_dismiss()),
+        )
     });
 }
 

@@ -62,7 +62,7 @@
  *
  * Subjects (per this row's own scope: every overlay's open/close, every
  * form control's primary interaction), all driven against the shared
- * read-only dev server at :8080 -- see `OVERLAY_SUBJECTS`/
+ * read-only dev server (`BASE_URL`, :8080 unless `PLAYWRIGHT_BASE_URL`) -- see `OVERLAY_SUBJECTS`/
  * `FORM_CONTROL_SUBJECTS` below for the full, current list and exactly
  * which gesture/locator each one uses. Locators are read from each
  * component's own existing spec (dialog.spec.ts, slider.spec.ts, etc.) as
@@ -155,8 +155,8 @@ import {
   type GestureReport,
 } from "../../main-thread";
 import { gotoHydrated } from "../../hydration";
+import { BASE_URL } from "../../base-url";
 
-const BASE_URL = "http://127.0.0.1:8080";
 const NAV_TIMEOUT = 20 * 60 * 1000; // first run compiles the app -- same budget every sibling oracle uses
 
 const url = (name: string, extra = "") => `${BASE_URL}/component/?name=${name}&${extra}`;
@@ -724,8 +724,25 @@ const FORM_CONTROL_SUBJECTS: FormControlSubject[] = [
       const root = page.locator('[data-slot="drawer-root"]');
       await expect(root).toHaveAttribute("data-state", "open");
       const content = page.locator('[data-slot="drawer-content"]');
+      // `data-state="open"` is set when the slide-in STARTS, not when it lands. Read straight away, the handle is
+      // still below the fold (y=751 of 720 at the first frame): the press then hits nothing, no drag begins, and the
+      // drawer never dismisses -- measured on the release deploy build, 9 of 10 immediate runs, against 10 of 10 after
+      // the slide-in settled. So wait until the handle has stopped moving (two equal reads 100 ms apart).
+      const handle = page.locator('[data-slot="drawer-handle"]');
+      let lastHandleBox = "";
+      await expect
+        .poll(
+          async () => {
+            const box = JSON.stringify(await handle.boundingBox());
+            const settled = box === lastHandleBox && box !== "null";
+            lastHandleBox = box;
+            return settled;
+          },
+          { intervals: [100], timeout: 10_000 },
+        )
+        .toBe(true);
       const contentBox = await content.boundingBox();
-      const handleBox = await page.locator('[data-slot="drawer-handle"]').boundingBox();
+      const handleBox = await handle.boundingBox();
       if (!contentBox || !handleBox) throw new Error("drawer content/handle has no bounding box");
       const startX = handleBox.x + handleBox.width / 2;
       const startY = handleBox.y + handleBox.height / 2;
@@ -791,7 +808,14 @@ const FORM_CONTROL_SUBJECTS: FormControlSubject[] = [
     // Scoped by the demo's own CSS class, not `getByRole("list")` -- see
     // this file's header, "A note on row 74's other lesson".
     name: "virtual_list (scroll)",
-    goto: (page) => goto(page, "virtual_list"),
+    goto: async (page) => {
+      await goto(page, "virtual_list");
+      // The wheel goes to whatever is under the pointer, and the pointer is parked at the container's centre. The
+      // first demo opens at y=435 and is 576px tall, so at 1280x720 that centre (y=723) is BELOW the fold: the
+      // pointer is off-screen, the wheel scrolls nothing in the list (the window scrolled 800px instead), and the
+      // poll below times out on `scrollTop === 0`. Bring it fully on-screen here, before the measured gesture.
+      await page.locator(".dx-virtual-list-container").first().scrollIntoViewIfNeeded();
+    },
     interact: async (page) => {
       const container = page.locator(".dx-virtual-list-container").first();
       const box = await container.boundingBox();

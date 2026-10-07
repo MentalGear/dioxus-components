@@ -41,6 +41,20 @@
 //!   focus-trap eval on this arm: the browser's own `showModal()` supplies
 //!   the focus trap, focus restore, inertness, and top layer, and its
 //!   `cancel`/`close` events (synced above) already handle Escape.
+//!
+//! ### Closing keeps the dialog modal until its exit has played
+//!
+//! `open` going `false` does not `close()` the `<dialog>` at once:
+//! `crate::use_dialog_open_driver` waits for the animations and transitions
+//! running on the dialog and its `::backdrop` to settle first, and Escape
+//! (`cancel`) is routed through state rather than closing natively. The
+//! `<dialog>` therefore carries its own `data-state` (`"open"`/`"closed"`) --
+//! `[open]` stays set for the whole exit, so a stylesheet keys the exit on
+//! `[data-state="closed"]` -- and stays a real modal in the top layer, with the
+//! viewport as its containing block, until the end. See that hook's doc for the
+//! regression this closes (a closing Sheet/Drawer/Dialog changing size and
+//! position, clipped to a `content-visibility` ancestor, the moment it left the
+//! top layer).
 
 #[cfg(not(feature = "web"))]
 use dioxus::document;
@@ -64,6 +78,9 @@ pub struct DialogCtx {
     // Whether the dialog is a modal and should capture focus.
     #[allow(unused)]
     is_modal: ReadSignal<bool>,
+    // Whether the dialog dims the page behind it -- see `DialogRootProps::overlay`.
+    #[allow(unused)]
+    overlay: ReadSignal<bool>,
     dialog_labelledby: Signal<String>,
     dialog_describedby: Signal<String>,
 }
@@ -80,6 +97,12 @@ impl DialogCtx {
     }
 }
 
+/// The `data-dx-overlay` value for a modal's `overlay` prop: `Some("off")` when the scrim
+/// is switched off, `None` (no attribute at all) when it is on.
+pub(crate) fn overlay_off(overlay: ReadSignal<bool>) -> Option<&'static str> {
+    (!overlay()).then_some("off")
+}
+
 /// The props for the [`DialogRoot`] component
 #[derive(Props, Clone, PartialEq)]
 pub struct DialogRootProps {
@@ -89,6 +112,16 @@ pub struct DialogRootProps {
     /// Whether the dialog is modal. If true, it will trap focus within the dialog when open.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub is_modal: ReadSignal<bool>,
+
+    /// Whether a modal dialog dims the page behind it with the shared overlay scrim.
+    /// Defaults to `true`. When `false` the content element (the `<dialog>` on the web
+    /// arm) and the root element carry `data-dx-overlay="off"`, which a stylesheet turns
+    /// into a transparent `::backdrop` (the theme's `dialog[data-dx-overlay="off"]::backdrop`
+    /// rule); the modality itself -- focus trap, inert page, click-outside dismissal -- is
+    /// untouched. Only the dim and the blur go. A headless user with no stylesheet gets the
+    /// attribute and the browser's own `::backdrop`.
+    #[props(default = ReadSignal::new(Signal::new(true)))]
+    pub overlay: ReadSignal<bool>,
 
     /// The controlled `open` state of the dialog.
     pub open: ReadSignal<Option<bool>>,
@@ -180,6 +213,7 @@ pub fn DialogRoot(props: DialogRootProps) -> Element {
         open,
         set_open,
         is_modal: props.is_modal,
+        overlay: props.overlay,
         dialog_labelledby,
         dialog_describedby,
     });
@@ -193,6 +227,9 @@ pub fn DialogRoot(props: DialogRootProps) -> Element {
         attributes!(div {
             aria_hidden: (!open()).then_some("true"),
             "data-state": if open() { "open" } else { "closed" },
+            // On the root too, because without a top layer (the non-web arm,
+            // `is_modal: false`) this wrapper is what a stylesheet paints the scrim on.
+            "data-dx-overlay": overlay_off(props.overlay),
         }),
     ]);
 
@@ -353,6 +390,8 @@ fn DialogContentNonModal(
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+            // See `DialogRootProps::overlay`: set on every arm so the DOM contract is the same.
+            "data-dx-overlay": overlay_off(ctx.overlay),
         }),
     ]);
 
@@ -415,6 +454,8 @@ fn DialogContentModal(
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+            // See `DialogRootProps::overlay`: set on every arm so the DOM contract is the same.
+            "data-dx-overlay": overlay_off(ctx.overlay),
         }),
     ]);
 
@@ -468,6 +509,12 @@ fn DialogContentModal(
             aria_modal: "true",
             aria_labelledby: labelledby,
             aria_describedby: describedby,
+            // The dialog's own state, not just the root wrapper's: closing keeps the
+            // `<dialog>` open (and modal) while it animates out
+            // (`crate::use_dialog_open_driver`), so `[open]` no longer says "closing" and a
+            // stylesheet keys the exit on `[data-state="closed"]` instead.
+            "data-state": if open() { "open" } else { "closed" },
+            "data-dx-overlay": overlay_off(ctx.overlay),
         }),
     ]);
 
@@ -613,6 +660,109 @@ pub fn DialogDescription(props: DialogDescriptionProps) -> Element {
             id: id,
             ..props.attributes,
             {props.children}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Renders `app` and lets the open effect (`use_animated_open`) run, which is what puts the
+    /// content in the DOM: it is absent from the first pass.
+    fn render_open(app: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(app);
+        dom.rebuild_in_place();
+        // First pass: the effect flips `show_in_dom`. Second: the content renders.
+        dom.process_events();
+        dom.render_immediate_to_vec();
+        dioxus_ssr::render(&dom)
+    }
+
+    #[component]
+    fn DialogDefault() -> Element {
+        rsx! { DialogRoot { default_open: true, DialogContent { "body" } } }
+    }
+
+    #[component]
+    fn DialogOverlayOff() -> Element {
+        rsx! { DialogRoot { default_open: true, overlay: false, DialogContent { "body" } } }
+    }
+
+    #[component]
+    fn AlertDialogOverlayOff() -> Element {
+        rsx! {
+            crate::alert_dialog::AlertDialogRoot {
+                default_open: true,
+                overlay: false,
+                crate::alert_dialog::AlertDialogContent { "body" }
+            }
+        }
+    }
+
+    #[component]
+    fn DrawerOverlayOff() -> Element {
+        rsx! {
+            crate::drawer::Drawer {
+                default_open: true,
+                overlay: false,
+                crate::drawer::DrawerContent { "body" }
+            }
+        }
+    }
+
+    #[component]
+    fn CommandDialogOverlayOff() -> Element {
+        rsx! {
+            crate::command::CommandDialog { default_open: true, overlay: false, "body" }
+        }
+    }
+
+    #[component]
+    fn CommandDialogDefault() -> Element {
+        rsx! {
+            crate::command::CommandDialog { default_open: true, "body" }
+        }
+    }
+
+    /// `overlay` defaults to `true`, and `true` renders no attribute at all: the dialog's
+    /// `::backdrop` paints the shared scrim and nothing in the DOM says otherwise.
+    #[test]
+    fn overlay_is_on_by_default_and_renders_no_marker() {
+        let html = render_open(DialogDefault);
+        assert!(
+            html.contains("body"),
+            "the content must have rendered: {html}"
+        );
+        assert!(!html.contains("data-dx-overlay"), "{html}");
+        let html = render_open(CommandDialogDefault);
+        assert!(html.contains("body"), "{html}");
+        assert!(!html.contains("data-dx-overlay"), "{html}");
+    }
+
+    /// `overlay: false` puts `data-dx-overlay="off"` on BOTH the root wrapper (the scrim
+    /// painter where there is no top layer) and the content element (the `<dialog>` on the
+    /// web arm, which the theme's `dialog[data-dx-overlay="off"]::backdrop` rule keys on).
+    #[test]
+    fn overlay_false_marks_the_root_and_the_content_of_every_composer() {
+        type App = fn() -> Element;
+        let composers: [(&str, App); 4] = [
+            ("DialogRoot", DialogOverlayOff),
+            ("AlertDialogRoot", AlertDialogOverlayOff),
+            ("Drawer", DrawerOverlayOff),
+            ("CommandDialog", CommandDialogOverlayOff),
+        ];
+        for (name, app) in composers {
+            let html = render_open(app);
+            assert!(
+                html.contains("body"),
+                "{name}: the content must have rendered: {html}"
+            );
+            let marked = html.matches(r#"data-dx-overlay="off""#).count();
+            assert_eq!(
+                marked, 2,
+                "{name}: expected the root and the content to carry data-dx-overlay=\"off\": {html}"
+            );
         }
     }
 }

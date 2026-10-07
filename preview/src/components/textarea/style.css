@@ -25,6 +25,15 @@
   color: var(--dx-muted-foreground);
 }
 
+/* Keyboard focus ring: the shared `--dx-ring-field` token `Input` draws
+ * (`../input/style.css`'s `.dx-input:focus-visible`). `.dx-textarea` resets
+ * `outline`, so without this nothing marks focus. The attribute selector out-ranks every
+ * variant's resting `box-shadow`, whatever the source order; the outline
+ * variant, which draws its edge as a real border, overrides it below. */
+.dx-textarea[data-style]:focus-visible {
+  box-shadow: var(--dx-ring-field);
+}
+
 /* Default Variant */
 .dx-textarea[data-style="default"] {
   background: var(--dx-card);
@@ -58,8 +67,11 @@
   border-color: var(--dx-border-strong);
 }
 
-.dx-textarea[data-style="outline"]:focus {
+/* `Button`'s focus construction (`../button/style.css`): the border takes the
+ * ring colour and the halo goes around it. */
+.dx-textarea[data-style="outline"]:focus-visible {
   border-color: var(--dx-ring-color);
+  box-shadow: var(--dx-ring-focus);
 }
 
 .dx-textarea[data-style="outline"]:invalid,
@@ -75,10 +87,6 @@
 .dx-textarea[data-style="ghost"]:hover:not(:disabled) {
   background-color: var(--dx-muted);
   color: var(--dx-accent-foreground);
-}
-
-.dx-textarea[data-style="ghost"]:focus {
-  border-color: var(--dx-ring-color);
 }
 
 /*

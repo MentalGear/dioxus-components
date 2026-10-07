@@ -44,3 +44,9 @@ CommandDialog {
 `CommandItem`'s `shortcut` slot is presentation-only -- it renders whatever element you pass (a
 `Kbd`/`KbdGroup` pair, above) but does not bind a keyboard shortcut for you. Wire up a global
 keyboard listener yourself if you want the displayed shortcut to actually fire the action.
+
+## Overlay
+
+A modal command palette dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
+
+Closing keeps the command palette a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.

@@ -62,6 +62,27 @@ ContextMenuContent {
 }
 ```
 
+### Open on hover, or click only
+
+By default hovering a `ContextMenuSubTrigger` opens its submenu after a short
+delay (200 ms) and leaving it closes the submenu again after a short grace
+delay. Pass `open_on_hover: false` to the `ContextMenuSub` for **click
+activation**:
+
+```rust
+ContextMenuSub {
+    // Default is `true`.
+    open_on_hover: false,
+    ContextMenuSubTrigger { index: 0, "Export as" }
+    ContextMenuSubContent { /* ... */ }
+}
+```
+
+The submenu then opens only on click, `Enter`, `Space` or the open arrow key,
+and the pointer never opens *or* closes it. Same semantics, and the same
+`openOnHover` naming, as `DropdownMenuSub` -- see that component's note. See
+the `click_only_submenu` variant.
+
 ## Checkbox and radio items
 
 `ContextMenuCheckboxItem` and `ContextMenuRadioGroup` + `ContextMenuRadioItem` are shadcn's

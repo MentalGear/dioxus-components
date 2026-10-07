@@ -14,7 +14,7 @@ use crate::dashboard::common::{
     AVATAR_PROFILE_OPTIONS, LOREM_IPSUM,
 };
 
-use super::avatars::avatar_profile_for_key;
+use super::avatars::avatar_src_for;
 use super::state::{EmailClientState, EmailClientStateStoreExt, EmailClientStateStoreImplExt};
 
 #[component]
@@ -207,7 +207,7 @@ pub(super) fn ReadPane(
                             ImageAvatar {
                                 size: AvatarImageSize::Small,
                                 shape: AvatarShape::Circle,
-                                src: "{avatar_profile_for_key(selected_static.sender.addr).src}",
+                                src: avatar_src_for(&selected_static.sender),
                                 alt: "{selected_static.sender.name}",
                                 {selected_static.sender.initials}
                             }

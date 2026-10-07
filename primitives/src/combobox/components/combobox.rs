@@ -44,7 +44,10 @@ pub struct ComboboxProps<T: Clone + PartialEq + 'static = String> {
     #[props(default)]
     pub on_open_change: Callback<bool>,
 
-    /// The controlled text query used to filter options.
+    /// The controlled text query used to filter options: the input's own text
+    /// from the user's first edit after the popup opens (empty before it --
+    /// opening over a selection leaves the label in the input and lists every
+    /// option).
     #[props(default)]
     pub query: ReadSignal<Option<String>>,
 
@@ -94,13 +97,21 @@ fn use_combobox_root(
     // Placeholder value until `ComboboxInput` mounts and syncs its own id
     // in -- see `ComboboxContext::input_id`'s doc.
     let input_id = use_unique_id();
+    let edited = use_signal(|| false);
+    let label = use_signal(|| None);
 
-    use_context_provider(|| ComboboxContext {
+    let ctx = use_context_provider(|| ComboboxContext {
         selectable,
         query,
         set_query,
         filter,
         input_id,
+        edited,
+        label,
+    });
+    use_effect(move || {
+        let mut ctx = ctx;
+        ctx.remember_label();
     });
 
     open

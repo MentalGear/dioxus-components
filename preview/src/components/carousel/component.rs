@@ -63,6 +63,15 @@ pub struct CarouselProps {
     /// The text direction for the root-level `ArrowLeft`/`ArrowRight` keys.
     pub dir: Option<Direction>,
 
+    /// The opacity of a disabled Previous/Next arrow (the one at the first or
+    /// last slide of a carousel that does not loop), `0.0..=1.0`. One setting
+    /// for both arrows. Unset keeps the theme's disabled opacity (0.5, shadcn's
+    /// `disabled:opacity-50`); `0.0` fades them out completely and then
+    /// hides them from assistive technology, without moving anything. Sets the
+    /// `--dx-carousel-nav-disabled-opacity` custom property, which a stylesheet
+    /// can also set on its own.
+    pub nav_disabled_opacity: Option<f32>,
+
     /// Additional attributes to apply to the carousel element.
     #[props(extends = GlobalAttributes)]
     pub attributes: Vec<Attribute>,
@@ -89,6 +98,7 @@ pub fn Carousel(props: CarouselProps) -> Element {
             loop_mode: props.loop_mode,
             on_value_change: props.on_value_change,
             dir: props.dir,
+            nav_disabled_opacity: props.nav_disabled_opacity,
             attributes: merged,
             {props.children}
         }

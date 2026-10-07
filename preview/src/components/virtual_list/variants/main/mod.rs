@@ -50,6 +50,9 @@ pub fn Demo() -> Element {
             VirtualList {
                 count: 2000usize,
                 buffer: 12usize,
+                // The windowed engine: these demos exercise measured row heights and the
+                // scrollbar-stability freeze. (`Auto` would keep 2000 rows in the DOM.)
+                virtualize: VirtualListMode::Windowed,
                 // Estimate height based on content pattern (idx % 6 repeats)
                 // Measured: min=68.4px (0 repeats), max=127.2px (5 repeats)
                 estimate_size: |idx| {

@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { type Locator, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
+import { gotoHydrated } from "./hydration";
 
 const URL = `${BASE_URL}/component/?name=accordion&`;
 const LOAD_TIMEOUT = 20 * 60 * 1000;
@@ -164,5 +165,207 @@ test.describe("Axe automated scan", () => {
     const buttons = accordionItems.getByRole("button");
     await clickOpen(buttons.first(), accordionItems.first());
     await expectNoAxeViolations(page, "accordion: first item expanded", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+/**
+ * `hidden_until_found` (backlog row 144), driven through the `until_found` variant: three items
+ * (Shipping open by default, Returns, Warranty), `allow_multiple_open: false`. Closed content stays
+ * mounted as `hidden="until-found"`; a reveal by the browser opens that item and closes the other.
+ *
+ * Headless Chromium's `window.find` finds `until-found` text but does not fire `beforematch` for
+ * it (only fragment navigation does), so the reveal is driven by a real `#fragment` navigation and
+ * by a synthetic `beforematch`; real Ctrl+F takes the same path as the fragment and is checked by
+ * hand in a headed browser.
+ */
+test.describe("hidden_until_found", () => {
+  async function load(page: Page) {
+    await gotoHydrated(page, URL, { timeout: LOAD_TIMEOUT });
+    const trigger = (name: string) => page.getByRole("button", { name, exact: true });
+    const panelOf = (name: string) =>
+      page.locator(".dx-accordion-content", { has: page.locator("p"), hasText: PANEL_TEXT[name] });
+    await expect(trigger("Shipping")).toHaveAttribute("aria-expanded", "true");
+    // Default-open Shipping finishes its open animation (and `use_animated_open`'s effect) first.
+    await expect(panelOf("Shipping")).not.toHaveAttribute("hidden", /.*/);
+    return { trigger, panelOf };
+  }
+
+  const PANEL_TEXT: Record<string, string> = {
+    Shipping: "Orders leave the warehouse",
+    Returns: "narwhal plush",
+    Warranty: "two year limited warranty",
+  };
+
+  /** Give the paragraph inside a panel an id the page can navigate to with a `#fragment`. */
+  async function markInside(panel: Locator, id: string) {
+    await panel.evaluate((el, id) => {
+      el.querySelector("p")!.id = id;
+    }, id);
+  }
+
+  async function expectOpenItem(
+    page: Page,
+    trigger: (name: string) => Locator,
+    panelOf: (name: string) => Locator,
+    open: string,
+  ) {
+    for (const name of Object.keys(PANEL_TEXT)) {
+      await expect(trigger(name)).toHaveAttribute("aria-expanded", String(name === open));
+      if (name === open) {
+        await expect(panelOf(name)).not.toHaveAttribute("hidden", /.*/);
+        await expect(panelOf(name)).toHaveAttribute("data-open", "true");
+      } else {
+        // Closed again: its close animation finishes, then it is re-hidden but stays mounted.
+        await expect(panelOf(name)).toHaveAttribute("hidden", "until-found", { timeout: 5000 });
+        await expect(panelOf(name)).toHaveAttribute("data-open", "false");
+      }
+    }
+  }
+
+  test("closed items stay mounted as hidden=until-found only when opted in", async ({ page }) => {
+    const { panelOf } = await load(page);
+    for (const name of ["Returns", "Warranty"]) {
+      await expect(panelOf(name)).toHaveCount(1);
+      await expect(panelOf(name)).toHaveAttribute("hidden", "until-found");
+      expect(await panelOf(name).evaluate((el) => getComputedStyle(el).contentVisibility)).toBe("hidden");
+    }
+    // The default demo's four closed items render no content element at all: only the opt-in
+    // demo's three exist.
+    await expect(page.locator(".dx-accordion-content")).toHaveCount(3);
+    // And find-in-page reaches the opted-in text but not the unmounted text.
+    expect(await page.evaluate(() => window.find("narwhal"))).toBe(true);
+    expect(await page.evaluate(() => window.find("lorem ipsum lorem"))).toBe(false);
+  });
+
+  test("a closed until-found panel at rest runs no animation", async ({ page }) => {
+    await load(page);
+    // `data-open="false"` is also how a closed panel looks at rest; the close animation must be
+    // keyed on `data-closing`, or every closed panel would play it on page load.
+    expect(
+      await page.evaluate(() =>
+        document
+          .getAnimations()
+          .map((a) => (a as CSSAnimation).animationName)
+          .filter((n) => n?.startsWith("dx-accordion-close")),
+      ),
+    ).toEqual([]);
+  });
+
+  test("a #fragment into a closed item reveals it and opens that item, closing the other", async ({ page }) => {
+    const { trigger, panelOf } = await load(page);
+    await markInside(panelOf("Returns"), "narwhal-target");
+    await page.evaluate(() => {
+      location.hash = "#narwhal-target";
+    });
+
+    await expectOpenItem(page, trigger, panelOf, "Returns");
+    await expect(page.locator("#narwhal-target")).toBeVisible();
+  });
+
+  test("a beforematch on a closed item opens it and respects single-open mode", async ({ page }) => {
+    const { trigger, panelOf } = await load(page);
+    await panelOf("Warranty").dispatchEvent("beforematch");
+    await expectOpenItem(page, trigger, panelOf, "Warranty");
+  });
+
+  test("a reveal is not animated: the item is at full height from its first frame", async ({ page }) => {
+    const { panelOf } = await load(page);
+    const returns = panelOf("Returns");
+    await markInside(returns, "narwhal-target");
+    const contentId = await returns.getAttribute("id");
+    expect(contentId).toBeTruthy();
+
+    const frames = await page.evaluate(async (id) => {
+      const el = document.getElementById(id)!;
+      const out: Array<{ h: number; hidden: boolean; animation: string }> = [];
+      const done = new Promise<void>((resolve) => {
+        let n = 0;
+        const tick = () => {
+          out.push({
+            h: el.getBoundingClientRect().height,
+            hidden: el.hasAttribute("hidden"),
+            animation: getComputedStyle(el).animationName,
+          });
+          if (++n < 45) requestAnimationFrame(tick);
+          else resolve();
+        };
+        requestAnimationFrame(tick);
+      });
+      location.hash = "#narwhal-target";
+      await done;
+      return out;
+    }, contentId!);
+
+    const visible = frames.filter((f) => !f.hidden);
+    expect(visible.length).toBeGreaterThan(10);
+    const settled = visible[visible.length - 1].h;
+    expect(settled).toBeGreaterThan(20);
+    // Never collapses and re-expands (the fight with the open animation): every frame from the
+    // first visible one is already at full height, and none runs the open animation.
+    for (const f of visible) {
+      expect(f.h).toBeGreaterThanOrEqual(settled - 1);
+      expect(f.animation).toBe("none");
+    }
+    await expect(returns).toHaveAttribute("data-revealed", "true");
+  });
+
+  test("opening by click still animates, closing animates and then re-hides", async ({ page }) => {
+    const { trigger, panelOf } = await load(page);
+    const returns = panelOf("Returns");
+    const contentId = (await returns.getAttribute("id"))!;
+
+    const openFrames = await sampleHeightFrames(page, contentId, () => trigger("Returns").click());
+    assertSmoothTransition(openFrames);
+    await expect(returns).not.toHaveAttribute("data-revealed", /.*/);
+    await page.waitForTimeout(500);
+
+    const closeFrames = await sampleHeightFrames(page, contentId, () => trigger("Returns").click());
+    assertSmoothTransition(closeFrames);
+    expect(closeFrames[closeFrames.length - 1].h).toBe(0);
+    await expect(returns).toHaveAttribute("hidden", "until-found");
+    await expect(trigger("Returns")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("an item revealed by a match closes and re-opens as an ordinary animated item afterwards", async ({ page }) => {
+    const { trigger, panelOf } = await load(page);
+    const returns = panelOf("Returns");
+    await returns.dispatchEvent("beforematch");
+    await expect(returns).toHaveAttribute("data-revealed", "true");
+    await page.waitForTimeout(500);
+
+    await trigger("Returns").click();
+    await expect(returns).toHaveAttribute("hidden", "until-found", { timeout: 5000 });
+    await expect(returns).not.toHaveAttribute("data-revealed", /.*/);
+
+    const contentId = (await returns.getAttribute("id"))!;
+    const openFrames = await sampleHeightFrames(page, contentId, () => trigger("Returns").click());
+    assertSmoothTransition(openFrames);
+  });
+
+  test("listens exactly once per item, through toggles, and not at all after unmount", async ({ page }) => {
+    const { trigger, panelOf } = await load(page);
+    const cdp = await page.context().newCDPSession(page);
+    const beforematchListeners = async (expression: string) => {
+      const { result } = await cdp.send("Runtime.evaluate", { expression });
+      const { listeners } = await cdp.send("DOMDebugger.getEventListeners", { objectId: result.objectId! });
+      return listeners.filter((l) => l.type === "beforematch").length;
+    };
+    await panelOf("Warranty").evaluate((el) => {
+      (window as any).__panel = el;
+    });
+    expect(await beforematchListeners("window.__panel")).toBe(1);
+
+    for (let i = 0; i < 3; i++) {
+      await trigger("Warranty").click();
+      await expect(trigger("Warranty")).toHaveAttribute("aria-expanded", "true");
+      await trigger("Warranty").click();
+      await expect(trigger("Warranty")).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(await beforematchListeners("window.__panel")).toBe(1);
+
+    await page.locator('a[href="/component/kbd/?"]').first().click();
+    await expect(page).toHaveURL(/\/component\/kbd\//);
+    await expect.poll(() => page.evaluate(() => (window as any).__panel.isConnected)).toBe(false);
+    expect(await beforematchListeners("window.__panel")).toBe(0);
   });
 });

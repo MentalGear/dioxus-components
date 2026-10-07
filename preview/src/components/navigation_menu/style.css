@@ -172,15 +172,23 @@
   animation: dx-navigation-menu-content-animate-out var(--dx-motion-duration-base) var(--dx-motion-ease-in) forwards;
 }
 
+/* `scale`/`translate`, not `transform`: an animated `transform` REPLACES an anchor's own
+ * centring transform (`translateX(-50%)`, `primitives/src/top_layer.rs`'s engine stylesheet)
+ * for as long as the animation runs, which played the date/colour picker panels 144px/133px
+ * off their anchor. This content sets no `data-side`, so no centring applies to it today; the
+ * individual properties compose with `transform` and keep it safe if one ever does.
+ * Guard: scripts/check-anchored-keyframes.sh. */
 @keyframes dx-navigation-menu-content-animate-out {
   0% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateY(var(--dx-space-2)) scale(0.98);
+    scale: 0.98;
+    translate: 0 var(--dx-space-2);
   }
 }
 
@@ -192,12 +200,14 @@
 @keyframes dx-navigation-menu-content-animate-in {
   0% {
     opacity: 0;
-    transform: translateY(var(--dx-space-2)) scale(0.98);
+    scale: 0.98;
+    translate: 0 var(--dx-space-2);
   }
 
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    scale: 1;
+    translate: 0 0;
   }
 }
 

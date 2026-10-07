@@ -1,5 +1,5 @@
 import { test, expect, devices } from "./fixtures";
-import { type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 
@@ -306,4 +306,267 @@ test.describe("Axe automated scan", () => {
         await expect(content(page)).toBeVisible();
         await expectNoAxeViolations(page, "combobox: listbox open", { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
     });
+});
+
+// ---------------------------------------------------------------------------
+// Re-engaging an input that already holds a selection.
+//
+// Reference behaviour (APG editable combobox, Base UI Combobox, shadcn's
+// Combobox which is built on it): the input's text is NEVER cleared or
+// rewritten by clicking or focusing it, the caret lands where the user
+// clicked, the popup lists every option (the filter ignores the selected
+// label until the first edit), and the selected option is marked and
+// scrolled into view. Escape / blur without a new pick restores the label.
+// ---------------------------------------------------------------------------
+
+/** The x offset (relative to the input's padding box) of the boundary before `index` in its text. */
+async function caretOffsetX(trigger: Locator, index: number): Promise<number> {
+    return trigger.evaluate((el: HTMLInputElement, at: number) => {
+        const cs = getComputedStyle(el);
+        const ctx = document.createElement("canvas").getContext("2d")!;
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        return parseFloat(cs.paddingLeft) + ctx.measureText(el.value.slice(0, at)).width - el.scrollLeft;
+    }, index);
+}
+
+const caret = (trigger: Locator) =>
+    trigger.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd]);
+
+/** Select "SvelteKit" through the list, leaving the input closed and holding its label. */
+async function selectSvelte(page: Page) {
+    const trigger = input(page);
+    await trigger.click();
+    await list(page).getByRole("option", { name: "SvelteKit" }).click();
+    await expect(content(page)).toHaveCount(0);
+    await expect(page.locator("[role='listbox']")).toHaveCount(0);
+    await expect(trigger).toHaveValue("SvelteKit");
+    return trigger;
+}
+
+test("clicking an input that holds a selection keeps its text and puts the caret where clicked", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    // Record every write to the input's value from here on: a re-render that flashes the text empty
+    // (even for one frame) throws the caret to the end, so there must be none at all.
+    await trigger.evaluate((el: HTMLInputElement) => {
+        const writes: string[] = [];
+        (window as any).__comboboxValueWrites = writes;
+        const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+        Object.defineProperty(el, "value", {
+            configurable: true,
+            get() { return own.get!.call(this); },
+            set(next: string) { writes.push(next); own.set!.call(this, next); },
+        });
+    });
+
+    // Click on the boundary between "Svel" and "teKit".
+    const box = (await trigger.boundingBox())!;
+    await trigger.click({ position: { x: await caretOffsetX(trigger, 4), y: box.height / 2 } });
+    await expect(content(page)).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // The listbox's open animation has settled: nothing below may flip afterwards.
+    await expect(list(page)).toHaveCSS("opacity", "1");
+    await expect(trigger).toHaveValue("SvelteKit");
+    expect(await caret(trigger)).toEqual([4, 4]);
+
+    // Every option is listed, not just the one matching the label...
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+    // ...and the selected one is marked (semantics and the check indicator).
+    const svelte = list(page).getByRole("option", { name: "SvelteKit" });
+    await expect(svelte).toHaveAttribute("aria-selected", "true");
+    await expect(svelte).toHaveAttribute("data-selected", "true");
+    await expect(svelte.locator(".dx-combobox-option-indicator")).toBeVisible();
+    await expect(list(page).locator("[aria-selected='true']")).toHaveCount(1);
+
+    // The text and the caret survive any follow-up render too, and the value was never rewritten.
+    await page.waitForTimeout(300);
+    await expect(trigger).toHaveValue("SvelteKit");
+    expect(await caret(trigger)).toEqual([4, 4]);
+    expect(await page.evaluate(() => (window as any).__comboboxValueWrites)).toEqual([]);
+});
+
+test("focusing an input that holds a selection and pressing ArrowDown keeps its text", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    await page.keyboard.press("ArrowDown");
+    await expect(content(page)).toBeVisible();
+    await expect(trigger).toHaveValue("SvelteKit");
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+    await expect(list(page).getByRole("option", { name: "SvelteKit" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("filtering starts on the first edit, not on open", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    await trigger.click();
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+
+    // First edit: drop the last letter. The text is now "SvelteKi", which only SvelteKit matches.
+    await page.keyboard.press("End");
+    await page.keyboard.press("Backspace");
+    await expect(trigger).toHaveValue("SvelteKi");
+    await expect(list(page).getByRole("option")).toHaveCount(1);
+    await expect(list(page).getByRole("option", { name: "SvelteKit" })).toBeVisible();
+
+    // Replace everything: filtering follows the whole input text.
+    await trigger.press("ControlOrMeta+a");
+    await page.keyboard.type("sol");
+    await expect(trigger).toHaveValue("sol");
+    await expect(list(page).getByRole("option")).toHaveCount(1);
+    await expect(list(page).getByRole("option", { name: "SolidStart" })).toBeVisible();
+});
+
+test("typing into a closed input that holds a selection edits the text in place", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    // Closed, focused, caret at the end ("SvelteKit|"): a typed character is appended, not swapped for the text.
+    await page.keyboard.press("End");
+    await page.keyboard.type("x");
+    await expect(content(page)).toBeVisible();
+    await expect(trigger).toHaveValue("SvelteKitx");
+    expect(await caret(trigger)).toEqual([10, 10]);
+    await expect(list(page).getByRole("option")).toHaveCount(0);
+    await expect(list(page).getByText("No framework found.")).toBeVisible();
+});
+
+test("Escape restores the selected label after editing", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    await trigger.click();
+    await trigger.press("ControlOrMeta+a");
+    await page.keyboard.type("zzz");
+    await expect(trigger).toHaveValue("zzz");
+    await expect(list(page).getByText("No framework found.")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(content(page)).toHaveCount(0);
+    await expect(trigger).toHaveValue("SvelteKit");
+});
+
+test("blurring without a new pick restores the selected label", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = await selectSvelte(page);
+
+    await trigger.click();
+    await trigger.press("ControlOrMeta+a");
+    await page.keyboard.type("so");
+    await expect(trigger).toHaveValue("so");
+
+    await page.keyboard.press("Tab");
+    await expect(content(page)).toHaveCount(0);
+    await expect(trigger).toHaveValue("SvelteKit");
+
+    // The next open starts from the full list again, with the label intact.
+    await trigger.click();
+    await expect(trigger).toHaveValue("SvelteKit");
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+});
+
+test("reopening scrolls the selected option into view", async ({ page }) => {
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    // Force the list to overflow: three rows tall, so the last option starts out of sight.
+    await page.addStyleTag({ content: ".dx-combobox-list { max-height: 6.5rem !important; }" });
+
+    const trigger = input(page);
+    await trigger.click();
+    await page.keyboard.press("End"); // open: highlights the last option
+    await page.keyboard.press("Enter");
+    await expect(trigger).toHaveValue("Dioxus");
+    await expect(page.locator("[role='listbox']")).toHaveCount(0);
+
+    await trigger.click();
+    await expect(list(page)).toHaveCSS("opacity", "1");
+    const dioxus = list(page).getByRole("option", { name: "Dioxus" });
+    await expect(dioxus).toHaveAttribute("aria-selected", "true");
+    await expect(trigger).toHaveValue("Dioxus");
+
+    const within = async () => {
+        const [l, o] = [await list(page).boundingBox(), await dioxus.boundingBox()];
+        return !!l && !!o && o.y >= l.y - 1 && o.y + o.height <= l.y + l.height + 1;
+    };
+    await expect.poll(within).toBe(true);
+    expect(await list(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    // Keyboard navigation keeps the active option in view as well.
+    await page.keyboard.press("Home");
+    await expect(list(page).getByRole("option", { name: "Next.js" })).toHaveAttribute("data-highlighted", "true");
+    await expect.poll(async () => {
+        const [l, o] = [await list(page).boundingBox(), await list(page).getByRole("option", { name: "Next.js" }).boundingBox()];
+        return !!l && !!o && o.y >= l.y - 1 && o.y + o.height <= l.y + l.height + 1;
+    }).toBe(true);
+});
+
+test("an externally opened (controlled) combobox keeps the selected label", async ({ page }) => {
+    await page.goto(variantUrl("controlled"), { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+
+    const trigger = page.getByRole("combobox", { name: "Controlled framework" });
+    await expect(trigger).toHaveValue("SvelteKit");
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(content(page)).toBeVisible();
+    await expect(trigger).toHaveValue("SvelteKit");
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+
+    // ...also after a typed-and-abandoned round.
+    await trigger.click();
+    await trigger.press("ControlOrMeta+a");
+    await page.keyboard.type("zz");
+    await page.keyboard.press("Escape");
+    await expect(content(page)).toHaveCount(0);
+    await expect(page.locator("[role='listbox']")).toHaveCount(0);
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(content(page)).toBeVisible();
+    await expect(trigger).toHaveValue("SvelteKit");
+    await expect(list(page).getByRole("option")).toHaveCount(7);
+});
+
+// ---------------------------------------------------------------------------
+// Keyboard focus ring: the input draws the same ring `Input` does.
+// ---------------------------------------------------------------------------
+
+const boxShadowOf = async (locator: Locator) => {
+    // Poll past the box-shadow transition: two equal reads in a row.
+    let previous = "";
+    await expect.poll(async () => {
+        const now = await locator.evaluate((el) => getComputedStyle(el).boxShadow);
+        const settled = now === previous;
+        previous = now;
+        return settled;
+    }).toBe(true);
+    return previous;
+};
+
+test("the input shows the same visible focus ring as Input on keyboard focus", async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=input&`, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const plain = page.getByRole("textbox", { name: "Enter your name" });
+    await plain.focus();
+    await expect(plain).toBeFocused();
+    const reference = await boxShadowOf(plain);
+    expect(reference).not.toBe("none");
+
+    await page.goto(URL, { timeout: 20 * 60 * 1000 });
+    await page.waitForLoadState('networkidle');
+    const trigger = input(page);
+    const resting = await trigger.evaluate((el) => getComputedStyle(el).boxShadow);
+    await trigger.focus(); // text fields always match :focus-visible
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveCSS("outline-style", "none");
+    const focused = await boxShadowOf(trigger);
+    expect(focused).not.toBe("none");
+    expect(focused).not.toBe(resting);
+    expect(focused).toBe(reference);
 });

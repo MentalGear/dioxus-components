@@ -1,7 +1,7 @@
 /* The wrapper draws the field chrome and the inner control is stripped bare
  * (below), so the wrapper must agree with `.dx-input` (input/style.css): same
  * transparent-light / input-30%-dark fill, 1px `input` edge, `muted` fill on
- * hover and focus, and on focus the ring-coloured edge plus `--dx-ring-focus`. */
+ * hover and focus, and on focus the shared `--dx-ring-field` ring. */
 .dx-input-group {
   position: relative;
   display: flex;
@@ -19,7 +19,7 @@
 }
 
 .dx-input-group:has(.dx-input-group-control:focus-visible) {
-  box-shadow: inset 0 0 0 1px var(--dx-ring-color), var(--dx-ring-focus);
+  box-shadow: var(--dx-ring-field);
 }
 
 .dx-input-group .dx-input-group-control {

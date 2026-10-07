@@ -15,6 +15,7 @@ pub fn Navbar(props: NavbarProps) -> Element {
         navbar::Navbar {
             disabled: props.disabled,
             roving_loop: props.roving_loop,
+            open_on_hover: props.open_on_hover,
             attributes: merged,
             {props.children}
         }

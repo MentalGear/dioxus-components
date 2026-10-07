@@ -3,6 +3,7 @@ use dioxus_primitives::toast::{use_toast, ToastOptions};
 
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::dialog::{Dialog, DialogDescription, DialogTitle};
+use crate::components::form::DemoForm;
 use crate::components::input::Input;
 use crate::components::label::Label;
 use crate::components::separator::Separator;
@@ -20,8 +21,8 @@ pub(super) fn ComposeModal(mut state: Store<EmailClientState>) -> Element {
     let body = state.compose_body().cloned();
     let recipient = to.clone();
 
-    let send = move |evt: FormEvent| {
-        evt.prevent_default();
+    // `DemoForm` has already cancelled the native submit (see its doc); this only reports the result.
+    let send = move |_: FormEvent| {
         let description = if recipient.trim().is_empty() {
             "Your message is on its way.".to_string()
         } else {
@@ -39,7 +40,7 @@ pub(super) fn ComposeModal(mut state: Store<EmailClientState>) -> Element {
             open: Some(open),
             on_open_change: move |v: bool| state.set_compose_open(v),
             class: "ec-compose-dialog",
-            form { class: "ec-compose-form", onsubmit: send,
+            DemoForm { class: "ec-compose-form", show_status: false, onsubmit: send,
                 div { class: "ec-compose-head",
                     div { class: "ec-compose-head-text",
                         DialogTitle { class: "ec-compose-title", "New message" }

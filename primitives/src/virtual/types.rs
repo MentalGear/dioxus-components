@@ -34,6 +34,7 @@ impl VirtualItem {
         self.start
     }
 
+    #[cfg(test)]
     pub(crate) fn end(&self) -> u32 {
         self.start + self.size
     }

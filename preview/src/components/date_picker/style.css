@@ -19,8 +19,14 @@
     rotate: 180deg;
 }
 
+/*
+ * Not inside the popover panel: the calendar's day cells are `data-disabled="true"` too when a day is
+ * unavailable, and that state is already drawn by calendar/style.css (the muted-foreground token +
+ * line-through, at full opacity). Fading it a second time here washed unavailable days out to ~2:1
+ * contrast instead of the designed look.
+ */
 .dx-date-picker[data-disabled="true"],
-.dx-date-picker [data-disabled="true"] {
+.dx-date-picker [data-disabled="true"]:not(.dx-date-picker-popover-content *) {
     cursor: not-allowed;
     opacity: 0.5;
 }
@@ -43,9 +49,46 @@
     transition: background-color var(--dx-motion-duration-fast) var(--dx-motion-ease-out);
 }
 
+/*
+ * The keyboard focus ring: the shared `--dx-ring-field` token every text field draws
+ * (`../input/style.css`'s `.dx-input:focus-visible`). The group is the field -- it draws the chrome and
+ * its segments are bare `contenteditable` spans -- so, as `InputGroup` does, the ring goes on the group
+ * while a segment has focus; the focused segment keeps its own highlight (below). The calendar trigger is
+ * a button inside the field and takes the same ring on its own box (it reset nothing, so the UA's
+ * outline used to be the only mark). `playwright/focus-ring.spec.ts` holds both to Input's.
+ */
+.dx-date-picker-group:has(.dx-date-picker-segment:focus-visible) {
+    box-shadow: var(--dx-ring-field);
+}
+
+.dx-date-picker-group .dx-date-picker-popover-trigger:focus-visible {
+    border-radius: var(--dx-radius-sm);
+    box-shadow: var(--dx-ring-field);
+    outline: none;
+}
+
+/*
+ * The panel is sized by what it holds. `.dx-popover-content` (popover/style.css) gives every
+ * popover a fixed one-month width (`width: 18rem`), which is why a second month used to render
+ * OUTSIDE the panel: the calendar's months overflowed a box sized for one. `max-content` makes
+ * the panel as wide as its months side by side (and, for one month, hugs the calendar instead of
+ * leaving a dead strip beside it); `max-width` is the same one-gutter-each-side viewport cap
+ * `.dx-popover-content` has (it used to be dropped here with `unset`), so on a phone the panel
+ * stops growing, the months wrap onto their own rows (calendar/style.css) and the panel stays
+ * inside the viewport -- where `top_layer.rs`'s clamp can place it.
+ */
 .dx-date-picker-group .dx-date-picker-popover-content {
-    max-width: unset;
+    width: max-content;
+    max-width: calc(100% - 2 * var(--dx-space-4));
     padding: 0;
+}
+
+/* One surface: the popover panel is the card, so the calendar inside it carries no second border,
+   shadow and background of its own (calendar/style.css reads these three). */
+.dx-date-picker-popover-content {
+    --dx-calendar-border: none;
+    --dx-calendar-background: transparent;
+    --dx-calendar-shadow: none;
 }
 
 /*
@@ -76,27 +119,35 @@
     pointer-events: none;
 }
 
+/*
+ * The 4px drop animates `translate`, NOT `transform`. The anchored panel centres itself on its
+ * trigger with `transform: translateX(-50%)` (top_layer.rs's engine stylesheet); a keyframe that
+ * sets `transform` replaces that for as long as the animation runs, so the panel played its whole
+ * fade at its un-centred spot (half its width to the right of the trigger -- 144px for a one-month
+ * panel, more for two) and snapped back to centre on the last frame, on every open and close.
+ * `translate` is a separate property that composes with `transform`, so the centring survives.
+ */
 @keyframes dx-date-picker-popover-fade-in {
     from {
         opacity: 0;
-        transform: translateY(-4px);
+        translate: 0 -4px;
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        translate: 0 0;
     }
 }
 
 @keyframes dx-date-picker-popover-fade-out {
     from {
         opacity: 1;
-        transform: translateY(0);
+        translate: 0 0;
     }
 
     to {
         opacity: 0;
-        transform: translateY(-4px);
+        translate: 0 -4px;
     }
 }
 

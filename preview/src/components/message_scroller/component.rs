@@ -5,7 +5,7 @@ use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 use dioxus_primitives::message_scroller::{
     self, MessageScrollerContentProps, MessageScrollerItemProps, MessageScrollerProps,
-    MessageScrollerProviderProps, MessageScrollerViewportProps,
+    MessageScrollerProviderProps, MessageScrollerRowsProps, MessageScrollerViewportProps,
 };
 
 // Re-exported so a demo (or a consumer's own page) can write
@@ -105,6 +105,28 @@ pub fn MessageScrollerItem(props: MessageScrollerItemProps) -> Element {
             scroll_anchor: props.scroll_anchor,
             attributes: merged,
             {props.children}
+        }
+    }
+}
+
+/// A long transcript's rows, grouped in chunks of 20 that the browser skips as a unit
+/// (one skippable element per row costs main-thread time per scroll frame in proportion to the
+/// row count). Use it in place of a `for` loop of `MessageScrollerItem`s.
+#[component]
+pub fn MessageScrollerRows(props: MessageScrollerRowsProps) -> Element {
+    let base = attributes!(div {
+        class: "dx-message-scroller-chunk",
+        "data-slot": "message-scroller-chunk",
+    });
+    let merged = merge_attributes(vec![base, props.attributes]);
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: asset!("/src/components/message_scroller/style.css") }
+        message_scroller::MessageScrollerRows {
+            count: props.count,
+            start: props.start,
+            render_row: props.render_row,
+            attributes: merged,
         }
     }
 }

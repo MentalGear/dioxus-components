@@ -122,6 +122,10 @@ declare -A allowed_qualified=(
     ["interval::use_interval"]=1  # hook, not markup (a component-owned timer, renders
                                    # nothing) -- main.rs `BlockPlayer`,
                                    # progress/variants/main/mod.rs
+    ["js_listener::use_js_listeners"]=1 # hook, not markup (scope-owned JS listeners,
+                                   # renders nothing) -- components/form/component.rs;
+                                   # themed wrappers (sidebar) are exempt and import it freely
+    ["js_listener::JsListeners"]=1 # plain handle type, not markup -- same call sites
     ["toast::ToastOptions"]=1     # plain builder struct, not markup -- same call sites
     ["checkbox::CheckboxState"]=1 # plain enum, not markup -- main.rs,
                                    # preview/src/components/form/component.rs

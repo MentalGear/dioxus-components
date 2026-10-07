@@ -92,8 +92,13 @@
  * out while `[open]` is still set, which also works in every engine.
  *
  * Only the modal arm is touched: the non-modal arm (`[popover]`) paints no scrim
- * at all, as shadcn's popover has no overlay. See `dialog/style.css` for the
- * shared block's full rationale. */
+ * at all, as shadcn's popover has no overlay. The modal arm paints none either
+ * unless `overlay: true`: `PopoverRoot` defaults `overlay` to false, which puts
+ * `data-dx-overlay="off"` on the dialog, and the theme's one
+ * `dialog[data-dx-overlay="off"]::backdrop` rule (`dx-components-theme.css`)
+ * wins over the rules below whatever their specificity -- this block is the
+ * scrim `overlay: true` shows, and needs no knowledge of the switch. See
+ * `dialog/style.css` for the shared block's full rationale. */
 .dx-popover-content:not([popover])::backdrop {
   backdrop-filter: none;
   background: transparent;

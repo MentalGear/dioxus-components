@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-pub use dioxus_primitives::virtual_list::VirtualListProps;
+pub use dioxus_primitives::virtual_list::{VirtualListMode, VirtualListProps};
 use dioxus_primitives::{dioxus_attributes::attributes, merge_attributes};
 
 /// Styled wrapper around the primitive `VirtualList`.
@@ -16,6 +16,8 @@ pub fn VirtualList(props: VirtualListProps) -> Element {
             buffer: props.buffer,
             estimate_size: props.estimate_size,
             render_item: props.render_item,
+            virtualize: props.virtualize,
+            auto_threshold: props.auto_threshold,
             attributes: merged,
         }
     }

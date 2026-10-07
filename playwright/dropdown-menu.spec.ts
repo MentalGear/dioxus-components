@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from './axe';
 import { BASE_URL } from './base-url';
 import { gotoHydrated } from './hydration';
+import { expectFadeKeepsTransform } from './assert-anchor-transform';
 
 test('test', async ({ page }) => {
   await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`);
@@ -396,5 +397,134 @@ test.describe('Axe automated scan', () => {
     await page.getByRole('button', { name: 'Radio Group' }).click();
     await expect(page.getByRole('menuitemradio', { name: 'Top' })).toBeVisible();
     await expectNoAxeViolations(page, 'dropdown-menu: radio group open', { excludeRegions: [EXCLUDE_VENDORED_CODE_HIGHLIGHT] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `DropdownMenuSub { open_on_hover: false }` -- click-activated submenu
+// (preview/src/components/dropdown_menu/variants/click_only_submenu/mod.rs;
+// renders alongside `main` on this page under its own labels). The default
+// hover-open / hover-leave-close contract is pinned, unchanged, by
+// `oracle/tier1-apg/menu-submenu.spec.ts`'s "hover:" tests on `main`.
+// ---------------------------------------------------------------------------
+test.describe('DropdownMenuSub open_on_hover: false (click activation)', () => {
+  const HOVER_SETTLE_MS = 1000; // >> SUBMENU_OPEN_INTENT_DELAY / SUBMENU_CLOSE_GRACE_DELAY (200ms each)
+
+  async function openMenu(page: import('@playwright/test').Page) {
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`, { timeout: 20 * 60 * 1000 });
+    const trigger = page.getByRole('button', { name: 'Actions', exact: true });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+    return {
+      trigger,
+      sub: page.getByRole('menuitem', { name: 'Export as' }),
+      submenu: page.getByRole('menu', { name: 'Export as' }),
+    };
+  }
+
+  test('hovering the sub-trigger for a second does not open it; a click does', async ({ page }) => {
+    const { sub, submenu } = await openMenu(page);
+    await expect(sub).toHaveAttribute('aria-expanded', 'false');
+
+    await sub.hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(sub).toHaveAttribute('aria-expanded', 'false');
+    await expect(submenu).toHaveCount(0);
+
+    await sub.click();
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+    await expect(submenu).toBeVisible();
+    // A click (unlike a hover) lands focus in the submenu.
+    await expect(page.getByRole('menuitem', { name: 'PDF document' })).toBeFocused();
+  });
+
+  test('the pointer leaving a click-opened submenu does not close it', async ({ page }) => {
+    const { sub, submenu } = await openMenu(page);
+    await sub.click();
+    await expect(submenu).toBeVisible();
+
+    // Onto a sibling item of the parent menu -- with hover on, this closes
+    // the submenu after SUBMENU_CLOSE_GRACE_DELAY.
+    await page.getByRole('menuitem', { name: 'Share' }).hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+    await expect(submenu).toBeVisible();
+
+    // And the pointer resting inside then leaving the submenu content does not close it either.
+    await page.getByRole('menuitem', { name: 'Plain text' }).hover();
+    await page.getByRole('menuitem', { name: 'Print' }).hover();
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('keyboard is unchanged: ArrowRight / Enter / Space open, ArrowLeft / Escape close', async ({ page }) => {
+    const { trigger, sub } = await openMenu(page);
+    await page.keyboard.press('ArrowDown'); // Share
+    await page.keyboard.press('ArrowDown'); // Export as
+    await expect(sub).toBeFocused();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('menuitem', { name: 'PDF document' })).toBeFocused();
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(sub).toHaveAttribute('aria-expanded', 'false');
+    await expect(sub).toBeFocused();
+    await expect(trigger).toHaveAttribute('data-state', 'open');
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'PDF document' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(sub).toHaveAttribute('aria-expanded', 'false');
+    await expect(sub).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(page.getByRole('menuitem', { name: 'PDF document' })).toBeFocused();
+  });
+
+  test('selecting a sub-item still closes the whole menu', async ({ page }) => {
+    const { trigger, sub } = await openMenu(page);
+    await sub.click();
+    await page.getByRole('menuitem', { name: 'Plain text' }).click();
+    await expect(trigger).toHaveAttribute('data-state', 'closed');
+    await expect(page.getByText('Chosen: text')).toBeVisible();
+  });
+
+  test('default (open_on_hover: true) is unchanged: hovering More tools still opens it', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Open Menu' }).click();
+    const sub = page.getByRole('menuitem', { name: 'More tools' });
+    await sub.hover();
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Open/close fade vs. the anchor's centring transform (2026-10-05). An anchored overlay centres itself
+// with `transform: translateX(-50%)` (top_layer.rs's engine stylesheet); a `@keyframes` that sets
+// `transform` REPLACES it for as long as it runs (the date picker played its fade 144px off-centre, the
+// colour picker 133px). `DropdownMenuContent` sets no `data-side`, so it has no centring to lose today -- the same
+// shape, latent -- so this probes the rendered keyframes instead of sampling a position that could not
+// move anyway: `assert-anchor-transform.ts` supplies an inline `transform`, seeks the element's own
+// CSS animation to its start/midpoint/end, and asserts the transform survives while `scale`/`translate`
+// do the moving. Source-level guard: scripts/check-anchored-keyframes.sh.
+// ---------------------------------------------------------------------------
+test.describe('Open/close animation', () => {
+  test('the fade animates translate/scale and leaves transform alone (root content and submenu, open and close)', async ({ page }) => {
+    await page.goto(`${BASE_URL}/component/?name=dropdown_menu&`, { timeout: 20 * 60 * 1000 });
+    await page.getByRole('button', { name: 'Open Menu' }).click();
+    const content = page.locator('.dx-dropdown-menu-content[data-state="open"]:not(.dx-dropdown-menu-sub-content)').first();
+    await expect(content).toBeVisible();
+    await expectFadeKeepsTransform(content, 'dropdown menu content, open');
+    await expectFadeKeepsTransform(content, 'dropdown menu content, close', { 'data-state': 'closed' });
+
+    // The submenu shares the keyframes but is its own element.
+    const sub = page.getByRole('menuitem', { name: 'More tools' });
+    await sub.hover();
+    await expect(sub).toHaveAttribute('aria-expanded', 'true');
+    const subContent = page.locator('.dx-dropdown-menu-sub-content[data-state="open"]').first();
+    await expect(subContent).toBeVisible();
+    await expectFadeKeepsTransform(subContent, 'dropdown submenu content, open');
+    await expectFadeKeepsTransform(subContent, 'dropdown submenu content, close', { 'data-state': 'closed' });
   });
 });

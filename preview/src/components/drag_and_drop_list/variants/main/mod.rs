@@ -8,18 +8,22 @@ struct TaskView {
     title: &'static str,
     status: &'static str,
     assignee: &'static str,
-    avatar: &'static str,
+    avatar: Asset,
     due: &'static str,
     urgent: bool,
 }
 
-// Avatar images are the same GitHub portraits used by the Avatar
-// component demo. Each task indexes into this list and the initials fall
-// back in if the image fails to load.
-const AVATARS: &[&str] = &[
-    "https://avatars.githubusercontent.com/u/66571940?s=96&v=4",
-    "https://avatars.githubusercontent.com/u/1007307?s=70&v=4",
-    "https://avatars.githubusercontent.com/u/10237910?s=70&v=4",
+// Avatar images are the bundled illustrations in `preview/assets/avatars`
+// (CC0, see its README), one per assignee, so the demo needs no network.
+// Each task indexes into this list and the initials fall back in if the
+// image fails to load.
+const AVATARS: &[Asset] = &[
+    asset!("/assets/avatars/avery-lin.svg"),
+    asset!("/assets/avatars/casey-park.svg"),
+    asset!("/assets/avatars/robin-hayes.svg"),
+    asset!("/assets/avatars/sarah-chen.svg"),
+    asset!("/assets/avatars/marcus-wright.svg"),
+    asset!("/assets/avatars/lena-park.svg"),
 ];
 
 const TASKS: &[TaskView] = &[
@@ -27,7 +31,7 @@ const TASKS: &[TaskView] = &[
         code: "LNC-128",
         title: "Ship Q2 product roadmap",
         status: "In progress",
-        assignee: "JS",
+        assignee: "AL",
         avatar: AVATARS[0],
         due: "Today",
         urgent: true,
@@ -36,7 +40,7 @@ const TASKS: &[TaskView] = &[
         code: "LNC-142",
         title: "Redesign onboarding flow",
         status: "In review",
-        assignee: "MP",
+        assignee: "CP",
         avatar: AVATARS[1],
         due: "Apr 24",
         urgent: false,
@@ -45,7 +49,7 @@ const TASKS: &[TaskView] = &[
         code: "LNC-147",
         title: "Audit payment webhook logs",
         status: "In progress",
-        assignee: "KT",
+        assignee: "RH",
         avatar: AVATARS[2],
         due: "Apr 29",
         urgent: false,
@@ -54,8 +58,8 @@ const TASKS: &[TaskView] = &[
         code: "LNC-151",
         title: "Draft changelog for v2.4",
         status: "To do",
-        assignee: "AR",
-        avatar: AVATARS[0],
+        assignee: "SC",
+        avatar: AVATARS[3],
         due: "May 02",
         urgent: false,
     },
@@ -63,8 +67,8 @@ const TASKS: &[TaskView] = &[
         code: "LNC-156",
         title: "Migrate analytics to ClickHouse",
         status: "Blocked",
-        assignee: "DL",
-        avatar: AVATARS[1],
+        assignee: "MW",
+        avatar: AVATARS[4],
         due: "May 05",
         urgent: false,
     },
@@ -72,8 +76,8 @@ const TASKS: &[TaskView] = &[
         code: "LNC-160",
         title: "Archive legacy API endpoints",
         status: "Backlog",
-        assignee: "SC",
-        avatar: AVATARS[2],
+        assignee: "LP",
+        avatar: AVATARS[5],
         due: "Later",
         urgent: false,
     },
@@ -191,7 +195,7 @@ pub fn Demo() -> Element {
         div { class: "dx-tasks-demo",
             div { class: "dx-tasks-header",
                 div {
-                    h3 { class: "dx-tasks-title", "Launch priorities" }
+                    h2 { class: "dx-tasks-title", "Launch priorities" }
                     p { class: "dx-tasks-subtitle",
                         "Drag to reorder - top is highest priority"
                     }

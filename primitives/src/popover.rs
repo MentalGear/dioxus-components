@@ -40,6 +40,9 @@
 //! keeps the modal arm trigger-anchored rather than falling back to the
 //! UA's viewport-centered default.
 
+// Only the native (Blitz) modal arm still evaluates script itself (its focus trap); the web arm's
+// open driver is the shared `crate::use_dialog_open_driver`.
+#[cfg(not(feature = "web"))]
 use dioxus::document;
 use dioxus::prelude::*;
 
@@ -69,6 +72,8 @@ struct PopoverCtx {
     // Whether the dialog is a modal and should capture focus.
     #[allow(unused)]
     is_modal: ReadSignal<bool>,
+    // Whether a modal popover keeps its page-dimming scrim. Only the modal arms read it.
+    overlay: ReadSignal<bool>,
     labelledby: Signal<String>,
     // Only read by `use_outside_dismiss` calls, which now live solely in
     // native (Blitz) arms (`PopoverModalContent`/`PopoverNonModalContent`'s
@@ -107,6 +112,16 @@ pub struct PopoverRootProps {
     /// Whether the popover is a modal and should capture focus.
     #[props(default = ReadSignal::new(Signal::new(true)))]
     pub is_modal: ReadSignal<bool>,
+
+    /// Whether a **modal** popover dims the page behind it with the shared overlay scrim.
+    /// Defaults to `false`: shadcn's popover has no overlay, so a modal popover (focus trap,
+    /// inert page, click-outside dismissal) is not dimmed unless asked to be. When `false` the
+    /// content `<dialog>` carries `data-dx-overlay="off"`, which the theme turns into a
+    /// transparent `::backdrop` (see `dx-components-theme.css`); when `true` nothing is set and
+    /// the styled `::backdrop` paints. A non-modal popover has no `::backdrop` scrim either way,
+    /// so this has no effect with `is_modal: false`.
+    #[props(default = ReadSignal::new(Signal::new(false)))]
+    pub overlay: ReadSignal<bool>,
 
     /// The controlled open state of the popover.
     pub open: ReadSignal<Option<bool>>,
@@ -175,6 +190,14 @@ pub struct PopoverRootProps {
 /// }
 /// ```
 ///
+/// ## Modal and overlay
+///
+/// A popover is modal by default (`is_modal`): focus is trapped, the page behind it is inert and a
+/// click outside dismisses it. That does not dim the page: `overlay` (default `false`, like
+/// shadcn's popover) controls the scrim separately. `overlay: true` lets the dialog's `::backdrop`
+/// paint the shared scrim; `overlay: false` sets `data-dx-overlay="off"` on the dialog, which the
+/// theme turns into a transparent `::backdrop`. Only the modal arm has a scrim to switch.
+///
 /// ## Styling
 ///
 /// The [`PopoverRoot`] component defines the following data attributes you can use to control styling:
@@ -208,6 +231,7 @@ pub fn PopoverRoot(props: PopoverRootProps) -> Element {
         open,
         set_open,
         is_modal: props.is_modal,
+        overlay: props.overlay,
         labelledby,
         root_id,
         content_id,
@@ -463,6 +487,11 @@ fn PopoverModalContent(
     // Owned by this component -- dialog role/aria wiring/state must win
     // over a caller's own attributes (`docs/backlog.md` row 93's
     // duplicate-attribute hazard).
+    //
+    // `data-dx-overlay="off"` is the shared overlay switch (`PopoverRootProps::overlay`). A `div`
+    // has no `::backdrop`, so the theme rule keyed on `dialog[...]` has nothing to match here; it
+    // is set anyway so the DOM contract is the same on every target.
+    let overlay_off = !(ctx.overlay)();
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(div {
@@ -473,6 +502,7 @@ fn PopoverModalContent(
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+            "data-dx-overlay": overlay_off.then_some("off"),
         }),
     ]);
 
@@ -486,96 +516,21 @@ fn PopoverModalContent(
     }
 }
 
-/// Drive `showModal()`/`close()` on the modal arm's `<dialog>` from `open`,
-/// guarded by the element's own `.open` -- exactly [`crate::use_dialog_open_driver`]
-/// (including the ink-baseline injection that its doc explains), except that
-/// `close()` is deferred until every animation targeting the dialog (its
-/// `data-state="closed"` content fade, and the transition on its `::backdrop`)
-/// has settled. `data-state` is rendered in the same pass that flips `open`, so
-/// by the next frame those animations exist; a reopen while one is still
-/// running leaves `data-state="open"`, which the final check reads, so the
-/// stale close never runs. With no animation at all (no stylesheet, reduced
-/// motion) the wait is empty and the dialog closes at once.
-#[cfg(feature = "web")]
-fn use_popover_modal_driver(
-    id: impl Readable<Target = String> + Copy + 'static,
-    open: impl Readable<Target = bool> + Copy + 'static,
-) {
-    use_effect(crate::top_layer::ensure_top_layer_ink_styles);
-
-    use_effect(move || {
-        let want_open = open.cloned();
-        let id = id.cloned();
-        // Prepended into this one script rather than left to the separate
-        // effect above, for the reason `use_dialog_open_driver`'s doc gives.
-        let inject = crate::top_layer::TOP_LAYER_INK_STYLES_INJECT_JS;
-        document::eval(&format!(
-            "{inject}
-            const dialog = document.getElementById('{id}');
-            if (!dialog) return;
-            if ({want_open}) {{
-                if (!dialog.open) dialog.showModal();
-                return;
-            }}
-            if (!dialog.open) return;
-            requestAnimationFrame(async () => {{
-                const running = document
-                    .getAnimations()
-                    .filter((a) => a.effect && a.effect.target === dialog);
-                await Promise.allSettled(running.map((a) => a.finished));
-                if (dialog.open && dialog.dataset.state === 'closed') dialog.close();
-            }});"
-        ));
-    });
-}
-
-/// Route the dialog's native `cancel` (Escape) through `set_open` instead of
-/// letting the browser close it on the spot. `cancel`'s default action is an
-/// immediate `close()`, which would skip the exit animation
-/// [`use_popover_modal_driver`] waits for; preventing it and closing via the
-/// signal sends Escape down the same path as every other dismissal. Same
-/// eval-channel shape as [`crate::use_dialog_close_sync`].
-#[cfg(feature = "web")]
-fn use_popover_modal_cancel(
-    id: impl Readable<Target = String> + Copy + 'static,
-    set_open: Callback<bool>,
-) {
-    crate::use_effect_with_cleanup(move || {
-        let mut eval = document::eval(
-            "const id = await dioxus.recv();
-            const dialog = document.getElementById(id);
-            const onCancel = (e) => { e.preventDefault(); dioxus.send(true); };
-            dialog.addEventListener('cancel', onCancel);
-            await dioxus.recv();
-            dialog.removeEventListener('cancel', onCancel);",
-        );
-        let _ = eval.send(id.cloned());
-        spawn(async move {
-            while let Ok(true) = eval.recv::<bool>().await {
-                set_open.call(false);
-            }
-        });
-        move || {
-            let _ = eval.send(true);
-        }
-    });
-}
-
 /// Web arm (native-dialog engine, two-engine overlay architecture
-/// completion): a real `<dialog>` opened with `showModal()`, driven like
-/// `dialog.rs`'s web modal arm by [`crate::use_dialog_close_sync`] and
-/// [`crate::use_dialog_backdrop_dismiss`], but with its own open driver and
-/// `cancel` routing ([`use_popover_modal_driver`]/[`use_popover_modal_cancel`])
-/// so that closing *waits for the exit animation*: the dialog stays modal -- in
-/// the top layer, with its `::backdrop` and its anchored position -- until the
-/// content fade and the scrim fade have both finished, and only then is
-/// `close()` called. `crate::use_dialog_open_driver` closes at once, and a
+/// completion): a real `<dialog>` opened with `showModal()`, driven exactly like
+/// `dialog.rs`'s web modal arm by the shared trio [`crate::use_dialog_open_driver`],
+/// [`crate::use_dialog_close_sync`] and [`crate::use_dialog_backdrop_dismiss`]. There is
+/// one implementation of the deferred close: the dialog stays modal -- in the top
+/// layer, with its `::backdrop` and its anchored position -- until the content fade
+/// and the scrim fade have both finished, and only then is `close()` called. (A
 /// native `close()` takes the dialog out of the top layer synchronously: the
-/// `::backdrop` scrim vanished in one frame, and the anchored-position rules
-/// (keyed on `:modal`, `top_layer.rs`) stopped matching mid-fade. No
-/// `use_global_escape_listener`/`use_outside_dismiss` and no focus-trap eval
-/// on this arm -- the browser's own `showModal()` supplies the focus trap,
-/// focus restore, background inertness, and top-layer rendering.
+/// `::backdrop` scrim would vanish in one frame, and the anchored-position rules,
+/// keyed on `:modal` in `top_layer.rs`, would stop matching mid-fade.) The shared
+/// `close_sync` also routes Escape's `cancel` through state, which is what used to be
+/// a second, duplicate handler here. No
+/// `use_global_escape_listener`/`use_outside_dismiss` and no focus-trap eval on this
+/// arm -- the browser's own `showModal()` supplies the focus trap, focus restore,
+/// background inertness, and top-layer rendering.
 ///
 /// Carries `dx-anchor-popover`/`position-anchor` -- see this module's doc
 /// comment ("trigger-anchored, not centered") for why a modal `Popover`
@@ -611,8 +566,7 @@ fn PopoverModalContent(
     let id_signal = use_signal(|| id.clone());
 
     crate::use_dialog_close_sync(id_signal, set_open);
-    use_popover_modal_driver(id_signal, open);
-    use_popover_modal_cancel(id_signal, set_open);
+    crate::use_dialog_open_driver(id_signal, open);
     // Native <dialog> has no built-in "click outside to dismiss" the way
     // `popover=` does -- see `crate::use_dialog_backdrop_dismiss`'s doc for
     // why `use_outside_dismiss` itself can't be reused for a `showModal()`
@@ -634,6 +588,12 @@ fn PopoverModalContent(
     let attributes = crate::top_layer::anchored_content_attributes(&id, attributes);
     // Owned by this component -- see the native arm's identical
     // construction above (`docs/backlog.md` row 93).
+    //
+    // `data-dx-overlay="off"` (`PopoverRootProps::overlay`, default off) is the shared overlay
+    // switch: the theme's `dialog[data-dx-overlay="off"]::backdrop` rule turns this dialog's
+    // scrim transparent. Rendered with the dialog, so toggling the prop while open fades the
+    // scrim in or out through the stylesheet's own `::backdrop` transition.
+    let overlay_off = !(ctx.overlay)();
     let attributes = merge_attributes(vec![
         attributes,
         attributes!(dialog {
@@ -644,6 +604,7 @@ fn PopoverModalContent(
             "data-state": if is_open { "open" } else { "closed" },
             "data-side": side.as_str(),
             "data-align": align.as_str(),
+            "data-dx-overlay": overlay_off.then_some("off"),
         }),
     ]);
 
