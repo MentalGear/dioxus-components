@@ -12,11 +12,11 @@
   "cargoDependencies": [
     {
       "name": "dioxus-primitives",
-      "git": "https://github.com/DioxusLabs/components"
+      "git": "https://github.com/MentalGear/shadcn-dioxus"
     }
   ],
   "componentDependencies": [
-    "navigation_menu"
+    { "name": "navigation_menu", "git": "https://github.com/MentalGear/shadcn-dioxus" }
   ],
   "globalAssets": [
     "../../../assets/dx-components-theme.css"

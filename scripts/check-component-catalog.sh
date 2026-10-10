@@ -165,7 +165,9 @@ def refs(src):
 for f in sorted(glob.glob(f"{root}/*/component.json")):
     d = os.path.dirname(f)
     name = os.path.basename(d)
-    declared = set(json.load(open(f)).get("componentDependencies") or [])
+    # An entry is a bare name (the CLI resolves it in dx's DEFAULT registry, upstream) or a
+    # {"name", "git"} object (resolved from `git`); check-registry-url.sh requires the object form.
+    declared = {d if isinstance(d, str) else d["name"] for d in json.load(open(f)).get("componentDependencies") or []}
     used = set()
     for rs in glob.glob(f"{d}/**/*.rs", recursive=True):
         if os.path.relpath(rs, d).split(os.sep)[0] == "variants":

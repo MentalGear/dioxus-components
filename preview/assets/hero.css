@@ -36,6 +36,7 @@
 
 .dx-hero-cta {
     display: flex;
+    max-width: 100%;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.85rem;
@@ -100,8 +101,12 @@
     text-wrap: pretty;
 }
 
+/* The command carries `--git <registry URL>`, wider than a phone: `min-width: 0` lets the box shrink
+ * to its container (a flex item's automatic minimum is its nowrap text) and the code truncates, so
+ * the copy button stays on screen. */
 .dx-hero-command {
     display: inline-flex;
+    min-width: 0;
     max-width: 100%;
     height: 2.5rem;
     align-items: center;
@@ -113,8 +118,13 @@
     gap: 0.5rem;
 }
 
+.dx-hero-command > :not(code, .dx-hero-prompt) {
+    flex-shrink: 0;
+}
+
 .dx-hero-command code {
     overflow: hidden;
+    min-width: 0;
     padding-right: 20px;
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.925rem;

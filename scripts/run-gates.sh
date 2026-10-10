@@ -93,6 +93,7 @@ gates=(
   "check-demo-forms|scripts/check-demo-forms.sh"
   "check-demo-remote-assets|scripts/check-demo-remote-assets.sh"
   "check-component-fonts|scripts/check-component-fonts.sh"
+  "check-registry-url|scripts/check-registry-url.sh"
   "fmt|cargo fmt --all -- --check"
   "clippy-default|cargo clippy --workspace $CLIPPY_FLAGS"
   "clippy-web|cargo clippy -p dioxus-primitives -p preview --features dioxus-primitives/web,preview/web $CLIPPY_FLAGS"

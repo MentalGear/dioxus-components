@@ -39,13 +39,22 @@ Once you find a component, you can add it to your project with the Dioxus CLI. I
 cargo install dioxus-cli
 ```
 
-Then, you can add a component to your project with:
+Then, add a component to your project from this repository's registry:
 
 ```
-dx components add button
+dx components add button --git https://github.com/MentalGear/shadcn-dioxus
 ```
 
-This will create a `components` folder in your project (if it doesn't already exist) and add the `Button` component files to it. If this is your first time adding a component, it will also prompt you to add a link to `/assets/dx-components.css` at the root of your app to provide the theme for your app.
+The `--git` flag matters: without it `dx components` reads the default registry (upstream `DioxusLabs/components`), not this one. Keep the URL exactly as written, since the components that depend on each other (and on `dioxus-primitives`) name it too. To leave the flag out, set the registry once in your app's `Dioxus.toml`:
+
+```toml
+[components.registry]
+git = "https://github.com/MentalGear/shadcn-dioxus"
+```
+
+`dx components list --git https://github.com/MentalGear/shadcn-dioxus` shows everything available.
+
+This will create a `components` folder in your project (if it doesn't already exist), add the `Button` component files to it, add the `dioxus-primitives` dependency to your `Cargo.toml`, and copy the shared theme to `assets/dx-components-theme.css`. After the first add, declare the module with `mod components;` in your `main.rs` and link the theme once in your root component with `document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }`.
 
 ## Contributing
 

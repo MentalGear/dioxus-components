@@ -1,5 +1,5 @@
 {
-  "name": "dioxus-components",
+  "name": "shadcn-dioxus",
   "description": "",
   "members": [
     "preview/src/components/tabs",

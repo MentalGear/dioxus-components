@@ -6,13 +6,19 @@
   "cargoDependencies": [
     {
       "name": "dioxus-primitives",
-      "git": "https://github.com/DioxusLabs/components"
+      "git": "https://github.com/MentalGear/shadcn-dioxus"
     },
     {
       "name": "dioxus-icons",
       "version": "0.1.0"
     }
   ],
-  "componentDependencies": ["table", "button", "select", "input", "checkbox"],
+  "componentDependencies": [
+    { "name": "table", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "button", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "select", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "input", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "checkbox", "git": "https://github.com/MentalGear/shadcn-dioxus" }
+  ],
   "globalAssets": ["../../../assets/dx-components-theme.css"]
 }

@@ -6,13 +6,16 @@
   "cargoDependencies": [
     {
       "name": "dioxus-primitives",
-      "git": "https://github.com/DioxusLabs/components"
+      "git": "https://github.com/MentalGear/shadcn-dioxus"
     },
     {
       "name": "palette",
       "version": "0.7.6"
     }
   ],
-  "componentDependencies": ["popover", "input"],
+  "componentDependencies": [
+    { "name": "popover", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "input", "git": "https://github.com/MentalGear/shadcn-dioxus" }
+  ],
   "globalAssets": ["../../../assets/dx-components-theme.css"]
 }

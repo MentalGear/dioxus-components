@@ -12,7 +12,7 @@
   "cargoDependencies": [
     {
       "name": "dioxus-primitives",
-      "git": "https://github.com/DioxusLabs/components"
+      "git": "https://github.com/MentalGear/shadcn-dioxus"
     },
     {
       "name": "dioxus-icons",
@@ -20,11 +20,11 @@
     }
   ],
   "componentDependencies": [
-    "button",
-    "separator",
-    "sheet",
-    "skeleton",
-    "tooltip"
+    { "name": "button", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "separator", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "sheet", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "skeleton", "git": "https://github.com/MentalGear/shadcn-dioxus" },
+    { "name": "tooltip", "git": "https://github.com/MentalGear/shadcn-dioxus" }
   ],
   "globalAssets": [
     "../../../assets/dx-components-theme.css"
