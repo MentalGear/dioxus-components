@@ -1,0 +1,8 @@
+[application]
+name = "preview"
+
+# The static shell's `<title>` (`index.html`) is the site name. dx appends this title to whatever
+# `<title>` the template already has, and its default is "dioxus | ⛺", so an unset title produced
+# "shadcn-dioxusdioxus | ⛺". Empty keeps the template's text as it is.
+[web.app]
+title = ""

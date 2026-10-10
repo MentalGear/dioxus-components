@@ -108,13 +108,13 @@ pub fn category_of(name: &str) -> ComponentCategory {
 pub enum Origin {
     /// A page of shadcn/ui's catalog.
     Shadcn,
-    /// A dioxus-components addition that shadcn/ui does not have. Rendered
+    /// A shadcn-dioxus addition that shadcn/ui does not have. Rendered
     /// with an "Extra" badge (`ExtraBadge`, `main.rs`).
     Extra,
 }
 
 /// Shown as the `title` of every "Extra" badge.
-pub const EXTRA_BADGE_TITLE: &str = "Not part of shadcn/ui \u{2014} a dioxus-components addition";
+pub const EXTRA_BADGE_TITLE: &str = "Not part of shadcn/ui \u{2014} a shadcn-dioxus addition";
 
 /// THE classification: one row per `preview/src/components/<dir>`, naming
 /// whether it is a shadcn/ui catalog page or one of our extras. Everything
