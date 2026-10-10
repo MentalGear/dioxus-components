@@ -3,7 +3,7 @@
 # check-internal-hrefs.sh
 #
 # Keeps internal links on the docs site from escaping the deploy base path.
-# The Pages build is served below `/dioxus-components/` (`dx --base-path`), so
+# The Pages build is served below `/shadcn-dioxus/` (`dx --base-path`), so
 # a root-absolute link that does not go through the router 404s there while
 # working on a dev server mounted at `/`. It hit twice -- the build-time
 # rendered docs.md HTML (now prefixed by `prefix_internal_hrefs` in

@@ -290,8 +290,8 @@ pub fn ChartsKind(kind: String, dark_mode: Option<bool>) -> Element {
     }
 }
 
-/// The site name in a page title: `Area Charts - dioxus-components`.
-const SITE_NAME: &str = "dioxus-components";
+/// The site name in a page title: `Area Charts \u{2013} shadcn-dioxus` (`crate::SITE_NAME`).
+use crate::SITE_NAME;
 
 /// Runs when a tab link is activated, before the router navigates (an inline
 /// handler runs ahead of Dioxus's own delegated one): remembers where the tab

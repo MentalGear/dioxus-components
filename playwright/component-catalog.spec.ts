@@ -25,7 +25,7 @@ import { expectNoAxeViolations, EXCLUDE_VENDORED_CODE_HIGHLIGHT } from "./axe";
 import { BASE_URL } from "./base-url";
 import { gotoHydrated } from "./hydration";
 
-const TITLE = "Not part of shadcn/ui — a dioxus-components addition";
+const TITLE = "Not part of shadcn/ui — a shadcn-dioxus addition";
 
 // --- the list, read from Rust --------------------------------------------------------------
 const MOD_RS = fs.readFileSync(path.join(__dirname, "..", "preview", "src", "components", "mod.rs"), "utf8");

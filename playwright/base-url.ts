@@ -26,7 +26,7 @@ export const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:808
  * (e.g. `oracle/hydration-parity.spec.ts`, which defaults to the :8090 static
  * SSG server). Same `PLAYWRIGHT_BASE_URL` override as `BASE_URL`, only the
  * fallback differs, so one env var points any spec at any server -- including
- * one that serves under a path prefix (`http://127.0.0.1:8090/dioxus-components`,
+ * one that serves under a path prefix (`http://127.0.0.1:8090/shadcn-dioxus`,
  * a `--base-path` build). The trailing slash is stripped so specs can keep
  * writing `${base}/component/x/`.
  */

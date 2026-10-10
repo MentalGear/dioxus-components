@@ -87,7 +87,7 @@ test('pointer entering the content cancels the close', async ({ page }) => {
 test('the plain top-level link is a real link', async ({ page }) => {
   await page.goto(URL, GOTO);
   const docsLink = nav(page).getByRole('link', { name: 'Docs' });
-  // The demo prefixes the router's base path (`/dioxus-components` on
+  // The demo prefixes the router's base path (`/shadcn-dioxus` on
   // Pages, empty on a root-served `dx serve`), so derive it from BASE_URL.
   const basePath = new globalThis.URL(BASE_URL).pathname.replace(/\/$/, '');
   await expect(docsLink).toHaveAttribute('href', `${basePath}/docs`);

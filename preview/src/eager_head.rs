@@ -224,7 +224,7 @@ mod tests {
 
         doc.create_link(link(
             "stylesheet",
-            "/dioxus-components/assets/style-dxh1a2b.css?v=1",
+            "/shadcn-dioxus/assets/style-dxh1a2b.css?v=1",
         ));
 
         let evals = evals.borrow();

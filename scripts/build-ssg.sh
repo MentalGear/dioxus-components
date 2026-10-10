@@ -5,7 +5,7 @@
 #   CARGO_TARGET_DIR=/abs/isolated/dir scripts/build-ssg.sh [debug|release] [--base-path P] [--no-css-bundle]
 #
 # Default profile: debug (the cheap one; deploy-preview.sh passes `release --base-path
-# dioxus-components`). On success prints, as its last two lines,
+# shadcn-dioxus`). On success prints, as its last two lines,
 #   PUBLIC_DIR=<$CARGO_TARGET_DIR/dx/preview/<profile>/web/public>
 #   STALE_HTML=0
 # and exits non-zero (with a reason on stderr) otherwise.
@@ -15,7 +15,7 @@
 #     the still-relative server binary and dies with an opaque "No such file or directory
 #     (os error 2)" (row 98); and an unset value means the shared repo `target/` (row 100).
 #  2. A no-base-path build refuses a tree carrying the `.base-path-build` marker: such a tree
-#     keeps emitting `/dioxus-components/` URLs even after `rm -rf public` (row 100 -- the
+#     keeps emitting `/<base-path>/` URLs even after `rm -rf public` (row 100 -- the
 #     tree is the problem, not its output). The marker is written HERE, before any
 #     `--base-path` build; scripts/lane-target.sh refuses marked trees as lane templates.
 #     The vice-versa direction (base-path build into an unmarked tree) is NOT refused: no
@@ -29,7 +29,7 @@
 #  4. Freshness: every `public/**/index.html` must be newer than a marker taken just before dx
 #     starts (stale ones are counted and fail the build; zero pages fails too).
 #  5. Output matches the requested base path: with `--base-path P` the root page must reference
-#     `/P/...`; without it NO page may reference `/dioxus-components/...` (same pattern as
+#     `/P/...`; without it NO page may reference `/shadcn-dioxus/...` or the pre-rename `/dioxus-components/...` (same pattern as
 #     scripts/lane-target.sh's contamination grep).
 #  4b. Every page's <head> carries ONE render-blocking bundle of every component stylesheet
 #     (scripts/ssg-css-bundle.mjs, run between guards 4 and 5 so guard 5 checks the final output). The
@@ -79,7 +79,7 @@ public_dir="$target_dir/dx/preview/$profile/web/public"
 if [ -z "$base_path" ] && [ -e "$marker_file" ]; then
   echo "error: $target_dir carries $marker_file ($(head -n1 "$marker_file"))." >&2
   echo "       A no-base-path build in a tree that ever held a --base-path build emits" >&2
-  echo "       /dioxus-components/ URLs everywhere, and wiping public/ does not fix it" >&2
+  echo "       base-path (/shadcn-dioxus/) URLs everywhere, and wiping public/ does not fix it" >&2
   echo "       (dev-docs/backlog.md row 100). Use a fresh tree: eval \"\$(scripts/lane-target.sh create <name>)\"." >&2
   exit 1
 fi
@@ -174,8 +174,8 @@ if [ -n "$base_path" ]; then
     exit 1
   fi
 else
-  if hit="$(grep -rlE --include='*.html' "[\"'(]/dioxus-components/" "$public_dir" | head -n 3)" && [ -n "$hit" ]; then
-    echo "error: no --base-path requested but the output references /dioxus-components/ URLs (row 100):" >&2
+  if hit="$(grep -rlE --include='*.html' "[\"'(]/(shadcn-dioxus|dioxus-components)/" "$public_dir" | head -n 3)" && [ -n "$hit" ]; then
+    echo "error: no --base-path requested but the output references /shadcn-dioxus/ (or legacy /dioxus-components/) URLs (row 100):" >&2
     printf '  - %s\n' $hit >&2
     echo "       This tree carries base-path build artifacts; use a fresh one (scripts/lane-target.sh create)." >&2
     exit 1

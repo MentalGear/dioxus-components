@@ -11,11 +11,11 @@
 # absolute (dx --ssg breaks on relative ones, row 98) and never the shared repo `target/`.
 #
 # The template must be base-path-free (row 100: a tree that ever held a
-# `--base-path dioxus-components` build keeps emitting prefixed URLs even after
+# `--base-path shadcn-dioxus` build keeps emitting prefixed URLs even after
 # `rm -rf public`). Two checks, because neither alone is enough:
 #   1. marker `<template>/.base-path-build`, written by scripts/deploy-preview.sh --
 #      instant, and catches a tree whose `public/` was already wiped;
-#   2. grep of the template's dx `public/` HTML for quoted `/dioxus-components/` URLs --
+#   2. grep of the template's dx `public/` HTML for quoted `/shadcn-dioxus/` (or legacy `/dioxus-components/`) URLs --
 #      authoritative on the actual output, catches templates made by hand.
 # Defaults: root $LANE_TARGET_ROOT or /home/user/tgt, template $LANE_TARGET_TEMPLATE or <root>/template.
 set -euo pipefail
@@ -48,7 +48,7 @@ contaminated() { # $1 = tree; prints why and returns 0 if it holds a base-path b
   local d
   for d in "$1"/dx/*/*/web/public; do
     [ -d "$d" ] || continue
-    grep -rqE --include='*.html' "[\"'(]/dioxus-components/" "$d" && { echo "base-path URLs in $d"; return 0; }
+    grep -rqE --include='*.html' "[\"'(]/(shadcn-dioxus|dioxus-components)/" "$d" && { echo "base-path URLs in $d"; return 0; }
   done
   return 1
 }

@@ -391,16 +391,16 @@ test("a keyboard tab switch lands on the new tab, not the page top", async ({ pa
 test("each tab has its own document title", async ({ page }) => {
   for (const tab of TABS) {
     await gotoHydrated(page, `${BASE_URL}/charts/${tab.slug}/`);
-    await expect(page).toHaveTitle(`${tab.label} \u2013 dioxus-components`);
+    await expect(page).toHaveTitle(`${tab.label} \u2013 shadcn-dioxus`);
   }
   await gotoHydrated(page, `${BASE_URL}/charts/`);
-  await expect(page).toHaveTitle("Area Charts \u2013 dioxus-components");
+  await expect(page).toHaveTitle("Area Charts \u2013 shadcn-dioxus");
   // ... and a client-side switch updates it.
   await page
     .getByRole("navigation", { name: "Chart types" })
     .getByRole("link", { name: "Line Charts" })
     .click();
-  await expect(page).toHaveTitle("Line Charts \u2013 dioxus-components");
+  await expect(page).toHaveTitle("Line Charts \u2013 shadcn-dioxus");
 });
 
 test("the interactive bar toggles have no UA button border", async ({ page }) => {

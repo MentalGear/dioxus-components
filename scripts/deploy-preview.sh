@@ -24,7 +24,7 @@ public_dir="$target_dir/dx/preview/release/web/public"
 # Wipes public/ first (dx's asset pipeline never cleans previous content-hashed
 # wasm/js out of it), tags the tree `.base-path-build` (row 100) and verifies every
 # page is fresh. `--force-sequential=true` is passed there, see the note below.
-"$repo_root/scripts/build-ssg.sh" release --base-path dioxus-components
+"$repo_root/scripts/build-ssg.sh" release --base-path shadcn-dioxus
 
 # `dx build --ssg` has a known, pre-existing race (unrelated to any one
 # source change -- reproduced identically on an untouched checkout, see

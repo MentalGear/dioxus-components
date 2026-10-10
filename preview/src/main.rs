@@ -54,6 +54,21 @@ mod polar_parity;
 mod theme;
 mod wasm_libc_shim;
 
+/// The site's display name: the header brand, the footer, the home hero, the docs intro, every
+/// `document::Title` suffix (`charts_gallery`) and the Open Graph `og:site_name`. The static shell's
+/// `<title>` in `index.html` is the one place Rust cannot reach; `site_name_tests` pins it to this.
+/// The crates keep their own names (`dioxus-primitives`), and so does the Git repository, which is
+/// also the GitHub Pages path (`--base-path shadcn-dioxus`, renamed from `dioxus-components` on 2026-10-10): this is the SITE's name only.
+pub(crate) const SITE_NAME: &str = "shadcn-dioxus";
+
+/// The one-sentence description behind `<meta name="description">`, `og:description` and
+/// `twitter:description`.
+const SITE_DESCRIPTION: &str = "Accessible, themeable Dioxus components in the shadcn/ui style, built on unstyled primitives and copied into your project.";
+
+/// Where the site is served from, without the path. A Pages repository rename moves the path, never
+/// this; `og:image` needs an absolute URL because link-preview scrapers do not resolve relative ones.
+const SITE_ORIGIN: &str = "https://mentalgear.github.io";
+
 #[derive(Copy, Clone, PartialEq)]
 enum ComponentType {
     /// Normal component as default.
@@ -576,7 +591,7 @@ fn Navbar() -> Element {
                             width: "18",
                             height: "18",
                         }
-                        span { "dioxus-components" }
+                        span { "{SITE_NAME}" }
                     }
                     Link { to: Route::docs(), class: "dx-navbar-link", "Docs" }
                     Link { to: Route::demos(), class: "dx-navbar-link", "Demos" }
@@ -600,7 +615,7 @@ fn Navbar() -> Element {
                     //     }
                     // }
                     Link {
-                        to: "https://github.com/DioxusLabs/components",
+                        to: "https://github.com/MentalGear/shadcn-dioxus",
                         class: "dx-navbar-link",
                         img {
                             class: "dx-light-mode-only",
@@ -643,7 +658,7 @@ fn Footer() -> Element {
                             width: "22",
                             height: "22",
                         }
-                        span { "Dioxus Components" }
+                        span { "{SITE_NAME}" }
                     }
                     p { class: "dx-footer-tagline",
                         "Accessible, themeable interface pieces for Dioxus apps."
@@ -660,7 +675,7 @@ fn Footer() -> Element {
                     div { class: "dx-footer-nav-group",
                         span { class: "dx-footer-nav-heading", "Project" }
                         Link {
-                            to: "https://github.com/DioxusLabs/dioxus-components",
+                            to: "https://github.com/MentalGear/shadcn-dioxus",
                             class: "dx-footer-link",
                             "GitHub"
                         }
@@ -1095,15 +1110,15 @@ fn Docs(dark_mode: Option<bool>) -> Element {
             article { class: "dx-docs-page dx-docs-prose",
                 header { class: "dx-docs-page-header",
                     p { class: "dx-docs-eyebrow", "Docs" }
-                    h1 { "Build with dioxus-components" }
+                    h1 { "Build with {SITE_NAME}" }
                     p {
-                        "dioxus-components is a collection of styled, accessible Dioxus components designed to be copied into your app. Use the CLI when you want the fastest path, or copy the source when you want complete ownership."
+                        "{SITE_NAME} is a collection of styled, accessible Dioxus components designed to be copied into your app. Use the CLI when you want the fastest path, or copy the source when you want complete ownership."
                     }
                 }
                 section { class: "dx-docs-section",
                     h2 { id: "{docs_section_slug(DOCS_SECTIONS[0])}", "{DOCS_SECTIONS[0]}" }
                     p {
-                        "dioxus-components is not yet on crates.io. For now, components ship from this Git repository — you point your app at the primitives library here, then pull individual styled components into your source tree with the Dioxus CLI."
+                        "{SITE_NAME} is not yet on crates.io. For now, components ship from this Git repository — you point your app at the primitives library here, then pull individual styled components into your source tree with the Dioxus CLI."
                     }
                     p {
                         "Start by adding the underlying primitives library to your app's "
@@ -1111,7 +1126,7 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                         " from the Git path:"
                     }
                     pre {
-                        code { r#"dioxus-primitives = {{ git = "https://github.com/DioxusLabs/components" }}"# }
+                        code { r#"dioxus-primitives = {{ git = "https://github.com/MentalGear/shadcn-dioxus" }}"# }
                     }
                     p {
                         "The styled components live in this same repository as a registry. The "
@@ -1542,7 +1557,7 @@ const TEMPLATE_H2_HEADINGS: [&str; 4] = [
     PAGE_HEADING_VARIANTS,
 ];
 
-/// Prefixes the app base path (`dx --base-path`, e.g. `/dioxus-components`)
+/// Prefixes the app base path (`dx --base-path`, e.g. `/shadcn-dioxus`)
 /// onto root-absolute `href="/..."` links in the build-time rendered
 /// `docs.md` HTML. `build.rs` bakes that HTML before the base path is
 /// known, and a root-absolute href otherwise escapes the base path when
@@ -2051,7 +2066,46 @@ fn BlockComponentVariantHighlight(
 /// font preload or the browser fetches the file twice.
 #[component]
 fn GlobalHead() -> Element {
+    // The `og:image` URL: the 512 px icon, absolute (see `SITE_ORIGIN`). `asset!()` already carries the
+    // build's `--base-path`, so a root-relative path gets only the origin put in front of it.
+    let icon = asset!("/assets/icon-512.png").to_string();
+    let og_image = if icon.starts_with('/') {
+        format!("{SITE_ORIGIN}{icon}")
+    } else {
+        icon
+    };
     rsx! {
+        // Icons go through `asset!()` (a static `<link>` in `index.html` is not prefixed with the base
+        // path). The PNG comes first and the SVG last, so an engine that understands both takes the SVG,
+        // which follows the browser's light/dark scheme itself (`@media (prefers-color-scheme)` inside
+        // the file; it does not follow the site's own `data-theme` toggle).
+        document::Link {
+            rel: "icon",
+            r#type: "image/png",
+            sizes: "32x32",
+            href: asset!("/assets/favicon-32.png"),
+        }
+        document::Link {
+            rel: "icon",
+            r#type: "image/svg+xml",
+            sizes: "any",
+            href: asset!("/assets/favicon.svg"),
+        }
+        document::Link {
+            rel: "apple-touch-icon",
+            sizes: "180x180",
+            href: asset!("/assets/apple-touch-icon.png"),
+        }
+        document::Meta { name: "description", content: SITE_DESCRIPTION }
+        document::Meta { property: "og:site_name", content: SITE_NAME }
+        document::Meta { property: "og:title", content: SITE_NAME }
+        document::Meta { property: "og:type", content: "website" }
+        document::Meta { property: "og:description", content: SITE_DESCRIPTION }
+        document::Meta { property: "og:image", content: "{og_image}" }
+        document::Meta { name: "twitter:card", content: "summary" }
+        document::Meta { name: "twitter:title", content: SITE_NAME }
+        document::Meta { name: "twitter:description", content: SITE_DESCRIPTION }
+        document::Meta { name: "twitter:image", content: "{og_image}" }
         document::Link {
             rel: "preload",
             r#as: "font",
@@ -2256,7 +2310,7 @@ fn Home(iframe: Option<bool>, dark_mode: Option<bool>) -> Element {
                 div { id: "hero",
                     div { class: "dx-hero-shell",
                         h1 { class: "dx-hero-heading",
-                            span { class: "dx-hero-title", "dioxus-components" }
+                            span { class: "dx-hero-title", "{SITE_NAME}" }
                             span { class: "dx-hero-subtitle",
                                 "beautiful, accessible, responsive components for dioxus apps"
                             }
@@ -3271,6 +3325,22 @@ mod variant_title_tests {
 }
 
 #[cfg(test)]
+mod site_name_tests {
+    const INDEX_HTML: &str = include_str!("../index.html");
+
+    /// The static shell paints before any Rust runs, so its `<title>` is a second copy of the name.
+    /// It must be the site name and nothing else, or the tab flashes a different name on load.
+    #[test]
+    fn index_html_title_is_the_site_name() {
+        assert!(
+            INDEX_HTML.contains(&format!("<title>{}</title>", super::SITE_NAME)),
+            "preview/index.html's <title> must be exactly `{}` (main.rs SITE_NAME)",
+            super::SITE_NAME
+        );
+    }
+}
+
+#[cfg(test)]
 mod docs_tests {
     use super::TEMPLATE_H2_HEADINGS;
 
@@ -3324,31 +3394,31 @@ mod docs_tests {
     #[test]
     fn root_absolute_hrefs_gain_the_base_path() {
         let html = r##"<a href="/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##;
-        let prefixed = super::prefix_root_absolute_hrefs(html, "/dioxus-components");
+        let prefixed = super::prefix_root_absolute_hrefs(html, "/shadcn-dioxus");
         assert_eq!(
             prefixed,
-            r##"<a href="/dioxus-components/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##
+            r##"<a href="/shadcn-dioxus/component/chart/">Chart</a> <a href="https://x.dev/">x</a> <a href="#a">a</a>"##
         );
         assert_eq!(super::prefix_root_absolute_hrefs(html, ""), html);
         assert_eq!(super::prefix_root_absolute_hrefs(html, "/"), html);
         // Idempotent: already-prefixed hrefs are left alone.
         assert_eq!(
-            super::prefix_root_absolute_hrefs(&prefixed, "/dioxus-components"),
+            super::prefix_root_absolute_hrefs(&prefixed, "/shadcn-dioxus"),
             prefixed
         );
         // Protocol-relative links are not root-absolute paths.
         let proto = r#"<a href="//cdn.example.com/x">x</a> <a href="/docs">d</a>"#;
         assert_eq!(
-            super::prefix_root_absolute_hrefs(proto, "/dioxus-components"),
-            r#"<a href="//cdn.example.com/x">x</a> <a href="/dioxus-components/docs">d</a>"#
+            super::prefix_root_absolute_hrefs(proto, "/shadcn-dioxus"),
+            r#"<a href="//cdn.example.com/x">x</a> <a href="/shadcn-dioxus/docs">d</a>"#
         );
         // A sibling path that merely starts with the prefix text still gets it.
         assert_eq!(
             super::prefix_root_absolute_hrefs(
-                r#"<a href="/dioxus-components-x/">x</a>"#,
-                "/dioxus-components"
+                r#"<a href="/shadcn-dioxus-x/">x</a>"#,
+                "/shadcn-dioxus"
             ),
-            r#"<a href="/dioxus-components/dioxus-components-x/">x</a>"#
+            r#"<a href="/shadcn-dioxus/shadcn-dioxus-x/">x</a>"#
         );
     }
 
