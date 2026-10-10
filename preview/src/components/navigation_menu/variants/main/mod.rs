@@ -2,7 +2,7 @@ use super::super::component::*;
 use dioxus::prelude::*;
 
 /// A root-absolute site path with the app base path (`dx --base-path`, e.g.
-/// `/dioxus-components` on Pages) in front. `NavigationMenuLink` renders a
+/// `/shadcn-dioxus` on Pages) in front. `NavigationMenuLink` renders a
 /// plain `<a>`, not a router `Link`, so it does not get the prefix for free
 /// and a bare `"/docs"` would 404 when the site is served below a sub-path.
 fn site_href(path: &str) -> String {
@@ -45,7 +45,7 @@ pub fn Demo() -> Element {
                                     href: site_href("/"),
                                     content_index: 0usize,
                                     class: "dx-navigation-menu-featured",
-                                    // Deliberately not "dioxus-components" --
+                                    // Deliberately not "shadcn-dioxus" --
                                     // the site's own persistent chrome
                                     // (`main.rs`'s navbar brand link) already
                                     // renders an `<a>` with that exact

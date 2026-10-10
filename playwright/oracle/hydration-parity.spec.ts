@@ -22,7 +22,7 @@
  *
  * ## The 2026-09-01 production incident this guards against
  *
- * The deployed site (https://mentalgear.github.io/dioxus-components/) is
+ * The deployed site (https://mentalgear.github.io/shadcn-dioxus/) is
  * built by CI as fullstack SSG (`.github/workflows/web.yml`: `ssg: true,
  * features: fullstack`). The SSG prerender runs the *server* binary -- a
  * host (non-wasm) build, not the wasm client. Before the axis fix this
@@ -670,8 +670,8 @@ test.describe("hydration parity — synthesized attribute collisions (Rule 4c)",
 });
 
 test.describe("hydration parity — SSG server markup vs. wasm client", () => {
-  // Row 123 / row 100: a `--base-path dioxus-components` build (the deploy build) served at
-  // `/` makes every internal URL `/dioxus-components/...`, which fails several rules below
+  // Row 123 / row 100: a `--base-path shadcn-dioxus` build (the deploy build) served at
+  // `/` makes every internal URL `/shadcn-dioxus/...`, which fails several rules below
   // for a test-setup reason that reads exactly like a hydration regression. Say so once, first.
   // Skipped when BASE itself carries a path (a base-path build served under its prefix).
   test("Rule 0: the served build matches the served base path (no base-path build served at root)", async ({
@@ -681,13 +681,13 @@ test.describe("hydration parity — SSG server markup vs. wasm client", () => {
     const response = await request.get(`${BASE}/`, { timeout: NAV_TIMEOUT });
     expect(response.ok()).toBeTruthy();
     const html = await response.text();
-    const prefixed = html.match(/["'(]\/dioxus-components\//g) ?? [];
+    const prefixed = html.match(/["'(]\/shadcn-dioxus\//g) ?? [];
     expect(
       prefixed.length,
       `WRONG BUILD SERVED, not a hydration failure: ${BASE}/ contains ${prefixed.length} ` +
-        `"/dioxus-components/" URL(s) -- a --base-path build (scripts/deploy-preview.sh, backlog row 100) ` +
+        `"/shadcn-dioxus/" URL(s) -- a --base-path build (scripts/deploy-preview.sh, backlog row 100) ` +
         `is being served at the root. Serve a no-base-path build at "/", or set ` +
-        `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090/dioxus-components to serve it under its prefix.`,
+        `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090/shadcn-dioxus to serve it under its prefix.`,
     ).toBe(0);
   });
 
