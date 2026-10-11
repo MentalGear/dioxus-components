@@ -1,0 +1,4 @@
+# cargo-generate configuration for the starter template (`dx new --template ... --subtemplate templates/starter`).
+# No prompts: the project name is the only input, and `dx new --yes` must never block on one.
+[template]
+exclude = ["**/.DS_Store"]

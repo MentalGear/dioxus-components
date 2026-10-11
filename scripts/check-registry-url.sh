@@ -19,7 +19,16 @@
 # Rules, over preview/src/components/*/component.json:
 #   - every `componentDependencies` entry is an object whose `git` is REGISTRY_GIT_URL;
 #   - every `cargoDependencies` entry named dioxus-primitives or dioxus-attributes has `git` == REGISTRY_GIT_URL;
-#   - the README's install commands use REGISTRY_GIT_URL.
+#   - the README's install commands use REGISTRY_GIT_URL;
+#   - the starter template (`templates/starter`, `dx new --template ... --subtemplate templates/starter`)
+#     pins the same string twice: `[components.registry] git` in its Dioxus.toml (so a new app's plain
+#     `dx components add <name>` reads this registry) and the `dioxus-primitives` `git` in its
+#     Cargo.toml.liquid.
+#
+#   - the installer CLI (`cli/`, package `shadcn-dioxus`) cannot reach preview's constant, so it keeps its own
+#     `pub const DEFAULT_REGISTRY_GIT_URL: &str = "...";` in cli/src/registry.rs: it must equal REGISTRY_GIT_URL
+#     (it is the registry `shadcn-dioxus add` reads when nothing else is named), and cli/README.md's
+#     `cargo install --git` command must use the same string.
 #
 # Usage: scripts/check-registry-url.sh
 # Exit status: 0 when clean, 1 on a violation, 2 when REGISTRY_GIT_URL cannot be read.
@@ -61,5 +70,55 @@ if ! grep -q -- "dx components add .* --git $url" README.md; then
   fail=1
 fi
 
+tpl=templates/starter
+tpl_dx="$tpl/Dioxus.toml"
+tpl_cargo="$tpl/Cargo.toml.liquid"
+if [ ! -f "$tpl_dx" ] || [ ! -f "$tpl_cargo" ]; then
+  echo "check-registry-url: $tpl_dx or $tpl_cargo is missing" >&2
+  fail=1
+else
+  tpl_report="$(python3 -I - "$url" "$tpl_dx" "$tpl_cargo" <<'PY'
+import re, sys
+
+url, dx_path, cargo_path = sys.argv[1:4]
+dx = open(dx_path).read()
+m = re.search(r'^\[components\.registry\]\s*\n(?:[^\[\n]*\n)*?\s*git\s*=\s*"([^"]*)"', dx, re.M)
+if not m:
+    print(f"{dx_path}: no `[components.registry]` table with a `git = \"...\"` key")
+elif m.group(1) != url:
+    print(f"{dx_path}: [components.registry] git is {m.group(1)!r}, want {url!r}")
+cargo = open(cargo_path).read()
+m = re.search(r'^dioxus-primitives\s*=\s*\{[^}]*\bgit\s*=\s*"([^"]*)"', cargo, re.M)
+if not m:
+    print(f"{cargo_path}: no `dioxus-primitives = {{ git = \"...\" }}` dependency")
+elif m.group(1) != url:
+    print(f"{cargo_path}: dioxus-primitives git is {m.group(1)!r}, want {url!r}")
+PY
+)"
+  if [ -n "$tpl_report" ]; then
+    echo "check-registry-url: starter template out of step with REGISTRY_GIT_URL ($url):" >&2
+    echo "$tpl_report" >&2
+    fail=1
+  fi
+fi
+
+if ! grep -q -- "dx new .* --template $url --subtemplate templates/starter" README.md; then
+  echo "check-registry-url: README.md has no \`dx new <name> --template $url --subtemplate templates/starter\` command" >&2
+  fail=1
+fi
+
+cli_url="$(sed -n 's/^pub const DEFAULT_REGISTRY_GIT_URL: &str = "\(.*\)";$/\1/p' cli/src/registry.rs)"
+if [ -z "$cli_url" ]; then
+  echo "check-registry-url: no \`pub const DEFAULT_REGISTRY_GIT_URL: &str = \"...\";\` in cli/src/registry.rs" >&2
+  fail=1
+elif [ "$cli_url" != "$url" ]; then
+  echo "check-registry-url: cli/src/registry.rs DEFAULT_REGISTRY_GIT_URL is $cli_url, want $url" >&2
+  fail=1
+fi
+if ! grep -q -- "cargo install --git $url shadcn-dioxus" cli/README.md; then
+  echo "check-registry-url: cli/README.md has no \`cargo install --git $url shadcn-dioxus\` command" >&2
+  fail=1
+fi
+
 [ "$fail" -ne 0 ] && exit 1
-echo "check-registry-url: OK -- every component.json dependency names $url."
+echo "check-registry-url: OK -- every component.json dependency, the starter template and the installer CLI name $url."
