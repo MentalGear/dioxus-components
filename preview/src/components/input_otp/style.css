@@ -72,9 +72,10 @@
   }
 }
 
+/* Reduced motion: a steady caret (an infinite 0.01 ms loop would flicker, not stop). */
 @media (prefers-reduced-motion: reduce) {
   .dx-input-otp-slot[data-active="true"]::after {
-    animation-duration: var(--dx-motion-duration-reduced);
+    animation: none;
   }
 }
 

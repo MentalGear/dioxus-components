@@ -129,3 +129,7 @@ is skipped by arrow keys and typeahead. The check is drawn at the inline end, in
 ## Direction / RTL
 
 `DropdownMenu` accepts a `dir: Option<Direction>` prop, inherited by every `DropdownMenuSub`. Under RTL: the submenu open key becomes `ArrowLeft` (was `ArrowRight`), the close key becomes `ArrowRight` (was `ArrowLeft`; `Escape` always closes regardless of direction), and each `DropdownMenuSubContent` opens to the left of its trigger instead of the right. See the `rtl` variant.
+
+## Motion
+
+The menu panel fades and scales in over `--dx-motion-duration-base` (`opacity`, `scale` from 0.95 and a 2px `translate`, never `transform`, so the anchor's centring survives) and fades out with `--dx-motion-ease-in`; item highlights use `--dx-motion-duration-fast`. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

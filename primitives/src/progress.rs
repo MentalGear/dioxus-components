@@ -67,6 +67,11 @@ pub fn Progress(props: ProgressProps) -> Element {
         None => "indeterminate",
     });
 
+    // Only the indeterminate bar loops: it is paused while off-screen or in a hidden tab
+    // (`crate::activity`; the theme turns `data-dx-motion="paused"` into
+    // `animation-play-state: paused`). A determinate bar subscribes to nothing.
+    let motion = crate::activity::use_motion_when(move || state() == "indeterminate");
+
     // Merged (caller-wins, deduped) rather than set here and then spread
     // over by `..props.attributes` below: doing that emits the SAME
     // attribute name (e.g. a caller `style` override, exercised by the
@@ -90,6 +95,7 @@ pub fn Progress(props: ProgressProps) -> Element {
             style: percentage().map(|p| format!("--progress-value: {p}%")),
         }),
         props.attributes,
+        motion.attributes(),
     ]);
 
     rsx! {

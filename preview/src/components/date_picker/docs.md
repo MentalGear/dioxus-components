@@ -67,3 +67,7 @@ computes its ranges from today, so they are always inside the month the picker o
 `false`, forwarded to the popover primitive: it only matters for a **modal** popover
 (`is_modal: true`), where `overlay: true` dims the page behind it with the shared scrim and
 `false` leaves it transparent. The styled pickers are non-modal, so it is a no-op for them.
+
+## Motion
+
+The calendar popover fades in and out over `--dx-motion-duration-base`. After a selection the popover waits `close_delay` (default 300 ms; `Duration::ZERO` closes at once, `close_on_select: false` keeps it open) so the click visibly registers, then plays its normal exit. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

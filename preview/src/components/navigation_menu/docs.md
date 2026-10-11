@@ -89,3 +89,7 @@ here are fixed.
   supported here): move to the previous/next link in that panel, stopping
   at the first/last link rather than wrapping.
 - Moving focus out of the whole navigation menu closes an open panel.
+
+## Motion
+
+Opening content slides in over `--dx-motion-duration-slow` and out over `--dx-motion-duration-base` (`opacity`, `scale` and `translate`, never `transform`); the trigger chevron rotates with `--dx-motion-ease-standard`. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

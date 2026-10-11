@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_primitives::activity::use_motion_when;
 use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
@@ -82,17 +83,25 @@ pub fn MarkerIcon(
 }
 
 /// The marker's text. Add the `dx-shimmer` class (from
-/// `assets/dx-effects.css`) for the animated streaming-text effect.
+/// `assets/dx-effects.css`) for the animated streaming-text effect. The sweep
+/// is paused while the text is off-screen, in a skipped `content-visibility`
+/// subtree or in a hidden tab (`primitives/src/activity.rs`); a marker without
+/// the class observes nothing.
 #[component]
 pub fn MarkerContent(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    let shimmer = attributes.iter().any(|a| {
+        a.name == "class" && matches!(&a.value, dioxus::core::AttributeValue::Text(t) if t.contains("dx-shimmer"))
+    });
+    let shimmering = use_memo(use_reactive!(|shimmer| shimmer));
+    let motion = use_motion_when(move || *shimmering.read());
     let base = attributes!(span {
         class: "dx-marker-content",
         "data-slot": "marker-content",
     });
-    let merged = merge_attributes(vec![base, attributes]);
+    let merged = merge_attributes(vec![base, attributes, motion.attributes()]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/marker/style.css") }
         span { ..merged, {children} }

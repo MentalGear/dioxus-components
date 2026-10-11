@@ -24,3 +24,7 @@ context menu submenus), which take an `open_on_hover` prop to switch hover
 off, a hover card has no such option: hovering (or focusing) the trigger *is*
 what opens it, and its content is supplementary -- never the only way to reach
 something. For a panel opened by a click, use [Popover](/component/popover/).
+
+## Motion
+
+The card fades in and out over `--dx-motion-duration-fast` (`opacity` only, so the anchor's `transform` centring is untouched). Retune with that token. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

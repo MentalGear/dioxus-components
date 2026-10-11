@@ -93,3 +93,7 @@ same in both modes. See the `click_only` variant.
 ## Direction / RTL
 
 `Menubar` accepts a `dir: Option<Direction>` prop. Its top-level trigger row is always horizontal, so `ArrowLeft`/`ArrowRight` between menus always swaps under RTL. See the `rtl` variant.
+
+## Motion
+
+The open menu animates in and out over `--dx-motion-duration-base` with `--dx-motion-ease-out` / `--dx-motion-ease-in`, in `opacity`, `scale` and `translate` only (never `transform`); item highlights use `--dx-motion-duration-fast`. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

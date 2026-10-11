@@ -49,6 +49,7 @@ mod dashboard;
 #[cfg(not(feature = "server"))]
 mod eager_head;
 mod installed_source;
+mod motion_docs;
 #[cfg(test)]
 mod polar_parity;
 mod theme;
@@ -78,6 +79,28 @@ fn dx_list_command() -> String {
 /// The command that installs `name` (a component directory name) from this registry.
 fn dx_add_command(name: &str) -> String {
     format!("dx components add {name} --git {REGISTRY_GIT_URL}")
+}
+
+/// The command that scaffolds a new app from this repository's starter template
+/// (`templates/starter`). The template's `Dioxus.toml` names `REGISTRY_GIT_URL` as the app's default
+/// component registry, so afterwards a plain `dx components add <name>` reads this registry.
+fn dx_new_command() -> String {
+    format!("dx new myapp --template {REGISTRY_GIT_URL} --subtemplate templates/starter")
+}
+
+/// The command that installs the `shadcn-dioxus` installer CLI (`cli/`), the primary way to use this
+/// registry: it reads this registry by default, so none of the commands below needs a `--git` flag.
+/// `scripts/check-registry-url.sh` pins the same string in `cli/README.md` and the CLI's
+/// `DEFAULT_REGISTRY_GIT_URL`.
+fn cli_install_command() -> String {
+    format!("cargo install --git {REGISTRY_GIT_URL} shadcn-dioxus")
+}
+
+/// The CLI command that installs `name` (a component directory name), its component dependencies and
+/// its crates. The command every copy button shows first; `dx_add_command` is the same install through
+/// dx.
+fn cli_add_command(name: &str) -> String {
+    format!("shadcn-dioxus add {name}")
 }
 
 /// The one-sentence description behind `<meta name="description">`, `og:description` and
@@ -718,6 +741,16 @@ pub struct HighlightedCode {
     pub source: HighlightedSource,
 }
 
+/// A code listing in the docs prose. `.dx-docs-prose pre` scrolls sideways, and a scrollable region must
+/// be reachable from the keyboard (axe `scrollable-region-focusable`), so every listing in the docs
+/// goes through this one component instead of a bare `pre` (same reason `CodeBlock` is focusable).
+#[component]
+pub(crate) fn DocsPre(children: Element) -> Element {
+    rsx! {
+        pre { tabindex: "0", {children} }
+    }
+}
+
 #[component]
 fn CodeBlock(source: HighlightedCode) -> Element {
     rsx! {
@@ -1098,7 +1131,13 @@ fn ComponentCode(
 /// pattern applied to the homepage's own sections -- both are plain
 /// `&'static [&'static str]` so `DocsLayout`'s `page_sections` prop can
 /// carry either one without caring which page it came from.
-const DOCS_SECTIONS: &[&str] = &["How it works", "Add a component", "Recommended workflow"];
+const DOCS_SECTIONS: &[&str] = &[
+    "How it works",
+    "New project",
+    "Add a component",
+    "Recommended workflow",
+    "Motion",
+];
 
 /// Turns a heading's visible text into a same-page anchor id: lowercased,
 /// with every run of non-alphanumeric characters (spaces included)
@@ -1124,9 +1163,17 @@ fn docs_section_slug(title: &str) -> String {
 
 #[component]
 fn Docs(dark_mode: Option<bool>) -> Element {
+    let cli_install = cli_install_command();
+    let cli_new = "shadcn-dioxus new myapp";
+    let cli_init = "shadcn-dioxus init";
+    let cli_list = "shadcn-dioxus list";
+    let cli_add_button = cli_add_command("button");
+    let cli_update = "shadcn-dioxus update";
     let list_command = dx_list_command();
     let add_button = dx_add_command("button");
     let registry_toml = format!("[components.registry]\ngit = \"{REGISTRY_GIT_URL}\"");
+    let new_command = dx_new_command();
+    let add_button_plain = "dx components add button";
     rsx! {
         DocsLayout { active: DocsNavActive::Overview, page_sections: Some(DOCS_SECTIONS),
             article { class: "dx-docs-page dx-docs-prose",
@@ -1140,72 +1187,171 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                 section { class: "dx-docs-section",
                     h2 { id: "{docs_section_slug(DOCS_SECTIONS[0])}", "{DOCS_SECTIONS[0]}" }
                     p {
-                        "{SITE_NAME} is not yet on crates.io. For now, components ship from this Git repository — you point your app at the primitives library here, then pull individual styled components into your source tree with the Dioxus CLI."
-                    }
-                    p {
-                        "Start by adding the underlying primitives library to your app's "
-                        code { "Cargo.toml" }
-                        " from the Git path:"
-                    }
-                    pre {
-                        code { r#"dioxus-primitives = {{ git = "{REGISTRY_GIT_URL}" }}"# }
-                    }
-                    p {
-                        "The styled components live in this same repository as a registry. The "
-                        code { "dx components" }
-                        " subcommand of the Dioxus CLI is what reads from it. To see everything that's available:"
+                        "{SITE_NAME} is not yet on crates.io. Components ship from this Git repository, which is a registry: each styled component is a folder (its Rust source, its stylesheet and a manifest) that gets copied into your source tree, next to the unstyled "
+                        code { "dioxus-primitives" }
+                        " library from the same repository. The installer is the "
+                        code { "shadcn-dioxus" }
+                        " command-line tool. Install it once:"
                     }
                     div { class: "dx-docs-command",
-                        code { "{list_command}" }
-                        CopyCommandButton { command: list_command.clone() }
+                        code { "{cli_install}" }
+                        CopyCommandButton { command: cli_install.clone() }
                     }
                     p {
-                        "The "
+                        "It reads this registry by default, so none of the commands below needs a "
                         code { "--git" }
-                        " flag matters: without it "
-                        code { "dx components" }
-                        " reads the Dioxus Labs registry instead of this one."
-                    }
-                    p {
-                        "Then add a specific component to your app — swap "
-                        code { "button" }
-                        " for any name from the list:"
+                        " flag. To see everything that's available:"
                     }
                     div { class: "dx-docs-command",
-                        code { "{add_button}" }
-                        CopyCommandButton { command: add_button.clone() }
+                        code { "{cli_list}" }
+                        CopyCommandButton { command: cli_list.to_string() }
                     }
                     p {
                         "Each "
-                        code { "dx components add" }
-                        " copies the component's Rust source and its stylesheet directly into your project. Once it's in your tree, the code is yours: keep the included CSS as-is, replace the class names with Tailwind utilities, or rewrite the styles from scratch. There is no runtime dependency on this registry after the copy."
+                        code { "shadcn-dioxus add" }
+                        " copies the component's Rust source and stylesheet into your project, installs the components it depends on, and adds the crates it needs (including "
+                        code { "dioxus-primitives" }
+                        ") to your "
+                        code { "Cargo.toml" }
+                        ". Once it's in your tree, the code is yours: keep the included CSS as-is, replace the class names with Tailwind utilities, or rewrite the styles from scratch. There is no runtime dependency on this registry after the copy."
+                    }
+                    p {
+                        "If you manage dependencies by hand, the primitives library is this line in "
+                        code { "Cargo.toml" }
+                        ":"
+                    }
+                    DocsPre {
+                        code { r#"dioxus-primitives = {{ git = "{REGISTRY_GIT_URL}" }}"# }
                     }
                 }
                 section { class: "dx-docs-section",
                     h2 { id: "{docs_section_slug(DOCS_SECTIONS[1])}", "{DOCS_SECTIONS[1]}" }
+                    p { "Starting a new app? One command creates it from this repository's starter template, with no Dioxus CLI needed:" }
+                    div { class: "dx-docs-command",
+                        code { "{cli_new}" }
+                        CopyCommandButton { command: cli_new.to_string() }
+                    }
                     p {
-                        "Run the add command from your Dioxus app. Swap "
+                        "The starter already declares "
+                        code { "mod components;" }
+                        ", depends on "
+                        code { "dioxus-primitives" }
+                        " from this repository and names this registry in its "
+                        code { "Dioxus.toml" }
+                        ". Then, from inside the new app:"
+                    }
+                    div { class: "dx-docs-command",
+                        code { "cd myapp && {cli_add_button}" }
+                        CopyCommandButton { command: format!("cd myapp && {cli_add_button}") }
+                    }
+                    p {
+                        "After your first add, link the shared theme once in your root component (the snippet under "
+                        em { "Add a component" }
+                        ", below)."
+                    }
+                    h3 { id: "new-project-with-dx", "The same with dx" }
+                    p {
+                        "The starter is a cargo-generate template, so the Dioxus CLI can create the same project. Inside it a plain "
+                        code { "dx components add" }
+                        " reads this registry too, because the starter's "
+                        code { "Dioxus.toml" }
+                        " names it:"
+                    }
+                    div { class: "dx-docs-command",
+                        code { "{new_command}" }
+                        CopyCommandButton { command: new_command.clone() }
+                    }
+                    div { class: "dx-docs-command",
+                        code { "{add_button_plain}" }
+                        CopyCommandButton { command: add_button_plain.to_string() }
+                    }
+                }
+                section { class: "dx-docs-section",
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[2])}", "{DOCS_SECTIONS[2]}" }
+                    p {
+                        "In an existing Dioxus app, run this once from the project root:"
+                    }
+                    div { class: "dx-docs-command",
+                        code { "{cli_init}" }
+                        CopyCommandButton { command: cli_init.to_string() }
+                    }
+                    p {
+                        code { "init" }
+                        " writes this registry into your "
+                        code { "Dioxus.toml" }
+                        " (keeping your comments), creates "
+                        code { "src/components" }
+                        " with its "
+                        code { "mod.rs" }
+                        ", declares "
+                        code { "mod components;" }
+                        " in "
+                        code { "src/main.rs" }
+                        ", copies the shared theme to "
+                        code { "assets/dx-components-theme.css" }
+                        " and links it from your root component. It is safe to run again. Then add components by name, swapping "
                         code { "button" }
-                        " for any component in the sidebar, and keep the "
-                        code { "--git" }
-                        " URL exactly as written."
+                        " for any component in the sidebar:"
+                    }
+                    div { class: "dx-docs-command",
+                        code { "{cli_add_button}" }
+                        CopyCommandButton { command: cli_add_button.clone() }
+                    }
+                    p {
+                        "To bring installed components up to the registry's latest:"
+                    }
+                    div { class: "dx-docs-command",
+                        code { "{cli_update}" }
+                        CopyCommandButton { command: cli_update.to_string() }
+                    }
+                    p {
+                        code { "update" }
+                        " never overwrites a file you edited: a component with an edited file is left unchanged and listed, and the command exits non-zero. Pass "
+                        code { "--force" }
+                        " to replace it anyway. "
+                        code { "shadcn-dioxus remove <name>" }
+                        " uninstalls a component."
+                    }
+                    h3 { id: "without-the-cli", "Without the CLI" }
+                    p {
+                        "The registry is also a "
+                        code { "dx components" }
+                        " registry. Name it once in your app's "
+                        code { "Dioxus.toml" }
+                        " and plain "
+                        code { "dx components add button" }
+                        " reads it:"
+                    }
+                    DocsPre {
+                        code { "{registry_toml}" }
+                    }
+                    p {
+                        "Or pass the registry on every command, keeping the URL exactly as written (the components that depend on each other, and on "
+                        code { "dioxus-primitives" }
+                        ", name it too):"
                     }
                     div { class: "dx-docs-command",
                         code { "{add_button}" }
                         CopyCommandButton { command: add_button.clone() }
                     }
                     p {
-                        "To leave the flag out, name the registry once in your app's "
-                        code { "Dioxus.toml" }
-                        " and run plain "
-                        code { "dx components add button" }
-                        ":"
-                    }
-                    pre {
-                        code { "{registry_toml}" }
+                        code { "{list_command}" }
+                        " lists what's available."
                     }
                     p {
-                        "The first add creates "
+                        strong { "Heads up: " }
+                        "plain "
+                        code { "dx components add" }
+                        " without that setup (no "
+                        code { "Dioxus.toml" }
+                        " registry, no "
+                        code { "--git" }
+                        ") installs upstream's version from "
+                        code { "DioxusLabs/components" }
+                        ", not this one. The Dioxus CLI reads its own default registry unless you tell it otherwise."
+                    }
+                    p {
+                        "With dx, the first add creates "
                         code { "src/components" }
                         " and copies the shared theme to "
                         code { "assets/dx-components-theme.css" }
@@ -1213,9 +1359,11 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                         code { "mod components;" }
                         " in your "
                         code { "main.rs" }
-                        " and link the theme once in your root component:"
+                        " and link the theme once in your root component (the CLI's "
+                        code { "init" }
+                        " does both for you):"
                     }
-                    pre {
+                    DocsPre {
                         code { r#"document::Link {{ rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }}"# }
                     }
                     p { class: "dx-docs-muted",
@@ -1223,13 +1371,18 @@ fn Docs(dark_mode: Option<bool>) -> Element {
                     }
                 }
                 section { class: "dx-docs-section",
-                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[2])}", "{DOCS_SECTIONS[2]}" }
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[3])}", "{DOCS_SECTIONS[3]}" }
                     ol {
                         li { "Pick a component from the sidebar or catalog." }
                         li { "Preview the default example and variants." }
-                        li { "Run the CLI command shown on the component page." }
+                        li { "Run the install command shown on the component page (the CLI command, with the dx equivalent under it)." }
                         li { "Customize the generated Rust and CSS to fit your app." }
+                        li { "Run the update command now and then; it keeps your edits." }
                     }
+                }
+                section { class: "dx-docs-section",
+                    h2 { id: "{docs_section_slug(DOCS_SECTIONS[4])}", "{DOCS_SECTIONS[4]}" }
+                    crate::motion_docs::MotionDocs {}
                 }
             }
         }
@@ -1750,12 +1903,24 @@ fn ComponentHighlight(demo: ComponentDemoData) -> Element {
 
 #[component]
 fn ComponentInstallCommand(name: &'static str) -> Element {
-    let command = dx_add_command(name);
+    // The CLI command is the primary one; the dx equivalent (which needs `--git`, because a bare
+    // `dx components add` reads upstream's registry) sits under it.
+    let command = cli_add_command(name);
+    let dx_command = dx_add_command(name);
 
     rsx! {
-        div { class: "dx-component-inline-command",
-            code { "{command}" }
-            CopyCommandButton { command: command.clone() }
+        div { class: "dx-component-install-commands",
+            div { class: "dx-component-inline-command",
+                code { "{command}" }
+                CopyCommandButton { command: command.clone() }
+            }
+            div { class: "dx-component-inline-command dx-component-inline-command-alt",
+                code { "{dx_command}" }
+                CopyCommandButton {
+                    command: dx_command.clone(),
+                    label: "Copy dx install command",
+                }
+            }
         }
     }
 }
@@ -2700,21 +2865,30 @@ fn BlockPlayer() -> Element {
     // faster clock only adds main-thread frames (every tick moves the thumb inside the masonry's
     // multi-column container, which re-lays it out). The timer is owned by this component and
     // dies with it (`use_interval`); the tick reads through `.peek()` and writes with `.set()`.
-    dioxus_primitives::interval::use_interval(std::time::Duration::from_secs(1), move || {
-        if !*playing.peek() {
-            return;
-        }
-        let current = progress_seconds.peek().unwrap_or(0.0);
-        let next = if current >= TRACK_DURATION_SECONDS {
-            0.0
-        } else {
-            (current + 1.0).min(TRACK_DURATION_SECONDS)
-        };
-        progress_seconds.set(Some(next));
-    });
+    // Gated on visibility: while the card is off-screen, skipped or the tab is hidden the task is
+    // dropped (zero wakeups) and the clock restarts with a full second on return.
+    let motion = dioxus_primitives::activity::use_motion();
+    dioxus_primitives::interval::use_interval_while(
+        motion.active(),
+        std::time::Duration::from_secs(1),
+        move || {
+            if !*playing.peek() {
+                return;
+            }
+            let current = progress_seconds.peek().unwrap_or(0.0);
+            let next = if current >= TRACK_DURATION_SECONDS {
+                0.0
+            } else {
+                (current + 1.0).min(TRACK_DURATION_SECONDS)
+            };
+            progress_seconds.set(Some(next));
+        },
+    );
 
     rsx! {
-        div { style: "display: flex; gap: 0.85rem; align-items: center;",
+        div {
+            style: "display: flex; gap: 0.85rem; align-items: center;",
+            ..motion.attributes(),
             // A CSS gradient "cover", so the demo needs no network (and no remote image).
             div {
                 role: "img",
@@ -3197,7 +3371,7 @@ fn ComponentGalleryPreview(component: ComponentDemoData) -> Element {
     let first_variant = &variants[0];
     let Comp = first_variant.component;
     let display_name = name.replace("_", " ");
-    let install_command = dx_add_command(name);
+    let install_command = cli_add_command(name);
 
     // Only the `sidebar` card, and only when rendered under `Home()` (which
     // is the sole provider of this context -- see `HomeSidebarControls`'s
@@ -3318,14 +3492,19 @@ fn SidebarGalleryCardControls(controls: HomeSidebarControls) -> Element {
 }
 
 #[component]
-fn CopyCommandButton(command: String) -> Element {
+fn CopyCommandButton(
+    command: String,
+    /// The button's accessible name; two commands on one page (the CLI's and dx's) need different ones.
+    #[props(default = "Copy install command".to_string())]
+    label: String,
+) -> Element {
     let mut copied = use_signal(|| false);
 
     rsx! {
         button {
             class: "dx-copy-button dx-component-card-copy",
             r#type: "button",
-            aria_label: "Copy install command",
+            aria_label: "{label}",
             "data-command": "{command}",
             "data-copied": copied,
             "onclick": "navigator.clipboard.writeText(this.dataset.command);",

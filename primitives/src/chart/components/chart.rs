@@ -50,7 +50,7 @@
 //!    reduced data table (category + first series' value; plus a `Percent`
 //!    column for [`ChartKind::Pie`]).
 //!
-//! After the first measured client render the svg carries
+//! The first time the chart is actually in view (and measured) the svg carries
 //! `data-animate="true"` (unless [`ChartProps::animate`] is off), which the
 //! themed stylesheet turns into Recharts' load animation -- bars grow from
 //! the baseline, lines and areas reveal left to right -- once, never under
@@ -410,6 +410,21 @@ pub fn Chart(props: ChartProps) -> Element {
     // opens the tooltip (`:focus-visible` semantics -- see `onfocus` below).
     let mut pointer_focus = use_hook(|| CopyValue::new(false));
     let is_cartesian = kind.is_cartesian();
+    // The load animation plays when the chart is first actually in view (`use_entered_view_when`:
+    // at least 40% on screen, tab visible, no pre-roll margin), not when it first renders: a chart
+    // in a skipped or off-screen card measures (and so would animate) while nobody can see it, and
+    // the animation's layout work was a large share of the first-scroll cost
+    // (`dev-docs/research/scroll-profile-2026-10-10.md`, cost 3). The answer is latched here;
+    // once it is in, the observer lets go (`enabled` goes false) and `data-animate` stays set.
+    let animate_prop = props.animate;
+    let mut entered = use_signal(|| false);
+    let enter = crate::activity::use_entered_view_when(move || animate_prop && !*entered.read());
+    let in_view = enter.entered();
+    use_effect(move || {
+        if animate_prop && in_view() && !*entered.peek() {
+            entered.set(true);
+        }
+    });
     let ChartSize {
         width,
         height,
@@ -612,8 +627,8 @@ pub fn Chart(props: ChartProps) -> Element {
         tabindex: wrapper_tabindex,
         "data-direction": direction.as_str(),
     });
-    let merged = merge_attributes(vec![props.attributes, owned]);
-    let animate = (props.animate && !pending).then_some("true");
+    let merged = merge_attributes(vec![props.attributes, owned, enter.attributes()]);
+    let animate = (props.animate && !pending && entered()).then_some("true");
 
     rsx! {
         div {

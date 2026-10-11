@@ -142,7 +142,10 @@ pub fn Avatar(props: AvatarProps) -> Element {
             AvatarState::Empty => "empty",
         },
     });
-    let merged = merge_attributes(vec![props.attributes.clone(), owned]);
+    // The loading placeholder pulses: paused while off-screen or in a hidden tab
+    // (`crate::activity`); an avatar that is not loading subscribes to nothing.
+    let motion = crate::activity::use_motion_when(move || state() == AvatarState::Loading);
+    let merged = merge_attributes(vec![props.attributes.clone(), owned, motion.attributes()]);
 
     rsx! {
         span {

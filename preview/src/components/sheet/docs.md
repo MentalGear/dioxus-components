@@ -89,3 +89,7 @@ Tailwind classes verbatim:
 A modal sheet dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
 
 Closing keeps the sheet a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.
+
+## Motion
+
+The sheet slides in from its edge over 500 ms and out over `--dx-motion-duration-slower`; the durations are literals in the `dx-slide-*` rules of `sheet/style.css`, and the scrim follows `--dx-overlay-duration`, `--dx-overlay-ease`, `--dx-overlay-scrim` and `--dx-overlay-blur`. The sheet stays open until its exit settles (at most 1500 ms) and only then closes, so the slide-out is always played. Its keyframes use `transform` because an edge-docked panel carries no anchor centring (it is on the `check-anchored-keyframes.sh` allowlist). Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

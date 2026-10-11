@@ -1,0 +1,17 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+authors = ["{{authors}}"]
+edition = "2021"
+
+[dependencies]
+dioxus = { version = "0.7.9", features = [] }
+# The styled components copied in by `dx components add` build on these primitives. Declaring the dependency
+# up front lets the `web` feature below switch on the primitives' browser-only code paths.
+dioxus-primitives = { git = "https://github.com/MentalGear/shadcn-dioxus" }
+
+[features]
+default = ["web"]
+web = ["dioxus/web", "dioxus-primitives/web"]
+desktop = ["dioxus/desktop", "dioxus-primitives/web"]
+mobile = ["dioxus/mobile", "dioxus-primitives/web"]

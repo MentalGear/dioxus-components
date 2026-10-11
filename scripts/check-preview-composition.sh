@@ -122,6 +122,11 @@ declare -A allowed_qualified=(
     ["interval::use_interval"]=1  # hook, not markup (a component-owned timer, renders
                                    # nothing) -- main.rs `BlockPlayer`,
                                    # progress/variants/main/mod.rs
+    ["interval::use_interval_while"]=1 # hook, not markup (the visibility-gated
+                                   # timer) -- main.rs `BlockPlayer`, progress/variants/main/mod.rs
+    ["activity::use_motion"]=1    # hook, not markup (is the element visible; the
+                                   # caller spreads its attributes) -- same two call sites;
+                                   # themed wrappers (spinner, skeleton) are exempt
     ["js_listener::use_js_listeners"]=1 # hook, not markup (scope-owned JS listeners,
                                    # renders nothing) -- components/form/component.rs;
                                    # themed wrappers (sidebar) are exempt and import it freely

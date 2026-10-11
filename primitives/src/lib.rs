@@ -17,6 +17,7 @@ use crate::js_listener::{use_js_listeners, JsListeners};
 pub use dioxus_attributes;
 
 pub mod accordion;
+pub mod activity;
 pub mod alert_dialog;
 pub mod aspect_ratio;
 pub mod avatar;

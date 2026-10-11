@@ -1,7 +1,13 @@
 [workspace]
 resolver = "3"
+# `templates/starter` is a cargo-generate template for new apps (`dx new --template ... --subtemplate
+# templates/starter`), not a crate of this workspace: keep it out so it never joins a build or a gate.
+# Its manifest is `Cargo.toml.liquid` (cargo-generate strips the suffix) so cargo, which scans a git
+# dependency's whole tree for manifests, never meets the unrendered `{{project-name}}` placeholder.
+exclude = ["templates"]
 members = [
     "primitives",
+    "cli",
     "preview",
     "test-harness",
     "dioxus-attributes",

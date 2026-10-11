@@ -135,6 +135,8 @@ Carousel { aria_label: "Featured photos",
 
 Rotation also pauses while keyboard focus is inside the carousel. When focus leaves it does not resume by itself; press the rotation button. Without `loop`, rotation stops at the last slide; with `loop`, it wraps and keeps going.
 
+**Motion and visibility.** Autoplay only runs while the carousel can be seen. When the carousel is scrolled off-screen (beyond a 200px margin), sits in a skipped `content-visibility` subtree or the tab is hidden, the timer is dropped (no wakeups at all, and the slide never changes under a reader who scrolled away); when it is visible again the countdown starts over with the full `delay`, so a slide is never skipped instantly on return. This is in addition to the existing rules: it still stops on interaction, hover/focus and when the user pauses it. It is built on `dioxus_primitives::activity::use_motion_active_for`. The arrow fade and the indicator pill use `--dx-motion-duration-slow`. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.
+
 ### Indicators
 
 ```rust

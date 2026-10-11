@@ -27,6 +27,7 @@
 use std::time::Duration;
 
 use dioxus::prelude::*;
+use dioxus_core::Task;
 use dioxus_sdk_time::sleep;
 
 /// Calls `on_tick` once every `period` for as long as the calling component is mounted.
@@ -56,6 +57,88 @@ pub fn use_interval(period: Duration, on_tick: impl FnMut() + 'static) {
                 on_tick.call(());
             }
         })
+    });
+}
+
+/// [`use_interval`] that only runs while `active` is true.
+///
+/// A timer that drives something visible (a clock, a demo's progress, a slideshow) is wasted
+/// work whenever nobody can see it. While `active` is false there is NO task at all, so no
+/// wakeups; when it turns true the loop starts again with a fresh full `period` (no instant
+/// catch-up tick). Pair it with [`crate::activity::use_motion`]'s `active()`:
+///
+/// ```rust,ignore
+/// let motion = use_motion();
+/// use_interval_while(motion.active(), Duration::from_secs(1), move || seconds += 1);
+/// ```
+///
+/// A timer that must keep counting while scrolled away (a toast's auto-dismiss) uses
+/// [`use_timeout_while`] with [`crate::activity::use_document_visible`] instead.
+/// `scripts/check-motion-gating.sh` rejects a bare `use_interval` outside this file.
+pub fn use_interval_while(
+    active: impl Into<ReadSignal<bool>>,
+    period: Duration,
+    on_tick: impl FnMut() + 'static,
+) {
+    let active: ReadSignal<bool> = active.into();
+    let mut on_tick = on_tick;
+    let on_tick = use_callback(move |()| on_tick());
+    // Not a signal: the effect must not subscribe to its own bookkeeping.
+    let mut running = use_hook(|| CopyValue::new(None as Option<Task>));
+    use_effect(move || {
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+        if !active() {
+            return;
+        }
+        let task = spawn(async move {
+            loop {
+                sleep(period).await;
+                on_tick.call(());
+            }
+        });
+        running.set(Some(task));
+    });
+    use_drop(move || {
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+    });
+}
+
+/// Calls `on_fire` once, `delay` after `active` is (or becomes) true. If `active` turns false
+/// before it fires the countdown is dropped, and when it turns true again it starts over with
+/// the full `delay` -- so a toast the user could not see (hidden tab) is not gone when they come
+/// back. Never fires twice.
+pub fn use_timeout_while(
+    active: impl Into<ReadSignal<bool>>,
+    delay: Duration,
+    on_fire: impl FnMut() + 'static,
+) {
+    let active: ReadSignal<bool> = active.into();
+    let mut on_fire = on_fire;
+    let on_fire = use_callback(move |()| on_fire());
+    let mut running = use_hook(|| CopyValue::new(None as Option<Task>));
+    let mut fired = use_hook(|| CopyValue::new(false));
+    use_effect(move || {
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+        if !active() || *fired.peek() {
+            return;
+        }
+        let task = spawn(async move {
+            sleep(delay).await;
+            fired.set(true);
+            on_fire.call(());
+        });
+        running.set(Some(task));
+    });
+    use_drop(move || {
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
     });
 }
 
@@ -175,6 +258,61 @@ mod tests {
             harness.ticks.get(),
             2,
             "no tick after the component unmounted"
+        );
+    }
+
+    /// A ticker whose gate the test flips from outside.
+    #[derive(Clone, Default)]
+    struct GateHarness {
+        ticks: Rc<Cell<usize>>,
+        gate: Rc<Cell<Option<Signal<bool>>>>,
+    }
+
+    #[component]
+    fn GatedHost() -> Element {
+        let harness: GateHarness = consume_context();
+        let gate = use_signal(|| true);
+        harness.gate.set(Some(gate));
+        let ticks = harness.ticks;
+        use_interval_while(gate, PERIOD, move || ticks.set(ticks.get() + 1));
+        rsx! { "gated" }
+    }
+
+    fn set_gate(dom: &mut VirtualDom, harness: &GateHarness, on: bool) {
+        let mut gate = harness.gate.get().expect("the host rendered");
+        dom.in_scope(ScopeId::APP, || gate.set(on));
+        dom.render_immediate_to_vec();
+        dom.process_events();
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn use_interval_while_stops_while_inactive_and_restarts_with_a_full_period() {
+        let harness = GateHarness::default();
+        let mut dom = VirtualDom::new(GatedHost).with_root_context(harness.clone());
+        dom.rebuild_in_place();
+        dom.process_events();
+
+        advance(&mut dom, PERIOD).await;
+        assert_eq!(harness.ticks.get(), 1);
+
+        set_gate(&mut dom, &harness, false);
+        for _ in 0..10 {
+            advance(&mut dom, PERIOD).await;
+        }
+        assert_eq!(harness.ticks.get(), 1, "no tick while inactive");
+
+        set_gate(&mut dom, &harness, true);
+        advance(&mut dom, PERIOD * 6 / 10).await;
+        assert_eq!(
+            harness.ticks.get(),
+            1,
+            "no catch-up tick on resume: the countdown starts over"
+        );
+        advance(&mut dom, PERIOD * 6 / 10).await;
+        assert_eq!(
+            harness.ticks.get(),
+            2,
+            "one tick a full period after resume"
         );
     }
 }

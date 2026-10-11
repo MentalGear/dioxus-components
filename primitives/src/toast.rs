@@ -7,7 +7,6 @@ use crate::{
 };
 use dioxus::prelude::*;
 use dioxus_attributes::attributes;
-use dioxus_sdk_time::use_timeout;
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -858,15 +857,16 @@ pub fn Toast(props: ToastProps) -> Element {
         let toast_id = props.id;
         let remove_toast = ctx.remove_toast;
 
-        // Create a timeout using dioxus-time
-        let timeout = use_timeout(duration, move |()| {
+        // The countdown runs while the TAB is visible and nothing else. A toast the user
+        // cannot see (hidden tab, minimized window) would otherwise be gone when they come back,
+        // so the countdown is dropped and restarted in full on return. It is deliberately NOT
+        // tied to the toast's position on the page (`use_motion`): a toast is a message the
+        // user is waiting on, not decoration, and scrolling must not change how long it stays
+        // (`crate::activity`, "Timers that carry meaning").
+        let visible = crate::activity::use_document_visible();
+        crate::interval::use_timeout_while(visible, duration, move || {
             // Call the remove_toast function directly with the toast ID
             remove_toast.call(toast_id);
-        });
-
-        // Start the timeout when the component mounts
-        use_effect(move || {
-            timeout.action(());
         });
     }
 

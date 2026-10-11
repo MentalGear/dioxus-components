@@ -33,28 +33,79 @@ shadcn-dioxus is a shadcn style component library for Dioxus built on top of the
 
 First, explore the [component gallery](https://mentalgear.github.io/shadcn-dioxus/) to find the components you want to use.
 
-Once you find a component, you can add it to your project with the Dioxus CLI. If you don't already have `dx` installed, you can do so with:
+Install the `shadcn-dioxus` command-line tool once. It copies a component's source and stylesheet into your app, adds the crates it needs to `Cargo.toml`, installs the components it depends on, and reads **this** registry by default, so no command below needs a `--git` flag:
+
+```sh
+cargo install --git https://github.com/MentalGear/shadcn-dioxus shadcn-dioxus
+```
+
+```sh
+shadcn-dioxus new myapp      # new project, from the starter template (no dx needed)
+shadcn-dioxus init           # existing project (writes the registry into Dioxus.toml)
+shadcn-dioxus add button
+shadcn-dioxus update         # never overwrites files you edited (--force does)
+```
+
+`shadcn-dioxus list` shows everything available and `shadcn-dioxus remove <name>` uninstalls a component. The full reference (what `update` keeps and replaces, which registry is read, `--path`/`--git`/`--rev`) is in [`cli/README.md`](./cli/README.md).
+
+### New project
+
+```sh
+shadcn-dioxus new myapp
+cd myapp
+shadcn-dioxus add button
+```
+
+The starter declares `mod components;` in `src/main.rs`, depends on `dioxus-primitives` from this repository and names this registry in its `Dioxus.toml`. After your first add, link the shared theme once in `App` with `document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }`.
+
+### Existing project
+
+Run `shadcn-dioxus init` once from the project root. It writes `[components.registry]` into `Dioxus.toml` (keeping your comments), creates `src/components`, declares `mod components;` in `src/main.rs`, copies the shared theme to `assets/dx-components-theme.css` and links it from `App`. It is safe to run again. Then `shadcn-dioxus add button`.
+
+`shadcn-dioxus update` brings installed components up to the registry's latest. It records a hash of every file it writes, so a component with a file you edited is left unchanged and listed (the command exits non-zero); `--force` replaces it anyway.
+
+### Without the CLI
+
+The registry is also a plain `dx components` registry, if you would rather not install another tool. If you do not already have `dx`:
 
 ```
 cargo install dioxus-cli
 ```
 
-Then, add a component to your project from this repository's registry:
+Any one of these works:
 
-```
-dx components add button --git https://github.com/MentalGear/shadcn-dioxus
-```
+- **A new project from the starter template** (the same project `shadcn-dioxus new` makes):
 
-The `--git` flag matters: without it `dx components` reads the default registry (upstream `DioxusLabs/components`), not this one. Keep the URL exactly as written, since the components that depend on each other (and on `dioxus-primitives`) name it too. To leave the flag out, set the registry once in your app's `Dioxus.toml`:
+  ```
+  dx new myapp --template https://github.com/MentalGear/shadcn-dioxus --subtemplate templates/starter
+  cd myapp
+  dx components add button
+  ```
 
-```toml
-[components.registry]
-git = "https://github.com/MentalGear/shadcn-dioxus"
-```
+  (Add `--yes` to skip the prompts.) The starter's `Dioxus.toml` names this registry, so the plain `dx components add button` reads it.
 
-`dx components list --git https://github.com/MentalGear/shadcn-dioxus` shows everything available.
+- **Name the registry once in your app's `Dioxus.toml`**, then use plain `dx components add <name>`:
 
-This will create a `components` folder in your project (if it doesn't already exist), add the `Button` component files to it, add the `dioxus-primitives` dependency to your `Cargo.toml`, and copy the shared theme to `assets/dx-components-theme.css`. After the first add, declare the module with `mod components;` in your `main.rs` and link the theme once in your root component with `document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }`.
+  ```toml
+  [components.registry]
+  git = "https://github.com/MentalGear/shadcn-dioxus"
+  ```
+
+- **Pass the registry on every command:**
+
+  ```
+  dx components add button --git https://github.com/MentalGear/shadcn-dioxus
+  ```
+
+  `dx components list --git https://github.com/MentalGear/shadcn-dioxus` shows everything available. Keep the URL exactly as written, since the components that depend on each other (and on `dioxus-primitives`) name it too.
+
+**Warning:** plain `dx components add <name>` without one of those setups reads dx's default registry (upstream `DioxusLabs/components`) and installs *upstream's* version of the component, not this one. The `--git` flag or the `Dioxus.toml` setting is what points it here.
+
+Either way the first add creates a `components` folder in your project (if it doesn't already exist), adds the component files to it, adds the `dioxus-primitives` dependency to your `Cargo.toml`, and copies the shared theme to `assets/dx-components-theme.css`. With `dx`, declare the module with `mod components;` in your `main.rs` and link the theme once in your root component with `document::Link { rel: "stylesheet", href: asset!("/assets/dx-components-theme.css") }`; `shadcn-dioxus init` does both for you.
+
+## Motion
+
+Animation speed comes from `--dx-motion-duration-*` and `--dx-motion-ease*` tokens, `prefers-reduced-motion` is answered by the stylesheets, an infinite animation may only animate compositor properties, and motion nobody can see is not run: loops pause, timers stop and entrances wait to be seen (`use_motion`, `use_interval_while`, `use_entered_view_when`, `use_document_visible`). The tokens, the hooks, the gates, how to write your own animated component and a per-component table of what moves and what each does while unseen are in [`dev-docs/motion.md`](./dev-docs/motion.md), and on the site under [Docs, "Motion"](https://mentalgear.github.io/shadcn-dioxus/docs/#motion).
 
 ## Contributing
 

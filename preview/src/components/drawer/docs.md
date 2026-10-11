@@ -52,3 +52,7 @@ DrawerClose {
 A modal drawer dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
 
 Closing keeps the drawer a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.
+
+## Motion
+
+The drawer slides in over `--dx-motion-duration-slow` and out over `--dx-motion-duration-base`; the scrim follows `--dx-overlay-duration`, `--dx-overlay-ease`, `--dx-overlay-scrim` and `--dx-overlay-blur`. While you drag, the panel follows the pointer through the `translate` property (it composes with the slide's `transform`), and a release settles with a `--dx-motion-duration-base` transition. The drawer stays open until its exit settles (at most 1500 ms) and only then closes. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

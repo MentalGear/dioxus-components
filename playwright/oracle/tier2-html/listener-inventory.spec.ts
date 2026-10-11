@@ -256,6 +256,8 @@ test.describe("listener inventory: every overlay returns window/document to its 
   }
 
   // The home page mounts the form fixture (its demo card) and the sidebar; `/charts/` has neither.
+  // Link hrefs carry the deployment's base path (`/shadcn-dioxus/...` on the Pages build); BASE_URL does too.
+  const BASE_PATH = new URL(BASE_URL).pathname.replace(/\/$/, "");
   for (const route of [
     { name: "the form fixture (document click/keyup, form invalid/reset)", from: "/charts/?", to: "/?", mounted: "#form-required" },
     { name: "the sidebar provider (window resize + keydown)", from: "/charts/?", to: "/docs?", mounted: '[data-slot="sidebar-wrapper"]' },
@@ -269,10 +271,10 @@ test.describe("listener inventory: every overlay returns window/document to its 
       const helperBefore = await helperLive(page);
 
       for (let visit = 0; visit < 2; visit++) {
-        await page.locator(`a[href="${route.to}"]`).first().click();
+        await page.locator(`a[href="${BASE_PATH}${route.to}"]`).first().click();
         await expect(page.locator(route.mounted).first()).toBeVisible({ timeout: 60_000 });
         await page.waitForTimeout(500);
-        await page.locator(`a[href="${route.from}"]`).first().click();
+        await page.locator(`a[href="${BASE_PATH}${route.from}"]`).first().click();
         await expect(page.locator(route.mounted)).toHaveCount(0, { timeout: 60_000 });
         await page.waitForTimeout(500);
       }

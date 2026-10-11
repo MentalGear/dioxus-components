@@ -51,3 +51,7 @@ Nothing breaks where it is unsupported: the content is simply not found by find-
 ### Accessibility
 
 Closed `until-found` content is hidden from the accessibility tree exactly like `hidden`: screen readers do not read it while the item is closed, and the trigger's `aria-expanded` stays `false`. Find-in-page is the one way to reach it without activating the trigger; it is exposed as soon as it opens, and `aria-expanded` follows.
+
+## Motion
+
+A panel's height opens and closes with `dx-accordion-open` / `dx-accordion-close` over `--dx-motion-duration-slower`, and the chevron rotates with the same duration. A panel revealed by find-in-page (`hidden_until_found`) skips the animation by design, so the browser can scroll to the match inside it. Retune with the token. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.
