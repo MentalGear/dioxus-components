@@ -54,3 +54,7 @@ an open dropdown does not close it. A dropdown opens on click (or `Enter` /
 `ArrowDown` / `ArrowUp`) and closes on a second click, `Escape`, or a press or
 focus outside it. Keyboard behaviour is the same in both modes, and touch never
 hover-opens. See the `click_only` variant.
+
+## Motion
+
+Opening dropdown content slides in over `--dx-motion-duration-slow` and out over `--dx-motion-duration-base` (`opacity`, `scale` and `translate`, never `transform`); the trigger chevron rotates with `--dx-motion-ease-standard`. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

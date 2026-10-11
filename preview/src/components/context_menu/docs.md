@@ -127,3 +127,7 @@ is skipped by arrow keys and typeahead. The check is drawn at the inline end, in
 ## Direction / RTL
 
 `ContextMenu` accepts a `dir: Option<Direction>` prop, inherited by every `ContextMenuSub`. Same open/close-key and side flip as `DropdownMenu`'s -- see that component's note. See the `rtl` variant.
+
+## Motion
+
+The menu panel animates in and out over `--dx-motion-duration-base` with `--dx-motion-ease-out` / `--dx-motion-ease-in`, in `opacity`, `scale` and `translate` only (never `transform`); item highlights use `--dx-motion-duration-fast`. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

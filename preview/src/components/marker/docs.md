@@ -38,3 +38,7 @@ Marker {
 - A labeled separator needs no role: the divider lines are decorative pseudo-elements and the text is read as ordinary content. Do not add `role: "separator"`, which would hide the label.
 - `MarkerIcon` is `aria-hidden`; the adjacent `MarkerContent` carries the meaning. An icon-only marker needs an `aria-label` on the `Marker`.
 - A marker that links or acts must be a real `a` or `button` (through `as`), so it is focusable and has the right role.
+
+## Motion
+
+`MarkerContent` with the `dx-shimmer` class sweeps a highlight across the text (`dx-effects.css`; tune with `--dx-shimmer-duration`, `--dx-shimmer-color`, `--dx-shimmer-spread` and `--dx-shimmer-angle`; `prefers-reduced-motion` turns it off). The sweep is paused whenever the text is off-screen, in a skipped `content-visibility` subtree or in a hidden tab (`MarkerContent` calls `use_motion_when`); a marker without the class subscribes to nothing. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

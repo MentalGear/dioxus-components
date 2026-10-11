@@ -117,3 +117,7 @@ The button carries `data-active` (`"true"` when there is content in its directio
 - Rows are always real elements (see Virtualization), so the accessibility tree sees the whole transcript, and find-in-page does too in browsers that search skipped content.
 - The styled viewport has a bottom edge fade from `dx-effects.css`. Without that file the fade is simply absent.
 - On a renderer without `document::eval` (native/Blitz) the shell renders as plain overflow: no auto-follow, no flash guard, and an inert button.
+
+## Motion
+
+The jump button slides, scales and fades with `--dx-motion-duration-slow` when it shows and a literal `0.4s` when it hides; the transcript is revealed once its scroll position has been applied (the flash guard). Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops, so nothing is paused while the scroller is unseen. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

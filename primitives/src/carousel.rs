@@ -5266,8 +5266,13 @@ pub fn CarouselAutoplay(props: CarouselAutoplayProps) -> Element {
     let loop_mode = ctx.loop_mode;
     let virtualized_loop_active = ctx.virtualized_loop_active;
     let set_selected = ctx.set_selected;
+    // Autoplay is motion nobody can see while the carousel is off-screen or the tab is hidden:
+    // the timer is dropped then (no wakeups, no slide changing under a reader who scrolled
+    // away) and restarts with a fresh full delay on return, never an instant jump. The
+    // stopped-for-good and hover/focus rules above are untouched; this only adds "visible".
+    let in_view = crate::activity::use_motion_active_for(ctx.content_id);
     use_effect(move || {
-        let active = (autoplay.rotating)();
+        let active = (autoplay.rotating)() && in_view();
         if let Some(task) = running.write().take() {
             task.cancel();
         }

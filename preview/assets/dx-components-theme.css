@@ -634,8 +634,9 @@ html[data-theme="light"] [class~="dxc-system"] {
  * with any component's own construction, it can only ever reduce motion
  * a user has already asked their OS to reduce. This does not reach
  * animated CONTENT that isn't itself an interactive root (a dialog's or
- * accordion panel's entrance transition, `skeleton`'s pulse) -- broadening
- * this to cover that is a reasonable follow-up, left to a future round. */
+ * accordion panel's entrance transition): those carry their own block.
+ * Looping content (skeleton, spinner, progress, avatar) is covered by the
+ * `[data-dx-motion-key]` rule further down. */
 @media (prefers-reduced-motion: reduce) {
   :where([data-dx-interactive]),
   button,
@@ -657,6 +658,51 @@ html[data-theme="light"] [class~="dxc-system"] {
     transition-duration: var(--dx-motion-duration-reduced) !important;
   }
 }
+
+/* Motion nobody can see is not run. `primitives/src/activity.rs` (`use_motion`) sets
+ * `data-dx-motion="paused"` on a component's root while the root is outside the viewport (plus
+ * 200px), inside a skipped `content-visibility` subtree, or the tab is hidden; this ONE rule pauses
+ * every animation on and under it, so a component never names its animation and a future one is
+ * covered without being listed. `paused` keeps the phase, so the spinner resumes where it was, and
+ * costs nothing while stopped. `!important` because a component's `animation:` shorthand resets
+ * `animation-play-state` to `running` and a later same-specificity sheet would otherwise win.
+ * Timers are not CSS: `use_interval_while` stops those. */
+/* stylelint-disable declaration-no-important */
+[data-dx-motion="paused"],
+[data-dx-motion="paused"] *,
+[data-dx-motion="paused"] *::before,
+[data-dx-motion="paused"] *::after,
+[data-dx-motion="paused"]::before,
+[data-dx-motion="paused"]::after {
+  animation-play-state: paused !important;
+}
+/* stylelint-enable declaration-no-important */
+
+/* Reduced motion for every LOOP, by construction (backlog row 176). `use_motion` marks exactly the
+ * elements that loop with `data-dx-motion-key`, always (the pause rule above keys on the other
+ * attribute, `data-dx-motion`, which exists only while paused). Under `prefers-reduced-motion: reduce`
+ * this ONE rule stops every animation on and under such a host, so a looping component is covered by
+ * calling `use_motion` and a future one needs no rule of its own. Stopped, not slowed: the element stays
+ * where it is (the spinner is a still ring, a skeleton a still block), so the "loading" meaning is
+ * carried by the shape and the `role="status"` / `aria-busy` semantics, not by motion.
+ * `!important` so it wins over any component's `animation:` shorthand whatever the stylesheet order
+ * (a duration-only override would NOT stop an infinite loop: 0.01 ms per cycle samples a random
+ * phase every frame and flickers). A component whose still frame would mislead (the indeterminate
+ * progress bar is a half-width bar that reads as 50%) draws its own still state in its sheet.
+ * `scripts/check-infinite-animations.sh` fails an `infinite` animation that neither has this host nor
+ * a reduced-motion block of its own (the OTP caret, the shimmer utility). */
+/* stylelint-disable declaration-no-important */
+@media (prefers-reduced-motion: reduce) {
+  [data-dx-motion-key],
+  [data-dx-motion-key] *,
+  [data-dx-motion-key] *::before,
+  [data-dx-motion-key] *::after,
+  [data-dx-motion-key]::before,
+  [data-dx-motion-key]::after {
+    animation: none !important;
+  }
+}
+/* stylelint-enable declaration-no-important */
 
 /* Forced colors (Windows contrast themes, `forced-colors: active`): the UA discards `box-shadow`, and every
  * component draws its focus ring with `box-shadow` while resetting `outline` (42 `outline: none`

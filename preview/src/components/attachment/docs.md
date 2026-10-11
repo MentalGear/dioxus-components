@@ -42,3 +42,7 @@ AttachmentGroup {
 - `AttachmentTrigger` covers the card and has no text of its own: give it an `aria-label` for what activating it does. It sits behind the actions in the stacking order, so the trigger and the actions are separately focusable and clickable. Pass `as` to render a link instead of a button.
 - An `AttachmentGroup` scrolls horizontally. When its attachments are interactive, keyboard users reach the off-screen ones by tabbing. For a row of presentational attachments, make the group itself focusable with `tabindex: "0"`, `role: "group"` and an `aria-label`.
 - The `Error` state uses a destructive colour. Keep the failure reason in `AttachmentDescription`, so the state is not conveyed by colour alone.
+
+## Motion
+
+While an attachment is `Uploading` or `Processing` its title shimmers with the `dx-shimmer` effect from `dx-effects.css` (tune with `--dx-shimmer-duration`, `--dx-shimmer-color`, `--dx-shimmer-spread` and `--dx-shimmer-angle`; `prefers-reduced-motion` turns it off). The sweep is paused whenever the title is off-screen or the tab is hidden, and an attachment that is not busy subscribes to nothing. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

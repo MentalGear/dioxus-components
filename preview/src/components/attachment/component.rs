@@ -1,5 +1,6 @@
 use crate::components::button::{Button, ButtonSize, ButtonVariant};
 use dioxus::prelude::*;
+use dioxus_primitives::activity::use_motion_when;
 use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
@@ -179,12 +180,15 @@ pub fn AttachmentTitle(
     #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
-    let busy = try_use_context::<AttachmentContext>().is_some_and(|ctx| (ctx.state)().is_busy());
+    let ctx = try_use_context::<AttachmentContext>();
+    let busy = ctx.is_some_and(|ctx| (ctx.state)().is_busy());
+    // The sweep is paused while the title is off-screen or in a hidden tab, and observed only while busy.
+    let motion = use_motion_when(move || ctx.is_some_and(|ctx| (ctx.state)().is_busy()));
     let base = attributes!(span {
         class: if busy { "dx-attachment-title dx-shimmer" } else { "dx-attachment-title" },
         "data-slot": "attachment-title",
     });
-    let merged = merge_attributes(vec![base, attributes]);
+    let merged = merge_attributes(vec![base, attributes, motion.attributes()]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/attachment/style.css") }
         span { ..merged, {children} }

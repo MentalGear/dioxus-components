@@ -17,8 +17,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dx-spinner svg {
-    animation-duration: var(--dx-motion-duration-reduced);
-  }
-}
+/* Reduced motion: the ring is a still arc. `use_motion` marks the spinner as a loop host and
+   dx-components-theme.css stops every animation under a host (no rule needed here; a duration-only
+   override would flicker an infinite loop). The icon, `role="status"` and the label carry "loading". */

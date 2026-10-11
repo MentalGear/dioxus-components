@@ -1286,6 +1286,28 @@ button.dx-theme-phone-trigger {
   flex-shrink: 0;
 }
 
+/* A component page shows the CLI command first and the dx equivalent under it
+ * (`ComponentInstallCommand`, main.rs). The stack is a column that may shrink
+ * below its content width, so each command truncates inside it at phone width
+ * rather than widening the header. */
+.dx-component-install-commands {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.dx-component-inline-command-alt {
+  background-color: transparent;
+  color: var(--dx-muted-foreground);
+}
+
+.dx-component-install-commands .dx-component-inline-command-alt code {
+  font-size: 0.75rem;
+}
+
 .dx-component-preview-frame {
   display: flex;
   width: 100%;
@@ -1613,14 +1635,26 @@ button.dx-theme-phone-trigger {
  * the box's padding edge, and these two boxes have no horizontal padding -- a focus ring on the
  * title link at the card's left edge (`outline-offset: 3px`) lost its left side. The margin
  * lets such ink out by 0.75rem without changing layout (not Safari: there the ring is clipped). */
+/* `contain-intrinsic-block-size` is the size of the CONTENT box, and both cards add padding (a component
+ * card 3rem top and bottom, a widget card 3.6rem plus its 2px border) that the estimate does not include.
+ * The estimate is therefore the MEAN measured border-box height minus that padding, so a never-rendered
+ * card is laid out at the height it will on average have and the document does not resize while it is
+ * first scrolled (row 174: the old `auto 380px` was a 476 px card against a 384 px mean, so the page
+ * shrank 38.5k -> 32.0k px, -17%, and the scrollbar thumb jumped). The MEAN, not the median (256 px: most
+ * cards are one demo row, a few -- form 2,020, bubble 836 -- are very tall), because it is the sum over the
+ * 75 cards that keeps the scrollbar's length steady; the running error stays under ~5% of the page.
+ * Measured 1280 / 1024 px: 384 / 393 px (-> 288 / 297); 390 px: 466 px (-> 418, the 24 px padding of the
+ * narrow layout); widgets 327 px (-> 267) at every width. `auto` keeps the real height once a card has been
+ * rendered. `playwright/oracle/tier2-html/home-scroll-stability.spec.ts` fails if the first scroll changes
+ * the document height by 10% or more, which is what re-measuring is for when the gallery changes. */
 .dx-component-card {
-  contain-intrinsic-block-size: auto 380px;
+  contain-intrinsic-block-size: auto 290px;
   content-visibility: var(--dx-cv, auto);
   overflow-clip-margin: 0.75rem;
 }
 
 .dx-widget-card:not(.dx-widget-card-popout) {
-  contain-intrinsic-block-size: auto 330px;
+  contain-intrinsic-block-size: auto 270px;
   content-visibility: var(--dx-cv, auto);
 }
 
@@ -1632,9 +1666,10 @@ html[data-cv-settle] {
 }
 
 @media (width <= 640px) {
-  /* Narrow cards stack and wrap (component cards mean 451 px, variants 427 px, at 390 px wide). */
+  /* Narrow cards stack and wrap (component cards mean 466 px border-box at 390 px wide, less the 48 px of
+   * padding; variants 427 px). */
   .dx-component-card {
-    contain-intrinsic-block-size: auto 450px;
+    contain-intrinsic-block-size: auto 418px;
   }
 }
 

@@ -49,3 +49,17 @@
         transform: translateX(-200%); /* rtl-physical */
     }
 }
+
+/* Reduced motion: the sweep is stopped by dx-components-theme.css (the bar is a use_motion host), and
+   a still half-width bar would read as 50%. Draw "busy, amount unknown" without motion instead: the
+   whole track filled with diagonal stripes. */
+@media (prefers-reduced-motion: reduce) {
+    .dx-progress[data-state='indeterminate'] .dx-progress-indicator {
+        width: 100%;
+        background-image: repeating-linear-gradient(
+            135deg,
+            transparent 0 var(--dx-space-2),
+            color-mix(in srgb, var(--dx-primary-foreground) 35%, transparent) var(--dx-space-2) var(--dx-space-4)
+        );
+    }
+}

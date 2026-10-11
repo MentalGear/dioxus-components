@@ -44,6 +44,15 @@ const GOTO_OPTS = { timeout: 20 * 60 * 1000 };
 
 async function goto(page: Page, variant: string) {
   await gotoHydrated(page, `${BASE_URL}/component/?name=carousel&variant=${variant}&`, GOTO_OPTS);
+  if (variant === "autoplay" || variant === "virtual_loop" || variant === "virtual_loop_rtl") {
+    // Autoplay only runs while the carousel can be seen (`primitives/src/activity.rs`: off-screen or
+    // hidden-tab autoplay is stopped and restarts with a fresh countdown), and this variant sits
+    // below the fold of the stacked page. Bring it into view -- instantly, the site's global
+    // `scroll-behavior: smooth` (backlog row 110) would otherwise animate it.
+    await page.evaluate((id) => {
+      document.getElementById(id)?.scrollIntoView({ block: "center", behavior: "instant" });
+    }, `component-preview-frame-${variant}`);
+  }
 }
 
 /** See this file's own header ("SCOPING"). */
@@ -2830,8 +2839,16 @@ test.describe("Carousel: paging never scrolls the page (ancestor-scroll regressi
 
     await waitForScrollStable(page);
     // Instant, never the page's own default `smooth` behavior (see this
-    // describe block's own "Methodology notes").
-    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
+    // describe block's own "Methodology notes"). Scrolled to the carousel,
+    // not to the top: autoplay only ticks while the carousel is on screen
+    // (`primitives/src/activity.rs`), and the point of this test is that
+    // the ticks leave a scroll position that has the carousel in view alone.
+    await page.evaluate(() =>
+      document
+        .getElementById("component-preview-frame-autoplay")
+        ?.scrollIntoView({ block: "center", behavior: "instant" }),
+    );
+    await waitForScrollStable(page);
     const scrollXBefore = await page.evaluate(() => window.scrollX);
     const scrollYBefore = await page.evaluate(() => window.scrollY);
     const before = await selectedLabel();

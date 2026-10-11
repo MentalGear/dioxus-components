@@ -96,3 +96,9 @@ A chart is a picture, so it comes with a real data table for anyone who cannot s
 With many points (say 90 daily values) a label under every category would be an unreadable smear, so labels are thinned the way Recharts' default `interval="preserveEnd"` thins them: the last category is always labelled, and walking back from it, a label is drawn only where it clears the previous one by `min_tick_gap` px and fits inside the chart. A narrow chart (a phone) therefore shows fewer labels than a wide one, and longer labels fewer than short ones. shadcn's 91-day charts set `minTickGap={32}` and so do ours (`min_tick_gap: 32.0`). Only the labels are thinned; every point stays hoverable and stays in the data table.
 
 Label widths are estimated from typical UI-font metrics rather than measured, so the server and the browser agree; an unusually wide font can still crowd, in which case raise `min_tick_gap` or shorten the labels with `x_tick_format`.
+
+## Motion and visibility
+
+The load animation plays once, when the chart is first actually on screen: at least 40% of it visible (or 40% of the viewport height for a chart taller than the screen) with the tab visible. A chart below the fold, in a skipped `content-visibility` card or in a background tab does not animate until it is seen, and one already in view at mount animates as soon as it has been laid out. There is no pre-roll margin on purpose: an entrance that starts before the chart is visible is one nobody saw. Set `animate: false` to turn the animation off entirely. See `dioxus_primitives::activity::use_entered_view_when`.
+
+The hover transitions use `--dx-motion-duration-base` and `--dx-motion-duration-slow`; the load animation durations are literals in `chart/style.css`. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

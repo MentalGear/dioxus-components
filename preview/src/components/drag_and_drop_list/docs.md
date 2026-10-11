@@ -33,3 +33,7 @@ Both are written as CSS custom properties on the list's root element, so they ca
 ```
 
 The room opens with the same transform transition as the rest of the list and is instant under `prefers-reduced-motion: reduce`. Keyboard reordering (Enter, arrow keys, Escape), the screen-reader announcements and right-to-left layouts are unaffected. The browser's own drag image, the translucent copy that follows the pointer, is drawn by the browser and is not styled by these options.
+
+## Motion
+
+While an item is dragged the items after the slot part by a `transform` transition, sized by `drop_gap` (`--dx-dnd-drop-gap`), and the dragged item stays as a ghost whose opacity is `ghost_opacity` (`--dx-dnd-ghost-opacity`). The motion only exists during a drag, so there is nothing to pause. It is instant under `prefers-reduced-motion: reduce`. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

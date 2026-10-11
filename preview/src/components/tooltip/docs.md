@@ -29,3 +29,7 @@ context menu submenus), which take an `open_on_hover` prop to switch hover
 off, a tooltip has no such option: hovering or focusing the trigger *is* what
 shows it, and it is a non-interactive hint, never the only way to reach
 something. For a panel opened by a click, use [Popover](/component/popover/).
+
+## Motion
+
+The tooltip fades in and out over `--dx-motion-duration-slow` (`opacity` only, so the anchor's `transform` centring is untouched). Retune with that token. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

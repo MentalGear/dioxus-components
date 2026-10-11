@@ -46,3 +46,7 @@ Closed `until-found` content is hidden from the accessibility tree exactly like 
 ### Styling
 
 Closed content that stays mounted carries `hidden` (`hidden="until-found"` with the opt-in). A stylesheet that sets `display` on `CollapsibleContent` overrides the browser's own `hidden` rule, so it must handle `[hidden]` itself, and `until-found` needs a real box: `display: none` there would make the text unsearchable. The shipped stylesheet does both.
+
+## Motion
+
+`Collapsible` does not animate: its content shows and hides. For an animated height use [Accordion](/component/accordion/). See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

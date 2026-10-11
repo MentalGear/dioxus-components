@@ -26,3 +26,7 @@ PopoverRoot {
     }
 }
 ```
+
+## Motion
+
+The panel fades in and out over `--dx-overlay-duration` (default `--dx-motion-duration-slow`) with `--dx-overlay-ease`. A modal popover uses the shared dialog exit driver, staying open until its exit settles (at most 1500 ms) before it closes. The keyframes animate `opacity` only, so the anchor's own `transform` centring is never replaced. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

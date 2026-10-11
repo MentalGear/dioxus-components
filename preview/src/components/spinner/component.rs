@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::LoaderCircle;
+use dioxus_primitives::activity::use_motion;
 use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
@@ -19,7 +20,11 @@ pub fn Spinner(
     // `role="status"` is required live-region semantics, not a caller
     // default -- owned-wins.
     let owned = attributes!(span { role: "status" });
-    let merged = merge_attributes(vec![base, attributes, owned]);
+    // Paused (not stopped) while off-screen or in a hidden tab: `data-dx-motion="paused"` is turned
+    // into `animation-play-state: paused` by `dx-components-theme.css`, so the ring keeps its
+    // phase and costs nothing while nobody can see it.
+    let motion = use_motion();
+    let merged = merge_attributes(vec![base, attributes, owned, motion.attributes()]);
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/src/components/spinner/style.css") }
         span { ..merged, LoaderCircle {} }

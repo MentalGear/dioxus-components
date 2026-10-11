@@ -70,3 +70,7 @@ Inactive `until-found` panels are hidden from the accessibility tree exactly lik
 ### Styling
 
 `TabContent` carries `hidden` when inactive (`hidden="until-found"` with the opt-in). A stylesheet must not set `display: none` on an `until-found` panel: that overrides the browser rule that keeps its text searchable. The shipped stylesheet skips `[hidden="until-found"]` and takes such a panel out of flow at zero size, so the inactive panels add no empty cards or gaps.
+
+## Motion
+
+Trigger colours and the `ghost` variant's underline change over `--dx-motion-duration-base` with `--dx-motion-ease-standard`; the panels switch instantly. Retune with those tokens. Reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

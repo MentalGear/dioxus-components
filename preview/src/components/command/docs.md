@@ -50,3 +50,7 @@ keyboard listener yourself if you want the displayed shortcut to actually fire t
 A modal command palette dims the page behind it with the shared overlay scrim: the dialog's own `::backdrop`, the same 10% black and 4px blur on every modal overlay. Pass `overlay: false` to keep the modality (focus trap, inert page, click-outside dismissal) without the dim and the blur; the `<dialog>` then carries `data-dx-overlay="off"`.
 
 Closing keeps the command palette a modal -- in the top layer, at the same size and place -- until its exit animation has played, and only then closes it. That holds in every browser; no stylesheet needs an engine-specific keep-alive.
+
+## Motion
+
+`CommandDialog` is a modal dialog, so it stays open until its exit animation and its backdrop's have settled (at most 1500 ms) and only then closes. The scrim and the panel share `--dx-overlay-duration` and `--dx-overlay-ease`; reduced motion swaps in `--dx-motion-duration-reduced`. Nothing loops. See [Motion](/docs#motion) for the tokens, reduced motion and the per-component table.

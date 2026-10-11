@@ -632,6 +632,88 @@ test.describe("Drop gap", () => {
   });
 });
 
+/*
+ * The home page renders the list twice -- the "Launch priorities" card in the
+ * masonry gallery (its own `BlockTasks` composition, no ghost/gap props) and the
+ * component's own demo in the catalog -- and both sit in a card with
+ * `content-visibility: auto` (paint containment). The ghost and the drop gap
+ * must be the component's defaults there too, and the room the gap opens must
+ * not be clipped by the card. Owner report, round 4: "the dnd list on the main
+ * overview demo doesn't have the new ghost / gap".
+ */
+test.describe("Home page lists", () => {
+  const HOME_LISTS = [
+    { name: "masonry card (Launch priorities)", index: 0 },
+    { name: "catalog card (component demo)", index: 1 },
+  ];
+
+  for (const { name, index } of HOME_LISTS) {
+    test(`${name}: default ghost opacity and drop gap, room not clipped`, async ({ page }) => {
+      await page.goto(`${BASE}/`, { timeout: LOAD_TIMEOUT });
+      const list = page.locator('ul[aria-roledescription="sortable list"]').nth(index);
+      await expect(list).toBeAttached({ timeout: 30000 });
+      // The cards are `content-visibility: auto`: render this one for real.
+      await list.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      await expect(list).toBeVisible();
+      const items = getItems(list);
+
+      // Same custom properties as the component page resolves.
+      expect(Number(await cssVar(list, "--dx-dnd-ghost-opacity"))).toBeCloseTo(
+        DEFAULT_GHOST_OPACITY,
+        5,
+      );
+      expect(await cssVar(list, "--dx-dnd-drop-gap")).toBe(`${DEFAULT_DROP_GAP}px`);
+
+      const rest = await spaceBetween(list, 1, 2);
+      await items.nth(0).click();
+      await page.keyboard.press("Enter");
+      await expect(items.nth(0)).toHaveAttribute("data-is-grabbing", "true");
+      await page.keyboard.press("ArrowDown");
+      await expect.poll(() => spaceBetween(list, 1, 2)).toBeCloseTo(rest + DEFAULT_DROP_GAP, 0);
+      await expect.poll(() => ghostOpacity(list)).toBeCloseTo(DEFAULT_GHOST_OPACITY, 2);
+
+      // Slot before the last item: the last item moves down by the gap and must
+      // still be inside the card (paint containment clips at its padding box).
+      const last = (await items.count()) - 1;
+      for (let i = 1; i < last - 1; i++) await page.keyboard.press("ArrowDown");
+      await expect.poll(() => spaceBetween(list, last - 1, last)).toBeCloseTo(
+        rest + DEFAULT_DROP_GAP,
+        0,
+      );
+      const clipped = await list.evaluate((ul) => {
+        const card = ul.closest(".dx-widget-card, .dx-component-card");
+        const lastItem = [...ul.querySelectorAll('li[aria-roledescription="sortable item"]')].pop();
+        if (!card || !lastItem) return "no card or item";
+        const slack = card.getBoundingClientRect().bottom - lastItem.getBoundingClientRect().bottom;
+        return slack >= 0 ? "" : `last item overflows its card by ${-slack}px`;
+      });
+      expect(clipped).toBe("");
+      await page.keyboard.press("Escape");
+      await expect.poll(() => spaceBetween(list, last - 1, last)).toBeCloseTo(rest, 0);
+    });
+  }
+
+  test("a mouse drag on the masonry card dims the ghost and opens the gap", async ({ page }) => {
+    await page.goto(`${BASE}/`, { timeout: LOAD_TIMEOUT });
+    const list = page.locator('ul[aria-roledescription="sortable list"]').first();
+    await expect(list).toBeAttached({ timeout: 30000 });
+    await list.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await expect(list).toBeVisible();
+    const items = getItems(list);
+    const rest = await spaceBetween(list, 1, 2);
+    const source = (await items.nth(0).boundingBox())!;
+    const target = (await items.nth(2).boundingBox())!;
+    await page.mouse.move(source.x + 40, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(source.x + 45, source.y + source.height / 2 + 10, { steps: 5 });
+    await page.mouse.move(target.x + 60, target.y + target.height * 0.8, { steps: 15 });
+    // Slot between items 2 and 3.
+    await expect.poll(() => ghostOpacity(list)).toBeCloseTo(DEFAULT_GHOST_OPACITY, 2);
+    await expect.poll(() => spaceBetween(list, 2, 3)).toBeCloseTo(rest + DEFAULT_DROP_GAP, 0);
+    await page.mouse.up();
+  });
+});
+
 test.describe("Instructions id (backlog row 120)", () => {
   test("every list's aria-describedby resolves to its own instructions element", async ({
     page,
